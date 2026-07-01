@@ -171,6 +171,36 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.getByRole('button', { name: '간트차트보기' })).toHaveAttribute('title', '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.');
   });
 
+  test('keeps the empty WBS state inside the mobile table viewport', async ({ page }) => {
+    await page.setViewportSize({ width: 375, height: 667 });
+    await page.evaluate(() => {
+      localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
+        projectName: 'Empty Scope',
+        baseDate: '2026-04-20',
+        tasks: []
+      }));
+    });
+    await page.reload();
+
+    const layout = await page.evaluate(() => {
+      const scrollRect = document.querySelector('.table-scroll').getBoundingClientRect();
+      const emptyRect = document.querySelector('.empty-state-cell > .table-empty').getBoundingClientRect();
+      const actionsRect = document.querySelector('.empty-state-cell .empty-actions').getBoundingClientRect();
+
+      return {
+        scrollLeft: scrollRect.left,
+        scrollRight: scrollRect.right,
+        emptyLeft: emptyRect.left,
+        emptyRight: emptyRect.right,
+        actionsRight: actionsRect.right
+      };
+    });
+
+    expect(layout.emptyLeft).toBeGreaterThanOrEqual(layout.scrollLeft - 1);
+    expect(layout.emptyRight).toBeLessThanOrEqual(layout.scrollRight + 1);
+    expect(layout.actionsRight).toBeLessThanOrEqual(layout.scrollRight + 1);
+  });
+
   test('adds a top-level task and restores it after reload', async ({ page }) => {
     const phaseName = 'P1000.분석단계';
 

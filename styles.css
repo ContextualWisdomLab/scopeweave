@@ -801,6 +801,14 @@ select[data-inline-progress]:focus {
   font-weight: 500;
 }
 
+.empty-state-cell {
+  padding: 0 !important;
+}
+
+.empty-state-cell > .table-empty {
+  width: min(100%, calc(100vw - 98px));
+}
+
 @media (max-width: 1400px) {
   .meta-grid-primary,
   .meta-grid-secondary,
@@ -839,6 +847,11 @@ select[data-inline-progress]:focus {
     position: static;
     border-radius: var(--radius-sm);
     padding: 16px;
+  }
+
+  .empty-state-cell > .table-empty {
+    width: calc(100vw - 34px);
+    padding: 48px 24px;
   }
 }
 

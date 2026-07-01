@@ -479,6 +479,7 @@ function setTableBodyRows(rows) {
 function createEmptyStateRow() {
   const row = document.createElement('tr');
   const cell = document.createElement('td');
+  cell.className = 'empty-state-cell';
   cell.colSpan = 21;
 
   const emptyState = document.createElement('div');
