@@ -109,6 +109,7 @@ test.describe('ScopeWeave Planner', () => {
     await page.setViewportSize({ width: 375, height: 667 });
     await page.goto('./');
 
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
     const mobileColumns = await page.evaluate(() => {
       const isVisible = (element) => getComputedStyle(element).display !== 'none';
       const headers = Array.from(document.querySelectorAll('thead th'))
@@ -182,6 +183,7 @@ test.describe('ScopeWeave Planner', () => {
     });
     await page.reload();
 
+    await expect(page.locator('.empty-state-cell > .table-empty')).toBeVisible();
     const layout = await page.evaluate(() => {
       const scrollRect = document.querySelector('.table-scroll').getBoundingClientRect();
       const emptyRect = document.querySelector('.empty-state-cell > .table-empty').getBoundingClientRect();

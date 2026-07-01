@@ -55,6 +55,7 @@ button {
 }
 
 .app-shell {
+  --table-empty-page-gutter: 98px; /* 2 * 48px shell padding + 2px table-section border */
   display: flex;
   min-height: 100vh;
   flex-direction: column;
@@ -806,7 +807,7 @@ select[data-inline-progress]:focus {
 }
 
 .empty-state-cell > .table-empty {
-  width: min(100%, calc(100vw - 98px));
+  width: min(100%, calc(100vw - var(--table-empty-page-gutter)));
 }
 
 @media (max-width: 1400px) {
@@ -825,6 +826,7 @@ select[data-inline-progress]:focus {
 
 @media (max-width: 800px) {
   .app-shell {
+    --table-empty-page-gutter: 34px; /* 2 * 16px shell padding + 2px table-section border */
     padding: 16px;
     gap: 16px;
   }
@@ -850,7 +852,6 @@ select[data-inline-progress]:focus {
   }
 
   .empty-state-cell > .table-empty {
-    width: calc(100vw - 34px);
     padding: 48px 24px;
   }
 }
