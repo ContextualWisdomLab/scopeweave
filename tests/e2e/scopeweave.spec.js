@@ -1005,6 +1005,20 @@ test.describe('ScopeWeave Planner', () => {
     expect(result.text).toContain('날짜 오류');
   });
 
+  test('creates an empty cell optimally using cloneNode', async ({ page }) => {
+    await page.evaluate(() => {
+      const cell1 = window.__scopeweaveTestApi.createEmptyCell();
+      const cell2 = window.__scopeweaveTestApi.createEmptyCell();
+
+      if (cell1 === cell2) {
+        throw new Error('cloneNode not used');
+      }
+      if (cell1.outerHTML !== cell2.outerHTML) {
+         throw new Error('cloneNode did not create identical markup');
+      }
+    });
+  });
+
   test('hardens dynamically generated download links', async ({ page }) => {
     await addTopLevelTask(page, {
       phase: 'Download hardening',

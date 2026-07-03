@@ -43,3 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.1] - 2026-06-25
 ### 성능 개선 (Performance)
 - 드래그 앤 드롭 동작 중 `dragover` 이벤트에서 발생하는 O(N) 작업 리스트 검색 성능 병목 문제를, O(1) 해시맵(Map) 기반의 캐싱 조회 로직으로 개선하여 큰 크기의 WBS 리스트에서의 버벅임 현상을 해결했습니다.
+
+## [Unreleased]
+### 성능 개선
+- 빈 셀(empty cell) 렌더링 시 DOM 요소 생성(document.createElement) 반복 호출을 피하기 위해, 처음 생성한 DOM 템플릿을 `cloneNode(true)`로 복제하여 사용하도록 최적화했습니다. 이를 통해 빈도 수가 높은 렌더링 루프에서의 메모리 할당 및 가비지 컬렉션 부하를 줄였습니다.
