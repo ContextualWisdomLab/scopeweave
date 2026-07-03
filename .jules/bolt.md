@@ -75,3 +75,7 @@
 ## 2026-06-29 - Cache active drag-and-drop elements
 **Learning:** Cleaning drag/drop classes by querying every table row on each drag event adds avoidable DOM traversal cost.
 **Action:** Cache the active drag element and current drop target in state, then clear only those elements during drag cleanup.
+
+## 2024-05-20 - Optimize static DOM creation with cloneNode
+**Learning:** Creating the same static DOM structure repeatedly using `document.createElement` inside rendering loops (like `createEmptyCell`) causes unnecessary memory allocations and CPU overhead, especially for large lists.
+**Action:** For static, stateless DOM elements that are frequently created, cache the fully constructed element once and return a copy using `.cloneNode(true)`.
