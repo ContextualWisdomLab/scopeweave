@@ -923,6 +923,7 @@ function handleInlineProgressChange(event) {
   task.actualProgressStatus = event.target.value;
   persistState();
   renderAll();
+  showToast('진척상태를 변경했습니다.');
 
   // 🎨 Palette: Restore focus to the dropdown after full DOM re-render
   requestAnimationFrame(() => {

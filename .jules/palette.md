@@ -101,3 +101,6 @@
 ## 2026-06-30 - Restore keyboard focus after synchronous DOM replacement
 **Learning:** In applications that rely on replacing large chunks of the DOM tree (e.g., calling `renderAll()` on every state change), elements that triggered the change (like dropdowns or toggle buttons) get destroyed and recreated. This causes the browser to reset focus to the `<body>` element, completely breaking keyboard navigation and forcing screen reader users to start over.
 **Action:** When implementing interactions that trigger a full re-render, identify the element that triggered the change (e.g., using its ID or data attributes), and use `requestAnimationFrame` to manually call `.focus()` on the newly rendered equivalent element after the DOM has been updated.
+## 2024-05-24 - 인라인 저장 동작에 대한 명시적 피드백 제공
+**Learning:** 인라인에서 자동 저장(Auto-save)이 일어날 때, 시각적 및 스크린 리더 사용자 모두에게 저장이 완료되었다는 명시적인 피드백(toast)을 제공하지 않으면 변경사항이 제대로 반영되었는지 불안해할 수 있다.
+**Action:** 앞으로 인라인 저장이나 비동기 작업이 백그라운드에서 완료되는 인터랙션을 구현할 때, 반드시 `showToast()`와 같은 aria-live 기반의 알림을 추가하여 사용자에게 명확한 피드백을 주어야 한다.
