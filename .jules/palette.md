@@ -101,3 +101,6 @@
 ## 2026-06-30 - Restore keyboard focus after synchronous DOM replacement
 **Learning:** In applications that rely on replacing large chunks of the DOM tree (e.g., calling `renderAll()` on every state change), elements that triggered the change (like dropdowns or toggle buttons) get destroyed and recreated. This causes the browser to reset focus to the `<body>` element, completely breaking keyboard navigation and forcing screen reader users to start over.
 **Action:** When implementing interactions that trigger a full re-render, identify the element that triggered the change (e.g., using its ID or data attributes), and use `requestAnimationFrame` to manually call `.focus()` on the newly rendered equivalent element after the DOM has been updated.
+## 2026-07-04 - 인라인 폼 유효성 검사 시각적 피드백 추가
+**Learning:** `aria-invalid` 속성만 추가하고 시각적인 피드백을 제공하지 않으면, 시각적 사용자가 오류가 발생한 위치를 직관적으로 파악하기 어렵습니다.
+**Action:** `aria-invalid="true"`가 설정된 폼 필드에 테두리와 포커스 스타일을 추가하여 명확한 시각적 오류 피드백을 제공하도록 합니다.

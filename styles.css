@@ -469,6 +469,21 @@ select[data-inline-progress]:focus {
   outline: none;
 }
 
+.editor-field input[aria-invalid="true"],
+.editor-field select[aria-invalid="true"],
+select[data-inline-progress][aria-invalid="true"] {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 1px var(--danger);
+}
+
+.editor-field input[aria-invalid="true"]:focus,
+.editor-field select[aria-invalid="true"]:focus,
+select[data-inline-progress][aria-invalid="true"]:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.15);
+  outline: none;
+}
+
 .editor-actions {
   margin-top: 24px;
   display: flex;
