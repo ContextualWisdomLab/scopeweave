@@ -70,26 +70,44 @@ function projectAccess(userId, projectId) {
 const metrics = { startedAt: new Date().toISOString(), requests: 0, s2xx: 0, s4xx: 0, s5xx: 0, signups: 0, projectsCreated: 0, webhookDeliveries: 0 };
 
 // Outbound webhooks: POST signed JSON to each active hook subscribed to `event`.
-// Fire-and-forget with a timeout — never blocks or fails the triggering request.
+// Fire-and-forget with a timeout, one retry on failure, and a recorded outcome
+// per attempt — never blocks or fails the triggering request.
+function recordDelivery(webhookId, event, status, ok, attempt) {
+  try {
+    db.prepare('INSERT INTO webhook_deliveries(webhook_id,event,status_code,ok,attempt) VALUES(?,?,?,?,?)')
+      .run(webhookId, event, status ?? null, ok ? 1 : 0, attempt);
+  } catch { /* recording must not break delivery */ }
+}
+
+function sendWebhook(webhookId, url, sig, event, body, attempt) {
+  metrics.webhookDeliveries++;
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 3000);
+  fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
+    body,
+    signal: ctrl.signal,
+  }).then((res) => {
+    recordDelivery(webhookId, event, res.status, res.ok, attempt);
+    if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
+  }).catch(() => {
+    recordDelivery(webhookId, event, null, false, attempt);
+    if (attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
+  }).finally(() => clearTimeout(to));
+}
+
 function deliver(orgId, event, payload) {
   let hooks;
   try {
-    hooks = db.prepare('SELECT url, secret, events FROM webhooks WHERE org_id = ? AND active = 1').all(orgId);
+    hooks = db.prepare('SELECT id, url, secret, events FROM webhooks WHERE org_id = ? AND active = 1').all(orgId);
   } catch { return; }
   for (const h of hooks) {
     const subs = String(h.events || '').split(',').map((s) => s.trim());
     if (!(subs.includes('*') || subs.includes(event))) continue;
     const body = JSON.stringify({ event, orgId: Number(orgId), payload, ts: new Date().toISOString() });
     const sig = createHmac('sha256', h.secret).update(body).digest('hex');
-    metrics.webhookDeliveries++;
-    const ctrl = new AbortController();
-    const to = setTimeout(() => ctrl.abort(), 3000);
-    fetch(h.url, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
-      body,
-      signal: ctrl.signal,
-    }).catch(() => {}).finally(() => clearTimeout(to));
+    sendWebhook(h.id, h.url, sig, event, body, 1);
   }
 }
 const quietLogs = String(process.env.SCOPEWEAVE_DB || '').includes(':memory:'); // silence during tests
@@ -441,7 +459,10 @@ app.get('/api/orgs/:id/webhooks', requireAuth, (c) => {
   const orgId = c.req.param('id');
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const webhooks = db.prepare(
-    'SELECT id, url, events, active, created_at AS createdAt FROM webhooks WHERE org_id = ? ORDER BY id DESC'
+    `SELECT w.id, w.url, w.events, w.active, w.created_at AS createdAt,
+       (SELECT ok FROM webhook_deliveries d WHERE d.webhook_id = w.id ORDER BY d.id DESC LIMIT 1) AS lastOk,
+       (SELECT created_at FROM webhook_deliveries d WHERE d.webhook_id = w.id ORDER BY d.id DESC LIMIT 1) AS lastAt
+     FROM webhooks w WHERE w.org_id = ? ORDER BY w.id DESC`
   ).all(orgId); // secret never returned
   return c.json({ webhooks });
 });
@@ -457,6 +478,18 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
   logAudit(orgId, uid, 'webhook.create', 'webhook', id, { url, events: evs });
   return c.json({ id, url, events: evs, secret }); // secret shown once for signature verification
+});
+
+app.get('/api/orgs/:id/webhooks/:whId/deliveries', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
+  const wh = db.prepare('SELECT id FROM webhooks WHERE id = ? AND org_id = ?').get(c.req.param('whId'), orgId);
+  if (!wh) return c.json({ error: 'not found' }, 404);
+  const deliveries = db.prepare(
+    'SELECT event, status_code AS statusCode, ok, attempt, created_at AS createdAt FROM webhook_deliveries WHERE webhook_id = ? ORDER BY id DESC LIMIT 50'
+  ).all(wh.id);
+  return c.json({ deliveries });
 });
 
 app.delete('/api/orgs/:id/webhooks/:whId', requireAuth, (c) => {

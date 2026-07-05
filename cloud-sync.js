@@ -489,7 +489,8 @@ async function renderWebhooks(body) {
     const li = document.createElement('li');
     const who = document.createElement('span');
     who.className = 'team-who';
-    who.textContent = `${w.url} · ${w.events}`;
+    const status = w.lastOk == null ? '' : (w.lastOk ? ' · 최근 ✓' : ' · 최근 ✗ 실패');
+    who.textContent = `${w.url} · ${w.events}${status}`;
     li.appendChild(who);
     const del = document.createElement('button');
     del.type = 'button';
