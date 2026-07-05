@@ -150,6 +150,7 @@ function ensureAuthUI() {
           <button type="submit" class="primary-button" id="cloud-submit">로그인</button>
           <button type="button" class="secondary-button" id="cloud-toggle">계정 만들기</button>
         </div>
+        <button type="button" class="secondary-button" id="cloud-sso" style="width:100%;margin-top:8px">SSO로 로그인 (OIDC)</button>
       </form>
     </div>`;
   document.body.appendChild(modal);
@@ -165,6 +166,7 @@ function ensureAuthUI() {
     $('#cloud-error').textContent = '';
   };
   $('#cloud-toggle').addEventListener('click', () => setMode(mode === 'login' ? 'signup' : 'login'));
+  $('#cloud-sso').addEventListener('click', () => { window.location.href = '/api/auth/oidc/start'; });
   modal.addEventListener('click', (e) => { if (e.target.dataset.cloudClose) modal.classList.add('hidden'); });
   $('#cloud-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -622,6 +624,16 @@ async function renderTokens(body) {
   section.appendChild(form);
   section.appendChild(secret);
   body.appendChild(section);
+}
+
+// SSO (OIDC) redirect: the token arrives in the URL fragment (not query → not
+// logged). Store it and clean the URL before anything else reads auth state.
+if (typeof window !== 'undefined' && location.hash.startsWith('#token=')) {
+  const t = decodeURIComponent(location.hash.slice('#token='.length));
+  if (t) {
+    setToken(t);
+    history.replaceState(null, '', location.pathname + location.search);
+  }
 }
 
 // Auto-accept an invite token from the URL (?invite=...) once logged in.

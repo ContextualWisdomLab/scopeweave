@@ -270,4 +270,31 @@ assert.ok(typeof m.sseActive === 'number', 'sseActive present');
 assert.ok(m.s2xx > 0 && m.s4xx > 0, 'status buckets counted (2xx + 4xx seen)');
 assert.ok(m.startedAt && typeof m.uptimeSec === 'number', 'startedAt + uptime present');
 
+// ---- SSO / OIDC (built-in mock provider) ----
+const follow = async (path) => { const res = await req(path); const loc = res.headers.get('location'); return { status: res.status, loc }; };
+const pathOf = (u) => { const url = new URL(u, 'http://localhost'); return url.pathname + url.search; };
+let step = await follow('/api/auth/oidc/start?email=sso@corp.com');
+assert.equal(step.status, 302, 'oidc start redirects');
+assert.ok(step.loc.includes('/api/auth/oidc/mock/authorize'), 'redirects to mock IdP');
+step = await follow(pathOf(step.loc));
+assert.equal(step.status, 302, 'mock authorize redirects');
+assert.ok(step.loc.includes('/api/auth/oidc/callback'), 'back to callback');
+step = await follow(pathOf(step.loc));
+assert.equal(step.status, 302, 'callback redirects with token');
+const ssoToken = new URL(step.loc, 'http://x').hash.replace('#token=', '');
+assert.ok(ssoToken.length > 20, 'callback issued a JWT in the fragment');
+r = await req('/api/me', { headers: { authorization: `Bearer ${ssoToken}` } });
+assert.equal(r.status, 200, 'SSO JWT works on /api/me');
+assert.equal((await r.json()).user.email, 'sso@corp.com', 'SSO user upserted by email');
+// re-login via SSO reuses the same user (no duplicate)
+step = await follow('/api/auth/oidc/start?email=sso@corp.com');
+step = await follow(pathOf(step.loc));
+step = await follow(pathOf(step.loc));
+const ssoToken2 = new URL(step.loc, 'http://x').hash.replace('#token=', '');
+r = await req('/api/me', { headers: { authorization: `Bearer ${ssoToken2}` } });
+assert.equal((await r.json()).user.email, 'sso@corp.com', 'SSO re-login same user');
+// forged state rejected
+r = await req('/api/auth/oidc/callback?code=x&state=bogus');
+assert.equal(r.status, 400, 'invalid state → 400');
+
 console.log('✓ API smoke tests passed');

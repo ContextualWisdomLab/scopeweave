@@ -3,7 +3,7 @@
 // (index.html/app.js) becomes the frontend that talks to these routes.
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
-import { randomBytes, createHmac } from 'node:crypto';
+import { randomBytes, createHmac, createHash } from 'node:crypto';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -466,6 +466,106 @@ app.delete('/api/orgs/:id/webhooks/:whId', requireAuth, (c) => {
   const info = db.prepare('DELETE FROM webhooks WHERE id = ? AND org_id = ?').run(c.req.param('whId'), orgId);
   if (!info.changes) return c.json({ error: 'not found' }, 404);
   return c.json({ ok: true });
+});
+
+// ------------------------------------------------------------ SSO (OIDC)
+// Real IdP via env (OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI). When
+// unset, a built-in mock provider makes the whole flow self-contained + testable.
+const OIDC = {
+  issuer: process.env.OIDC_ISSUER,
+  clientId: process.env.OIDC_CLIENT_ID,
+  clientSecret: process.env.OIDC_CLIENT_SECRET,
+  redirectUri: process.env.OIDC_REDIRECT_URI,
+};
+const oidcMock = !OIDC.issuer;
+const oidcStates = new Map(); // state -> { verifier, exp }
+const oidcCodes = new Map();  // mock only: code -> email
+
+function upsertSsoUser(email) {
+  let user = db.prepare('SELECT id, email FROM users WHERE email = ?').get(email);
+  if (user) return user;
+  db.exec('BEGIN');
+  try {
+    const uid = rowid(db.prepare('INSERT INTO users(email,password_hash,name) VALUES(?,?,?)')
+      .run(email, hashPassword(randomBytes(24).toString('hex')), ''));
+    const oid = rowid(db.prepare('INSERT INTO orgs(name,owner_id) VALUES(?,?)').run(`${email}'s workspace`, uid));
+    db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)').run(oid, uid, 'owner');
+    db.exec('COMMIT');
+    metrics.signups++;
+    return { id: uid, email };
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+}
+
+app.get('/api/auth/oidc/start', (c) => {
+  const origin = new URL(c.req.url).origin;
+  const state = randomBytes(16).toString('hex');
+  const verifier = randomBytes(32).toString('base64url');
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
+  oidcStates.set(state, { verifier, exp: Date.now() + 5 * 60 * 1000 });
+  const redirectUri = OIDC.redirectUri || `${origin}/api/auth/oidc/callback`;
+  if (oidcMock) {
+    const email = c.req.query('email') || 'sso-user@example.com';
+    const u = new URL(`${origin}/api/auth/oidc/mock/authorize`);
+    u.searchParams.set('state', state);
+    u.searchParams.set('email', email);
+    u.searchParams.set('redirect_uri', redirectUri);
+    return c.redirect(u.toString());
+  }
+  const u = new URL(`${OIDC.issuer.replace(/\/$/, '')}/authorize`);
+  u.searchParams.set('client_id', OIDC.clientId);
+  u.searchParams.set('redirect_uri', redirectUri);
+  u.searchParams.set('response_type', 'code');
+  u.searchParams.set('scope', 'openid email profile');
+  u.searchParams.set('state', state);
+  u.searchParams.set('code_challenge', challenge);
+  u.searchParams.set('code_challenge_method', 'S256');
+  return c.redirect(u.toString());
+});
+
+// Built-in mock IdP authorize — instantly issues a code (dev/test only).
+app.get('/api/auth/oidc/mock/authorize', (c) => {
+  if (!oidcMock) return c.json({ error: 'mock disabled' }, 404);
+  const state = c.req.query('state');
+  const email = c.req.query('email');
+  const redirectUri = c.req.query('redirect_uri');
+  const code = randomBytes(16).toString('hex');
+  oidcCodes.set(code, email);
+  const u = new URL(redirectUri);
+  u.searchParams.set('code', code);
+  u.searchParams.set('state', state);
+  return c.redirect(u.toString());
+});
+
+app.get('/api/auth/oidc/callback', async (c) => {
+  const state = c.req.query('state');
+  const code = c.req.query('code');
+  const s = oidcStates.get(state);
+  if (!s || s.exp < Date.now()) return c.json({ error: 'invalid or expired state' }, 400);
+  oidcStates.delete(state);
+  let email;
+  if (oidcMock) {
+    email = oidcCodes.get(code);
+    oidcCodes.delete(code);
+    if (!email) return c.json({ error: 'invalid code' }, 400);
+  } else {
+    const redirectUri = OIDC.redirectUri || `${new URL(c.req.url).origin}/api/auth/oidc/callback`;
+    const tokenRes = await fetch(`${OIDC.issuer.replace(/\/$/, '')}/token`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri, client_id: OIDC.clientId, client_secret: OIDC.clientSecret, code_verifier: s.verifier }),
+    }).catch(() => null);
+    const tok = tokenRes ? await tokenRes.json().catch(() => ({})) : {};
+    if (!tok.id_token) return c.json({ error: 'token exchange failed' }, 400);
+    // Ceiling: verify the id_token signature via the issuer JWKS before prod.
+    const claims = JSON.parse(Buffer.from(String(tok.id_token).split('.')[1] || '', 'base64url').toString() || '{}');
+    email = claims.email;
+    if (!email) return c.json({ error: 'no email claim' }, 400);
+  }
+  const user = upsertSsoUser(email);
+  const token = signToken({ sub: user.id, email });
+  // Return the token in the URL fragment (not query → not logged); the client
+  // stores it and cleans the URL.
+  return c.redirect(`/#token=${token}`);
 });
 
 app.get('/api/health', (c) => c.json({ ok: true }));
