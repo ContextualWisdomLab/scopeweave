@@ -204,6 +204,34 @@ function renderPanel({ pv, ev, tasks, baseDate, calcPlannedRatio, calcDuration, 
   if (series.timeline.length >= 2) {
     panel.appendChild(buildScurveSvg(series, evm, baseDate));
   }
+
+  renderCpm(panel, tasks, calcDuration);
+}
+
+// Critical-path summary + row highlighting. Only shown when tasks declare
+// dependencies (task.predecessors). Row highlight is deferred to the next frame
+// because this runs mid-renderAll, before app.js has appended the new rows.
+function renderCpm(panel, tasks, calcDuration) {
+  const hasPreds = (tasks || []).some((t) => {
+    const p = t.predecessors;
+    return p && (Array.isArray(p) ? p.length : String(p).trim());
+  });
+  const highlight = (predicate) => {
+    requestAnimationFrame(() => {
+      document.querySelectorAll('tbody tr[data-task-id]').forEach((tr) => {
+        tr.classList.toggle('cpm-critical', predicate(tr.getAttribute('data-task-id')));
+      });
+    });
+  };
+  if (!hasPreds) { highlight(() => false); return; }
+
+  const cpm = computeCpm(tasks, { calcDuration });
+  const line = el('p', { class: `cpm-summary${cpm.cycleDetected ? ' cpm-warn' : ''}` },
+    cpm.cycleDetected
+      ? '⚠ 순환 의존성이 감지되어 임계경로를 계산할 수 없습니다.'
+      : `임계경로(CPM): 프로젝트 기간 ${cpm.projectDurationDays}일 · 임계 작업 ${cpm.criticalPath.length}개`);
+  panel.appendChild(line);
+  highlight((id) => !cpm.cycleDetected && Boolean(cpm.perTask[id]?.critical));
 }
 
 function buildScurveSvg(series, evm, baseDate) {
