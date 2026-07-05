@@ -65,6 +65,99 @@ export function buildScurve({ tasks, calcPlannedRatio, calcDuration, buildTimeli
   return { timeline, planned };
 }
 
+// Critical Path Method (CPM). Pure. Duration per task from task.duration (days)
+// or from plannedStart/End day-count (mirrors app.js calculateDurationDays; an
+// injected calcDuration is used when provided). Dependencies come from an
+// optional task.predecessors (array or comma-separated ids referencing task.id).
+// Robust to cycles (returns cycleDetected:true, never throws).
+export function computeCpm(tasks, opts = {}) {
+  const list = Array.isArray(tasks) ? tasks : [];
+  const ids = list.map((t) => String(t.id));
+  const idset = new Set(ids);
+  const byId = new Map(list.map((t) => [String(t.id), t]));
+
+  const durOf = (t) => {
+    if (typeof t.duration === 'number' && t.duration >= 0) return t.duration;
+    if (t.plannedStartDate && t.plannedEndDate) {
+      if (opts.calcDuration) return opts.calcDuration(t.plannedStartDate, t.plannedEndDate);
+      const ms = Date.parse(t.plannedEndDate) - Date.parse(t.plannedStartDate);
+      if (!Number.isFinite(ms) || ms < 0) return 0;
+      return Math.max(1, Math.round(ms / 86400000));
+    }
+    return 0;
+  };
+  const predsOf = (t) => {
+    let p = t.predecessors;
+    if (!p) return [];
+    if (typeof p === 'string') p = p.split(',').map((s) => s.trim()).filter(Boolean);
+    return Array.isArray(p) ? p.map(String) : [];
+  };
+
+  const preds = new Map(ids.map((id) => [id, []]));
+  const succ = new Map(ids.map((id) => [id, []]));
+  for (const t of list) {
+    const id = String(t.id);
+    for (const p of predsOf(t)) {
+      if (idset.has(p) && p !== id) { preds.get(id).push(p); succ.get(p).push(id); }
+    }
+  }
+
+  // Kahn topological sort → cycle detection.
+  const indeg = new Map(ids.map((id) => [id, preds.get(id).length]));
+  const queue = ids.filter((id) => indeg.get(id) === 0);
+  const order = [];
+  while (queue.length) {
+    const id = queue.shift();
+    order.push(id);
+    for (const s of succ.get(id)) {
+      indeg.set(s, indeg.get(s) - 1);
+      if (indeg.get(s) === 0) queue.push(s);
+    }
+  }
+  const cycleDetected = order.length !== ids.length;
+  const topo = cycleDetected ? ids : order; // best-effort order under a cycle
+
+  const dur = new Map(ids.map((id) => [id, durOf(byId.get(id))]));
+  const es = new Map();
+  const ef = new Map();
+  for (const id of topo) {
+    const start = preds.get(id).reduce((m, p) => Math.max(m, ef.get(p) ?? 0), 0);
+    es.set(id, start);
+    ef.set(id, start + dur.get(id));
+  }
+  const projectDurationDays = ids.reduce((m, id) => Math.max(m, ef.get(id) ?? 0), 0);
+
+  const lf = new Map();
+  const ls = new Map();
+  for (const id of [...topo].reverse()) {
+    const succs = succ.get(id);
+    const finish = succs.length
+      ? succs.reduce((m, s) => Math.min(m, ls.get(s) ?? projectDurationDays), Infinity)
+      : projectDurationDays;
+    lf.set(id, finish);
+    ls.set(id, finish - dur.get(id));
+  }
+
+  const perTask = {};
+  for (const id of ids) {
+    const slack = (ls.get(id) ?? 0) - (es.get(id) ?? 0);
+    perTask[id] = {
+      duration: dur.get(id),
+      es: es.get(id) ?? 0,
+      ef: ef.get(id) ?? 0,
+      ls: ls.get(id) ?? 0,
+      lf: lf.get(id) ?? 0,
+      slack,
+      critical: !cycleDetected && Math.abs(slack) < 1e-9,
+    };
+  }
+  const criticalPath = ids
+    .filter((id) => perTask[id].critical)
+    .sort((a, b) => perTask[a].es - perTask[b].es);
+
+  return { perTask, projectDurationDays, criticalPath, cycleDetected };
+}
+
 // --------------------------------------------------------------------- DOM
 const SVGNS = 'http://www.w3.org/2000/svg';
 const pct = (n) => `${(n * 100).toFixed(1)}%`;
@@ -164,5 +257,5 @@ function buildScurveSvg(series, evm, baseDate) {
 }
 
 if (typeof window !== 'undefined') {
-  window.ScopeWeaveAnalytics = { render: renderPanel, computeEvm, buildScurve };
+  window.ScopeWeaveAnalytics = { render: renderPanel, computeEvm, buildScurve, computeCpm };
 }
