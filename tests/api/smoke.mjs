@@ -80,4 +80,23 @@ assert.equal(r.status, 404, 'cross-tenant read → 404');
 r = await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: { authorization: `Bearer ${t2}` }, body: body({ tasks: [], version: 2 }) });
 assert.equal(r.status, 404, 'cross-tenant write → 404');
 
+// SSE stream: query-token auth (EventSource can't send headers)
+r = await req(`/api/projects/${proj.id}/stream?token=${encodeURIComponent(token)}`);
+assert.equal(r.status, 200, 'SSE with valid query token → 200');
+assert.match(r.headers.get('content-type') || '', /text\/event-stream/, 'SSE content-type');
+await r.body?.cancel();
+r = await req(`/api/projects/${proj.id}/stream`);
+assert.equal(r.status, 401, 'SSE without token → 401');
+await r.body?.cancel?.();
+
+// Static allowlist — client files served, source/db never exposed
+for (const [path, code] of [['/', 200], ['/index.html', 200], ['/app.js', 200], ['/cloud-sync.js', 200], ['/styles.css', 200], ['/wbs.json', 200]]) {
+  const res = await req(path);
+  assert.equal(res.status, code, `static ${path} → ${code}`);
+}
+for (const path of ['/server/app.mjs', '/server/db.mjs', '/data.db', '/package.json', '/../etc/passwd']) {
+  const res = await req(path);
+  assert.equal(res.status, 404, `blocked ${path} → 404`);
+}
+
 console.log('✓ API smoke tests passed');

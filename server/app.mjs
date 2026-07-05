@@ -2,6 +2,7 @@
 // project docs, SSE realtime fan-out per project. The existing static client
 // (index.html/app.js) becomes the frontend that talks to these routes.
 import { Hono } from 'hono';
+import { readFile } from 'node:fs/promises';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken } from './auth.mjs';
 
@@ -125,9 +126,16 @@ app.put('/api/projects/:id', requireAuth, async (c) => {
   return c.json({ version });
 });
 
-app.get('/api/projects/:id/stream', requireAuth, (c) => {
+app.get('/api/projects/:id/stream', (c) => {
+  // EventSource can't send an Authorization header, so accept a query token
+  // here only. Ceiling: issue a short-lived stream-scoped token before prod so
+  // full JWTs don't land in URLs / access logs.
+  const header = c.req.header('authorization') || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : (c.req.query('token') || '');
+  let user;
+  try { user = verifyToken(token); } catch { return c.json({ error: 'unauthorized' }, 401); }
   const id = c.req.param('id');
-  if (!projectAccess(c.get('user').sub, id)) return c.json({ error: 'not found' }, 404);
+  if (!projectAccess(user.sub, id)) return c.json({ error: 'not found' }, 404);
   const key = String(id);
   const stream = new ReadableStream({
     start(controller) {
@@ -146,3 +154,25 @@ app.get('/api/projects/:id/stream', requireAuth, (c) => {
 });
 
 app.get('/api/health', (c) => c.json({ ok: true }));
+
+// Static client — strict allowlist so server/, data.db, package.json etc. are
+// never served. Anything not listed → 404.
+const STATIC = {
+  '/': ['index.html', 'text/html; charset=utf-8'],
+  '/index.html': ['index.html', 'text/html; charset=utf-8'],
+  '/404.html': ['404.html', 'text/html; charset=utf-8'],
+  '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
+  '/cloud-sync.js': ['cloud-sync.js', 'text/javascript; charset=utf-8'],
+  '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
+  '/wbs.json': ['wbs.json', 'application/json; charset=utf-8'],
+};
+app.get('*', async (c) => {
+  const entry = STATIC[c.req.path];
+  if (!entry) return c.notFound();
+  try {
+    const buf = await readFile(new URL(`../${entry[0]}`, import.meta.url));
+    return c.body(buf, 200, { 'Content-Type': entry[1] });
+  } catch {
+    return c.notFound();
+  }
+});

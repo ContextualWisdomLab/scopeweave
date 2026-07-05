@@ -184,13 +184,26 @@ async function bootstrap() {
     elements.connectJsonSyncButton.title = '이 브라우저는 wbs.json 직접 저장 연결을 지원하지 않습니다.';
   }
 
-  const savedState = loadLocalState();
-  if (savedState) {
-    hydrateState(savedState);
+  // Optional cloud overlay (loaded as a separate module; undefined offline).
+  const cloudApi = typeof window !== 'undefined' ? window.ScopeWeaveCloud : null;
+  cloudApi?.init?.({
+    hydrateState,
+    renderAll,
+    getState: () => ({ projectName: state.projectName, baseDate: state.baseDate, tasks: state.tasks }),
+  });
+
+  const cloudState = cloudApi ? await cloudApi.boot() : null;
+  if (cloudState) {
+    hydrateState(cloudState);
   } else {
-    const seedData = await loadSeedTasks();
-    state.tasks = normalizeImportedTasks(seedData);
-    invalidateTaskIndexCache();
+    const savedState = loadLocalState();
+    if (savedState) {
+      hydrateState(savedState);
+    } else {
+      const seedData = await loadSeedTasks();
+      state.tasks = normalizeImportedTasks(seedData);
+      invalidateTaskIndexCache();
+    }
   }
 
   renderAll();
@@ -1437,6 +1450,10 @@ function persistState() {
     writeJsonSyncFile().catch(() => {
       showToast('연결된 wbs.json 파일 저장에 실패했습니다.');
     });
+  }
+
+  if (typeof window !== 'undefined') {
+    window.ScopeWeaveCloud?.push?.(payload);
   }
 }
 

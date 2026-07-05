@@ -881,3 +881,55 @@ select[data-inline-progress]:focus {
   margin: 0;
   line-height: 1.5;
 }
+
+/* Cloud sync auth UI (SaaS overlay) */
+.title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.cloud-auth {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.cloud-select {
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  max-width: 220px;
+}
+.cloud-panel {
+  max-width: 420px;
+  width: 100%;
+}
+.cloud-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 8px 4px 4px;
+}
+.cloud-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+.cloud-actions .primary-button {
+  flex: 1;
+}
+.cloud-error {
+  color: var(--danger);
+  font-size: 13px;
+  min-height: 18px;
+  margin: 0;
+}
+.cloud-name-field.hidden {
+  display: none;
+}
