@@ -307,4 +307,28 @@ assert.equal((await r.json()).user.email, 'sso@corp.com', 'SSO re-login same use
 r = await req('/api/auth/oidc/callback?code=x&state=bogus');
 assert.equal(r.status, 400, 'invalid state → 400');
 
+// ---- Account & project lifecycle ----
+// delete a project
+r = await req('/api/projects', { method: 'POST', headers: auth, body: body({ name: 'to-delete' }) });
+const delProj = await r.json();
+r = await req(`/api/projects/${delProj.id}`, { method: 'DELETE', headers: auth });
+assert.equal(r.status, 200, 'owner deletes project');
+r = await req(`/api/projects/${delProj.id}`, { headers: auth });
+assert.equal(r.status, 404, 'deleted project is gone');
+// change password
+r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'pw@x.com', password: 'password123' }) });
+const pwAuth = { authorization: `Bearer ${(await r.json()).token}` };
+r = await req('/api/auth/change-password', { method: 'POST', headers: pwAuth, body: body({ oldPassword: 'wrong', newPassword: 'newpass123' }) });
+assert.equal(r.status, 403, 'wrong current password → 403');
+r = await req('/api/auth/change-password', { method: 'POST', headers: pwAuth, body: body({ oldPassword: 'password123', newPassword: 'newpass123' }) });
+assert.equal(r.status, 200, 'password changed');
+assert.equal((await req('/api/auth/login', { method: 'POST', body: body({ email: 'pw@x.com', password: 'newpass123' }) })).status, 200, 'login with new password');
+assert.equal((await req('/api/auth/login', { method: 'POST', body: body({ email: 'pw@x.com', password: 'password123' }) })).status, 401, 'old password rejected');
+// account deletion (GDPR)
+r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'gone@x.com', password: 'password123' }) });
+const goneAuth = { authorization: `Bearer ${(await r.json()).token}` };
+assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, body: body({ password: 'wrong' }) })).status, 403, 'account delete needs password');
+assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, body: body({ password: 'password123' }) })).status, 200, 'account deleted');
+assert.equal((await req('/api/auth/login', { method: 'POST', body: body({ email: 'gone@x.com', password: 'password123' }) })).status, 401, 'deleted account cannot login');
+
 console.log('✓ API smoke tests passed');

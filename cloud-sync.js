@@ -471,6 +471,56 @@ async function renderTeam() {
   await renderTokens(body);
   await renderWebhooks(body);
   await renderAudit(body);
+  renderAccount(body);
+}
+
+// Account settings — change password / delete account.
+function renderAccount(body) {
+  const section = document.createElement('div');
+  section.className = 'token-section';
+  const h = document.createElement('h3');
+  h.className = 'token-heading';
+  h.textContent = '계정';
+  section.appendChild(h);
+
+  const form = document.createElement('form');
+  form.className = 'cloud-form';
+  const oldPw = document.createElement('input');
+  oldPw.type = 'password'; oldPw.placeholder = '현재 비밀번호'; oldPw.autocomplete = 'current-password';
+  const newPw = document.createElement('input');
+  newPw.type = 'password'; newPw.placeholder = '새 비밀번호 (8자 이상)'; newPw.minLength = 8; newPw.autocomplete = 'new-password';
+  const save = document.createElement('button');
+  save.type = 'submit'; save.className = 'secondary-button'; save.textContent = '비밀번호 변경';
+  form.append(oldPw, newPw, save);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await api('/api/auth/change-password', { method: 'POST', body: { oldPassword: oldPw.value, newPassword: newPw.value } });
+      oldPw.value = ''; newPw.value = '';
+      toast('비밀번호를 변경했습니다.');
+    } catch (err) { toast(err.data?.error || err.message); }
+  });
+  section.appendChild(form);
+
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'secondary-button';
+  del.style.color = 'var(--danger)';
+  del.style.marginTop = '8px';
+  del.textContent = '계정 삭제';
+  del.addEventListener('click', async () => {
+    const pw = prompt('계정과 소유한 워크스페이스가 영구 삭제됩니다. 확인하려면 비밀번호를 입력하세요.');
+    if (!pw) return;
+    try {
+      await api('/api/account', { method: 'DELETE', body: { password: pw } });
+      setToken(''); setProjectId('');
+      document.getElementById('team-modal')?.classList.add('hidden');
+      renderAuthUI();
+      toast('계정을 삭제했습니다.');
+    } catch (err) { toast(err.data?.error || err.message); }
+  });
+  section.appendChild(del);
+  body.appendChild(section);
 }
 
 // Outbound webhooks — owner/admin. Secret shown once at creation.

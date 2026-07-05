@@ -601,6 +601,47 @@ app.get('/api/auth/oidc/callback', async (c) => {
   return c.redirect(`/#token=${token}`);
 });
 
+// ------------------------------------------------------ account & lifecycle
+// Delete a project (write roles). tasks live in the row, so this fully removes it.
+app.delete('/api/projects/:id', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const id = c.req.param('id');
+  const p = projectAccess(uid, id);
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  db.prepare('DELETE FROM projects WHERE id = ?').run(id);
+  logAudit(p.org_id, uid, 'project.delete', 'project', id, { name: p.name });
+  deliver(p.org_id, 'project.delete', { projectId: Number(id) });
+  return c.json({ ok: true });
+});
+
+// Change password (verifies the current one).
+app.post('/api/auth/change-password', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const { oldPassword, newPassword } = await c.req.json().catch(() => ({}));
+  if (!newPassword || String(newPassword).length < 8) return c.json({ error: 'new password (min 8) required' }, 400);
+  const u = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(uid);
+  if (!u || !verifyPassword(oldPassword || '', u.password_hash)) return c.json({ error: 'current password incorrect' }, 403);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(newPassword), uid);
+  return c.json({ ok: true });
+});
+
+// Delete account (GDPR). Removes owned workspaces (cascading their data) and the
+// user. Requires the current password to confirm.
+app.delete('/api/account', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const { password } = await c.req.json().catch(() => ({}));
+  const u = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(uid);
+  if (!u || !verifyPassword(password || '', u.password_hash)) return c.json({ error: 'password required to delete account' }, 403);
+  db.exec('BEGIN');
+  try {
+    db.prepare('DELETE FROM orgs WHERE owner_id = ?').run(uid); // cascades projects/members/webhooks/invites/audit
+    db.prepare('DELETE FROM users WHERE id = ?').run(uid);       // cascades memberships/tokens
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+  return c.json({ ok: true });
+});
+
 app.get('/api/health', (c) => c.json({ ok: true }));
 
 // Static client — strict allowlist so server/, data.db, package.json etc. are
