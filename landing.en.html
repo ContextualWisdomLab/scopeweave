@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="ko">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self';" />
-    <title>ScopeWeave — 공정관리 SaaS (EVM · 임계경로)</title>
+    <title>ScopeWeave — Schedule-Control SaaS (EVM · Critical Path)</title>
     <style>
       :root {
         --bg: #f8fafc; --surface: #ffffff; --depth: #f1f5f9;
@@ -33,7 +33,7 @@
       .hero { text-align: center; padding: 88px 0 64px; }
       .eyebrow { display: inline-block; font-size: 13px; font-weight: 700; color: var(--primary); background: #eff6ff; padding: 6px 14px; border-radius: 20px; }
       .hero h1 { font-size: 52px; line-height: 1.15; letter-spacing: -.03em; margin: 22px 0 16px; }
-      .hero p.lead { font-size: 19px; color: var(--muted); max-width: 680px; margin: 0 auto 32px; }
+      .hero p.lead { font-size: 19px; color: var(--muted); max-width: 700px; margin: 0 auto 32px; }
       .hero .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 
       .section { padding: 64px 0; }
@@ -72,68 +72,68 @@
       <div class="wrap nav-inner">
         <div class="brand">Scope<b>Weave</b></div>
         <nav class="nav-links">
-          <a href="#features">기능</a>
-          <a href="#pricing">가격</a>
-          <a href="/">앱 열기</a>
-          <a class="lang" href="/landing.en.html">EN</a>
+          <a href="#features">Features</a>
+          <a href="#pricing">Pricing</a>
+          <a href="/">Open app</a>
+          <a class="lang" href="/landing.html">KO</a>
         </nav>
       </div>
     </header>
 
     <main>
       <section class="hero wrap">
-        <span class="eyebrow">공정관리 SaaS · EVM · 임계경로</span>
-        <h1>계획부터 실적까지,<br />공정을 <span style="color:var(--primary)">통제</span>하세요.</h1>
-        <p class="lead">WBS 트리 편집과 누적 진척률에 EVM(SPI·SV)·S-curve와 CPM 임계경로를 더한
-          공정관리 도구. 실시간 협업·팀 권한·CSV·공개 API까지 한 곳에서.</p>
+        <span class="eyebrow">Schedule-Control SaaS · EVM · Critical Path</span>
+        <h1>From plan to actuals,<br /><span style="color:var(--primary)">take control</span> of your schedule.</h1>
+        <p class="lead">A WBS planner with cumulative progress — now with EVM (SPI·SV), S-curve, and
+          CPM critical path. Real-time collaboration, team roles, CSV and a public API, all in one place.</p>
         <div class="cta">
-          <a class="btn btn-primary" href="/">무료로 시작하기</a>
-          <a class="btn btn-ghost" href="#pricing">가격 보기</a>
+          <a class="btn btn-primary" href="/">Start free</a>
+          <a class="btn btn-ghost" href="#pricing">See pricing</a>
         </div>
       </section>
 
       <section class="section" id="features">
         <div class="wrap">
-          <h2>공정관리에 필요한 모든 것</h2>
-          <p class="sub">진척 측정부터 일정 리스크 예측까지, 정량적으로.</p>
+          <h2>Everything you need to control the schedule</h2>
+          <p class="sub">From progress measurement to schedule-risk forecasting — quantitatively.</p>
           <div class="grid">
-            <div class="card"><span class="tag">EVM</span><h3>성과관리 (SPI·SV)</h3><p>계획·실적 가중 진척률로 SPI·SV와 누적 S-curve를 자동 계산해 일정 성과를 정량 측정합니다.</p></div>
-            <div class="card"><span class="tag">CPM</span><h3>임계경로 분석</h3><p>선행작업 의존성으로 임계경로와 여유(slack)를 산출하고, 지연 위험 작업을 표에서 강조합니다.</p></div>
-            <div class="card"><span class="tag">협업</span><h3>실시간 동기화</h3><p>클라우드 저장과 SSE 실시간 반영, 낙관적 동시성으로 팀원 변경이 즉시 보입니다. 오프라인 폴백 지원.</p></div>
-            <div class="card"><span class="tag">팀</span><h3>역할 기반 권한</h3><p>소유자·관리자·멤버·뷰어 역할로 프로젝트 접근을 통제합니다. 이메일 초대와 링크 수락.</p></div>
-            <div class="card"><span class="tag">자동화</span><h3>CSV · 공개 API</h3><p>화면 컬럼 계약 그대로 CSV 왕복. 개인 액세스 토큰(PAT)으로 스크립트·CI에서 API 연동.</p></div>
-            <div class="card"><span class="tag">간트</span><h3>주간 간트 차트</h3><p>계획·실적 오버레이로 일정 흐름을 한눈에. WBS 3단계(단계·Activity·Task) 트리 편집.</p></div>
+            <div class="card"><span class="tag">EVM</span><h3>Performance (SPI·SV)</h3><p>Weighted planned/actual progress computes SPI·SV and a cumulative S-curve to quantify schedule performance.</p></div>
+            <div class="card"><span class="tag">CPM</span><h3>Critical Path</h3><p>Task dependencies derive the critical path and slack; at-risk tasks are highlighted in the table.</p></div>
+            <div class="card"><span class="tag">Collab</span><h3>Real-time Sync</h3><p>Cloud storage with SSE live updates and optimistic concurrency — teammates' changes appear instantly. Offline fallback.</p></div>
+            <div class="card"><span class="tag">Teams</span><h3>Role-based Access</h3><p>Owner, Admin, Member, and Viewer roles control project access. Email invites and link acceptance.</p></div>
+            <div class="card"><span class="tag">Automation</span><h3>CSV · Public API</h3><p>Round-trip CSV on the screen column contract. Personal access tokens (PAT) drive scripts and CI. Signed webhooks.</p></div>
+            <div class="card"><span class="tag">Gantt</span><h3>Weekly Gantt</h3><p>Planned/actual overlay at a glance. Three-level WBS (Phase · Activity · Task) tree editing.</p></div>
           </div>
         </div>
       </section>
 
       <section class="section" id="pricing" style="background:var(--surface); border-top:1px solid var(--border); border-bottom:1px solid var(--border)">
         <div class="wrap">
-          <h2>단순한 가격</h2>
-          <p class="sub">개인은 무료로, 팀은 무제한으로.</p>
+          <h2>Simple pricing</h2>
+          <p class="sub">Free for individuals, unlimited for teams.</p>
           <div class="pricing">
             <div class="plan">
               <h3>Free</h3>
-              <div class="price">₩0<small> / 월</small></div>
+              <div class="price">₩0<small> / mo (~$0)</small></div>
               <ul>
-                <li>프로젝트 2개</li>
-                <li>멤버 3명</li>
-                <li>EVM · CPM · 간트 전 기능</li>
-                <li>CSV · 공개 API</li>
+                <li>2 projects</li>
+                <li>3 members</li>
+                <li>All of EVM · CPM · Gantt</li>
+                <li>CSV · public API</li>
               </ul>
-              <a class="btn btn-ghost" href="/">무료로 시작</a>
+              <a class="btn btn-ghost" href="/">Start free</a>
             </div>
             <div class="plan pro">
-              <span class="badge">추천</span>
+              <span class="badge">Popular</span>
               <h3>Pro</h3>
-              <div class="price">₩19,000<small> / 월</small></div>
+              <div class="price">₩19,000<small> / mo (~$14)</small></div>
               <ul>
-                <li>프로젝트 무제한</li>
-                <li>멤버 무제한</li>
-                <li>실시간 협업 · 팀 권한</li>
-                <li>우선 지원</li>
+                <li>Unlimited projects</li>
+                <li>Unlimited members</li>
+                <li>Real-time collaboration · team roles</li>
+                <li>Priority support</li>
               </ul>
-              <a class="btn btn-primary" href="/">Pro 시작하기</a>
+              <a class="btn btn-primary" href="/">Get Pro</a>
             </div>
           </div>
         </div>
@@ -142,13 +142,13 @@
 
     <footer>
       <div class="wrap">
-        <p>ScopeWeave — 공정관리 SaaS</p>
+        <p>ScopeWeave — Schedule-Control SaaS</p>
         <p>
-          <a href="/">앱 열기</a> ·
-          <a href="/docs/api.md">API 문서</a> ·
-          <a href="#features">기능</a> ·
-          <a href="#pricing">가격</a> ·
-          <a href="/landing.en.html">English</a>
+          <a href="/">Open app</a> ·
+          <a href="/docs/api.md">API docs</a> ·
+          <a href="#features">Features</a> ·
+          <a href="#pricing">Pricing</a> ·
+          <a href="/landing.html">한국어</a>
         </p>
       </div>
     </footer>

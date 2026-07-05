@@ -477,6 +477,7 @@ const STATIC = {
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
   '/404.html': ['404.html', 'text/html; charset=utf-8'],
   '/landing.html': ['landing.html', 'text/html; charset=utf-8'],
+  '/landing.en.html': ['landing.en.html', 'text/html; charset=utf-8'],
   '/pricing': ['landing.html', 'text/html; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/cloud-sync.js': ['cloud-sync.js', 'text/javascript; charset=utf-8'],
