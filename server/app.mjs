@@ -3,7 +3,7 @@
 // (index.html/app.js) becomes the frontend that talks to these routes.
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHmac } from 'node:crypto';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -67,7 +67,31 @@ function projectAccess(userId, projectId) {
 }
 
 // --- observability: in-process counters + structured request log.
-const metrics = { startedAt: new Date().toISOString(), requests: 0, s2xx: 0, s4xx: 0, s5xx: 0, signups: 0, projectsCreated: 0 };
+const metrics = { startedAt: new Date().toISOString(), requests: 0, s2xx: 0, s4xx: 0, s5xx: 0, signups: 0, projectsCreated: 0, webhookDeliveries: 0 };
+
+// Outbound webhooks: POST signed JSON to each active hook subscribed to `event`.
+// Fire-and-forget with a timeout — never blocks or fails the triggering request.
+function deliver(orgId, event, payload) {
+  let hooks;
+  try {
+    hooks = db.prepare('SELECT url, secret, events FROM webhooks WHERE org_id = ? AND active = 1').all(orgId);
+  } catch { return; }
+  for (const h of hooks) {
+    const subs = String(h.events || '').split(',').map((s) => s.trim());
+    if (!(subs.includes('*') || subs.includes(event))) continue;
+    const body = JSON.stringify({ event, orgId: Number(orgId), payload, ts: new Date().toISOString() });
+    const sig = createHmac('sha256', h.secret).update(body).digest('hex');
+    metrics.webhookDeliveries++;
+    const ctrl = new AbortController();
+    const to = setTimeout(() => ctrl.abort(), 3000);
+    fetch(h.url, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
+      body,
+      signal: ctrl.signal,
+    }).catch(() => {}).finally(() => clearTimeout(to));
+  }
+}
 const quietLogs = String(process.env.SCOPEWEAVE_DB || '').includes(':memory:'); // silence during tests
 app.use('*', async (c, next) => {
   const t = Date.now();
@@ -174,6 +198,7 @@ app.put('/api/projects/:id', requireAuth, async (c) => {
     "UPDATE projects SET name=?, base_date=?, tasks_json=?, version=?, updated_at=datetime('now') WHERE id=?"
   ).run(body.name ?? p.name, body.baseDate ?? p.base_date, JSON.stringify(tasks), version, id);
   logAudit(p.org_id, uid, 'project.update', 'project', id, { version, tasks: tasks.length });
+  deliver(p.org_id, 'project.update', { projectId: Number(id), version, tasks: tasks.length, by: uid });
   broadcast(id, { type: 'update', version, by: uid });
   return c.json({ version });
 });
@@ -253,6 +278,7 @@ app.post('/api/invites/:token/accept', requireAuth, (c) => {
     }
     db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)').run(inv.org_id, uid, inv.role);
     logAudit(inv.org_id, uid, 'member.join', 'user', uid, { role: inv.role });
+    deliver(inv.org_id, 'member.join', { userId: uid, role: inv.role });
   }
   db.prepare("UPDATE invites SET accepted_at = datetime('now') WHERE id = ?").run(inv.id);
   return c.json({ orgId: inv.org_id, role: existing || inv.role });
@@ -328,6 +354,7 @@ app.post('/api/orgs/:id/_dev/activate-pro', requireAuth, (c) => {
   if (orgRole(uid, orgId) !== 'owner') return c.json({ error: 'forbidden' }, 403);
   db.prepare("UPDATE orgs SET plan = 'pro' WHERE id = ?").run(orgId);
   logAudit(orgId, uid, 'billing.upgrade', 'org', orgId, { plan: 'pro', via: 'dev' });
+  deliver(orgId, 'billing.upgrade', { plan: 'pro' });
   return c.json({ plan: 'pro' });
 });
 
@@ -406,6 +433,39 @@ app.get('/api/metrics', (c) => {
     sseActive,
     uptimeSec: Math.round(process.uptime()),
   });
+});
+
+// ------------------------------------------------------------------- webhooks
+app.get('/api/orgs/:id/webhooks', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
+  const webhooks = db.prepare(
+    'SELECT id, url, events, active, created_at AS createdAt FROM webhooks WHERE org_id = ? ORDER BY id DESC'
+  ).all(orgId); // secret never returned
+  return c.json({ webhooks });
+});
+
+app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
+  const { url, events } = await c.req.json().catch(() => ({}));
+  if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  const secret = `whsec_${randomBytes(24).toString('base64url')}`;
+  const evs = Array.isArray(events) ? events.join(',') : (events || '*');
+  const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
+  logAudit(orgId, uid, 'webhook.create', 'webhook', id, { url, events: evs });
+  return c.json({ id, url, events: evs, secret }); // secret shown once for signature verification
+});
+
+app.delete('/api/orgs/:id/webhooks/:whId', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
+  const info = db.prepare('DELETE FROM webhooks WHERE id = ? AND org_id = ?').run(c.req.param('whId'), orgId);
+  if (!info.changes) return c.json({ error: 'not found' }, 404);
+  return c.json({ ok: true });
 });
 
 app.get('/api/health', (c) => c.json({ ok: true }));

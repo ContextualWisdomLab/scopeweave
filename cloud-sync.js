@@ -467,7 +467,67 @@ async function renderTeam() {
   body.appendChild(exportBtn);
 
   await renderTokens(body);
+  await renderWebhooks(body);
   await renderAudit(body);
+}
+
+// Outbound webhooks — owner/admin. Secret shown once at creation.
+async function renderWebhooks(body) {
+  let data;
+  try { data = await api(`/api/orgs/${currentOrgId}/webhooks`); } catch { return; }
+  const section = document.createElement('div');
+  section.className = 'token-section';
+  const h = document.createElement('h3');
+  h.className = 'token-heading';
+  h.textContent = '웹훅';
+  section.appendChild(h);
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  for (const w of data.webhooks) {
+    const li = document.createElement('li');
+    const who = document.createElement('span');
+    who.className = 'team-who';
+    who.textContent = `${w.url} · ${w.events}`;
+    li.appendChild(who);
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'secondary-button team-remove';
+    del.textContent = '삭제';
+    del.addEventListener('click', () =>
+      api(`/api/orgs/${currentOrgId}/webhooks/${w.id}`, { method: 'DELETE' }).then(() => { toast('웹훅을 삭제했습니다.'); renderTeam(); }).catch((e) => toast(e.message)));
+    li.appendChild(del);
+    list.appendChild(li);
+  }
+  section.appendChild(list);
+  const form = document.createElement('form');
+  form.className = 'team-invite';
+  const input = document.createElement('input');
+  input.type = 'url';
+  input.placeholder = 'https://example.com/webhook';
+  const btn = document.createElement('button');
+  btn.type = 'submit';
+  btn.className = 'primary-button';
+  btn.textContent = '웹훅 추가';
+  form.append(input, btn);
+  const secret = document.createElement('p');
+  secret.className = 'token-secret';
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const w = await api(`/api/orgs/${currentOrgId}/webhooks`, { method: 'POST', body: { url: input.value.trim(), events: '*' } });
+      secret.textContent = `서명 시크릿(한 번만 표시): ${w.secret}`;
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'team-who';
+      who.textContent = `${w.url} · ${w.events}`;
+      li.appendChild(who);
+      list.appendChild(li);
+      input.value = '';
+    } catch (err) { toast(err.data?.error || err.message); }
+  });
+  section.appendChild(form);
+  section.appendChild(secret);
+  body.appendChild(section);
 }
 
 const AUDIT_LABELS = {

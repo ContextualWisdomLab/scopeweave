@@ -235,6 +235,30 @@ assert.match(r.headers.get('content-disposition') || '', /attachment/, 'export i
 r = await req(`/api/orgs/${orgAId}/export`, { headers: oauth });
 assert.equal(r.status, 403, 'non-owner export → 403');
 
+// ---- Webhooks ----
+r = await req(`/api/orgs/${orgAId}/webhooks`, { method: 'POST', headers: auth, body: body({ url: 'http://127.0.0.1:9/hook', events: ['project.update'] }) });
+assert.equal(r.status, 200, 'create webhook');
+const wh = await r.json();
+assert.ok(wh.secret.startsWith('whsec_'), 'webhook secret returned once');
+r = await req(`/api/orgs/${orgAId}/webhooks`, { headers: auth });
+const whlist = (await r.json()).webhooks;
+assert.ok(whlist.some((w) => w.id === wh.id), 'webhook listed');
+assert.ok(!whlist.some((w) => 'secret' in w), 'webhook secret never listed');
+r = await req(`/api/orgs/${orgAId}/webhooks`, { method: 'POST', headers: auth, body: body({ url: 'not-a-url' }) });
+assert.equal(r.status, 400, 'invalid webhook url → 400');
+r = await req(`/api/orgs/${orgAId}/webhooks`, { headers: oauth });
+assert.equal(r.status, 403, 'non-member webhooks → 403');
+// trigger project.update → a delivery is attempted (counter increments synchronously)
+const before = (await (await req('/api/metrics')).json()).webhookDeliveries;
+r = await req(`/api/projects/${proj.id}`, { headers: auth });
+const pv2 = (await r.json()).version;
+r = await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: auth, body: body({ tasks: [{ id: 'wh', name: '훅' }], version: pv2 }) });
+assert.equal(r.status, 200);
+const after = (await (await req('/api/metrics')).json()).webhookDeliveries;
+assert.ok(after > before, 'webhook delivery attempted on project.update');
+r = await req(`/api/orgs/${orgAId}/webhooks/${wh.id}`, { method: 'DELETE', headers: auth });
+assert.equal(r.status, 200, 'delete webhook');
+
 // ---- Observability / metrics ----
 r = await req('/api/metrics');
 assert.equal(r.status, 200, 'metrics endpoint');
