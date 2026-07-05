@@ -203,7 +203,15 @@ function renderAuthUI() {
     bar.appendChild(btn);
     return;
   }
-  // logged in: project switcher + new + logout
+  // logged in: onboarding (no projects yet) → sample; else project switcher.
+  if (!projectsCache.length) {
+    const sample = document.createElement('button');
+    sample.type = 'button';
+    sample.className = 'primary-button';
+    sample.textContent = '✨ 샘플로 시작';
+    sample.addEventListener('click', sampleStart);
+    bar.appendChild(sample);
+  }
   const select = document.createElement('select');
   select.className = 'cloud-select';
   select.setAttribute('aria-label', '프로젝트 선택');
@@ -256,22 +264,41 @@ function openLoginModal() {
   modal?.classList.remove('hidden');
 }
 
+// Create a cloud project and seed it with `seedState` (defaults to what's on
+// screen). Used by both "새 프로젝트" and the "샘플로 시작" onboarding.
+async function makeProject(name, seedState) {
+  const r = await api('/api/projects', { method: 'POST', body: { name } });
+  await refreshProjects();
+  version = r.version;
+  setProjectId(r.id);
+  const meta = projectsCache.find((x) => String(x.id) === String(r.id));
+  if (meta) currentOrgId = meta.orgId;
+  const base = seedState || host?.getState?.() || { baseDate: '', tasks: [] };
+  await doPush({ ...base, projectName: name }); // keep the chosen project name
+  subscribe(r.id);
+  renderAuthUI();
+  return r;
+}
+
 async function createProjectFlow() {
   const name = prompt('새 프로젝트 이름');
   if (!name || !name.trim()) return;
   try {
-    const r = await api('/api/projects', { method: 'POST', body: { name: name.trim() } });
-    await refreshProjects();
-    // seed the new project with whatever is currently on screen
-    version = r.version;
-    setProjectId(r.id);
-    const s = host?.getState?.() || { projectName: name.trim(), baseDate: '', tasks: [] };
-    await doPush(s);
-    subscribe(r.id);
-    renderAuthUI();
+    await makeProject(name.trim());
     toast(`'${name.trim()}' 프로젝트를 만들었습니다.`);
   } catch (e) {
     toast(e.message || '프로젝트 생성 실패');
+  }
+}
+
+// Onboarding: a first project pre-populated from the app's source-backed seed
+// (whatever app.js has loaded on screen — the wbs.json sample for a new user).
+async function sampleStart() {
+  try {
+    await makeProject('샘플 프로젝트', host?.getState?.());
+    toast('샘플 프로젝트로 시작했습니다. 자유롭게 편집하세요.');
+  } catch (e) {
+    toast(e.message || '샘플 프로젝트 생성 실패');
   }
 }
 
