@@ -223,4 +223,16 @@ const oauth = { authorization: `Bearer ${(await r.json()).token}` };
 r = await req(`/api/orgs/${orgAId}/audit`, { headers: oauth });
 assert.equal(r.status, 403, 'non-member audit → 403');
 
+// ---- Data export (owner only) ----
+r = await req(`/api/orgs/${orgAId}/export`, { headers: auth });
+assert.equal(r.status, 200, 'owner can export');
+const exp = await r.json();
+assert.ok(exp.org && Array.isArray(exp.projects) && Array.isArray(exp.members) && Array.isArray(exp.audit), 'export shape');
+assert.ok(exp.projects.some((p) => Array.isArray(p.tasks)), 'export includes project tasks');
+assert.ok(exp.exportedAt, 'export is timestamped');
+assert.match(r.headers.get('content-disposition') || '', /attachment/, 'export is a download');
+// non-owner cannot export the whole workspace
+r = await req(`/api/orgs/${orgAId}/export`, { headers: oauth });
+assert.equal(r.status, 403, 'non-owner export → 403');
+
 console.log('✓ API smoke tests passed');

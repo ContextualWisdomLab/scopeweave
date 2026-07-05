@@ -278,6 +278,26 @@ async function createProjectFlow() {
 // ------------------------------------------------------------- team / RBAC UI
 const ROLE_LABELS = { owner: '소유자', admin: '관리자', member: '멤버', viewer: '뷰어' };
 
+async function exportOrg() {
+  try {
+    const res = await fetch(`/api/orgs/${currentOrgId}/export`, { headers: { authorization: `Bearer ${getToken()}` } });
+    if (res.status === 403) return toast('소유자만 데이터를 내보낼 수 있습니다.');
+    if (!res.ok) return toast('내보내기에 실패했습니다.');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `scopeweave-org-${currentOrgId}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast('워크스페이스 데이터를 내보냈습니다.');
+  } catch {
+    toast('내보내기에 실패했습니다.');
+  }
+}
+
 async function resolveOrgId() {
   if (currentOrgId) return currentOrgId;
   const me = await api('/api/me');
@@ -410,6 +430,14 @@ async function renderTeam() {
     pending.textContent = `대기 중인 초대: ${data.invites.map((i) => i.email).join(', ')}`;
     body.appendChild(pending);
   }
+
+  const exportBtn = document.createElement('button');
+  exportBtn.type = 'button';
+  exportBtn.className = 'secondary-button';
+  exportBtn.textContent = '데이터 내보내기 (JSON)';
+  exportBtn.style.marginTop = '8px';
+  exportBtn.addEventListener('click', exportOrg);
+  body.appendChild(exportBtn);
 
   await renderTokens(body);
   await renderAudit(body);

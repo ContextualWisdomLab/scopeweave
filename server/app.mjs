@@ -354,6 +354,30 @@ app.get('/api/orgs/:id/audit', requireAuth, (c) => {
   return c.json({ events });
 });
 
+// Full workspace export (owner only) — data portability / GDPR. Everything the
+// org holds, as one JSON document.
+app.get('/api/orgs/:id/export', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (orgRole(uid, orgId) !== 'owner') return c.json({ error: 'only the owner can export' }, 403);
+  const org = getOrg(orgId);
+  const members = db.prepare(
+    `SELECT u.email, u.name, m.role FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.org_id = ?`
+  ).all(orgId);
+  const projects = db.prepare(
+    'SELECT id, name, base_date AS baseDate, tasks_json, version, created_at AS createdAt, updated_at AS updatedAt FROM projects WHERE org_id = ?'
+  ).all(orgId).map((p) => ({ ...p, tasks: JSON.parse(p.tasks_json), tasks_json: undefined }));
+  const audit = db.prepare(
+    'SELECT action, target_type AS targetType, target_id AS targetId, meta, created_at AS createdAt FROM audit_log WHERE org_id = ? ORDER BY id'
+  ).all(orgId).map((a) => ({ ...a, meta: a.meta ? JSON.parse(a.meta) : null }));
+  logAudit(orgId, uid, 'org.export', 'org', orgId, { projects: projects.length });
+  return c.json({
+    exportedAt: new Date().toISOString(),
+    org: { id: org.id, name: org.name, plan: org.plan },
+    members, projects, audit,
+  }, 200, { 'Content-Disposition': `attachment; filename="scopeweave-org-${orgId}.json"` });
+});
+
 app.get('/api/health', (c) => c.json({ ok: true }));
 
 // Static client — strict allowlist so server/, data.db, package.json etc. are
