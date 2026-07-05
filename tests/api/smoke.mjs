@@ -4,6 +4,7 @@
 import assert from 'node:assert';
 
 process.env.SCOPEWEAVE_DB = ':memory:';
+process.env.SCOPEWEAVE_DEV = '1'; // enables the dev-activate-pro endpoint for this test
 const { app } = await import('../../server/app.mjs');
 
 const req = (path, opts = {}) =>
@@ -144,5 +145,41 @@ for (const path of ['/server/app.mjs', '/server/db.mjs', '/data.db', '/package.j
   const res = await req(path);
   assert.equal(res.status, 404, `blocked ${path} → 404`);
 }
+
+// ---- Billing / plan gating ----
+// orgA on Free: 1 project, 1 member so far.
+r = await req(`/api/orgs/${orgAId}/billing`, { headers: auth });
+const bill = await r.json();
+assert.equal(bill.plan, 'free');
+assert.equal(bill.limits.projects, 2);
+assert.equal(bill.usage.projects, 1);
+// 2nd project under cap → ok; 3rd → 402
+r = await req('/api/projects', { method: 'POST', headers: auth, body: body({ name: 'P2' }) });
+assert.equal(r.status, 200, '2nd project ok');
+r = await req('/api/projects', { method: 'POST', headers: auth, body: body({ name: 'P3' }) });
+assert.equal(r.status, 402, '3rd project → 402 (Free cap)');
+assert.equal((await r.json()).upgrade, true);
+// member cap: fill to 3, 4th accept → 402
+async function addMember(email) {
+  const s = await req('/api/auth/signup', { method: 'POST', body: body({ email, password: 'password123' }) });
+  const tok = (await s.json()).token;
+  const inv = await (await req(`/api/orgs/${orgAId}/invites`, { method: 'POST', headers: auth, body: body({ email, role: 'member' }) })).json();
+  return req(`/api/invites/${inv.token}/accept`, { method: 'POST', headers: { authorization: `Bearer ${tok}` } });
+}
+assert.equal((await addMember('m2@x.com')).status, 200, 'member 2 ok');
+assert.equal((await addMember('m3@x.com')).status, 200, 'member 3 ok (cap)');
+assert.equal((await addMember('m4@x.com')).status, 402, '4th member → 402');
+// checkout → mock url (no Stripe key), owner-only
+r = await req(`/api/orgs/${orgAId}/checkout`, { method: 'POST', headers: auth });
+assert.equal(r.status, 200);
+const co = await r.json();
+assert.ok(co.url && co.mock === true, 'mock checkout url');
+// dev-activate → pro, caps lifted
+r = await req(`/api/orgs/${orgAId}/_dev/activate-pro`, { method: 'POST', headers: auth });
+assert.equal(r.status, 200);
+assert.equal((await r.json()).plan, 'pro');
+r = await req('/api/projects', { method: 'POST', headers: auth, body: body({ name: 'P3-pro' }) });
+assert.equal(r.status, 200, 'project cap lifted on Pro');
+assert.equal((await addMember('m4b@x.com')).status, 200, 'member cap lifted on Pro');
 
 console.log('✓ API smoke tests passed');

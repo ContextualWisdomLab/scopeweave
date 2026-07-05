@@ -340,6 +340,32 @@ async function renderTeam() {
   if (!body) return;
   const data = await api(`/api/orgs/${currentOrgId}/members`);
   body.textContent = '';
+
+  // plan + usage indicator
+  try {
+    const b = await api(`/api/orgs/${currentOrgId}/billing`);
+    const bar = document.createElement('div');
+    bar.className = 'billing-bar';
+    const cap = (used, limit) => `${used}/${limit == null ? '∞' : limit}`;
+    const info = document.createElement('span');
+    info.textContent = `${b.planName} · 프로젝트 ${cap(b.usage.projects, b.limits.projects)} · 멤버 ${cap(b.usage.members, b.limits.members)}`;
+    bar.appendChild(info);
+    if (b.plan === 'free') {
+      const up = document.createElement('button');
+      up.type = 'button';
+      up.className = 'primary-button billing-upgrade';
+      up.textContent = 'Pro 업그레이드';
+      up.addEventListener('click', async () => {
+        try {
+          const s = await api(`/api/orgs/${currentOrgId}/checkout`, { method: 'POST' });
+          if (s.mock) toast('결제 연동(Stripe 키)이 필요합니다 — 데모 환경입니다.');
+          else window.location.href = s.url;
+        } catch (e) { toast(e.data?.error || e.message); }
+      });
+      bar.appendChild(up);
+    }
+    body.appendChild(bar);
+  } catch { /* billing optional */ }
   const list = document.createElement('ul');
   list.className = 'team-list';
   for (const m of data.members) {
