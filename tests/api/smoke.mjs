@@ -80,6 +80,52 @@ assert.equal(r.status, 404, 'cross-tenant read → 404');
 r = await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: { authorization: `Bearer ${t2}` }, body: body({ tasks: [], version: 2 }) });
 assert.equal(r.status, 404, 'cross-tenant write → 404');
 
+// ---- Teams / RBAC ----
+const orgAId = me.orgs[0].id;
+// a viewer user (its own token; not yet a member of orgA)
+r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'viewer@x.com', password: 'password123' }) });
+const vauth = { authorization: `Bearer ${(await r.json()).token}` };
+// non-member cannot invite (404 hides the org's existence)
+r = await req(`/api/orgs/${orgAId}/invites`, { method: 'POST', headers: vauth, body: body({ email: 'z@z.com' }) });
+assert.equal(r.status, 404, 'non-member invite → 404');
+// owner invites viewer@x.com as viewer
+r = await req(`/api/orgs/${orgAId}/invites`, { method: 'POST', headers: auth, body: body({ email: 'viewer@x.com', role: 'viewer' }) });
+assert.equal(r.status, 200, 'owner invite ok');
+const invite = await r.json();
+assert.ok(invite.token);
+// viewer accepts → joins orgA as viewer
+r = await req(`/api/invites/${invite.token}/accept`, { method: 'POST', headers: vauth });
+assert.equal(r.status, 200);
+assert.equal((await r.json()).role, 'viewer');
+// reused invite → 404
+r = await req(`/api/invites/${invite.token}/accept`, { method: 'POST', headers: vauth });
+assert.equal(r.status, 404, 'used invite → 404');
+// roster shows the viewer
+r = await req(`/api/orgs/${orgAId}/members`, { headers: auth });
+const roster = await r.json();
+const vmember = roster.members.find((m) => m.email === 'viewer@x.com');
+assert.ok(vmember && vmember.role === 'viewer', 'viewer in roster');
+// viewer can READ but not WRITE the project
+r = await req(`/api/projects/${proj.id}`, { headers: vauth });
+assert.equal(r.status, 200, 'viewer read ok');
+r = await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: vauth, body: body({ tasks: [], version: 2 }) });
+assert.equal(r.status, 403, 'viewer write → 403');
+// owner promotes viewer → member, who can now write
+r = await req(`/api/orgs/${orgAId}/members/${vmember.id}`, { method: 'PATCH', headers: auth, body: body({ role: 'member' }) });
+assert.equal(r.status, 200, 'promote ok');
+r = await req(`/api/projects/${proj.id}`, { headers: vauth });
+const curV = (await r.json()).version;
+r = await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: vauth, body: body({ tasks: [{ id: 'm', name: '멤버작업' }], version: curV }) });
+assert.equal(r.status, 200, 'promoted member can write');
+// owner role is protected
+r = await req(`/api/orgs/${orgAId}/members/${me.user.id}`, { method: 'PATCH', headers: auth, body: body({ role: 'member' }) });
+assert.equal(r.status, 403, 'cannot demote owner');
+// owner/admin can remove a member; owner cannot be removed
+r = await req(`/api/orgs/${orgAId}/members/${me.user.id}`, { method: 'DELETE', headers: auth });
+assert.equal(r.status, 403, 'cannot remove owner');
+r = await req(`/api/orgs/${orgAId}/members/${vmember.id}`, { method: 'DELETE', headers: auth });
+assert.equal(r.status, 200, 'remove member ok');
+
 // SSE stream: query-token auth (EventSource can't send headers)
 r = await req(`/api/projects/${proj.id}/stream?token=${encodeURIComponent(token)}`);
 assert.equal(r.status, 200, 'SSE with valid query token → 200');

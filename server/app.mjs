@@ -3,8 +3,16 @@
 // (index.html/app.js) becomes the frontend that talks to these routes.
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken } from './auth.mjs';
+
+// --- RBAC. Roles (highest→lowest): owner > admin > member > viewer.
+const ROLES = ['owner', 'admin', 'member', 'viewer'];
+const orgRole = (userId, orgId) =>
+  db.prepare('SELECT role FROM memberships WHERE user_id = ? AND org_id = ?').get(userId, orgId)?.role || null;
+const canManage = (role) => role === 'owner' || role === 'admin';
+const canWrite = (role) => role === 'owner' || role === 'admin' || role === 'member';
 
 export const app = new Hono();
 
@@ -33,7 +41,7 @@ function broadcast(projectId, data) {
 // Membership-scoped project fetch — the tenant isolation boundary.
 function projectAccess(userId, projectId) {
   return db.prepare(
-    `SELECT p.* FROM projects p
+    `SELECT p.*, m.role AS memberRole FROM projects p
      JOIN memberships m ON m.org_id = p.org_id
      WHERE p.id = ? AND m.user_id = ?`
   ).get(projectId, userId);
@@ -113,6 +121,7 @@ app.put('/api/projects/:id', requireAuth, async (c) => {
   const id = c.req.param('id');
   const p = projectAccess(uid, id);
   if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden: viewer role is read-only' }, 403);
   const body = await c.req.json().catch(() => ({}));
   if (typeof body.version === 'number' && body.version !== p.version) {
     return c.json({ error: 'version conflict', current: p.version }, 409);
@@ -151,6 +160,83 @@ app.get('/api/projects/:id/stream', (c) => {
   return new Response(stream, {
     headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
   });
+});
+
+// --------------------------------------------------------------- teams / RBAC
+// List members of an org (any member may view the roster).
+app.get('/api/orgs/:id/members', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (!orgRole(uid, orgId)) return c.json({ error: 'not found' }, 404);
+  const members = db.prepare(
+    `SELECT u.id, u.email, u.name, m.role FROM memberships m
+     JOIN users u ON u.id = m.user_id WHERE m.org_id = ? ORDER BY m.id`
+  ).all(orgId);
+  const invites = db.prepare(
+    `SELECT email, role, token, created_at AS createdAt FROM invites
+     WHERE org_id = ? AND accepted_at IS NULL ORDER BY id DESC`
+  ).all(orgId);
+  return c.json({ members, invites });
+});
+
+// Invite by email (owner/admin only). Returns the token (prod: email a link).
+app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  const role = orgRole(uid, orgId);
+  if (!role) return c.json({ error: 'not found' }, 404);
+  if (!canManage(role)) return c.json({ error: 'forbidden' }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const email = String(body.email || '').trim().toLowerCase();
+  const inviteRole = body.role || 'member';
+  if (!email) return c.json({ error: 'email required' }, 400);
+  if (!['admin', 'member', 'viewer'].includes(inviteRole)) return c.json({ error: 'invalid role' }, 400);
+  const token = randomBytes(24).toString('base64url');
+  db.prepare('INSERT INTO invites(org_id,email,role,token,invited_by) VALUES(?,?,?,?,?)')
+    .run(orgId, email, inviteRole, token, uid);
+  return c.json({ token, email, role: inviteRole });
+});
+
+// Accept an invite (any authenticated user holding the token). Idempotent.
+app.post('/api/invites/:token/accept', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const inv = db.prepare('SELECT * FROM invites WHERE token = ?').get(c.req.param('token'));
+  if (!inv || inv.accepted_at) return c.json({ error: 'invalid or used invite' }, 404);
+  const existing = orgRole(uid, inv.org_id);
+  if (!existing) {
+    db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)').run(inv.org_id, uid, inv.role);
+  }
+  db.prepare("UPDATE invites SET accepted_at = datetime('now') WHERE id = ?").run(inv.id);
+  return c.json({ orgId: inv.org_id, role: existing || inv.role });
+});
+
+// Change a member's role (owner/admin). Cannot touch an owner or set owner.
+app.patch('/api/orgs/:id/members/:userId', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  const targetId = c.req.param('userId');
+  if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const newRole = body.role;
+  if (!['admin', 'member', 'viewer'].includes(newRole)) return c.json({ error: 'invalid role' }, 400);
+  const target = db.prepare('SELECT role FROM memberships WHERE org_id = ? AND user_id = ?').get(orgId, targetId);
+  if (!target) return c.json({ error: 'not found' }, 404);
+  if (target.role === 'owner') return c.json({ error: 'cannot change owner role' }, 403);
+  db.prepare('UPDATE memberships SET role = ? WHERE org_id = ? AND user_id = ?').run(newRole, orgId, targetId);
+  return c.json({ userId: Number(targetId), role: newRole });
+});
+
+// Remove a member (owner/admin). Cannot remove an owner.
+app.delete('/api/orgs/:id/members/:userId', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  const targetId = c.req.param('userId');
+  if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
+  const target = db.prepare('SELECT role FROM memberships WHERE org_id = ? AND user_id = ?').get(orgId, targetId);
+  if (!target) return c.json({ error: 'not found' }, 404);
+  if (target.role === 'owner') return c.json({ error: 'cannot remove owner' }, 403);
+  db.prepare('DELETE FROM memberships WHERE org_id = ? AND user_id = ?').run(orgId, targetId);
+  return c.json({ ok: true });
 });
 
 app.get('/api/health', (c) => c.json({ ok: true }));
