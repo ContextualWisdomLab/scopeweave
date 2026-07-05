@@ -440,6 +440,18 @@ function renderAll() {
   elements.actualProgress.textContent = formatPercent(metrics.totalWeightedActualRatio * 100, 2);
   elements.syncStatus.textContent = state.jsonSyncHandle ? '연결된 wbs.json 파일에 자동저장 중' : '브라우저 로컬 자동저장 사용 중';
 
+  if (typeof window !== 'undefined') {
+    window.ScopeWeaveAnalytics?.render?.({
+      pv: metrics.totalWeightedPlannedRatio,
+      ev: metrics.totalWeightedActualRatio,
+      tasks: state.tasks,
+      baseDate: state.baseDate,
+      calcPlannedRatio: calculatePlannedProgressRatio,
+      calcDuration: calculateDurationDays,
+      buildTimeline: buildWeekdayTimeline,
+    });
+  }
+
   const ownerColorMap = createOwnerColorMap();
   const visibleTasks = getVisibleTasks();
   const rows = [];

@@ -163,6 +163,7 @@ const STATIC = {
   '/404.html': ['404.html', 'text/html; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/cloud-sync.js': ['cloud-sync.js', 'text/javascript; charset=utf-8'],
+  '/analytics.js': ['analytics.js', 'text/javascript; charset=utf-8'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
   '/wbs.json': ['wbs.json', 'application/json; charset=utf-8'],
 };
