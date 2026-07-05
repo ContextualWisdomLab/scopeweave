@@ -206,4 +206,21 @@ assert.equal(r.status, 401, 'revoked PAT → 401');
 r = await req(`/api/tokens/${pat.id}`, { method: 'DELETE', headers: auth });
 assert.equal(r.status, 404, 'double-revoke → 404');
 
+// ---- Audit log ----
+r = await req(`/api/orgs/${orgAId}/audit`, { headers: auth });
+assert.equal(r.status, 200, 'owner reads audit');
+const audit = (await r.json()).events;
+assert.ok(Array.isArray(audit) && audit.length > 0, 'audit has events');
+const auditActions = new Set(audit.map((e) => e.action));
+for (const act of ['project.create', 'project.update', 'member.invite', 'member.role_change', 'member.remove', 'billing.upgrade']) {
+  assert.ok(auditActions.has(act), `audit logged ${act}`);
+}
+assert.ok(audit.some((e) => e.actorEmail === 'a@b.com'), 'audit resolves actor email');
+assert.ok(audit.some((e) => e.meta && typeof e.meta === 'object'), 'audit meta is structured');
+// non-member cannot read the audit trail
+r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'outsider@x.com', password: 'password123' }) });
+const oauth = { authorization: `Bearer ${(await r.json()).token}` };
+r = await req(`/api/orgs/${orgAId}/audit`, { headers: oauth });
+assert.equal(r.status, 403, 'non-member audit → 403');
+
 console.log('✓ API smoke tests passed');

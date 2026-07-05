@@ -412,6 +412,39 @@ async function renderTeam() {
   }
 
   await renderTokens(body);
+  await renderAudit(body);
+}
+
+const AUDIT_LABELS = {
+  'project.create': '프로젝트 생성', 'project.update': '프로젝트 저장',
+  'member.invite': '멤버 초대', 'member.join': '멤버 합류',
+  'member.role_change': '역할 변경', 'member.remove': '멤버 제거',
+  'billing.upgrade': '플랜 업그레이드',
+};
+
+// Recent activity (owner/admin only; endpoint 403s otherwise → section hidden).
+async function renderAudit(body) {
+  let data;
+  try { data = await api(`/api/orgs/${currentOrgId}/audit?limit=12`); } catch { return; }
+  if (!data.events?.length) return;
+  const section = document.createElement('div');
+  section.className = 'token-section';
+  const h = document.createElement('h3');
+  h.className = 'token-heading';
+  h.textContent = '감사 로그';
+  section.appendChild(h);
+  const list = document.createElement('ul');
+  list.className = 'audit-list';
+  for (const e of data.events) {
+    const li = document.createElement('li');
+    const label = AUDIT_LABELS[e.action] || e.action;
+    const who = e.actorEmail || '시스템';
+    const when = (e.createdAt || '').replace('T', ' ').slice(0, 16);
+    li.textContent = `${when} · ${who} · ${label}`;
+    list.appendChild(li);
+  }
+  section.appendChild(list);
+  body.appendChild(section);
 }
 
 // Personal Access Tokens — create/list/revoke, secret shown once.
