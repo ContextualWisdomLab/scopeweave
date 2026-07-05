@@ -297,6 +297,14 @@ function bindGlobalEvents() {
 
 function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
   elements.tableBody.addEventListener('click', (event) => {
+    // Intercept clicks on aria-disabled submit buttons and manually call saveEditor to focus errors
+    const submitBtn = event.target.closest('button[type="submit"]');
+    if (submitBtn && submitBtn.getAttribute('aria-disabled') === 'true') {
+      event.preventDefault();
+      saveEditor();
+      return;
+    }
+
     const row = event.target.closest('tr[data-task-id]');
     if (!row) {
       return;
@@ -695,6 +703,7 @@ function renderEditorRow(anchorId) {
   errors.className = 'validation-message';
   errors.setAttribute('aria-live', 'polite');
   errors.setAttribute('aria-atomic', 'true');
+  errors.setAttribute('tabindex', '-1');
   editorActions.append(saveButton, cancelButton, errors);
 
   form.append(editorGrid, editorActions);
@@ -897,7 +906,11 @@ function renderEditorValidation() {
 
   const saveButton = form.querySelector('button[type="submit"]');
   if (saveButton) {
-    saveButton.disabled = errors.length > 0;
+    if (errors.length > 0) {
+      saveButton.setAttribute('aria-disabled', 'true');
+    } else {
+      saveButton.removeAttribute('aria-disabled');
+    }
     saveButton.title = errors.length > 0 ? '입력값을 올바르게 수정해야 저장할 수 있습니다.' : '저장 (Enter)';
   }
 
@@ -1033,6 +1046,12 @@ function saveEditor() {
   if (errors.length > 0) {
     state.editor.errors = errors;
     renderEditorValidation();
+    requestAnimationFrame(() => {
+      const errorElement = document.getElementById('editor-errors');
+      if (errorElement) {
+        errorElement.focus();
+      }
+    });
     return;
   }
 
