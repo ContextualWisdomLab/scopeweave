@@ -235,4 +235,15 @@ assert.match(r.headers.get('content-disposition') || '', /attachment/, 'export i
 r = await req(`/api/orgs/${orgAId}/export`, { headers: oauth });
 assert.equal(r.status, 403, 'non-owner export → 403');
 
+// ---- Observability / metrics ----
+r = await req('/api/metrics');
+assert.equal(r.status, 200, 'metrics endpoint');
+const m = await r.json();
+assert.ok(m.requests > 0, 'requests counted');
+assert.ok(m.signups >= 1, 'signups counted');
+assert.ok(m.projectsCreated >= 1, 'projects counted');
+assert.ok(typeof m.sseActive === 'number', 'sseActive present');
+assert.ok(m.s2xx > 0 && m.s4xx > 0, 'status buckets counted (2xx + 4xx seen)');
+assert.ok(m.startedAt && typeof m.uptimeSec === 'number', 'startedAt + uptime present');
+
 console.log('✓ API smoke tests passed');

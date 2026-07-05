@@ -66,6 +66,23 @@ function projectAccess(userId, projectId) {
   ).get(projectId, userId);
 }
 
+// --- observability: in-process counters + structured request log.
+const metrics = { startedAt: new Date().toISOString(), requests: 0, s2xx: 0, s4xx: 0, s5xx: 0, signups: 0, projectsCreated: 0 };
+const quietLogs = String(process.env.SCOPEWEAVE_DB || '').includes(':memory:'); // silence during tests
+app.use('*', async (c, next) => {
+  const t = Date.now();
+  await next();
+  try {
+    metrics.requests++;
+    const s = c.res.status;
+    if (s >= 500) metrics.s5xx++; else if (s >= 400) metrics.s4xx++; else if (s >= 200) metrics.s2xx++;
+    if (!quietLogs) {
+      // structured; never logs bodies, tokens, or secrets
+      console.log(JSON.stringify({ ts: new Date().toISOString(), method: c.req.method, path: c.req.path, status: s, ms: Date.now() - t }));
+    }
+  } catch { /* metrics/logging must never break a request */ }
+});
+
 app.post('/api/auth/signup', async (c) => {
   const { email, password, name } = await c.req.json().catch(() => ({}));
   if (!email || !password || String(password).length < 8) {
@@ -85,6 +102,7 @@ app.post('/api/auth/signup', async (c) => {
   };
   db.exec('BEGIN');
   try { tx(); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; }
+  metrics.signups++;
   return c.json({ token: signToken({ sub: uid, email }) });
 });
 
@@ -129,6 +147,7 @@ app.post('/api/projects', requireAuth, async (c) => {
     return c.json({ error: 'project limit reached on the Free plan', upgrade: true, limit: PLANS.free.limits.projects }, 402);
   }
   const id = rowid(db.prepare('INSERT INTO projects(org_id,name,created_by) VALUES(?,?,?)').run(org.id, name, uid));
+  metrics.projectsCreated++;
   logAudit(org.id, uid, 'project.create', 'project', id, { name });
   return c.json({ id, name, version: 1 });
 });
@@ -376,6 +395,17 @@ app.get('/api/orgs/:id/export', requireAuth, (c) => {
     org: { id: org.id, name: org.name, plan: org.plan },
     members, projects, audit,
   }, 200, { 'Content-Disposition': `attachment; filename="scopeweave-org-${orgId}.json"` });
+});
+
+// Operational metrics (JSON). Ceiling: expose Prometheus text format + gate
+// behind an internal token before prod if scraped externally.
+app.get('/api/metrics', (c) => {
+  const sseActive = [...streams.values()].reduce((n, s) => n + s.size, 0);
+  return c.json({
+    ...metrics,
+    sseActive,
+    uptimeSec: Math.round(process.uptime()),
+  });
 });
 
 app.get('/api/health', (c) => c.json({ ok: true }));
