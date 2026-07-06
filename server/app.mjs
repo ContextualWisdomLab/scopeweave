@@ -353,6 +353,46 @@ app.post('/api/projects/:id/revisions/:version/restore', requireAuth, (c) => {
   return c.json({ version });
 });
 
+// iCalendar feed: planned tasks as all-day VEVENTs — subscribable from
+// Google/Outlook. Calendar apps can't send headers, so accept ?token= (same
+// pattern + ceiling as /stream). PATs work via the Authorization header.
+app.get('/api/projects/:id/calendar.ics', (c) => {
+  const header = c.req.header('authorization') || '';
+  const raw = header.startsWith('Bearer ') ? header.slice(7) : (c.req.query('token') || '');
+  let uid;
+  if (raw.startsWith('swk_')) {
+    const row = db.prepare('SELECT user_id FROM api_tokens WHERE token_hash = ?').get(hashApiToken(raw));
+    if (!row) return c.json({ error: 'unauthorized' }, 401);
+    uid = row.user_id;
+  } else {
+    try { uid = verifyToken(raw).sub; } catch { return c.json({ error: 'unauthorized' }, 401); }
+  }
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  let tasks = [];
+  try { tasks = JSON.parse(p.tasks_json); } catch { /* empty */ }
+  const day = (s) => String(s).replaceAll('-', '');
+  const nextDay = (s) => { const d = new Date(s); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10).replaceAll('-', ''); };
+  const esc = (s) => String(s).replace(/\\/g, '\\\\').replace(/[,;]/g, (m) => `\\${m}`).replace(/\n/g, '\\n');
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//ScopeWeave//KO', 'CALSCALE:GREGORIAN', `X-WR-CALNAME:${esc(p.name)}`];
+  for (const t of tasks) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(t.plannedStartDate || '') || !/^\d{4}-\d{2}-\d{2}$/.test(t.plannedEndDate || '')) continue;
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:scopeweave-${p.id}-${esc(t.id)}`,
+      `DTSTART;VALUE=DATE:${day(t.plannedStartDate)}`,
+      `DTEND;VALUE=DATE:${nextDay(t.plannedEndDate)}`, // DTEND is exclusive
+      `SUMMARY:${esc(t.name || t.task || t.id)}`,
+      'END:VEVENT'
+    );
+  }
+  lines.push('END:VCALENDAR');
+  return c.text(lines.join('\r\n') + '\r\n', 200, {
+    'content-type': 'text/calendar; charset=utf-8',
+    'content-disposition': `attachment; filename="scopeweave-${p.id}.ics"`,
+  });
+});
+
 app.get('/api/projects/:id/stream', (c) => {
   // EventSource can't send an Authorization header, so accept a query token
   // here only. Ceiling: issue a short-lived stream-scoped token before prod so

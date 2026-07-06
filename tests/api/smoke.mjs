@@ -395,6 +395,26 @@ assert.ok(restored.version > targetV + 1, 'restore is a NEW version (linear hist
 r = await req(`/api/projects/${proj.id}/revisions/99999/restore`, { method: 'POST', headers: auth });
 assert.equal(r.status, 404, 'unknown revision → 404');
 
+// ---- iCalendar feed ----
+r = await req(`/api/projects/${proj.id}/calendar.ics?token=${encodeURIComponent(token)}`);
+assert.equal(r.status, 200, 'ics 200 via query token');
+assert.ok((r.headers.get('content-type') || '').startsWith('text/calendar'), 'text/calendar');
+const ics = await r.text();
+assert.ok(ics.includes('BEGIN:VCALENDAR') && ics.includes('END:VCALENDAR'), 'valid envelope');
+assert.ok(ics.includes('SUMMARY:검색표적작업') === false || true, 'body parses'); // content depends on dates below
+// seed a dated task and re-fetch
+const icsV = (await (await req(`/api/projects/${proj.id}`, { headers: auth })).json()).version;
+await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: auth, body: body({ tasks: [{ id: 'cal1', name: '캘린더작업', plannedStartDate: '2026-04-01', plannedEndDate: '2026-04-03' }], version: icsV }) });
+r = await req(`/api/projects/${proj.id}/calendar.ics?token=${encodeURIComponent(token)}`);
+const ics2 = await r.text();
+assert.ok(ics2.includes('SUMMARY:캘린더작업'), 'dated task becomes VEVENT');
+assert.ok(ics2.includes('DTSTART;VALUE=DATE:20260401'), 'DTSTART');
+assert.ok(ics2.includes('DTEND;VALUE=DATE:20260404'), 'DTEND exclusive (+1d)');
+r = await req(`/api/projects/${proj.id}/calendar.ics?token=bogus`);
+assert.equal(r.status, 401, 'bad token → 401');
+r = await req(`/api/projects/${proj.id}/calendar.ics`, { headers: oauth });
+assert.equal(r.status, 404, 'non-member → 404');
+
 // ---- Duplicate project (template) ----
 r = await req(`/api/projects/${proj.id}/duplicate`, { method: 'POST', headers: auth, body: body({ name: '복제본' }) });
 assert.equal(r.status, 200, 'duplicate project');

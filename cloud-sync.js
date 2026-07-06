@@ -651,6 +651,26 @@ async function openBaselineModal() {
   });
   panel.appendChild(save);
 
+  const ics = document.createElement('button');
+  ics.type = 'button';
+  ics.className = 'secondary-button';
+  ics.style.marginLeft = '8px';
+  ics.textContent = '캘린더 내보내기 (.ics)';
+  ics.addEventListener('click', async () => {
+    try {
+      const res = await fetch(`/api/projects/${pid}/calendar.ics`, { headers: { authorization: `Bearer ${getToken()}` } });
+      if (!res.ok) return toast('캘린더 내보내기에 실패했습니다.');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `scopeweave-${pid}.ics`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('캘린더 파일(.ics)을 내려받았습니다.');
+    } catch { toast('캘린더 내보내기에 실패했습니다.'); }
+  });
+  panel.appendChild(ics);
+
   const list = document.createElement('ul');
   list.className = 'team-list';
   panel.appendChild(list);
