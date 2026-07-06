@@ -7,6 +7,7 @@ import { randomBytes, createHmac, createHash } from 'node:crypto';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
+import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
 
@@ -238,7 +239,7 @@ app.post('/api/projects', requireAuth, async (c) => {
 app.get('/api/projects/:id', requireAuth, (c) => {
   const p = projectAccess(c.get('user').sub, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
-  return c.json({ id: p.id, name: p.name, baseDate: p.base_date, tasks: JSON.parse(p.tasks_json), version: p.version });
+  return c.json({ id: p.id, name: p.name, orgId: p.org_id, baseDate: p.base_date, tasks: JSON.parse(p.tasks_json), version: p.version });
 });
 
 app.put('/api/projects/:id', requireAuth, async (c) => {
@@ -897,6 +898,90 @@ app.get('/api/search', requireAuth, (c) => {
     if (results.length >= 20) break;
   }
   return c.json({ query: q, results });
+});
+
+// Portfolio dashboard: executive rollup across every project in a workspace —
+// weighted planned/actual progress, SPI + status, overdue-task counts.
+app.get('/api/orgs/:id/portfolio', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (!orgRole(uid, orgId)) return c.json({ error: 'not found' }, 404);
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = db.prepare(
+    'SELECT id, name, base_date AS baseDate, tasks_json, archived, updated_at AS updatedAt FROM projects WHERE org_id = ? ORDER BY archived ASC, updated_at DESC'
+  ).all(orgId);
+  const projects = rows.map((p) => {
+    let tasks = [];
+    try { tasks = JSON.parse(p.tasks_json); } catch { /* empty */ }
+    let wSum = 0, pv = 0, ev = 0, overdue = 0;
+    for (const t of tasks) {
+      const w = Number(t.weight) || 1;
+      wSum += w;
+      pv += w * ((Number(t.plannedProgress) || 0) / 100);
+      ev += w * ((Number(t.actualProgress) || 0) / 100);
+      if (t.plannedEndDate && t.plannedEndDate < today && (Number(t.actualProgress) || 0) < 100) overdue++;
+    }
+    const evm = computeEvm({ pv: wSum ? pv / wSum : 0, ev: wSum ? ev / wSum : 0 });
+    return {
+      id: p.id,
+      name: p.name,
+      archived: Boolean(p.archived),
+      tasks: tasks.length,
+      planned: Math.round(evm.pv * 1000) / 10,   // %
+      actual: Math.round(evm.ev * 1000) / 10,    // %
+      spi: evm.spi === null ? null : Math.round(evm.spi * 100) / 100,
+      status: evm.status,
+      label: evm.label,
+      overdue,
+      updatedAt: p.updatedAt,
+    };
+  });
+  return c.json({ projects });
+});
+
+// Public read-only share links: a random token grants VIEW access to one
+// project (no account needed) — revocable. Never exposes org/member data.
+app.post('/api/projects/:id/shares', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canManage(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const token = randomBytes(18).toString('base64url');
+  db.prepare('INSERT INTO share_tokens(project_id, token, created_by) VALUES(?,?,?)').run(p.id, token, uid);
+  logAudit(p.org_id, uid, 'share.create', 'project', p.id, {});
+  return c.json({ token, url: `/?share=${token}` });
+});
+
+app.get('/api/projects/:id/shares', requireAuth, (c) => {
+  const p = projectAccess(c.get('user').sub, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canManage(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const shares = db.prepare(
+    'SELECT id, token, created_at AS createdAt FROM share_tokens WHERE project_id = ? AND revoked = 0 ORDER BY id DESC'
+  ).all(p.id);
+  return c.json({ shares });
+});
+
+app.delete('/api/projects/:id/shares/:sid', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canManage(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const info = db.prepare('UPDATE share_tokens SET revoked = 1 WHERE id = ? AND project_id = ? AND revoked = 0')
+    .run(c.req.param('sid'), p.id);
+  if (!info.changes) return c.json({ error: 'not found' }, 404);
+  logAudit(p.org_id, uid, 'share.revoke', 'project', p.id, { shareId: Number(c.req.param('sid')) });
+  return c.json({ ok: true });
+});
+
+// Anonymous read via share token — project content only.
+app.get('/api/shared/:token', (c) => {
+  const row = db.prepare(
+    `SELECT p.name, p.base_date AS baseDate, p.tasks_json FROM share_tokens s
+     JOIN projects p ON p.id = s.project_id WHERE s.token = ? AND s.revoked = 0`
+  ).get(c.req.param('token'));
+  if (!row) return c.json({ error: 'not found' }, 404);
+  return c.json({ name: row.name, baseDate: row.baseDate, tasks: JSON.parse(row.tasks_json), readOnly: true });
 });
 
 // Unseen-activity notifications: per project, count others' saves + comments
