@@ -50,7 +50,9 @@ const EDITABLE_FIELDS = [
   'actualProgressStatus',
   'actualStartDate',
   'actualEndDate',
-  'predecessors'
+  'predecessors',
+  'budget',
+  'actualCost'
 ];
 
 const CSV_HEADERS = [
@@ -77,7 +79,9 @@ const CSV_HEADERS = [
   '__id',
   '__parentId',
   '__depth',
-  '선행작업'
+  '선행작업',
+  '예산',
+  '실투입비'
 ];
 const CSV_FORMULA_PREFIX_PATTERN = /^\s*[=+\-@|]/;
 const UNSAFE_JSON_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -96,7 +100,9 @@ const CSV_FIELD_LABELS = Object.freeze(Object.assign(Object.create(null), {
   actualProgressStatus: '실적진척상태',
   actualStartDate: '실적시작일',
   actualEndDate: '실적종료일',
-  predecessors: '선행작업'
+  predecessors: '선행작업',
+  budget: '예산',
+  actualCost: '실투입비'
 }));
 
 const EDITOR_FIELD_TEST_IDS = Object.freeze(Object.assign(Object.create(null), {
@@ -112,7 +118,9 @@ const EDITOR_FIELD_TEST_IDS = Object.freeze(Object.assign(Object.create(null), {
   plannedEndDate: 'editor-planned-end',
   actualStartDate: 'editor-actual-start',
   actualEndDate: 'editor-actual-end',
-  predecessors: 'editor-predecessors'
+  predecessors: 'editor-predecessors',
+  budget: 'editor-budget',
+  actualCost: 'editor-actual-cost'
 }));
 
 const LEGACY_PLANNED_END_FIELD = 'plannedEnd' + 'Ddate';
@@ -700,7 +708,9 @@ function renderEditorRow(anchorId) {
     renderEditorSelectField('실적진척상태', 'actualProgressStatus', draft.actualProgressStatus, ACTUAL_PROGRESS_OPTIONS),
     renderEditorField('실적시작일', 'actualStartDate', draft.actualStartDate, 'date'),
     renderEditorField('실적종료일', 'actualEndDate', draft.actualEndDate, 'date'),
-    renderEditorField('선행작업', 'predecessors', draft.predecessors, 'text', false, '예: P1000,P2000 (선행 작업 ID/코드, 쉼표 구분)')
+    renderEditorField('선행작업', 'predecessors', draft.predecessors, 'text', false, '예: P1000,P2000 (선행 작업 ID/코드, 쉼표 구분)'),
+    renderEditorField('예산', 'budget', draft.budget, 'text', false, '예: 1000000 (원, 비용 EVM용)'),
+    renderEditorField('실투입비', 'actualCost', draft.actualCost, 'text', false, '예: 850000 (원)')
   ].forEach((field) => editorGrid.appendChild(field));
 
   const editorActions = document.createElement('div');
@@ -1113,6 +1123,8 @@ function createEmptyTaskDraft() {
     actualStartDate: '',
     actualEndDate: '',
     predecessors: '',
+    budget: '',
+    actualCost: '',
     isSynthetic: false
   };
 }
@@ -1597,7 +1609,9 @@ const createNormalizedExternalRecord = (task, defaults = {}) => ({
   actualProgressStatus: ACTUAL_PROGRESS_MAP[task.actualProgressStatus] !== undefined ? task.actualProgressStatus : '미착수(0%)',
   actualStartDate: task.actualStartDate || '',
   actualEndDate: task.actualEndDate || '',
-  predecessors: task.predecessors || defaults.predecessors || ''
+  predecessors: task.predecessors || defaults.predecessors || '',
+  budget: task.budget || defaults.budget || '',
+  actualCost: task.actualCost || defaults.actualCost || ''
 });
 
 function getPhaseKey(task, index) {
@@ -1742,7 +1756,9 @@ function exportCsv() {
       task.id,
       task.parentId || '',
       task.depth,
-      task.predecessors || ''
+      task.predecessors || '',
+      task.budget || '',
+      task.actualCost || ''
     ];
   });
 
@@ -1916,6 +1932,8 @@ function parseCsv(text) {
     actualStartDate: validateCsvCell(readCsvCell(cells, headerMap, '실적시작일'), 'actualStartDate'),
     actualEndDate: validateCsvCell(readCsvCell(cells, headerMap, '실적종료일'), 'actualEndDate'),
     predecessors: validateCsvCell(readCsvCell(cells, headerMap, '선행작업'), 'predecessors'),
+    budget: validateCsvCell(readCsvCell(cells, headerMap, '예산'), 'budget'),
+    actualCost: validateCsvCell(readCsvCell(cells, headerMap, '실투입비'), 'actualCost'),
     __id: validateCsvId(readCsvCell(cells, headerMap, '__id')),
     __parentId: validateCsvParentId(readCsvCell(cells, headerMap, '__parentId')),
     __depth: validateCsvDepth(readCsvCell(cells, headerMap, '__depth'))
