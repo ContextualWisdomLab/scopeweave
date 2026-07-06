@@ -675,6 +675,19 @@ async function renderTeam() {
         api(`/api/orgs/${currentOrgId}/members/${m.id}`, { method: 'DELETE' })
           .then(() => { toast(`${m.email} 제거됨`); renderTeam(); }).catch((e) => toast(e.message)));
       li.appendChild(del);
+      const xfer = document.createElement('button');
+      xfer.type = 'button';
+      xfer.className = 'secondary-button';
+      xfer.textContent = '소유권 이전';
+      xfer.addEventListener('click', async () => {
+        if (!confirm(`${m.email}에게 소유권을 이전합니다. 나는 관리자가 됩니다.`)) return;
+        try {
+          await api(`/api/orgs/${currentOrgId}/transfer`, { method: 'POST', body: { userId: m.id } });
+          toast('소유권을 이전했습니다.');
+          renderTeam();
+        } catch (e) { toast(e.data?.error || e.message); } // server 403s non-owners
+      });
+      li.appendChild(xfer);
     }
     list.appendChild(li);
   }

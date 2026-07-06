@@ -63,6 +63,7 @@ A PAT acts as your user across all your workspaces.
 | --- | --- | --- |
 | `POST` | `/api/orgs` | `{ name }` — create an additional workspace (creator = owner) |
 | `PATCH` | `/api/orgs/:id` | `{ name }` — rename (owner) |
+| `POST` | `/api/orgs/:id/transfer` | `{ userId }` — transfer ownership to a member (owner; old owner becomes admin) |
 | `POST` | `/api/orgs/:id/leave` | Leave the workspace (non-owner; owner gets `403`) |
 | `GET` | `/api/orgs/:id/members` | Roster + pending invites |
 | `PATCH` | `/api/orgs/:id/members/:userId` | `{ role }` — change a member's role (manage; owner immutable) |

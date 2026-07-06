@@ -435,4 +435,24 @@ assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, b
 assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, body: body({ password: 'password123' }) })).status, 200, 'account deleted');
 assert.equal((await req('/api/auth/login', { method: 'POST', body: body({ email: 'gone@x.com', password: 'password123' }) })).status, 401, 'deleted account cannot login');
 
+// ---- Ownership transfer (full circle: old owner can then leave) ----
+r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'heir@x.com', password: 'password123' }) });
+const heir = await r.json();
+const heirAuth = { authorization: `Bearer ${heir.token}` };
+const heirInv = await (await req(`/api/orgs/${orgAId}/invites`, { method: 'POST', headers: auth, body: body({ email: 'heir@x.com', role: 'member' }) })).json();
+await req(`/api/invites/${heirInv.token}/accept`, { method: 'POST', headers: heirAuth });
+const heirId = (await (await req('/api/me', { headers: heirAuth })).json()).user.id;
+r = await req(`/api/orgs/${orgAId}/transfer`, { method: 'POST', headers: heirAuth, body: body({ userId: 1 }) });
+assert.equal(r.status, 403, 'non-owner cannot transfer');
+r = await req(`/api/orgs/${orgAId}/transfer`, { method: 'POST', headers: auth, body: body({ userId: 99999 }) });
+assert.equal(r.status, 404, 'transfer to non-member → 404');
+r = await req(`/api/orgs/${orgAId}/transfer`, { method: 'POST', headers: auth, body: body({ userId: heirId }) });
+assert.equal(r.status, 200, 'owner transfers ownership');
+r = await req('/api/me', { headers: heirAuth });
+assert.equal((await r.json()).orgs.find((o) => o.id === orgAId)?.role, 'owner', 'target became owner');
+r = await req('/api/me', { headers: auth });
+assert.equal((await r.json()).orgs.find((o) => o.id === orgAId)?.role, 'admin', 'old owner demoted to admin');
+r = await req(`/api/orgs/${orgAId}/leave`, { method: 'POST', headers: auth });
+assert.equal(r.status, 200, 'former owner can now leave');
+
 console.log('✓ API smoke tests passed');

@@ -395,6 +395,27 @@ app.post('/api/orgs/:id/leave', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
+// Transfer workspace ownership to an existing member (owner only). The old
+// owner becomes an admin; orgs.owner_id follows. Transactional.
+app.post('/api/orgs/:id/transfer', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (orgRole(uid, orgId) !== 'owner') return c.json({ error: 'forbidden' }, 403);
+  const { userId } = await c.req.json().catch(() => ({}));
+  if (!userId || Number(userId) === Number(uid)) return c.json({ error: 'target member userId required' }, 400);
+  const target = db.prepare('SELECT role FROM memberships WHERE org_id = ? AND user_id = ?').get(orgId, userId);
+  if (!target) return c.json({ error: 'target is not a member' }, 404);
+  db.exec('BEGIN');
+  try {
+    db.prepare("UPDATE memberships SET role = 'owner' WHERE org_id = ? AND user_id = ?").run(orgId, userId);
+    db.prepare("UPDATE memberships SET role = 'admin' WHERE org_id = ? AND user_id = ?").run(orgId, uid);
+    db.prepare('UPDATE orgs SET owner_id = ? WHERE id = ?').run(userId, orgId);
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+  logAudit(orgId, uid, 'org.transfer', 'user', userId, { from: uid });
+  return c.json({ ok: true, newOwnerId: Number(userId) });
+});
+
 // Rename a workspace (owner only).
 app.patch('/api/orgs/:id', requireAuth, async (c) => {
   const uid = c.get('user').sub;
