@@ -10,7 +10,8 @@
     "test:api": "node tests/api/smoke.mjs && node tests/api/ratelimit.test.mjs",
     "test:unit": "node tests/unit/analytics.test.mjs && node tests/unit/cpm.test.mjs && node tests/unit/baseline-compare.test.mjs && node tests/unit/workload.test.mjs",
     "test:e2e": "playwright test",
-    "test:e2e:headed": "playwright test --headed"
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:cloud": "playwright test tests/e2e/cloud.spec.js"
   },
   "dependencies": {
     "@hono/node-server": "^1.19.14",
