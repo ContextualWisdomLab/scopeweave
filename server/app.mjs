@@ -601,6 +601,49 @@ app.get('/api/auth/oidc/callback', async (c) => {
   return c.redirect(`/#token=${token}`);
 });
 
+// ------------------------------------------------------------- baselines
+// Snapshot a project's current plan as a named baseline (schedule-control:
+// compare actuals against the frozen plan later).
+app.post('/api/projects/:id/baselines', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const id = c.req.param('id');
+  const p = projectAccess(uid, id);
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const { name } = await c.req.json().catch(() => ({}));
+  const bid = rowid(db.prepare('INSERT INTO baselines(project_id,name,base_date,tasks_json,created_by) VALUES(?,?,?,?,?)')
+    .run(id, String(name || 'Baseline').slice(0, 80), p.base_date, p.tasks_json, uid));
+  logAudit(p.org_id, uid, 'baseline.create', 'project', id, { baselineId: bid, name });
+  return c.json({ id: bid, name: name || 'Baseline' });
+});
+
+app.get('/api/projects/:id/baselines', requireAuth, (c) => {
+  const p = projectAccess(c.get('user').sub, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  const baselines = db.prepare(
+    'SELECT id, name, base_date AS baseDate, created_at AS createdAt FROM baselines WHERE project_id = ? ORDER BY id DESC'
+  ).all(p.id);
+  return c.json({ baselines });
+});
+
+app.get('/api/projects/:id/baselines/:bid', requireAuth, (c) => {
+  const p = projectAccess(c.get('user').sub, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  const b = db.prepare('SELECT id, name, base_date AS baseDate, tasks_json, created_at AS createdAt FROM baselines WHERE id = ? AND project_id = ?').get(c.req.param('bid'), p.id);
+  if (!b) return c.json({ error: 'not found' }, 404);
+  return c.json({ id: b.id, name: b.name, baseDate: b.baseDate, tasks: JSON.parse(b.tasks_json), createdAt: b.createdAt });
+});
+
+app.delete('/api/projects/:id/baselines/:bid', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const info = db.prepare('DELETE FROM baselines WHERE id = ? AND project_id = ?').run(c.req.param('bid'), p.id);
+  if (!info.changes) return c.json({ error: 'not found' }, 404);
+  return c.json({ ok: true });
+});
+
 // ------------------------------------------------------ account & lifecycle
 // Delete a project (write roles). tasks live in the row, so this fully removes it.
 app.delete('/api/projects/:id', requireAuth, (c) => {

@@ -307,6 +307,27 @@ assert.equal((await r.json()).user.email, 'sso@corp.com', 'SSO re-login same use
 r = await req('/api/auth/oidc/callback?code=x&state=bogus');
 assert.equal(r.status, 400, 'invalid state → 400');
 
+// ---- Baselines ----
+// save current project as a baseline, list, fetch, delete
+r = await req(`/api/projects/${proj.id}`, { headers: auth });
+const blCurV = (await r.json()).version;
+await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: auth, body: body({ tasks: [{ id: 'b1', name: '기준작업', plannedStartDate: '2026-01-01', plannedEndDate: '2026-01-05' }], baseDate: '2026-01-01', version: blCurV }) });
+r = await req(`/api/projects/${proj.id}/baselines`, { method: 'POST', headers: auth, body: body({ name: 'v1 착수' }) });
+assert.equal(r.status, 200, 'save baseline');
+const bl = await r.json();
+assert.ok(bl.id);
+r = await req(`/api/projects/${proj.id}/baselines`, { headers: auth });
+assert.ok((await r.json()).baselines.some((b) => b.id === bl.id), 'baseline listed');
+r = await req(`/api/projects/${proj.id}/baselines/${bl.id}`, { headers: auth });
+const blFull = await r.json();
+assert.equal(blFull.tasks[0].name, '기준작업', 'baseline froze the tasks');
+assert.equal(blFull.baseDate, '2026-01-01', 'baseline froze the base date');
+// viewer/non-member cannot save
+r = await req(`/api/projects/${proj.id}/baselines`, { method: 'POST', headers: oauth, body: body({ name: 'x' }) });
+assert.equal(r.status, 404, 'non-member baseline → 404');
+r = await req(`/api/projects/${proj.id}/baselines/${bl.id}`, { method: 'DELETE', headers: auth });
+assert.equal(r.status, 200, 'delete baseline');
+
 // ---- Account & project lifecycle ----
 // delete a project
 r = await req('/api/projects', { method: 'POST', headers: auth, body: body({ name: 'to-delete' }) });
