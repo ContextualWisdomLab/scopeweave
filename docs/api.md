@@ -33,6 +33,7 @@ A PAT acts as your user across all your workspaces.
 | `GET` | `/api/auth/oidc/start` | Begin SSO (OIDC + PKCE). Redirects to the IdP (or the built-in mock when `OIDC_ISSUER` is unset) |
 | `GET` | `/api/auth/oidc/callback` | IdP redirect target; issues the app JWT via URL fragment |
 | `POST` | `/api/auth/change-password` | `{ oldPassword, newPassword }` (min 8) |
+| `POST` | `/api/auth/logout-all` | Invalidate every existing session JWT; returns a fresh token for this device (PATs unaffected) |
 | `DELETE` | `/api/account` | `{ password }` — GDPR delete: removes owned workspaces + the user |
 | `GET` | `/api/me` | Current user + workspaces (`orgs[].role`) |
 

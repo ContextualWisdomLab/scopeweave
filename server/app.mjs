@@ -39,7 +39,11 @@ async function requireAuth(c, next) {
     return next();
   }
   try {
-    c.set('user', verifyToken(token));
+    const payload = verifyToken(token);
+    // Session revocation: a bumped token_version invalidates all older JWTs.
+    const u = db.prepare('SELECT token_version FROM users WHERE id = ?').get(payload.sub);
+    if (!u || (payload.tv || 0) !== u.token_version) return c.json({ error: 'unauthorized' }, 401);
+    c.set('user', payload);
   } catch {
     return c.json({ error: 'unauthorized' }, 401);
   }
@@ -166,7 +170,7 @@ app.post('/api/auth/signup', async (c) => {
   db.exec('BEGIN');
   try { tx(); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; }
   metrics.signups++;
-  return c.json({ token: signToken({ sub: uid, email }) });
+  return c.json({ token: signToken({ sub: uid, email, tv: 0 }) });
 });
 
 app.post('/api/auth/login', async (c) => {
@@ -175,7 +179,7 @@ app.post('/api/auth/login', async (c) => {
   if (!u || !verifyPassword(password || '', u.password_hash)) {
     return c.json({ error: 'invalid credentials' }, 401);
   }
-  return c.json({ token: signToken({ sub: u.id, email: u.email }) });
+  return c.json({ token: signToken({ sub: u.id, email: u.email, tv: u.token_version }) });
 });
 
 app.get('/api/me', requireAuth, (c) => {
@@ -629,7 +633,7 @@ const oidcStates = new Map(); // state -> { verifier, exp }
 const oidcCodes = new Map();  // mock only: code -> email
 
 function upsertSsoUser(email) {
-  let user = db.prepare('SELECT id, email FROM users WHERE email = ?').get(email);
+  let user = db.prepare('SELECT id, email, token_version FROM users WHERE email = ?').get(email);
   if (user) return user;
   db.exec('BEGIN');
   try {
@@ -709,7 +713,7 @@ app.get('/api/auth/oidc/callback', async (c) => {
     if (!email) return c.json({ error: 'no email claim' }, 400);
   }
   const user = upsertSsoUser(email);
-  const token = signToken({ sub: user.id, email });
+  const token = signToken({ sub: user.id, email, tv: user.token_version || 0 });
   // Return the token in the URL fragment (not query → not logged); the client
   // stores it and cleans the URL.
   return c.redirect(`/#token=${token}`);
@@ -820,6 +824,15 @@ app.delete('/api/projects/:id', requireAuth, (c) => {
   logAudit(p.org_id, uid, 'project.delete', 'project', id, { name: p.name });
   deliver(p.org_id, 'project.delete', { projectId: Number(id) });
   return c.json({ ok: true });
+});
+
+// Log out everywhere: bump token_version → every existing JWT dies. Returns a
+// fresh token so THIS device stays signed in. PATs are unaffected.
+app.post('/api/auth/logout-all', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  db.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?').run(uid);
+  const u = db.prepare('SELECT email, token_version FROM users WHERE id = ?').get(uid);
+  return c.json({ ok: true, token: signToken({ sub: uid, email: u.email, tv: u.token_version }) });
 });
 
 // Change password (verifies the current one).

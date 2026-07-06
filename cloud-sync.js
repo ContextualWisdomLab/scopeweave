@@ -849,6 +849,21 @@ function renderAccount(body) {
   });
   section.appendChild(form);
 
+  const outAll = document.createElement('button');
+  outAll.type = 'button';
+  outAll.className = 'secondary-button';
+  outAll.style.marginTop = '8px';
+  outAll.textContent = '다른 모든 기기에서 로그아웃';
+  outAll.addEventListener('click', async () => {
+    if (!confirm('다른 모든 기기의 세션을 무효화합니다. 이 기기는 유지됩니다.')) return;
+    try {
+      const res = await api('/api/auth/logout-all', { method: 'POST' });
+      setToken(res.token); // fresh token keeps this device signed in
+      toast('다른 모든 기기에서 로그아웃했습니다.');
+    } catch (e) { toast(e.data?.error || e.message); }
+  });
+  section.appendChild(outAll);
+
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'secondary-button';

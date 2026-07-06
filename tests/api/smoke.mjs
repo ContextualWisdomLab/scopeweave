@@ -448,6 +448,20 @@ assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, b
 assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, body: body({ password: 'password123' }) })).status, 200, 'account deleted');
 assert.equal((await req('/api/auth/login', { method: 'POST', body: body({ email: 'gone@x.com', password: 'password123' }) })).status, 401, 'deleted account cannot login');
 
+// ---- Logout everywhere (token_version revocation) ----
+r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'devices@x.com', password: 'password123' }) });
+const devTokA = (await r.json()).token;
+r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'devices@x.com', password: 'password123' }) });
+const devTokB = (await r.json()).token; // second "device"
+r = await req('/api/auth/logout-all', { method: 'POST', headers: { authorization: `Bearer ${devTokA}` } });
+assert.equal(r.status, 200, 'logout-all ok');
+const fresh = (await r.json()).token;
+assert.equal((await req('/api/me', { headers: { authorization: `Bearer ${devTokA}` } })).status, 401, 'old token A dead');
+assert.equal((await req('/api/me', { headers: { authorization: `Bearer ${devTokB}` } })).status, 401, 'other device token dead');
+assert.equal((await req('/api/me', { headers: { authorization: `Bearer ${fresh}` } })).status, 200, 'fresh token works');
+r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'devices@x.com', password: 'password123' }) });
+assert.equal((await req('/api/me', { headers: { authorization: `Bearer ${(await r.json()).token}` } })).status, 200, 're-login works');
+
 // ---- Ownership transfer (full circle: old owner can then leave) ----
 r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'heir@x.com', password: 'password123' }) });
 const heir = await r.json();
