@@ -246,6 +246,15 @@ function renderAuthUI() {
   team.addEventListener('click', () => openTeamModal().catch((e) => toast(e.message || '팀 정보를 불러오지 못했습니다.')));
   bar.appendChild(team);
 
+  if (getProjectId()) {
+    const bl = document.createElement('button');
+    bl.type = 'button';
+    bl.className = 'secondary-button';
+    bl.textContent = '기준선';
+    bl.addEventListener('click', () => openBaselineModal().catch((e) => toast(e.message || '기준선을 불러오지 못했습니다.')));
+    bar.appendChild(bl);
+  }
+
   const out = document.createElement('button');
   out.type = 'button';
   out.className = 'secondary-button';
@@ -332,6 +341,165 @@ async function resolveOrgId() {
   const me = await api('/api/me');
   currentOrgId = me.orgs?.[0]?.id || null;
   return currentOrgId;
+}
+
+// ------------------------------------------------------------- baselines
+// Compare the live plan against a frozen baseline: which tasks' planned dates
+// slipped, and by how many days.
+const dayMs = 86400000;
+const slipDays = (fromDate, toDate) => {
+  if (!fromDate || !toDate) return null;
+  const a = new Date(fromDate), b = new Date(toDate);
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
+  return Math.round((b - a) / dayMs);
+};
+
+export function compareBaseline(baselineTasks, currentTasks) {
+  const base = new Map((baselineTasks || []).map((t) => [t.id, t]));
+  const rows = [];
+  for (const cur of currentTasks || []) {
+    const old = base.get(cur.id);
+    if (!old) { rows.push({ id: cur.id, name: cur.name, kind: 'added', endSlip: null }); continue; }
+    const endSlip = slipDays(old.plannedEndDate, cur.plannedEndDate);
+    const startSlip = slipDays(old.plannedStartDate, cur.plannedStartDate);
+    if ((endSlip || 0) !== 0 || (startSlip || 0) !== 0) {
+      rows.push({ id: cur.id, name: cur.name, kind: 'moved', baseEnd: old.plannedEndDate || '', curEnd: cur.plannedEndDate || '', endSlip: endSlip ?? 0 });
+    }
+  }
+  const cur = new Set((currentTasks || []).map((t) => t.id));
+  for (const old of baselineTasks || []) {
+    if (!cur.has(old.id)) rows.push({ id: old.id, name: old.name, kind: 'removed', endSlip: null });
+  }
+  const slipped = rows.filter((r) => r.kind === 'moved' && r.endSlip > 0);
+  return { rows, summary: { changed: rows.length, slipped: slipped.length, maxSlip: slipped.reduce((m, r) => Math.max(m, r.endSlip), 0) } };
+}
+
+async function openBaselineModal() {
+  const pid = getProjectId();
+  if (!pid) return;
+  let modal = document.getElementById('baseline-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'baseline-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'baseline-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#baseline-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '기준선 (Baseline)';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '기준선 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'primary-button';
+  save.textContent = '현재 계획을 기준선으로 저장';
+  save.addEventListener('click', async () => {
+    const name = prompt('기준선 이름', `기준선 ${new Date().toISOString().slice(0, 10)}`);
+    if (!name) return;
+    await api(`/api/projects/${pid}/baselines`, { method: 'POST', body: { name } });
+    toast('기준선을 저장했습니다.');
+    openBaselineModal();
+  });
+  panel.appendChild(save);
+
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  panel.appendChild(list);
+  const result = document.createElement('div');
+  result.id = 'baseline-result';
+  panel.appendChild(result);
+
+  const data = await api(`/api/projects/${pid}/baselines`);
+  if (!data.baselines.length) {
+    const li = document.createElement('li');
+    li.textContent = '저장된 기준선이 없습니다.';
+    list.appendChild(li);
+    return;
+  }
+  for (const b of data.baselines) {
+    const li = document.createElement('li');
+    const who = document.createElement('span');
+    who.className = 'team-who';
+    who.textContent = `${b.name} · ${String(b.createdAt).slice(0, 10)}`;
+    const cmp = document.createElement('button');
+    cmp.type = 'button';
+    cmp.className = 'secondary-button';
+    cmp.textContent = '비교';
+    cmp.addEventListener('click', async () => {
+      const full = await api(`/api/projects/${pid}/baselines/${b.id}`);
+      renderBaselineDiff(result, compareBaseline(full.tasks, host?.getState?.()?.tasks || []));
+    });
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'secondary-button';
+    del.textContent = '삭제';
+    del.addEventListener('click', async () => {
+      await api(`/api/projects/${pid}/baselines/${b.id}`, { method: 'DELETE' });
+      openBaselineModal();
+    });
+    li.append(who, cmp, del);
+    list.appendChild(li);
+  }
+}
+
+function renderBaselineDiff(el, { rows, summary }) {
+  el.textContent = '';
+  const sum = document.createElement('p');
+  sum.textContent = rows.length
+    ? `변경 ${summary.changed}건 · 지연 ${summary.slipped}건 · 최대 지연 ${summary.maxSlip}일`
+    : '기준선과 차이가 없습니다.';
+  el.appendChild(sum);
+  if (!rows.length) return;
+  const table = document.createElement('table');
+  table.className = 'wbs-table';
+  const thead = document.createElement('thead');
+  const hr = document.createElement('tr');
+  for (const t of ['작업', '기준 종료', '현재 종료', '차이']) {
+    const th = document.createElement('th');
+    th.textContent = t;
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  const tbody = document.createElement('tbody');
+  for (const r of rows.slice(0, 50)) {
+    const tr = document.createElement('tr');
+    const cells = r.kind === 'moved'
+      ? [r.name, r.baseEnd, r.curEnd, `${r.endSlip > 0 ? '+' : ''}${r.endSlip}일`]
+      : [r.name, '', '', r.kind === 'added' ? '신규' : '삭제됨'];
+    for (const c of cells) {
+      const td = document.createElement('td');
+      td.textContent = c ?? '';
+      tr.appendChild(td);
+    }
+    if (r.kind === 'moved' && r.endSlip > 0) tr.style.color = 'var(--delay, #ea580c)';
+    tbody.appendChild(tr);
+  }
+  table.append(thead, tbody);
+  const wrap = document.createElement('div');
+  wrap.style.overflowX = 'auto';
+  wrap.appendChild(table);
+  el.appendChild(wrap);
 }
 
 async function openTeamModal() {
