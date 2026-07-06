@@ -340,6 +340,32 @@ async function renderTeam() {
   if (!body) return;
   const data = await api(`/api/orgs/${currentOrgId}/members`);
   body.textContent = '';
+
+  // plan + usage indicator
+  try {
+    const b = await api(`/api/orgs/${currentOrgId}/billing`);
+    const bar = document.createElement('div');
+    bar.className = 'billing-bar';
+    const cap = (used, limit) => `${used}/${limit == null ? '∞' : limit}`;
+    const info = document.createElement('span');
+    info.textContent = `${b.planName} · 프로젝트 ${cap(b.usage.projects, b.limits.projects)} · 멤버 ${cap(b.usage.members, b.limits.members)}`;
+    bar.appendChild(info);
+    if (b.plan === 'free') {
+      const up = document.createElement('button');
+      up.type = 'button';
+      up.className = 'primary-button billing-upgrade';
+      up.textContent = 'Pro 업그레이드';
+      up.addEventListener('click', async () => {
+        try {
+          const s = await api(`/api/orgs/${currentOrgId}/checkout`, { method: 'POST' });
+          if (s.mock) toast('결제 연동(Stripe 키)이 필요합니다 — 데모 환경입니다.');
+          else window.location.href = s.url;
+        } catch (e) { toast(e.data?.error || e.message); }
+      });
+      bar.appendChild(up);
+    }
+    body.appendChild(bar);
+  } catch { /* billing optional */ }
   const list = document.createElement('ul');
   list.className = 'team-list';
   for (const m of data.members) {
@@ -384,6 +410,70 @@ async function renderTeam() {
     pending.textContent = `대기 중인 초대: ${data.invites.map((i) => i.email).join(', ')}`;
     body.appendChild(pending);
   }
+
+  await renderTokens(body);
+}
+
+// Personal Access Tokens — create/list/revoke, secret shown once.
+async function renderTokens(body) {
+  const section = document.createElement('div');
+  section.className = 'token-section';
+  const h = document.createElement('h3');
+  h.className = 'token-heading';
+  h.textContent = 'API 토큰';
+  section.appendChild(h);
+
+  let data;
+  try { data = await api('/api/tokens'); } catch { return; }
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  for (const t of data.tokens) {
+    const li = document.createElement('li');
+    const who = document.createElement('span');
+    who.className = 'team-who';
+    who.textContent = `${t.name} · ${t.prefix}… ${t.lastUsed ? '· 최근 사용 ' + t.lastUsed.slice(0, 10) : '· 미사용'}`;
+    li.appendChild(who);
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'secondary-button team-remove';
+    del.textContent = '폐기';
+    del.addEventListener('click', () =>
+      api(`/api/tokens/${t.id}`, { method: 'DELETE' }).then(() => { toast('토큰을 폐기했습니다.'); renderTeam(); }).catch((e) => toast(e.message)));
+    li.appendChild(del);
+    list.appendChild(li);
+  }
+  section.appendChild(list);
+
+  const form = document.createElement('form');
+  form.className = 'team-invite';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = '토큰 이름 (예: CI, Zapier)';
+  const btn = document.createElement('button');
+  btn.type = 'submit';
+  btn.className = 'primary-button';
+  btn.textContent = '토큰 생성';
+  form.append(input, btn);
+  const secret = document.createElement('p');
+  secret.className = 'token-secret';
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const t = await api('/api/tokens', { method: 'POST', body: { name: input.value.trim() || 'token' } });
+      secret.textContent = `한 번만 표시됩니다 — 지금 복사하세요: ${t.token}`;
+      input.value = '';
+      // append the new token to the list without wiping the shown secret
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'team-who';
+      who.textContent = `${t.name} · ${t.prefix}… · 미사용`;
+      li.appendChild(who);
+      list.appendChild(li);
+    } catch (err) { toast(err.data?.error || err.message); }
+  });
+  section.appendChild(form);
+  section.appendChild(secret);
+  body.appendChild(section);
 }
 
 // Auto-accept an invite token from the URL (?invite=...) once logged in.
