@@ -307,6 +307,16 @@ assert.equal((await r.json()).user.email, 'sso@corp.com', 'SSO re-login same use
 r = await req('/api/auth/oidc/callback?code=x&state=bogus');
 assert.equal(r.status, 400, 'invalid state → 400');
 
+// ---- Prometheus metrics format ----
+r = await req('/api/metrics?format=prometheus');
+assert.equal(r.status, 200, 'prometheus metrics 200');
+assert.ok((r.headers.get('content-type') || '').startsWith('text/plain'), 'prometheus text content-type');
+const prom = await r.text();
+assert.ok(/# TYPE scopeweave_requests counter\nscopeweave_requests \d+/.test(prom), 'requests counter exposed');
+assert.ok(/# TYPE scopeweave_uptime_sec gauge/.test(prom), 'uptime gauge exposed');
+assert.ok(/scopeweave_signups \d+/.test(prom), 'signups exposed');
+assert.ok(!prom.includes('startedAt'), 'non-numeric fields skipped');
+
 // ---- Duplicate project (template) ----
 r = await req(`/api/projects/${proj.id}/duplicate`, { method: 'POST', headers: auth, body: body({ name: '복제본' }) });
 assert.equal(r.status, 200, 'duplicate project');

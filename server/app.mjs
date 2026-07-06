@@ -483,11 +483,17 @@ app.get('/api/orgs/:id/export', requireAuth, (c) => {
 // behind an internal token before prod if scraped externally.
 app.get('/api/metrics', (c) => {
   const sseActive = [...streams.values()].reduce((n, s) => n + s.size, 0);
-  return c.json({
-    ...metrics,
-    sseActive,
-    uptimeSec: Math.round(process.uptime()),
-  });
+  const all = { ...metrics, sseActive, uptimeSec: Math.round(process.uptime()) };
+  if (c.req.query('format') !== 'prometheus') return c.json(all);
+  // Prometheus text exposition format (0.0.4) — scrape-ready for Grafana/Alerting.
+  const gauge = new Set(['sseActive', 'uptimeSec']);
+  const lines = [];
+  for (const [k, v] of Object.entries(all)) {
+    if (typeof v !== 'number') continue; // startedAt etc.
+    const name = `scopeweave_${k.replace(/([A-Z])/g, '_$1').toLowerCase()}`;
+    lines.push(`# TYPE ${name} ${gauge.has(k) ? 'gauge' : 'counter'}`, `${name} ${v}`);
+  }
+  return c.text(lines.join('\n') + '\n', 200, { 'content-type': 'text/plain; version=0.0.4; charset=utf-8' });
 });
 
 // ------------------------------------------------------------------- webhooks
