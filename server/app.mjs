@@ -807,6 +807,7 @@ const STATIC = {
   '/404.html': ['404.html', 'text/html; charset=utf-8'],
   '/landing.html': ['landing.html', 'text/html; charset=utf-8'],
   '/landing.en.html': ['landing.en.html', 'text/html; charset=utf-8'],
+  '/docs/api.md': ['docs/api.md', 'text/markdown; charset=utf-8'],
   '/pricing': ['landing.html', 'text/html; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/cloud-sync.js': ['cloud-sync.js', 'text/javascript; charset=utf-8'],
