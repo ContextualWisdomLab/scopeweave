@@ -188,6 +188,22 @@ app.get('/api/me', requireAuth, (c) => {
   return c.json({ user, orgs });
 });
 
+// Create an additional workspace (org); the creator becomes its owner.
+app.post('/api/orgs', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const { name } = await c.req.json().catch(() => ({}));
+  if (!name || !String(name).trim()) return c.json({ error: 'name required' }, 400);
+  let oid;
+  db.exec('BEGIN');
+  try {
+    oid = rowid(db.prepare('INSERT INTO orgs(name,owner_id) VALUES(?,?)').run(String(name).trim().slice(0, 120), uid));
+    db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)').run(oid, uid, 'owner');
+    db.exec('COMMIT');
+  } catch (e) { db.exec('ROLLBACK'); throw e; }
+  logAudit(oid, uid, 'org.create', 'org', oid, { name });
+  return c.json({ id: oid, name: String(name).trim(), role: 'owner' });
+});
+
 app.get('/api/projects', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const projects = db.prepare(

@@ -307,6 +307,20 @@ assert.equal((await r.json()).user.email, 'sso@corp.com', 'SSO re-login same use
 r = await req('/api/auth/oidc/callback?code=x&state=bogus');
 assert.equal(r.status, 400, 'invalid state → 400');
 
+// ---- Create additional workspace (org) ----
+r = await req('/api/orgs', { method: 'POST', headers: auth, body: body({ name: '두번째 워크스페이스' }) });
+assert.equal(r.status, 200, 'create org');
+const org2 = await r.json();
+assert.equal(org2.role, 'owner', 'creator is owner');
+r = await req('/api/me', { headers: auth });
+const myOrgs = (await r.json()).orgs;
+assert.ok(myOrgs.some((o) => o.id === org2.id && o.role === 'owner'), 'new org in my workspaces');
+// can create a project in the new org
+r = await req('/api/projects', { method: 'POST', headers: auth, body: body({ name: 'P-in-org2', orgId: org2.id }) });
+assert.equal(r.status, 200, 'project in new org');
+r = await req('/api/orgs', { method: 'POST', headers: auth, body: body({ name: '' }) });
+assert.equal(r.status, 400, 'empty org name → 400');
+
 // ---- Baselines ----
 // save current project as a baseline, list, fetch, delete
 r = await req(`/api/projects/${proj.id}`, { headers: auth });
