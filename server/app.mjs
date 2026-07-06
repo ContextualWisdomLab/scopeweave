@@ -3,14 +3,33 @@
 // (index.html/app.js) becomes the frontend that talks to these routes.
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
+import { randomBytes } from 'node:crypto';
 import { db, rowid } from './db.mjs';
-import { hashPassword, verifyPassword, signToken, verifyToken } from './auth.mjs';
+import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
+import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
+
+const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
+
+// --- RBAC. Roles (highest→lowest): owner > admin > member > viewer.
+const ROLES = ['owner', 'admin', 'member', 'viewer'];
+const orgRole = (userId, orgId) =>
+  db.prepare('SELECT role FROM memberships WHERE user_id = ? AND org_id = ?').get(userId, orgId)?.role || null;
+const canManage = (role) => role === 'owner' || role === 'admin';
+const canWrite = (role) => role === 'owner' || role === 'admin' || role === 'member';
 
 export const app = new Hono();
 
 async function requireAuth(c, next) {
   const header = c.req.header('authorization') || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+  // Personal Access Token path (swk_...): look up by hash, act as its user.
+  if (token.startsWith('swk_')) {
+    const row = db.prepare('SELECT * FROM api_tokens WHERE token_hash = ?').get(hashApiToken(token));
+    if (!row) return c.json({ error: 'unauthorized' }, 401);
+    db.prepare("UPDATE api_tokens SET last_used = datetime('now') WHERE id = ?").run(row.id);
+    c.set('user', { sub: row.user_id, viaPat: true });
+    return next();
+  }
   try {
     c.set('user', verifyToken(token));
   } catch {
@@ -33,7 +52,7 @@ function broadcast(projectId, data) {
 // Membership-scoped project fetch — the tenant isolation boundary.
 function projectAccess(userId, projectId) {
   return db.prepare(
-    `SELECT p.* FROM projects p
+    `SELECT p.*, m.role AS memberRole FROM projects p
      JOIN memberships m ON m.org_id = p.org_id
      WHERE p.id = ? AND m.user_id = ?`
   ).get(projectId, userId);
@@ -98,6 +117,9 @@ app.post('/api/projects', requireAuth, async (c) => {
     ? db.prepare('SELECT o.id FROM orgs o JOIN memberships m ON m.org_id = o.id WHERE o.id = ? AND m.user_id = ?').get(orgId, uid)
     : db.prepare('SELECT o.id FROM orgs o JOIN memberships m ON m.org_id = o.id WHERE m.user_id = ? ORDER BY o.id LIMIT 1').get(uid);
   if (!org) return c.json({ error: 'no accessible org' }, 400);
+  if (wouldExceed(db, getOrg(org.id), 'projects')) {
+    return c.json({ error: 'project limit reached on the Free plan', upgrade: true, limit: PLANS.free.limits.projects }, 402);
+  }
   const id = rowid(db.prepare('INSERT INTO projects(org_id,name,created_by) VALUES(?,?,?)').run(org.id, name, uid));
   return c.json({ id, name, version: 1 });
 });
@@ -113,6 +135,7 @@ app.put('/api/projects/:id', requireAuth, async (c) => {
   const id = c.req.param('id');
   const p = projectAccess(uid, id);
   if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden: viewer role is read-only' }, 403);
   const body = await c.req.json().catch(() => ({}));
   if (typeof body.version === 'number' && body.version !== p.version) {
     return c.json({ error: 'version conflict', current: p.version }, 409);
@@ -153,6 +176,153 @@ app.get('/api/projects/:id/stream', (c) => {
   });
 });
 
+// --------------------------------------------------------------- teams / RBAC
+// List members of an org (any member may view the roster).
+app.get('/api/orgs/:id/members', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (!orgRole(uid, orgId)) return c.json({ error: 'not found' }, 404);
+  const members = db.prepare(
+    `SELECT u.id, u.email, u.name, m.role FROM memberships m
+     JOIN users u ON u.id = m.user_id WHERE m.org_id = ? ORDER BY m.id`
+  ).all(orgId);
+  const invites = db.prepare(
+    `SELECT email, role, token, created_at AS createdAt FROM invites
+     WHERE org_id = ? AND accepted_at IS NULL ORDER BY id DESC`
+  ).all(orgId);
+  return c.json({ members, invites });
+});
+
+// Invite by email (owner/admin only). Returns the token (prod: email a link).
+app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  const role = orgRole(uid, orgId);
+  if (!role) return c.json({ error: 'not found' }, 404);
+  if (!canManage(role)) return c.json({ error: 'forbidden' }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const email = String(body.email || '').trim().toLowerCase();
+  const inviteRole = body.role || 'member';
+  if (!email) return c.json({ error: 'email required' }, 400);
+  if (!['admin', 'member', 'viewer'].includes(inviteRole)) return c.json({ error: 'invalid role' }, 400);
+  const token = randomBytes(24).toString('base64url');
+  db.prepare('INSERT INTO invites(org_id,email,role,token,invited_by) VALUES(?,?,?,?,?)')
+    .run(orgId, email, inviteRole, token, uid);
+  return c.json({ token, email, role: inviteRole });
+});
+
+// Accept an invite (any authenticated user holding the token). Idempotent.
+app.post('/api/invites/:token/accept', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const inv = db.prepare('SELECT * FROM invites WHERE token = ?').get(c.req.param('token'));
+  if (!inv || inv.accepted_at) return c.json({ error: 'invalid or used invite' }, 404);
+  const existing = orgRole(uid, inv.org_id);
+  if (!existing) {
+    if (wouldExceed(db, getOrg(inv.org_id), 'members')) {
+      return c.json({ error: 'member limit reached on the Free plan', upgrade: true, limit: PLANS.free.limits.members }, 402);
+    }
+    db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)').run(inv.org_id, uid, inv.role);
+  }
+  db.prepare("UPDATE invites SET accepted_at = datetime('now') WHERE id = ?").run(inv.id);
+  return c.json({ orgId: inv.org_id, role: existing || inv.role });
+});
+
+// Change a member's role (owner/admin). Cannot touch an owner or set owner.
+app.patch('/api/orgs/:id/members/:userId', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  const targetId = c.req.param('userId');
+  if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
+  const body = await c.req.json().catch(() => ({}));
+  const newRole = body.role;
+  if (!['admin', 'member', 'viewer'].includes(newRole)) return c.json({ error: 'invalid role' }, 400);
+  const target = db.prepare('SELECT role FROM memberships WHERE org_id = ? AND user_id = ?').get(orgId, targetId);
+  if (!target) return c.json({ error: 'not found' }, 404);
+  if (target.role === 'owner') return c.json({ error: 'cannot change owner role' }, 403);
+  db.prepare('UPDATE memberships SET role = ? WHERE org_id = ? AND user_id = ?').run(newRole, orgId, targetId);
+  return c.json({ userId: Number(targetId), role: newRole });
+});
+
+// Remove a member (owner/admin). Cannot remove an owner.
+app.delete('/api/orgs/:id/members/:userId', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  const targetId = c.req.param('userId');
+  if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
+  const target = db.prepare('SELECT role FROM memberships WHERE org_id = ? AND user_id = ?').get(orgId, targetId);
+  if (!target) return c.json({ error: 'not found' }, 404);
+  if (target.role === 'owner') return c.json({ error: 'cannot remove owner' }, 403);
+  db.prepare('DELETE FROM memberships WHERE org_id = ? AND user_id = ?').run(orgId, targetId);
+  return c.json({ ok: true });
+});
+
+// ------------------------------------------------------------------- billing
+app.get('/api/orgs/:id/billing', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (!orgRole(uid, orgId)) return c.json({ error: 'not found' }, 404);
+  const org = getOrg(orgId);
+  const plan = planOf(org);
+  return c.json({ plan: org.plan, planName: plan.name, priceKrw: plan.priceKrw, limits: plan.limits, usage: orgUsage(db, orgId) });
+});
+
+app.post('/api/orgs/:id/checkout', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (orgRole(uid, orgId) !== 'owner') return c.json({ error: 'only the owner can upgrade' }, 403);
+  const origin = new URL(c.req.url).origin;
+  const session = await createCheckout({ orgId, origin });
+  return c.json(session);
+});
+
+// Stripe webhook (stub). Live mode should verify the signature with
+// STRIPE_WEBHOOK_SECRET before trusting the event — named ceiling.
+app.post('/api/stripe/webhook', async (c) => {
+  const event = await c.req.json().catch(() => ({}));
+  if (event?.type === 'checkout.session.completed') {
+    const orgId = event.data?.object?.client_reference_id || event.data?.object?.metadata?.orgId;
+    if (orgId) db.prepare("UPDATE orgs SET plan = 'pro' WHERE id = ?").run(orgId);
+  }
+  return c.json({ received: true });
+});
+
+// Dev-only: simulate a successful checkout upgrading the org to Pro.
+// Disabled unless SCOPEWEAVE_DEV=1 (never reachable in production).
+app.post('/api/orgs/:id/_dev/activate-pro', requireAuth, (c) => {
+  if (process.env.SCOPEWEAVE_DEV !== '1') return c.json({ error: 'not found' }, 404);
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (orgRole(uid, orgId) !== 'owner') return c.json({ error: 'forbidden' }, 403);
+  db.prepare("UPDATE orgs SET plan = 'pro' WHERE id = ?").run(orgId);
+  return c.json({ plan: 'pro' });
+});
+
+// ------------------------------------------------- personal access tokens (PAT)
+app.get('/api/tokens', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const tokens = db.prepare(
+    'SELECT id, name, prefix, last_used AS lastUsed, created_at AS createdAt FROM api_tokens WHERE user_id = ? ORDER BY id DESC'
+  ).all(uid);
+  return c.json({ tokens }); // never the secret or hash
+});
+
+app.post('/api/tokens', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const { name } = await c.req.json().catch(() => ({}));
+  const t = generateApiToken();
+  const id = rowid(db.prepare('INSERT INTO api_tokens(user_id,name,token_hash,prefix) VALUES(?,?,?,?)')
+    .run(uid, String(name || 'token').slice(0, 60), t.hash, t.prefix));
+  // Full secret returned ONCE — never retrievable again.
+  return c.json({ id, name: name || 'token', prefix: t.prefix, token: t.full });
+});
+
+app.delete('/api/tokens/:id', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const info = db.prepare('DELETE FROM api_tokens WHERE id = ? AND user_id = ?').run(c.req.param('id'), uid);
+  if (!info.changes) return c.json({ error: 'not found' }, 404);
+  return c.json({ ok: true });
+});
+
 app.get('/api/health', (c) => c.json({ ok: true }));
 
 // Static client — strict allowlist so server/, data.db, package.json etc. are
@@ -161,8 +331,11 @@ const STATIC = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
   '/404.html': ['404.html', 'text/html; charset=utf-8'],
+  '/landing.html': ['landing.html', 'text/html; charset=utf-8'],
+  '/pricing': ['landing.html', 'text/html; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/cloud-sync.js': ['cloud-sync.js', 'text/javascript; charset=utf-8'],
+  '/analytics.js': ['analytics.js', 'text/javascript; charset=utf-8'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
   '/wbs.json': ['wbs.json', 'application/json; charset=utf-8'],
 };
