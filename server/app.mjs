@@ -7,6 +7,7 @@ import { randomBytes, createHmac, createHash } from 'node:crypto';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
+import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
 
@@ -211,9 +212,9 @@ app.post('/api/orgs', requireAuth, async (c) => {
 app.get('/api/projects', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const projects = db.prepare(
-    `SELECT p.id,p.name,p.base_date AS baseDate,p.version,p.org_id AS orgId,p.updated_at AS updatedAt
+    `SELECT p.id,p.name,p.base_date AS baseDate,p.version,p.org_id AS orgId,p.updated_at AS updatedAt,p.archived
      FROM projects p JOIN memberships m ON m.org_id = p.org_id
-     WHERE m.user_id = ? ORDER BY p.updated_at DESC`
+     WHERE m.user_id = ? ORDER BY p.archived ASC, p.updated_at DESC`
   ).all(uid);
   return c.json({ projects });
 });
@@ -238,7 +239,7 @@ app.post('/api/projects', requireAuth, async (c) => {
 app.get('/api/projects/:id', requireAuth, (c) => {
   const p = projectAccess(c.get('user').sub, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
-  return c.json({ id: p.id, name: p.name, baseDate: p.base_date, tasks: JSON.parse(p.tasks_json), version: p.version });
+  return c.json({ id: p.id, name: p.name, orgId: p.org_id, baseDate: p.base_date, tasks: JSON.parse(p.tasks_json), version: p.version });
 });
 
 app.put('/api/projects/:id', requireAuth, async (c) => {
@@ -351,6 +352,46 @@ app.post('/api/projects/:id/revisions/:version/restore', requireAuth, (c) => {
   logAudit(p.org_id, uid, 'project.restore', 'project', id, { from: Number(c.req.param('version')), version });
   broadcast(id, { type: 'update', version, by: uid });
   return c.json({ version });
+});
+
+// iCalendar feed: planned tasks as all-day VEVENTs — subscribable from
+// Google/Outlook. Calendar apps can't send headers, so accept ?token= (same
+// pattern + ceiling as /stream). PATs work via the Authorization header.
+app.get('/api/projects/:id/calendar.ics', (c) => {
+  const header = c.req.header('authorization') || '';
+  const raw = header.startsWith('Bearer ') ? header.slice(7) : (c.req.query('token') || '');
+  let uid;
+  if (raw.startsWith('swk_')) {
+    const row = db.prepare('SELECT user_id FROM api_tokens WHERE token_hash = ?').get(hashApiToken(raw));
+    if (!row) return c.json({ error: 'unauthorized' }, 401);
+    uid = row.user_id;
+  } else {
+    try { uid = verifyToken(raw).sub; } catch { return c.json({ error: 'unauthorized' }, 401); }
+  }
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  let tasks = [];
+  try { tasks = JSON.parse(p.tasks_json); } catch { /* empty */ }
+  const day = (s) => String(s).replaceAll('-', '');
+  const nextDay = (s) => { const d = new Date(s); d.setDate(d.getDate() + 1); return d.toISOString().slice(0, 10).replaceAll('-', ''); };
+  const esc = (s) => String(s).replace(/\\/g, '\\\\').replace(/[,;]/g, (m) => `\\${m}`).replace(/\n/g, '\\n');
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//ScopeWeave//KO', 'CALSCALE:GREGORIAN', `X-WR-CALNAME:${esc(p.name)}`];
+  for (const t of tasks) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(t.plannedStartDate || '') || !/^\d{4}-\d{2}-\d{2}$/.test(t.plannedEndDate || '')) continue;
+    lines.push(
+      'BEGIN:VEVENT',
+      `UID:scopeweave-${p.id}-${esc(t.id)}`,
+      `DTSTART;VALUE=DATE:${day(t.plannedStartDate)}`,
+      `DTEND;VALUE=DATE:${nextDay(t.plannedEndDate)}`, // DTEND is exclusive
+      `SUMMARY:${esc(t.name || t.task || t.id)}`,
+      'END:VEVENT'
+    );
+  }
+  lines.push('END:VCALENDAR');
+  return c.text(lines.join('\r\n') + '\r\n', 200, {
+    'content-type': 'text/calendar; charset=utf-8',
+    'content-disposition': `attachment; filename="scopeweave-${p.id}.ics"`,
+  });
 });
 
 app.get('/api/projects/:id/stream', (c) => {
@@ -605,6 +646,24 @@ app.get('/api/orgs/:id/audit', requireAuth, (c) => {
      WHERE a.org_id = ? ORDER BY a.id DESC LIMIT ?`
   ).all(orgId, limit);
   const events = rows.map((r) => ({ ...r, meta: r.meta ? JSON.parse(r.meta) : null }));
+  if (c.req.query('format') === 'csv') {
+    // Compliance deliverable. Formula-injection-safe: values starting with
+    // = + - @ are prefixed with ' so spreadsheets treat them as text.
+    const csvCell = (v) => {
+      let s = v == null ? '' : String(v);
+      if (/^[=+\-@]/.test(s)) s = `'${s}`;
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = ['id', 'createdAt', 'actorEmail', 'action', 'targetType', 'targetId', 'meta'];
+    const lines = [header.join(',')];
+    for (const e of events) {
+      lines.push([e.id, e.createdAt, e.actorEmail, e.action, e.targetType, e.targetId, e.meta ? JSON.stringify(e.meta) : ''].map(csvCell).join(','));
+    }
+    return c.text(lines.join('\r\n') + '\r\n', 200, {
+      'content-type': 'text/csv; charset=utf-8',
+      'content-disposition': `attachment; filename="scopeweave-audit-${orgId}.csv"`,
+    });
+  }
   return c.json({ events });
 });
 
@@ -839,6 +898,134 @@ app.get('/api/search', requireAuth, (c) => {
     if (results.length >= 20) break;
   }
   return c.json({ query: q, results });
+});
+
+// Portfolio dashboard: executive rollup across every project in a workspace —
+// weighted planned/actual progress, SPI + status, overdue-task counts.
+app.get('/api/orgs/:id/portfolio', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (!orgRole(uid, orgId)) return c.json({ error: 'not found' }, 404);
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = db.prepare(
+    'SELECT id, name, base_date AS baseDate, tasks_json, archived, updated_at AS updatedAt FROM projects WHERE org_id = ? ORDER BY archived ASC, updated_at DESC'
+  ).all(orgId);
+  const projects = rows.map((p) => {
+    let tasks = [];
+    try { tasks = JSON.parse(p.tasks_json); } catch { /* empty */ }
+    let wSum = 0, pv = 0, ev = 0, overdue = 0;
+    for (const t of tasks) {
+      const w = Number(t.weight) || 1;
+      wSum += w;
+      pv += w * ((Number(t.plannedProgress) || 0) / 100);
+      ev += w * ((Number(t.actualProgress) || 0) / 100);
+      if (t.plannedEndDate && t.plannedEndDate < today && (Number(t.actualProgress) || 0) < 100) overdue++;
+    }
+    const evm = computeEvm({ pv: wSum ? pv / wSum : 0, ev: wSum ? ev / wSum : 0 });
+    return {
+      id: p.id,
+      name: p.name,
+      archived: Boolean(p.archived),
+      tasks: tasks.length,
+      planned: Math.round(evm.pv * 1000) / 10,   // %
+      actual: Math.round(evm.ev * 1000) / 10,    // %
+      spi: evm.spi === null ? null : Math.round(evm.spi * 100) / 100,
+      status: evm.status,
+      label: evm.label,
+      overdue,
+      updatedAt: p.updatedAt,
+    };
+  });
+  return c.json({ projects });
+});
+
+// Public read-only share links: a random token grants VIEW access to one
+// project (no account needed) — revocable. Never exposes org/member data.
+app.post('/api/projects/:id/shares', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canManage(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const token = randomBytes(18).toString('base64url');
+  db.prepare('INSERT INTO share_tokens(project_id, token, created_by) VALUES(?,?,?)').run(p.id, token, uid);
+  logAudit(p.org_id, uid, 'share.create', 'project', p.id, {});
+  return c.json({ token, url: `/?share=${token}` });
+});
+
+app.get('/api/projects/:id/shares', requireAuth, (c) => {
+  const p = projectAccess(c.get('user').sub, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canManage(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const shares = db.prepare(
+    'SELECT id, token, created_at AS createdAt FROM share_tokens WHERE project_id = ? AND revoked = 0 ORDER BY id DESC'
+  ).all(p.id);
+  return c.json({ shares });
+});
+
+app.delete('/api/projects/:id/shares/:sid', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canManage(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const info = db.prepare('UPDATE share_tokens SET revoked = 1 WHERE id = ? AND project_id = ? AND revoked = 0')
+    .run(c.req.param('sid'), p.id);
+  if (!info.changes) return c.json({ error: 'not found' }, 404);
+  logAudit(p.org_id, uid, 'share.revoke', 'project', p.id, { shareId: Number(c.req.param('sid')) });
+  return c.json({ ok: true });
+});
+
+// Anonymous read via share token — project content only.
+app.get('/api/shared/:token', (c) => {
+  const row = db.prepare(
+    `SELECT p.name, p.base_date AS baseDate, p.tasks_json FROM share_tokens s
+     JOIN projects p ON p.id = s.project_id WHERE s.token = ? AND s.revoked = 0`
+  ).get(c.req.param('token'));
+  if (!row) return c.json({ error: 'not found' }, 404);
+  return c.json({ name: row.name, baseDate: row.baseDate, tasks: JSON.parse(row.tasks_json), readOnly: true });
+});
+
+// Unseen-activity notifications: per project, count others' saves + comments
+// newer than my last-seen mark. Opening a project marks it seen.
+app.get('/api/notifications', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const rows = db.prepare(
+    `SELECT p.id AS projectId,
+       (SELECT COUNT(*) FROM project_revisions r WHERE r.project_id = p.id
+          AND r.saved_by IS NOT NULL AND r.saved_by != ?
+          AND r.created_at > COALESCE(s.seen_at, '')) AS revisions,
+       (SELECT COUNT(*) FROM comments cm WHERE cm.project_id = p.id
+          AND cm.user_id IS NOT NULL AND cm.user_id != ?
+          AND cm.created_at > COALESCE(s.seen_at, '')) AS comments
+     FROM projects p
+     JOIN memberships m ON m.org_id = p.org_id AND m.user_id = ?
+     LEFT JOIN project_seen s ON s.project_id = p.id AND s.user_id = ?`
+  ).all(uid, uid, uid, uid);
+  const notifications = rows
+    .map((r) => ({ projectId: r.projectId, unseen: r.revisions + r.comments }))
+    .filter((r) => r.unseen > 0);
+  return c.json({ notifications });
+});
+
+app.post('/api/projects/:id/seen', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  db.prepare(`INSERT INTO project_seen(project_id, user_id, seen_at) VALUES(?, ?, datetime('now'))
+    ON CONFLICT(project_id, user_id) DO UPDATE SET seen_at = datetime('now')`).run(p.id, uid);
+  return c.json({ ok: true });
+});
+
+// Archive / restore a project (write roles): declutter without deleting.
+app.post('/api/projects/:id/archive', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const { archived } = await c.req.json().catch(() => ({}));
+  const flag = archived === false ? 0 : 1;
+  db.prepare('UPDATE projects SET archived = ? WHERE id = ?').run(flag, p.id);
+  logAudit(p.org_id, uid, flag ? 'project.archive' : 'project.unarchive', 'project', p.id, {});
+  return c.json({ id: p.id, archived: Boolean(flag) });
 });
 
 // Duplicate a project (template use: copy tasks + base date into a new project
