@@ -1,4 +1,4 @@
-name: Trivy Security Scan
+name: Scorecard Security Scan
 
 on:
   pull_request:
@@ -13,15 +13,17 @@ permissions:
   contents: read
 
 concurrency:
-  group: trivy-${{ github.event.pull_request.number || github.ref }}
+  group: scorecard-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: false
 
 jobs:
-  trivy:
-    name: trivy
+  scorecard:
+    name: scorecard
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: read
+      id-token: write
       security-events: write
     steps:
       - name: Checkout repository
@@ -30,20 +32,17 @@ jobs:
           persist-credentials: false
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
-      - name: Run Trivy filesystem scan
-        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+      - name: Run Scorecard
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
         with:
-          scan-type: fs
-          scan-ref: .
-          format: sarif
-          output: trivy-results.sarif
-          severity: MEDIUM,HIGH,CRITICAL
-          ignore-unfixed: true
-          exit-code: '0'
+          repo_token: ${{ github.token }}
+          results_file: scorecard-results.sarif
+          results_format: sarif
+          publish_results: false
 
-      - name: Upload Trivy SARIF
+      - name: Upload Scorecard SARIF
         if: ${{ always() }}
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
-          sarif_file: trivy-results.sarif
-          category: trivy
+          sarif_file: scorecard-results.sarif
+          category: scorecard
