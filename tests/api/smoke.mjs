@@ -469,6 +469,22 @@ assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, b
 assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, body: body({ password: 'password123' }) })).status, 200, 'account deleted');
 assert.equal((await req('/api/auth/login', { method: 'POST', body: body({ email: 'gone@x.com', password: 'password123' }) })).status, 401, 'deleted account cannot login');
 
+// ---- Task comments ----
+r = await req(`/api/projects/${proj.id}/comments`, { method: 'POST', headers: auth, body: body({ taskId: 's1', body: '이 작업 일정 확인 부탁' }) });
+assert.equal(r.status, 200, 'post comment');
+const cmt = await r.json();
+r = await req(`/api/projects/${proj.id}/comments?taskId=s1`, { headers: auth });
+const cms = (await r.json()).comments;
+assert.ok(cms.some((x) => x.id === cmt.id && x.body === '이 작업 일정 확인 부탁' && x.email), 'comment listed with author email');
+r = await req(`/api/projects/${proj.id}/comments`, { method: 'POST', headers: auth, body: body({ body: '' }) });
+assert.equal(r.status, 400, 'empty comment → 400');
+r = await req(`/api/projects/${proj.id}/comments`, { headers: oauth });
+assert.equal(r.status, 404, 'non-member comments → 404');
+r = await req(`/api/projects/${proj.id}/comments/${cmt.id}`, { method: 'DELETE', headers: auth });
+assert.equal(r.status, 200, 'author deletes own comment');
+r = await req(`/api/projects/${proj.id}/comments/${cmt.id}`, { method: 'DELETE', headers: auth });
+assert.equal(r.status, 404, 'double delete → 404');
+
 // ---- Logout everywhere (token_version revocation) ----
 r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'devices@x.com', password: 'password123' }) });
 const devTokA = (await r.json()).token;

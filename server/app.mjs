@@ -268,6 +268,49 @@ app.put('/api/projects/:id', requireAuth, async (c) => {
   return c.json({ version });
 });
 
+// Task comments: discussion bound to a project (optionally a task). All roles
+// can read; write roles can post; author or manage can delete.
+app.get('/api/projects/:id/comments', requireAuth, (c) => {
+  const p = projectAccess(c.get('user').sub, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  const taskId = c.req.query('taskId');
+  const comments = (taskId
+    ? db.prepare(`SELECT cm.id, cm.task_id AS taskId, cm.body, cm.created_at AS createdAt, cm.user_id AS userId, u.email
+        FROM comments cm LEFT JOIN users u ON u.id = cm.user_id
+        WHERE cm.project_id = ? AND cm.task_id = ? ORDER BY cm.id DESC LIMIT 100`).all(p.id, taskId)
+    : db.prepare(`SELECT cm.id, cm.task_id AS taskId, cm.body, cm.created_at AS createdAt, cm.user_id AS userId, u.email
+        FROM comments cm LEFT JOIN users u ON u.id = cm.user_id
+        WHERE cm.project_id = ? ORDER BY cm.id DESC LIMIT 100`).all(p.id));
+  return c.json({ comments });
+});
+
+app.post('/api/projects/:id/comments', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const { taskId, body } = await c.req.json().catch(() => ({}));
+  const text = String(body || '').trim();
+  if (!text) return c.json({ error: 'body required' }, 400);
+  if (text.length > 2000) return c.json({ error: 'comment too long (max 2000)' }, 400);
+  const cid = rowid(db.prepare('INSERT INTO comments(project_id,task_id,user_id,body) VALUES(?,?,?,?)')
+    .run(p.id, String(taskId || ''), uid, text));
+  logAudit(p.org_id, uid, 'comment.create', 'project', p.id, { commentId: cid, taskId: taskId || null });
+  broadcast(p.id, { type: 'comment', commentId: cid, by: uid });
+  return c.json({ id: cid });
+});
+
+app.delete('/api/projects/:id/comments/:cid', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  const cm = db.prepare('SELECT user_id FROM comments WHERE id = ? AND project_id = ?').get(c.req.param('cid'), p.id);
+  if (!cm) return c.json({ error: 'not found' }, 404);
+  if (cm.user_id !== uid && !canManage(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  db.prepare('DELETE FROM comments WHERE id = ?').run(c.req.param('cid'));
+  return c.json({ ok: true });
+});
+
 // Revision history: list, inspect, restore.
 app.get('/api/projects/:id/revisions', requireAuth, (c) => {
   const p = projectAccess(c.get('user').sub, c.req.param('id'));

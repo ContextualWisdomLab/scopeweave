@@ -278,6 +278,15 @@ function renderAuthUI() {
   search.addEventListener('click', openSearchModal);
   bar.appendChild(search);
 
+  if (getProjectId()) {
+    const cmt = document.createElement('button');
+    cmt.type = 'button';
+    cmt.className = 'secondary-button';
+    cmt.textContent = '코멘트';
+    cmt.addEventListener('click', () => openCommentsModal().catch((e) => toast(e.message || '코멘트를 불러오지 못했습니다.')));
+    bar.appendChild(cmt);
+  }
+
   const out = document.createElement('button');
   out.type = 'button';
   out.className = 'secondary-button';
@@ -364,6 +373,120 @@ async function resolveOrgId() {
   const me = await api('/api/me');
   currentOrgId = me.orgs?.[0]?.id || null;
   return currentOrgId;
+}
+
+// ------------------------------------------------------------- comments
+async function openCommentsModal() {
+  const pid = getProjectId();
+  if (!pid) return;
+  let modal = document.getElementById('comments-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'comments-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'comments-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#comments-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '코멘트';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '코멘트 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  // task filter (전체 or a specific task)
+  const sel = document.createElement('select');
+  sel.className = 'cloud-select';
+  const all = document.createElement('option');
+  all.value = '';
+  all.textContent = '전체 코멘트';
+  sel.appendChild(all);
+  for (const t of host?.getState?.()?.tasks || []) {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.name || t.task || t.id;
+    sel.appendChild(opt);
+  }
+  panel.appendChild(sel);
+
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  panel.appendChild(list);
+
+  const form = document.createElement('form');
+  form.className = 'cloud-form';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = '코멘트 입력 (선택한 작업에 달림)';
+  input.maxLength = 2000;
+  const send = document.createElement('button');
+  send.type = 'submit';
+  send.className = 'primary-button';
+  send.textContent = '등록';
+  form.append(input, send);
+  panel.appendChild(form);
+
+  const taskName = (id) => {
+    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
+    return t ? (t.name || t.task || id) : id;
+  };
+
+  async function refresh() {
+    list.textContent = '';
+    const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
+    const data = await api(`/api/projects/${pid}/comments${q}`);
+    if (!data.comments.length) {
+      const li = document.createElement('li');
+      li.textContent = '코멘트가 없습니다.';
+      list.appendChild(li);
+      return;
+    }
+    for (const cm of data.comments) {
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'team-who';
+      const where = cm.taskId ? ` [${taskName(cm.taskId)}]` : '';
+      who.textContent = `${cm.email || '알 수 없음'}${where}: ${cm.body}`;
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'secondary-button team-remove';
+      del.textContent = '삭제';
+      del.addEventListener('click', () =>
+        api(`/api/projects/${pid}/comments/${cm.id}`, { method: 'DELETE' })
+          .then(refresh).catch((e) => toast(e.data?.error || e.message)));
+      li.append(who, del);
+      list.appendChild(li);
+    }
+  }
+  sel.addEventListener('change', refresh);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!input.value.trim()) return;
+    try {
+      await api(`/api/projects/${pid}/comments`, { method: 'POST', body: { taskId: sel.value, body: input.value.trim() } });
+      input.value = '';
+      refresh();
+    } catch (err) { toast(err.data?.error || err.message); }
+  });
+  await refresh();
 }
 
 // ------------------------------------------------------------- search
