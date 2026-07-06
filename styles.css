@@ -881,3 +881,141 @@ select[data-inline-progress]:focus {
   margin: 0;
   line-height: 1.5;
 }
+
+/* Cloud sync auth UI (SaaS overlay) */
+.title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.cloud-auth {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+.cloud-select {
+  font: inherit;
+  font-size: 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  max-width: 220px;
+}
+.cloud-panel {
+  max-width: 420px;
+  width: 100%;
+}
+.cloud-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 8px 4px 4px;
+}
+.cloud-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 4px;
+}
+.cloud-actions .primary-button {
+  flex: 1;
+}
+.cloud-error {
+  color: var(--danger);
+  font-size: 13px;
+  min-height: 18px;
+  margin: 0;
+}
+.cloud-name-field.hidden {
+  display: none;
+}
+
+/* EVM / S-curve analytics panel (schedule-control moat) */
+.evm-panel {
+  margin-top: 12px;
+  padding: 16px 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-sm);
+}
+.evm-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 20px;
+}
+.evm-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.evm-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.evm-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text);
+}
+.evm-metric.evm-active .evm-value { color: var(--status-active); }
+.evm-metric.evm-delay .evm-value { color: var(--status-delay); }
+.evm-metric.evm-before .evm-value { color: var(--text-muted); }
+.evm-badge {
+  margin-left: auto;
+  padding: 5px 12px;
+  border-radius: var(--radius-badge);
+  font-size: 13px;
+  font-weight: 700;
+  color: #ffffff;
+}
+.evm-badge.evm-active { background: var(--status-active); }
+.evm-badge.evm-delay { background: var(--status-delay); }
+.evm-badge.evm-before { background: var(--status-before); }
+.evm-scurve-wrap { margin-top: 14px; }
+.evm-scurve {
+  width: 100%;
+  height: 120px;
+  display: block;
+}
+.evm-grid { stroke: var(--border); stroke-width: 1; }
+.evm-plan-line { fill: none; stroke: var(--gantt-plan); stroke-width: 2; }
+.evm-today { stroke: var(--border-strong); stroke-width: 1; stroke-dasharray: 3 3; }
+.evm-ev-dot { fill: var(--gantt-actual); }
+.evm-ev-dot.evm-delay { fill: var(--status-delay); }
+.evm-caption {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+/* Team / RBAC panel */
+.team-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.team-list li { display: flex; align-items: center; gap: 8px; }
+.team-who { flex: 1; font-size: 14px; color: var(--text); overflow: hidden; text-overflow: ellipsis; }
+.team-role-tag { font-size: 12px; font-weight: 700; color: var(--status-active); padding: 4px 10px; }
+.team-remove { padding: 6px 10px; font-size: 13px; }
+.team-invite { display: flex; gap: 8px; align-items: center; margin-top: 8px; }
+.team-invite input { flex: 1; font: inherit; font-size: 14px; padding: 8px 12px; border: 1px solid var(--border-strong); border-radius: var(--radius-sm); }
+.team-pending { font-size: 12px; color: var(--text-muted); margin: 8px 0 0; }
+
+/* Billing / plan indicator */
+.billing-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; margin-bottom: 14px; background: var(--surface-depth-3); border-radius: var(--radius-sm); font-size: 13px; font-weight: 600; color: var(--text); }
+.billing-upgrade { padding: 6px 14px; font-size: 13px; }
+
+/* CPM critical path */
+.cpm-summary { margin: 12px 0 0; font-size: 13px; font-weight: 600; color: var(--status-delay); }
+.cpm-summary.cpm-warn { color: var(--danger); }
+tbody tr.cpm-critical > td:first-child { box-shadow: inset 3px 0 0 0 var(--status-delay); }
+tbody tr.cpm-critical { background: rgba(234, 88, 12, 0.04); }
+
+/* API token section */
+.token-section { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); }
+.token-heading { margin: 0 0 10px; font-size: 15px; font-weight: 700; color: var(--text); }
+.token-secret { margin: 10px 0 0; padding: 8px 10px; font-size: 12px; word-break: break-all; color: var(--status-active); background: var(--surface-depth-3); border-radius: var(--radius-sm); }
+.token-secret:empty { display: none; }

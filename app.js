@@ -49,7 +49,8 @@ const EDITABLE_FIELDS = [
   'plannedEndDate',
   'actualProgressStatus',
   'actualStartDate',
-  'actualEndDate'
+  'actualEndDate',
+  'predecessors'
 ];
 
 const CSV_HEADERS = [
@@ -75,7 +76,8 @@ const CSV_HEADERS = [
   '가중치실적진척률',
   '__id',
   '__parentId',
-  '__depth'
+  '__depth',
+  '선행작업'
 ];
 const CSV_FORMULA_PREFIX_PATTERN = /^\s*[=+\-@|]/;
 const UNSAFE_JSON_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -93,7 +95,8 @@ const CSV_FIELD_LABELS = Object.freeze(Object.assign(Object.create(null), {
   plannedEndDate: '계획종료일',
   actualProgressStatus: '실적진척상태',
   actualStartDate: '실적시작일',
-  actualEndDate: '실적종료일'
+  actualEndDate: '실적종료일',
+  predecessors: '선행작업'
 }));
 
 const EDITOR_FIELD_TEST_IDS = Object.freeze(Object.assign(Object.create(null), {
@@ -108,7 +111,8 @@ const EDITOR_FIELD_TEST_IDS = Object.freeze(Object.assign(Object.create(null), {
   plannedStartDate: 'editor-planned-start',
   plannedEndDate: 'editor-planned-end',
   actualStartDate: 'editor-actual-start',
-  actualEndDate: 'editor-actual-end'
+  actualEndDate: 'editor-actual-end',
+  predecessors: 'editor-predecessors'
 }));
 
 const LEGACY_PLANNED_END_FIELD = 'plannedEnd' + 'Ddate';
@@ -184,13 +188,26 @@ async function bootstrap() {
     elements.connectJsonSyncButton.title = '이 브라우저는 wbs.json 직접 저장 연결을 지원하지 않습니다.';
   }
 
-  const savedState = loadLocalState();
-  if (savedState) {
-    hydrateState(savedState);
+  // Optional cloud overlay (loaded as a separate module; undefined offline).
+  const cloudApi = typeof window !== 'undefined' ? window.ScopeWeaveCloud : null;
+  cloudApi?.init?.({
+    hydrateState,
+    renderAll,
+    getState: () => ({ projectName: state.projectName, baseDate: state.baseDate, tasks: state.tasks }),
+  });
+
+  const cloudState = cloudApi ? await cloudApi.boot() : null;
+  if (cloudState) {
+    hydrateState(cloudState);
   } else {
-    const seedData = await loadSeedTasks();
-    state.tasks = normalizeImportedTasks(seedData);
-    invalidateTaskIndexCache();
+    const savedState = loadLocalState();
+    if (savedState) {
+      hydrateState(savedState);
+    } else {
+      const seedData = await loadSeedTasks();
+      state.tasks = normalizeImportedTasks(seedData);
+      invalidateTaskIndexCache();
+    }
   }
 
   renderAll();
@@ -426,6 +443,18 @@ function renderAll() {
   elements.plannedProgress.textContent = formatPercent(metrics.totalWeightedPlannedRatio * 100, 2);
   elements.actualProgress.textContent = formatPercent(metrics.totalWeightedActualRatio * 100, 2);
   elements.syncStatus.textContent = state.jsonSyncHandle ? '연결된 wbs.json 파일에 자동저장 중' : '브라우저 로컬 자동저장 사용 중';
+
+  if (typeof window !== 'undefined') {
+    window.ScopeWeaveAnalytics?.render?.({
+      pv: metrics.totalWeightedPlannedRatio,
+      ev: metrics.totalWeightedActualRatio,
+      tasks: state.tasks,
+      baseDate: state.baseDate,
+      calcPlannedRatio: calculatePlannedProgressRatio,
+      calcDuration: calculateDurationDays,
+      buildTimeline: buildWeekdayTimeline,
+    });
+  }
 
   const ownerColorMap = createOwnerColorMap();
   const visibleTasks = getVisibleTasks();
@@ -670,7 +699,8 @@ function renderEditorRow(anchorId) {
     renderEditorField('계획종료일', 'plannedEndDate', draft.plannedEndDate, 'date'),
     renderEditorSelectField('실적진척상태', 'actualProgressStatus', draft.actualProgressStatus, ACTUAL_PROGRESS_OPTIONS),
     renderEditorField('실적시작일', 'actualStartDate', draft.actualStartDate, 'date'),
-    renderEditorField('실적종료일', 'actualEndDate', draft.actualEndDate, 'date')
+    renderEditorField('실적종료일', 'actualEndDate', draft.actualEndDate, 'date'),
+    renderEditorField('선행작업', 'predecessors', draft.predecessors, 'text', false, '예: P1000,P2000 (선행 작업 ID/코드, 쉼표 구분)')
   ].forEach((field) => editorGrid.appendChild(field));
 
   const editorActions = document.createElement('div');
@@ -1082,6 +1112,7 @@ function createEmptyTaskDraft() {
     actualProgressStatus: '미착수(0%)',
     actualStartDate: '',
     actualEndDate: '',
+    predecessors: '',
     isSynthetic: false
   };
 }
@@ -1438,6 +1469,10 @@ function persistState() {
       showToast('연결된 wbs.json 파일 저장에 실패했습니다.');
     });
   }
+
+  if (typeof window !== 'undefined') {
+    window.ScopeWeaveCloud?.push?.(payload);
+  }
 }
 
 function loadLocalState() {
@@ -1561,7 +1596,8 @@ const createNormalizedExternalRecord = (task, defaults = {}) => ({
   plannedEndDate: getPlannedEndDateValue(task),
   actualProgressStatus: ACTUAL_PROGRESS_MAP[task.actualProgressStatus] !== undefined ? task.actualProgressStatus : '미착수(0%)',
   actualStartDate: task.actualStartDate || '',
-  actualEndDate: task.actualEndDate || ''
+  actualEndDate: task.actualEndDate || '',
+  predecessors: task.predecessors || defaults.predecessors || ''
 });
 
 function getPhaseKey(task, index) {
@@ -1705,7 +1741,8 @@ function exportCsv() {
       formatPercent(taskMetrics.weightedActualRatio * 100, 2),
       task.id,
       task.parentId || '',
-      task.depth
+      task.depth,
+      task.predecessors || ''
     ];
   });
 
@@ -1878,6 +1915,7 @@ function parseCsv(text) {
     actualProgressStatus: validateCsvCell(readCsvCell(cells, headerMap, '실적진척상태') || '미착수(0%)', 'actualProgressStatus'),
     actualStartDate: validateCsvCell(readCsvCell(cells, headerMap, '실적시작일'), 'actualStartDate'),
     actualEndDate: validateCsvCell(readCsvCell(cells, headerMap, '실적종료일'), 'actualEndDate'),
+    predecessors: validateCsvCell(readCsvCell(cells, headerMap, '선행작업'), 'predecessors'),
     __id: validateCsvId(readCsvCell(cells, headerMap, '__id')),
     __parentId: validateCsvParentId(readCsvCell(cells, headerMap, '__parentId')),
     __depth: validateCsvDepth(readCsvCell(cells, headerMap, '__depth'))
