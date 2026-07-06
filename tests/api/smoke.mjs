@@ -528,6 +528,25 @@ assert.equal(r.status, 200, 'author deletes own comment');
 r = await req(`/api/projects/${proj.id}/comments/${cmt.id}`, { method: 'DELETE', headers: auth });
 assert.equal(r.status, 404, 'double delete → 404');
 
+// ---- Portfolio dashboard (org rollup) ----
+r = await req(`/api/orgs/${orgAId}/portfolio`, { headers: auth });
+assert.equal(r.status, 200, 'portfolio 200');
+const port = (await r.json()).projects;
+const portMain = port.find((p) => p.id === proj.id);
+assert.ok(portMain, 'main project in the rollup');
+assert.ok(typeof portMain.planned === 'number' && typeof portMain.actual === 'number', 'weighted % present');
+assert.ok(['before', 'active', 'delay'].includes(portMain.status), 'evm status present');
+assert.ok(typeof portMain.overdue === 'number', 'overdue count present');
+// seeded past-due task shows up as overdue
+const poV = (await (await req(`/api/projects/${proj.id}`, { headers: auth })).json()).version;
+await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: auth, body: body({ tasks: [{ id: 'od1', name: '지연작업', plannedStartDate: '2020-01-01', plannedEndDate: '2020-01-05', plannedProgress: 100, actualProgress: 30, weight: 2 }], version: poV }) });
+r = await req(`/api/orgs/${orgAId}/portfolio`, { headers: auth });
+const portAfter = (await r.json()).projects.find((p) => p.id === proj.id);
+assert.equal(portAfter.overdue, 1, 'past-due incomplete task counted overdue');
+assert.equal(portAfter.status, 'delay', 'SPI 0.3 → delay');
+r = await req(`/api/orgs/${orgAId}/portfolio`, { headers: oauth });
+assert.equal(r.status, 404, 'non-member portfolio → 404');
+
 // ---- Unseen-activity notifications ----
 r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'notif@x.com', password: 'password123' }) });
 const nAuth = { authorization: `Bearer ${(await r.json()).token}` };

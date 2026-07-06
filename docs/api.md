@@ -101,6 +101,7 @@ snapshot as a **new** version — history stays linear.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| `GET` | `/api/orgs/:id/portfolio` | Executive rollup: per-project weighted plan/actual %, SPI + status, overdue counts |
 | `GET` | `/api/orgs/:id/billing` | Plan, limits, usage |
 | `POST` | `/api/orgs/:id/checkout` | Start a Pro checkout (Stripe when configured; mock URL otherwise) |
 

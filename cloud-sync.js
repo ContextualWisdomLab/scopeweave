@@ -60,8 +60,7 @@ function subscribe(id) {
 async function openProject(id, { silent = false } = {}) {
   const p = await api(`/api/projects/${id}`);
   setProjectId(id);
-  const meta = projectsCache.find((x) => String(x.id) === String(id));
-  if (meta) currentOrgId = meta.orgId;
+  currentOrgId = p.orgId || projectsCache.find((x) => String(x.id) === String(id))?.orgId || currentOrgId;
   version = p.version;
   host?.hydrateState({ projectName: p.name, baseDate: p.baseDate, tasks: p.tasks });
   host?.renderAll();
@@ -104,6 +103,7 @@ export const cloud = {
     try {
       const p = await api(`/api/projects/${getProjectId()}`);
       version = p.version;
+      currentOrgId = p.orgId || currentOrgId; // team/dashboard need the org right after reload
       subscribe(p.id);
       renderAuthUI();
       return { projectName: p.name, baseDate: p.baseDate, tasks: p.tasks };
@@ -262,6 +262,13 @@ function renderAuthUI() {
   newBtn.addEventListener('click', createProjectFlow);
   bar.appendChild(newBtn);
 
+  const dash = document.createElement('button');
+  dash.type = 'button';
+  dash.className = 'secondary-button';
+  dash.textContent = '대시보드';
+  dash.addEventListener('click', () => openPortfolioModal().catch((e) => toast(e.message || '대시보드를 불러오지 못했습니다.')));
+  bar.appendChild(dash);
+
   const team = document.createElement('button');
   team.type = 'button';
   team.className = 'secondary-button';
@@ -411,6 +418,97 @@ async function resolveOrgId() {
   const me = await api('/api/me');
   currentOrgId = me.orgs?.[0]?.id || null;
   return currentOrgId;
+}
+
+// ------------------------------------------------------------- portfolio
+// Executive rollup: every project's weighted progress, SPI, and overdue count.
+async function openPortfolioModal() {
+  if (!currentOrgId) { toast('워크스페이스를 먼저 선택하세요.'); return; }
+  let modal = document.getElementById('portfolio-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'portfolio-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'portfolio-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#portfolio-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '포트폴리오 대시보드';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '대시보드 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  const data = await api(`/api/orgs/${currentOrgId}/portfolio`);
+  const active = data.projects.filter((p) => !p.archived);
+  if (!active.length) {
+    const p = document.createElement('p');
+    p.textContent = '프로젝트가 없습니다.';
+    panel.appendChild(p);
+    return;
+  }
+  const summary = document.createElement('p');
+  const late = active.filter((p) => p.status === 'delay').length;
+  const totOverdue = active.reduce((n, p) => n + p.overdue, 0);
+  summary.textContent = `프로젝트 ${active.length}개 · 주의/지연 ${late}개 · 지연 작업 합계 ${totOverdue}건`;
+  panel.appendChild(summary);
+
+  const wrap = document.createElement('div');
+  wrap.style.overflowX = 'auto';
+  const table = document.createElement('table');
+  table.className = 'wbs-table';
+  const thead = document.createElement('thead');
+  const hr = document.createElement('tr');
+  for (const t of ['프로젝트', '작업', '계획%', '실적%', 'SPI', '상태', '지연', '']) {
+    const th = document.createElement('th');
+    th.textContent = t;
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  const tbody = document.createElement('tbody');
+  for (const p of active) {
+    const tr = document.createElement('tr');
+    const cells = [p.name, String(p.tasks), `${p.planned}%`, `${p.actual}%`, p.spi === null ? '-' : p.spi.toFixed(2), p.label, p.overdue ? `${p.overdue}건` : '-'];
+    for (const cText of cells) {
+      const td = document.createElement('td');
+      td.textContent = cText;
+      tr.appendChild(td);
+    }
+    if (p.status === 'delay') tr.style.color = 'var(--delay, #ea580c)';
+    const td = document.createElement('td');
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'secondary-button';
+    open.textContent = '열기';
+    open.addEventListener('click', async () => {
+      modal.classList.add('hidden');
+      await openProject(p.id).catch((err) => toast(err.message));
+    });
+    td.appendChild(open);
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  }
+  table.append(thead, tbody);
+  wrap.appendChild(table);
+  panel.appendChild(wrap);
 }
 
 // ------------------------------------------------------------- comments

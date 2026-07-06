@@ -7,6 +7,7 @@ import { randomBytes, createHmac, createHash } from 'node:crypto';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
+import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
 
@@ -238,7 +239,7 @@ app.post('/api/projects', requireAuth, async (c) => {
 app.get('/api/projects/:id', requireAuth, (c) => {
   const p = projectAccess(c.get('user').sub, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
-  return c.json({ id: p.id, name: p.name, baseDate: p.base_date, tasks: JSON.parse(p.tasks_json), version: p.version });
+  return c.json({ id: p.id, name: p.name, orgId: p.org_id, baseDate: p.base_date, tasks: JSON.parse(p.tasks_json), version: p.version });
 });
 
 app.put('/api/projects/:id', requireAuth, async (c) => {
@@ -897,6 +898,45 @@ app.get('/api/search', requireAuth, (c) => {
     if (results.length >= 20) break;
   }
   return c.json({ query: q, results });
+});
+
+// Portfolio dashboard: executive rollup across every project in a workspace —
+// weighted planned/actual progress, SPI + status, overdue-task counts.
+app.get('/api/orgs/:id/portfolio', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (!orgRole(uid, orgId)) return c.json({ error: 'not found' }, 404);
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = db.prepare(
+    'SELECT id, name, base_date AS baseDate, tasks_json, archived, updated_at AS updatedAt FROM projects WHERE org_id = ? ORDER BY archived ASC, updated_at DESC'
+  ).all(orgId);
+  const projects = rows.map((p) => {
+    let tasks = [];
+    try { tasks = JSON.parse(p.tasks_json); } catch { /* empty */ }
+    let wSum = 0, pv = 0, ev = 0, overdue = 0;
+    for (const t of tasks) {
+      const w = Number(t.weight) || 1;
+      wSum += w;
+      pv += w * ((Number(t.plannedProgress) || 0) / 100);
+      ev += w * ((Number(t.actualProgress) || 0) / 100);
+      if (t.plannedEndDate && t.plannedEndDate < today && (Number(t.actualProgress) || 0) < 100) overdue++;
+    }
+    const evm = computeEvm({ pv: wSum ? pv / wSum : 0, ev: wSum ? ev / wSum : 0 });
+    return {
+      id: p.id,
+      name: p.name,
+      archived: Boolean(p.archived),
+      tasks: tasks.length,
+      planned: Math.round(evm.pv * 1000) / 10,   // %
+      actual: Math.round(evm.ev * 1000) / 10,    // %
+      spi: evm.spi === null ? null : Math.round(evm.spi * 100) / 100,
+      status: evm.status,
+      label: evm.label,
+      overdue,
+      updatedAt: p.updatedAt,
+    };
+  });
+  return c.json({ projects });
 });
 
 // Unseen-activity notifications: per project, count others' saves + comments
