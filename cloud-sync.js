@@ -1719,6 +1719,70 @@ if (typeof window !== 'undefined' && location.hash.startsWith('#token=')) {
     setToken(t);
     history.replaceState(null, '', location.pathname + location.search);
   }
+
+  await renderTokens(body);
+}
+
+// Personal Access Tokens — create/list/revoke, secret shown once.
+async function renderTokens(body) {
+  const section = document.createElement('div');
+  section.className = 'token-section';
+  const h = document.createElement('h3');
+  h.className = 'token-heading';
+  h.textContent = 'API 토큰';
+  section.appendChild(h);
+
+  let data;
+  try { data = await api('/api/tokens'); } catch { return; }
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  for (const t of data.tokens) {
+    const li = document.createElement('li');
+    const who = document.createElement('span');
+    who.className = 'team-who';
+    who.textContent = `${t.name} · ${t.prefix}… ${t.lastUsed ? '· 최근 사용 ' + t.lastUsed.slice(0, 10) : '· 미사용'}`;
+    li.appendChild(who);
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'secondary-button team-remove';
+    del.textContent = '폐기';
+    del.addEventListener('click', () =>
+      api(`/api/tokens/${t.id}`, { method: 'DELETE' }).then(() => { toast('토큰을 폐기했습니다.'); renderTeam(); }).catch((e) => toast(e.message)));
+    li.appendChild(del);
+    list.appendChild(li);
+  }
+  section.appendChild(list);
+
+  const form = document.createElement('form');
+  form.className = 'team-invite';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = '토큰 이름 (예: CI, Zapier)';
+  const btn = document.createElement('button');
+  btn.type = 'submit';
+  btn.className = 'primary-button';
+  btn.textContent = '토큰 생성';
+  form.append(input, btn);
+  const secret = document.createElement('p');
+  secret.className = 'token-secret';
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const t = await api('/api/tokens', { method: 'POST', body: { name: input.value.trim() || 'token' } });
+      secret.textContent = `한 번만 표시됩니다 — 지금 복사하세요: ${t.token}`;
+      input.value = '';
+      // append the new token to the list without wiping the shown secret
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'team-who';
+      who.textContent = `${t.name} · ${t.prefix}… · 미사용`;
+      li.appendChild(who);
+      list.appendChild(li);
+    } catch (err) { toast(err.data?.error || err.message); }
+  });
+  section.appendChild(form);
+  section.appendChild(secret);
+  body.appendChild(section);
 }
 
 // Auto-accept an invite token from the URL (?invite=...) once logged in.
