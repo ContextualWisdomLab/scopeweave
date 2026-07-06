@@ -211,9 +211,9 @@ app.post('/api/orgs', requireAuth, async (c) => {
 app.get('/api/projects', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const projects = db.prepare(
-    `SELECT p.id,p.name,p.base_date AS baseDate,p.version,p.org_id AS orgId,p.updated_at AS updatedAt
+    `SELECT p.id,p.name,p.base_date AS baseDate,p.version,p.org_id AS orgId,p.updated_at AS updatedAt,p.archived
      FROM projects p JOIN memberships m ON m.org_id = p.org_id
-     WHERE m.user_id = ? ORDER BY p.updated_at DESC`
+     WHERE m.user_id = ? ORDER BY p.archived ASC, p.updated_at DESC`
   ).all(uid);
   return c.json({ projects });
 });
@@ -879,6 +879,19 @@ app.get('/api/search', requireAuth, (c) => {
     if (results.length >= 20) break;
   }
   return c.json({ query: q, results });
+});
+
+// Archive / restore a project (write roles): declutter without deleting.
+app.post('/api/projects/:id/archive', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const { archived } = await c.req.json().catch(() => ({}));
+  const flag = archived === false ? 0 : 1;
+  db.prepare('UPDATE projects SET archived = ? WHERE id = ?').run(flag, p.id);
+  logAudit(p.org_id, uid, flag ? 'project.archive' : 'project.unarchive', 'project', p.id, {});
+  return c.json({ id: p.id, archived: Boolean(flag) });
 });
 
 // Duplicate a project (template use: copy tasks + base date into a new project

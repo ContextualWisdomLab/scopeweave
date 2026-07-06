@@ -222,12 +222,25 @@ function renderAuthUI() {
   ph.value = '';
   ph.textContent = projectsCache.length ? '프로젝트 선택…' : '프로젝트 없음';
   select.appendChild(ph);
-  for (const p of projectsCache) {
+  for (const p of projectsCache.filter((x) => !x.archived)) {
     const opt = document.createElement('option');
     opt.value = String(p.id);
     opt.textContent = p.name; // textContent → XSS-safe
     if (String(p.id) === String(openId)) opt.selected = true;
     select.appendChild(opt);
+  }
+  const archivedProjects = projectsCache.filter((x) => x.archived);
+  if (archivedProjects.length) {
+    const group = document.createElement('optgroup');
+    group.label = '보관됨';
+    for (const p of archivedProjects) {
+      const opt = document.createElement('option');
+      opt.value = String(p.id);
+      opt.textContent = `📦 ${p.name}`;
+      if (String(p.id) === String(openId)) opt.selected = true;
+      group.appendChild(opt);
+    }
+    select.appendChild(group);
   }
   select.addEventListener('change', () => { if (select.value) openProject(select.value).catch((e) => toast(e.message)); });
   bar.appendChild(select);
@@ -269,6 +282,21 @@ function renderAuthUI() {
       } catch (err) { toast(err.data?.error || err.message); }
     });
     bar.appendChild(dup);
+
+    const cur = projectsCache.find((x) => String(x.id) === String(getProjectId()));
+    const arch = document.createElement('button');
+    arch.type = 'button';
+    arch.className = 'secondary-button';
+    arch.textContent = cur?.archived ? '보관 해제' : '보관';
+    arch.addEventListener('click', async () => {
+      try {
+        const res = await api(`/api/projects/${getProjectId()}/archive`, { method: 'POST', body: { archived: !cur?.archived } });
+        await refreshProjects();
+        renderAuthUI();
+        toast(res.archived ? '프로젝트를 보관했습니다.' : '보관을 해제했습니다.');
+      } catch (err) { toast(err.data?.error || err.message); }
+    });
+    bar.appendChild(arch);
   }
 
   const search = document.createElement('button');

@@ -489,6 +489,18 @@ assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, b
 assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, body: body({ password: 'password123' }) })).status, 200, 'account deleted');
 assert.equal((await req('/api/auth/login', { method: 'POST', body: body({ email: 'gone@x.com', password: 'password123' }) })).status, 401, 'deleted account cannot login');
 
+// ---- Archive / restore ----
+r = await req(`/api/projects/${proj.id}/archive`, { method: 'POST', headers: auth, body: body({ archived: true }) });
+assert.equal(r.status, 200, 'archive ok');
+assert.equal((await r.json()).archived, true);
+r = await req('/api/projects', { headers: auth });
+const archListed = (await r.json()).projects.find((p) => p.id === proj.id);
+assert.equal(archListed.archived, 1, 'list carries archived flag');
+r = await req(`/api/projects/${proj.id}/archive`, { method: 'POST', headers: oauth, body: body({ archived: false }) });
+assert.equal(r.status, 404, 'non-member archive → 404');
+r = await req(`/api/projects/${proj.id}/archive`, { method: 'POST', headers: auth, body: body({ archived: false }) });
+assert.equal((await r.json()).archived, false, 'restore ok');
+
 // ---- Task comments ----
 r = await req(`/api/projects/${proj.id}/comments`, { method: 'POST', headers: auth, body: body({ taskId: 's1', body: '이 작업 일정 확인 부탁' }) });
 assert.equal(r.status, 200, 'post comment');
