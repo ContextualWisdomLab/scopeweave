@@ -10,6 +10,14 @@ import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
 
+// Append-only audit trail. Never throws into the request path.
+function logAudit(orgId, userId, action, targetType, targetId, meta) {
+  try {
+    db.prepare('INSERT INTO audit_log(org_id,user_id,action,target_type,target_id,meta) VALUES(?,?,?,?,?,?)')
+      .run(orgId, userId ?? null, action, targetType ?? null, targetId != null ? String(targetId) : null, meta ? JSON.stringify(meta) : null);
+  } catch { /* audit must not break the operation */ }
+}
+
 // --- RBAC. Roles (highest→lowest): owner > admin > member > viewer.
 const ROLES = ['owner', 'admin', 'member', 'viewer'];
 const orgRole = (userId, orgId) =>
@@ -121,6 +129,7 @@ app.post('/api/projects', requireAuth, async (c) => {
     return c.json({ error: 'project limit reached on the Free plan', upgrade: true, limit: PLANS.free.limits.projects }, 402);
   }
   const id = rowid(db.prepare('INSERT INTO projects(org_id,name,created_by) VALUES(?,?,?)').run(org.id, name, uid));
+  logAudit(org.id, uid, 'project.create', 'project', id, { name });
   return c.json({ id, name, version: 1 });
 });
 
@@ -145,6 +154,7 @@ app.put('/api/projects/:id', requireAuth, async (c) => {
   db.prepare(
     "UPDATE projects SET name=?, base_date=?, tasks_json=?, version=?, updated_at=datetime('now') WHERE id=?"
   ).run(body.name ?? p.name, body.baseDate ?? p.base_date, JSON.stringify(tasks), version, id);
+  logAudit(p.org_id, uid, 'project.update', 'project', id, { version, tasks: tasks.length });
   broadcast(id, { type: 'update', version, by: uid });
   return c.json({ version });
 });
@@ -208,6 +218,7 @@ app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
   const token = randomBytes(24).toString('base64url');
   db.prepare('INSERT INTO invites(org_id,email,role,token,invited_by) VALUES(?,?,?,?,?)')
     .run(orgId, email, inviteRole, token, uid);
+  logAudit(orgId, uid, 'member.invite', 'invite', email, { role: inviteRole });
   return c.json({ token, email, role: inviteRole });
 });
 
@@ -222,6 +233,7 @@ app.post('/api/invites/:token/accept', requireAuth, (c) => {
       return c.json({ error: 'member limit reached on the Free plan', upgrade: true, limit: PLANS.free.limits.members }, 402);
     }
     db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)').run(inv.org_id, uid, inv.role);
+    logAudit(inv.org_id, uid, 'member.join', 'user', uid, { role: inv.role });
   }
   db.prepare("UPDATE invites SET accepted_at = datetime('now') WHERE id = ?").run(inv.id);
   return c.json({ orgId: inv.org_id, role: existing || inv.role });
@@ -240,6 +252,7 @@ app.patch('/api/orgs/:id/members/:userId', requireAuth, async (c) => {
   if (!target) return c.json({ error: 'not found' }, 404);
   if (target.role === 'owner') return c.json({ error: 'cannot change owner role' }, 403);
   db.prepare('UPDATE memberships SET role = ? WHERE org_id = ? AND user_id = ?').run(newRole, orgId, targetId);
+  logAudit(orgId, uid, 'member.role_change', 'user', targetId, { from: target.role, to: newRole });
   return c.json({ userId: Number(targetId), role: newRole });
 });
 
@@ -253,6 +266,7 @@ app.delete('/api/orgs/:id/members/:userId', requireAuth, (c) => {
   if (!target) return c.json({ error: 'not found' }, 404);
   if (target.role === 'owner') return c.json({ error: 'cannot remove owner' }, 403);
   db.prepare('DELETE FROM memberships WHERE org_id = ? AND user_id = ?').run(orgId, targetId);
+  logAudit(orgId, uid, 'member.remove', 'user', targetId, { role: target.role });
   return c.json({ ok: true });
 });
 
@@ -294,6 +308,7 @@ app.post('/api/orgs/:id/_dev/activate-pro', requireAuth, (c) => {
   const orgId = c.req.param('id');
   if (orgRole(uid, orgId) !== 'owner') return c.json({ error: 'forbidden' }, 403);
   db.prepare("UPDATE orgs SET plan = 'pro' WHERE id = ?").run(orgId);
+  logAudit(orgId, uid, 'billing.upgrade', 'org', orgId, { plan: 'pro', via: 'dev' });
   return c.json({ plan: 'pro' });
 });
 
@@ -321,6 +336,22 @@ app.delete('/api/tokens/:id', requireAuth, (c) => {
   const info = db.prepare('DELETE FROM api_tokens WHERE id = ? AND user_id = ?').run(c.req.param('id'), uid);
   if (!info.changes) return c.json({ error: 'not found' }, 404);
   return c.json({ ok: true });
+});
+
+// Audit trail — owner/admin only. Enterprise requirement.
+app.get('/api/orgs/:id/audit', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
+  const limit = Math.min(Number(c.req.query('limit')) || 100, 500);
+  const rows = db.prepare(
+    `SELECT a.id, a.action, a.target_type AS targetType, a.target_id AS targetId, a.meta,
+            a.created_at AS createdAt, u.email AS actorEmail
+     FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
+     WHERE a.org_id = ? ORDER BY a.id DESC LIMIT ?`
+  ).all(orgId, limit);
+  const events = rows.map((r) => ({ ...r, meta: r.meta ? JSON.parse(r.meta) : null }));
+  return c.json({ events });
 });
 
 app.get('/api/health', (c) => c.json({ ok: true }));
