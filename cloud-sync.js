@@ -300,6 +300,13 @@ function renderAuthUI() {
     });
     bar.appendChild(dup);
 
+    const report = document.createElement('button');
+    report.type = 'button';
+    report.className = 'secondary-button';
+    report.textContent = '주간보고';
+    report.addEventListener('click', () => { try { openReportModal(); } catch (e) { toast(e.message || '보고서 생성 실패'); } });
+    bar.appendChild(report);
+
     const msp = document.createElement('button');
     msp.type = 'button';
     msp.className = 'secondary-button';
@@ -441,6 +448,115 @@ async function resolveOrgId() {
   const me = await api('/api/me');
   currentOrgId = me.orgs?.[0]?.id || null;
   return currentOrgId;
+}
+
+// ------------------------------------------------------------ weekly report
+// 주간보고 generator — the PM deliverable, straight from live data.
+// Pure: takes tasks + a reference date, returns markdown.
+export function buildWeeklyReport(tasks, refDate, projectName = '') {
+  const ref = new Date(refDate);
+  if (Number.isNaN(ref.getTime())) return '';
+  const day = (d) => d.toISOString().slice(0, 10);
+  const monday = new Date(ref);
+  monday.setDate(ref.getDate() - ((ref.getDay() + 6) % 7)); // this week's Monday
+  const weekStart = day(monday);
+  const weekEnd = day(new Date(monday.getTime() + 6 * 86400000));
+  const nextStart = day(new Date(monday.getTime() + 7 * 86400000));
+  const nextEnd = day(new Date(monday.getTime() + 13 * 86400000));
+  const today = day(ref);
+  const name = (t) => t.name || t.task || t.activity || t.phase || t.id;
+  const leaf = (tasks || []).filter((t) => !t.isSynthetic);
+
+  const done = leaf.filter((t) => t.actualEndDate && t.actualEndDate >= weekStart && t.actualEndDate <= weekEnd);
+  const doing = leaf.filter((t) => {
+    const a = Number(t.actualProgress) || 0;
+    return a > 0 && a < 100 && !t.actualEndDate;
+  });
+  const late = leaf.filter((t) => t.plannedEndDate && t.plannedEndDate < today && (Number(t.actualProgress) || 0) < 100);
+  const upcoming = leaf.filter((t) => t.plannedStartDate && t.plannedStartDate >= nextStart && t.plannedStartDate <= nextEnd);
+
+  let wSum = 0, pv = 0, ev = 0;
+  for (const t of leaf) {
+    const w = Number(t.weight) || 1;
+    wSum += w;
+    pv += w * ((Number(t.plannedProgress) || 0) / 100);
+    ev += w * ((Number(t.actualProgress) || 0) / 100);
+  }
+  const pvPct = wSum ? (pv / wSum) * 100 : 0;
+  const evPct = wSum ? (ev / wSum) * 100 : 0;
+  const spi = pvPct > 0 ? evPct / pvPct : null;
+
+  const section = (title, items, fmt) =>
+    `## ${title}\n${items.length ? items.map((t) => `- ${fmt(t)}`).join('\n') : '- (없음)'}`;
+  return [
+    `# 주간보고${projectName ? ` — ${projectName}` : ''} (${weekStart} ~ ${weekEnd})`,
+    '',
+    `**진척 요약**: 계획 ${pvPct.toFixed(1)}% · 실적 ${evPct.toFixed(1)}%` +
+      (spi === null ? '' : ` · SPI ${spi.toFixed(2)} (${spi >= 1 ? '일정 준수' : spi >= 0.9 ? '경미한 지연' : '지연 위험'})`),
+    '',
+    section('금주 완료', done, (t) => `${name(t)} (${t.actualEndDate})`),
+    '',
+    section('진행 중', doing, (t) => `${name(t)} — ${Number(t.actualProgress) || 0}%${t.owner ? ` (${t.owner})` : ''}`),
+    '',
+    section('지연', late, (t) => `${name(t)} — 계획종료 ${t.plannedEndDate}, 실적 ${Number(t.actualProgress) || 0}%${t.owner ? ` (${t.owner})` : ''}`),
+    '',
+    section('차주 예정', upcoming, (t) => `${name(t)} (${t.plannedStartDate} 시작${t.owner ? `, ${t.owner}` : ''})`),
+    '',
+  ].join('\n');
+}
+
+function openReportModal() {
+  const state = host?.getState?.();
+  if (!state) { toast('프로젝트를 먼저 여세요.'); return; }
+  const md = buildWeeklyReport(state.tasks, new Date().toISOString().slice(0, 10), state.projectName || '');
+  let modal = document.getElementById('report-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'report-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'report-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#report-panel');
+  panel.textContent = '';
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '주간보고';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '주간보고 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'primary-button';
+  copy.textContent = '마크다운 복사';
+  copy.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(md); toast('주간보고를 복사했습니다.'); }
+    catch { toast('복사에 실패했습니다 — 아래 내용을 직접 선택하세요.'); }
+  });
+  panel.appendChild(copy);
+
+  const pre = document.createElement('pre');
+  pre.id = 'report-body';
+  pre.style.whiteSpace = 'pre-wrap';
+  pre.style.userSelect = 'text';
+  pre.textContent = md;
+  panel.appendChild(pre);
 }
 
 // ------------------------------------------------------- MS Project import
