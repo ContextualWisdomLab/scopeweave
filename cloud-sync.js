@@ -1182,6 +1182,24 @@ async function renderAudit(body) {
   h.className = 'token-heading';
   h.textContent = '감사 로그';
   section.appendChild(h);
+  const csvBtn = document.createElement('button');
+  csvBtn.type = 'button';
+  csvBtn.className = 'secondary-button';
+  csvBtn.textContent = 'CSV 다운로드';
+  csvBtn.addEventListener('click', async () => {
+    try {
+      const res = await fetch(`/api/orgs/${currentOrgId}/audit?format=csv&limit=500`, { headers: { authorization: `Bearer ${getToken()}` } });
+      if (!res.ok) return toast('감사 로그 내보내기에 실패했습니다.');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `scopeweave-audit-${currentOrgId}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('감사 로그 CSV를 내려받았습니다.');
+    } catch { toast('감사 로그 내보내기에 실패했습니다.'); }
+  });
+  section.appendChild(csvBtn);
   const list = document.createElement('ul');
   list.className = 'audit-list';
   for (const e of data.events) {

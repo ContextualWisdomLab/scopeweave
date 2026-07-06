@@ -645,6 +645,24 @@ app.get('/api/orgs/:id/audit', requireAuth, (c) => {
      WHERE a.org_id = ? ORDER BY a.id DESC LIMIT ?`
   ).all(orgId, limit);
   const events = rows.map((r) => ({ ...r, meta: r.meta ? JSON.parse(r.meta) : null }));
+  if (c.req.query('format') === 'csv') {
+    // Compliance deliverable. Formula-injection-safe: values starting with
+    // = + - @ are prefixed with ' so spreadsheets treat them as text.
+    const csvCell = (v) => {
+      let s = v == null ? '' : String(v);
+      if (/^[=+\-@]/.test(s)) s = `'${s}`;
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = ['id', 'createdAt', 'actorEmail', 'action', 'targetType', 'targetId', 'meta'];
+    const lines = [header.join(',')];
+    for (const e of events) {
+      lines.push([e.id, e.createdAt, e.actorEmail, e.action, e.targetType, e.targetId, e.meta ? JSON.stringify(e.meta) : ''].map(csvCell).join(','));
+    }
+    return c.text(lines.join('\r\n') + '\r\n', 200, {
+      'content-type': 'text/csv; charset=utf-8',
+      'content-disposition': `attachment; filename="scopeweave-audit-${orgId}.csv"`,
+    });
+  }
   return c.json({ events });
 });
 

@@ -489,6 +489,17 @@ assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, b
 assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, body: body({ password: 'password123' }) })).status, 200, 'account deleted');
 assert.equal((await req('/api/auth/login', { method: 'POST', body: body({ email: 'gone@x.com', password: 'password123' }) })).status, 401, 'deleted account cannot login');
 
+// ---- Audit CSV export ----
+r = await req(`/api/orgs/${orgAId}/audit?format=csv`, { headers: auth });
+assert.equal(r.status, 200, 'audit csv 200');
+assert.ok((r.headers.get('content-type') || '').startsWith('text/csv'), 'text/csv');
+const auditCsv = await r.text();
+assert.ok(auditCsv.startsWith('id,createdAt,actorEmail,action'), 'csv header');
+assert.ok(auditCsv.includes('project.create'), 'contains audited actions');
+assert.ok(!/^[=+\-@]/m.test(auditCsv.split('\r\n')[1] || ''), 'formula-injection guarded');
+r = await req(`/api/orgs/${orgAId}/audit?format=csv`, { headers: oauth });
+assert.equal(r.status, 403, 'non-manager audit csv → 403');
+
 // ---- Archive / restore ----
 r = await req(`/api/projects/${proj.id}/archive`, { method: 'POST', headers: auth, body: body({ archived: true }) });
 assert.equal(r.status, 200, 'archive ok');

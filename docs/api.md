@@ -135,7 +135,7 @@ const ok = req.headers['x-scopeweave-signature'] ===
 | `GET` | `/api/tokens` | List your PATs (prefix + last-used, never the secret) |
 | `POST` | `/api/tokens` | Create `{ name }` → secret shown once |
 | `DELETE` | `/api/tokens/:id` | Revoke a token |
-| `GET` | `/api/orgs/:id/audit` | Audit log (manage) |
+| `GET` | `/api/orgs/:id/audit` | Audit log (manage; `?format=csv` for a compliance CSV) |
 | `GET` | `/api/orgs/:id/export` | Full workspace export JSON (owner) |
 | `GET` | `/api/metrics` | Ops counters (JSON; add `?format=prometheus` for scrape-ready text) |
 | `GET` | `/api/health` | Liveness |
