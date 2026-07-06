@@ -179,6 +179,62 @@ function ensurePanel() {
   return panel;
 }
 
+// Resource workload: aggregate leaf-level effort per 담당자 (owner).
+// Pure — feeds the panel table and is unit-tested directly.
+export function computeWorkload(tasks) {
+  const byOwner = new Map();
+  for (const t of tasks || []) {
+    const owner = String(t.owner || '').trim() || '미지정';
+    let o = byOwner.get(owner);
+    if (!o) { o = { owner, count: 0, plannedSum: 0, actualSum: 0, behind: 0 }; byOwner.set(owner, o); }
+    const planned = Number(t.plannedProgress) || 0;
+    const actual = Number(t.actualProgress) || 0;
+    o.count += 1;
+    o.plannedSum += planned;
+    o.actualSum += actual;
+    if (actual < planned) o.behind += 1;
+  }
+  return [...byOwner.values()]
+    .map((o) => ({
+      owner: o.owner,
+      count: o.count,
+      avgPlanned: o.count ? o.plannedSum / o.count : 0,
+      avgActual: o.count ? o.actualSum / o.count : 0,
+      behind: o.behind,
+    }))
+    .sort((a, b) => b.count - a.count || a.owner.localeCompare(b.owner));
+}
+
+function renderWorkload(panel, tasks) {
+  const rows = computeWorkload(tasks);
+  const named = rows.filter((r) => r.owner !== '미지정');
+  if (!named.length) return; // no owners assigned → nothing useful to show
+  const title = el('p', { class: 'cpm-summary' }, `담당자별 워크로드 (상위 ${Math.min(rows.length, 8)}명)`);
+  panel.appendChild(title);
+  const table = el('table', { class: 'workload-table' });
+  const thead = document.createElement('thead');
+  const hr = document.createElement('tr');
+  for (const h of ['담당자', '작업수', '계획평균', '실적평균', '지연']) hr.appendChild(el('th', {}, h));
+  thead.appendChild(hr);
+  const tbody = document.createElement('tbody');
+  for (const r of rows.slice(0, 8)) {
+    const tr = document.createElement('tr');
+    tr.appendChild(el('td', {}, r.owner));
+    tr.appendChild(el('td', {}, String(r.count)));
+    tr.appendChild(el('td', {}, `${r.avgPlanned.toFixed(1)}%`));
+    tr.appendChild(el('td', {}, `${r.avgActual.toFixed(1)}%`));
+    const behind = el('td', {}, r.behind ? `${r.behind}건` : '-');
+    if (r.behind) behind.classList.add('workload-behind');
+    tr.appendChild(behind);
+    tbody.appendChild(tr);
+  }
+  table.appendChild(thead);
+  table.appendChild(tbody);
+  const wrap = el('div', { class: 'workload-wrap' });
+  wrap.appendChild(table);
+  panel.appendChild(wrap);
+}
+
 function renderPanel({ pv, ev, tasks, baseDate, calcPlannedRatio, calcDuration, buildTimeline }) {
   const panel = ensurePanel();
   if (!panel) return;
@@ -206,6 +262,7 @@ function renderPanel({ pv, ev, tasks, baseDate, calcPlannedRatio, calcDuration, 
   }
 
   renderCpm(panel, tasks, calcDuration);
+  renderWorkload(panel, tasks);
 }
 
 // Critical-path summary + row highlighting. Only shown when tasks declare
@@ -285,5 +342,5 @@ function buildScurveSvg(series, evm, baseDate) {
 }
 
 if (typeof window !== 'undefined') {
-  window.ScopeWeaveAnalytics = { render: renderPanel, computeEvm, buildScurve, computeCpm };
+  window.ScopeWeaveAnalytics = { render: renderPanel, computeEvm, buildScurve, computeCpm, computeWorkload };
 }
