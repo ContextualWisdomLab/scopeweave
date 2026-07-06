@@ -300,6 +300,29 @@ function renderAuthUI() {
     });
     bar.appendChild(dup);
 
+    const msp = document.createElement('button');
+    msp.type = 'button';
+    msp.className = 'secondary-button';
+    msp.textContent = 'MSP 가져오기';
+    msp.addEventListener('click', () => {
+      let fi = document.getElementById('msp-file-input');
+      if (!fi) {
+        fi = document.createElement('input');
+        fi.id = 'msp-file-input';
+        fi.type = 'file';
+        fi.accept = '.xml,text/xml';
+        fi.hidden = true;
+        fi.addEventListener('change', () => {
+          const f = fi.files?.[0];
+          fi.value = '';
+          if (f) importMsProjectFile(f).catch((e) => toast(e.message || 'MSP 가져오기에 실패했습니다.'));
+        });
+        document.body.appendChild(fi);
+      }
+      fi.click();
+    });
+    bar.appendChild(msp);
+
     const cur = projectsCache.find((x) => String(x.id) === String(getProjectId()));
     const arch = document.createElement('button');
     arch.type = 'button';
@@ -418,6 +441,64 @@ async function resolveOrgId() {
   const me = await api('/api/me');
   currentOrgId = me.orgs?.[0]?.id || null;
   return currentOrgId;
+}
+
+// ------------------------------------------------------- MS Project import
+// Parse Microsoft Project XML (Project 2003+ .xml export) into ScopeWeave's
+// task schema. ponytail: regex block parsing (MSP XML is machine-generated,
+// no DOMParser needed → node-testable); swap for a real XML parser if
+// hand-edited files ever matter.
+export function parseMsProjectXml(xml) {
+  const tag = (block, name) => {
+    const m = block.match(new RegExp(`<${name}>([^<]*)</${name}>`));
+    return m ? m[1].trim() : '';
+  };
+  const unescape = (s) => s
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  const day = (s) => (/^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : '');
+  const tasks = [];
+  const parents = {}; // depth -> last task id at that depth
+  const blocks = xml.match(/<Task>[\s\S]*?<\/Task>/g) || [];
+  for (const block of blocks) {
+    const uid = tag(block, 'UID');
+    const name = unescape(tag(block, 'Name'));
+    if (!uid || uid === '0' || !name) continue; // project-summary row / blanks
+    const level = Math.max(1, Number(tag(block, 'OutlineLevel')) || 1);
+    const depth = Math.min(level, 3); // deeper levels flatten to task level
+    const preds = [...block.matchAll(/<PredecessorLink>[\s\S]*?<PredecessorUID>(\d+)<\/PredecessorUID>[\s\S]*?<\/PredecessorLink>/g)]
+      .map((m) => `msp-${m[1]}`);
+    const pct = Number(tag(block, 'PercentComplete')) || 0;
+    const t = {
+      id: `msp-${uid}`,
+      parentId: depth > 1 ? (parents[depth - 1] || '') : '',
+      depth,
+      phase: depth === 1 ? name : '',
+      activity: depth === 2 ? name : '',
+      task: depth === 3 ? name : '',
+      name,
+      plannedStartDate: day(tag(block, 'Start')),
+      plannedEndDate: day(tag(block, 'Finish')),
+      actualProgress: pct,
+      predecessors: preds.join(','),
+    };
+    tasks.push(t);
+    parents[depth] = t.id;
+    for (let d = depth + 1; d <= 3; d++) delete parents[d]; // reset deeper chain
+  }
+  return tasks;
+}
+
+async function importMsProjectFile(file) {
+  const xml = await file.text();
+  const tasks = parseMsProjectXml(xml);
+  if (!tasks.length) { toast('가져올 작업이 없습니다 (MSP XML 형식을 확인하세요).'); return; }
+  if (!confirm(`MS Project에서 ${tasks.length}개 작업을 가져옵니다. 현재 프로젝트 내용을 대체합니다.`)) return;
+  host?.hydrateState({ tasks });
+  host?.renderAll();
+  const state = host?.getState?.();
+  if (state) await doPush(state);
+  toast(`MS Project에서 ${tasks.length}개 작업을 가져왔습니다.`);
 }
 
 // ------------------------------------------------------------- portfolio
