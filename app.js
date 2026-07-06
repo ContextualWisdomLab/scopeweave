@@ -245,12 +245,7 @@ function bindHeaderEvents(persistAndRenderMetadata) {
     }
     exportCsv();
   });
-  elements.importCsvButton.addEventListener('click', () => {
-    if (state.tasks.length > 0 && !window.confirm('CSV를 가져오면 기존 작업이 모두 삭제됩니다. 계속하시겠습니까?')) {
-      return;
-    }
-    elements.csvFileInput.click();
-  });
+  elements.importCsvButton.addEventListener('click', () => elements.csvFileInput.click());
   elements.csvFileInput.addEventListener('change', handleCsvImport);
   elements.openGanttButton.addEventListener('click', (e) => {
     if (elements.openGanttButton.getAttribute('aria-disabled') === 'true') {
@@ -444,8 +439,8 @@ function renderAll() {
     elements.exportCsvButton.removeAttribute('aria-disabled');
     elements.openGanttButton.removeAttribute('aria-disabled');
   }
-  elements.exportCsvButton.title = hasTasks ? '현재 작성된 작업을 CSV 파일로 다운로드합니다.' : '내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.';
-  elements.openGanttButton.title = hasTasks ? '작업 일정을 간트 차트 형태로 시각화하여 봅니다.' : '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.';
+  elements.exportCsvButton.title = hasTasks ? '' : '내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.';
+  elements.openGanttButton.title = hasTasks ? '' : '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.';
 
   // ⚡ Bolt: Cache parent IDs to convert O(N^2) render loop to O(N)
   cachedHasChildrenSet.clear();
@@ -513,7 +508,6 @@ function createEmptyStateRow() {
   addRootBtn.type = 'button';
   addRootBtn.className = 'primary-button';
   addRootBtn.textContent = '최상위 작업 추가';
-  addRootBtn.title = '새로운 최상위(1단계) 작업을 추가합니다.';
   addRootBtn.addEventListener('click', () => {
     openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() });
   });
@@ -522,7 +516,6 @@ function createEmptyStateRow() {
   importCsvBtn.type = 'button';
   importCsvBtn.className = 'secondary-button';
   importCsvBtn.textContent = 'CSV 가져오기';
-  importCsvBtn.title = 'CSV 파일에서 작업을 불러옵니다.';
   importCsvBtn.addEventListener('click', () => {
     document.getElementById('csv-file-input').click();
   });

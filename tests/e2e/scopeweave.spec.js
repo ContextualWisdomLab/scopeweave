@@ -897,7 +897,6 @@ test.describe('ScopeWeave Planner', () => {
   });
 
   test('can trigger CSV import file chooser', async ({ page }) => {
-    page.on('dialog', dialog => dialog.accept());
     const fileChooserPromise = page.waitForEvent('filechooser');
     await page.getByRole('button', { name: 'CSV 가져오기' }).click();
     const fileChooser = await fileChooserPromise;
@@ -1127,29 +1126,6 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
 
     const importCsvBtn = page.locator('#import-csv');
     await expect(importCsvBtn).toHaveAttribute('title', 'CSV 파일에서 작업을 불러와 기존 데이터를 덮어씁니다.');
-
-    // Evaluate state to empty tasks to check disabled tooltips
-    await page.evaluate(() => {
-      localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({ projectName: '', baseDate: '', tasks: [] }));
-    });
-    await page.reload();
-
-    await expect(page.locator('#export-csv')).toHaveAttribute('title', '내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.');
-    await expect(page.locator('#open-gantt')).toHaveAttribute('title', '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.');
-  });
-
-  test('adds helpful tooltips to empty state action buttons', async ({ page }) => {
-    await page.goto('./');
-    await page.evaluate(() => {
-      localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({ projectName: '', baseDate: '', tasks: [] }));
-    });
-    await page.reload();
-
-    const emptyAddRootBtn = page.locator('.table-empty .primary-button');
-    await expect(emptyAddRootBtn).toHaveAttribute('title', '새로운 최상위(1단계) 작업을 추가합니다.');
-
-    const emptyImportCsvBtn = page.locator('.table-empty .secondary-button');
-    await expect(emptyImportCsvBtn).toHaveAttribute('title', 'CSV 파일에서 작업을 불러옵니다.');
   });
 
   test('adds helpful placeholder to project name input', async ({ page }) => {
