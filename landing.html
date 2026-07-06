@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; object-src 'none'; base-uri 'none'; form-action 'self';" />
+    <title>ScopeWeave — 공정관리 SaaS (EVM · 임계경로)</title>
+    <style>
+      :root {
+        --bg: #f8fafc; --surface: #ffffff; --depth: #f1f5f9;
+        --text: #0f172a; --muted: #64748b; --border: #e2e8f0; --border-strong: #cbd5e1;
+        --primary: #2563eb; --active: #059669; --delay: #ea580c;
+        --radius: 16px; --radius-sm: 10px;
+        --shadow: 0 4px 6px -1px rgba(15,23,42,.08), 0 2px 4px -2px rgba(15,23,42,.04);
+        --shadow-lg: 0 20px 25px -5px rgba(15,23,42,.1), 0 8px 10px -6px rgba(15,23,42,.04);
+        --font: "Pretendard", "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", roboto, sans-serif;
+      }
+      * { box-sizing: border-box; }
+      body { margin: 0; font-family: var(--font); color: var(--text); background: var(--bg); line-height: 1.6; }
+      a { color: inherit; text-decoration: none; }
+      .wrap { max-width: 1080px; margin: 0 auto; padding: 0 24px; }
+      .btn { display: inline-block; padding: 13px 22px; border-radius: var(--radius-sm); font-weight: 700; font-size: 15px; }
+      .btn-primary { background: var(--primary); color: #fff; }
+      .btn-ghost { background: var(--surface); color: var(--text); border: 1px solid var(--border-strong); }
+
+      header.nav { position: sticky; top: 0; background: rgba(255,255,255,.9); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); z-index: 10; }
+      .nav-inner { display: flex; align-items: center; justify-content: space-between; height: 62px; }
+      .brand { font-weight: 800; font-size: 20px; letter-spacing: -.02em; }
+      .brand b { color: var(--primary); }
+      .nav-links a { margin-left: 20px; font-size: 14px; color: var(--muted); font-weight: 600; }
+
+      .hero { text-align: center; padding: 88px 0 64px; }
+      .eyebrow { display: inline-block; font-size: 13px; font-weight: 700; color: var(--primary); background: #eff6ff; padding: 6px 14px; border-radius: 20px; }
+      .hero h1 { font-size: 52px; line-height: 1.15; letter-spacing: -.03em; margin: 22px 0 16px; }
+      .hero p.lead { font-size: 19px; color: var(--muted); max-width: 680px; margin: 0 auto 32px; }
+      .hero .cta { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+
+      .section { padding: 64px 0; }
+      .section h2 { font-size: 32px; letter-spacing: -.02em; text-align: center; margin: 0 0 8px; }
+      .section .sub { text-align: center; color: var(--muted); margin: 0 0 40px; }
+
+      .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+      .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 24px; box-shadow: var(--shadow); }
+      .card h3 { margin: 0 0 8px; font-size: 17px; }
+      .card p { margin: 0; color: var(--muted); font-size: 14px; }
+      .card .tag { font-size: 12px; font-weight: 700; color: var(--active); }
+
+      .pricing { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; max-width: 720px; margin: 0 auto; }
+      .plan { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 32px; }
+      .plan.pro { border: 2px solid var(--primary); box-shadow: var(--shadow-lg); position: relative; }
+      .plan .badge { position: absolute; top: -12px; right: 24px; background: var(--primary); color: #fff; font-size: 12px; font-weight: 700; padding: 5px 12px; border-radius: 20px; }
+      .plan h3 { margin: 0; font-size: 18px; }
+      .price { font-size: 40px; font-weight: 800; letter-spacing: -.02em; margin: 12px 0 4px; }
+      .price small { font-size: 15px; color: var(--muted); font-weight: 600; }
+      .plan ul { list-style: none; padding: 0; margin: 20px 0 24px; }
+      .plan li { padding: 7px 0; color: var(--text); font-size: 14px; border-bottom: 1px solid var(--depth); }
+      .plan li::before { content: "✓ "; color: var(--active); font-weight: 800; }
+      .plan .btn { width: 100%; text-align: center; }
+
+      footer { border-top: 1px solid var(--border); padding: 40px 0; color: var(--muted); font-size: 13px; text-align: center; }
+      footer a { color: var(--muted); margin: 0 10px; font-weight: 600; }
+      @media (max-width: 800px) {
+        .hero h1 { font-size: 36px; }
+        .grid { grid-template-columns: 1fr; }
+        .pricing { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <header class="nav">
+      <div class="wrap nav-inner">
+        <div class="brand">Scope<b>Weave</b></div>
+        <nav class="nav-links">
+          <a href="#features">기능</a>
+          <a href="#pricing">가격</a>
+          <a href="/">앱 열기</a>
+        </nav>
+      </div>
+    </header>
+
+    <main>
+      <section class="hero wrap">
+        <span class="eyebrow">공정관리 SaaS · EVM · 임계경로</span>
+        <h1>계획부터 실적까지,<br />공정을 <span style="color:var(--primary)">통제</span>하세요.</h1>
+        <p class="lead">WBS 트리 편집과 누적 진척률에 EVM(SPI·SV)·S-curve와 CPM 임계경로를 더한
+          공정관리 도구. 실시간 협업·팀 권한·CSV·공개 API까지 한 곳에서.</p>
+        <div class="cta">
+          <a class="btn btn-primary" href="/">무료로 시작하기</a>
+          <a class="btn btn-ghost" href="#pricing">가격 보기</a>
+        </div>
+      </section>
+
+      <section class="section" id="features">
+        <div class="wrap">
+          <h2>공정관리에 필요한 모든 것</h2>
+          <p class="sub">진척 측정부터 일정 리스크 예측까지, 정량적으로.</p>
+          <div class="grid">
+            <div class="card"><span class="tag">EVM</span><h3>성과관리 (SPI·SV)</h3><p>계획·실적 가중 진척률로 SPI·SV와 누적 S-curve를 자동 계산해 일정 성과를 정량 측정합니다.</p></div>
+            <div class="card"><span class="tag">CPM</span><h3>임계경로 분석</h3><p>선행작업 의존성으로 임계경로와 여유(slack)를 산출하고, 지연 위험 작업을 표에서 강조합니다.</p></div>
+            <div class="card"><span class="tag">협업</span><h3>실시간 동기화</h3><p>클라우드 저장과 SSE 실시간 반영, 낙관적 동시성으로 팀원 변경이 즉시 보입니다. 오프라인 폴백 지원.</p></div>
+            <div class="card"><span class="tag">팀</span><h3>역할 기반 권한</h3><p>소유자·관리자·멤버·뷰어 역할로 프로젝트 접근을 통제합니다. 이메일 초대와 링크 수락.</p></div>
+            <div class="card"><span class="tag">자동화</span><h3>CSV · 공개 API</h3><p>화면 컬럼 계약 그대로 CSV 왕복. 개인 액세스 토큰(PAT)으로 스크립트·CI에서 API 연동.</p></div>
+            <div class="card"><span class="tag">간트</span><h3>주간 간트 차트</h3><p>계획·실적 오버레이로 일정 흐름을 한눈에. WBS 3단계(단계·Activity·Task) 트리 편집.</p></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="pricing" style="background:var(--surface); border-top:1px solid var(--border); border-bottom:1px solid var(--border)">
+        <div class="wrap">
+          <h2>단순한 가격</h2>
+          <p class="sub">개인은 무료로, 팀은 무제한으로.</p>
+          <div class="pricing">
+            <div class="plan">
+              <h3>Free</h3>
+              <div class="price">₩0<small> / 월</small></div>
+              <ul>
+                <li>프로젝트 2개</li>
+                <li>멤버 3명</li>
+                <li>EVM · CPM · 간트 전 기능</li>
+                <li>CSV · 공개 API</li>
+              </ul>
+              <a class="btn btn-ghost" href="/">무료로 시작</a>
+            </div>
+            <div class="plan pro">
+              <span class="badge">추천</span>
+              <h3>Pro</h3>
+              <div class="price">₩19,000<small> / 월</small></div>
+              <ul>
+                <li>프로젝트 무제한</li>
+                <li>멤버 무제한</li>
+                <li>실시간 협업 · 팀 권한</li>
+                <li>우선 지원</li>
+              </ul>
+              <a class="btn btn-primary" href="/">Pro 시작하기</a>
+            </div>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <p>ScopeWeave — 공정관리 SaaS</p>
+        <p>
+          <a href="/">앱 열기</a> ·
+          <a href="/docs/api.md">API 문서</a> ·
+          <a href="#features">기능</a> ·
+          <a href="#pricing">가격</a>
+        </p>
+      </div>
+    </footer>
+  </body>
+</html>

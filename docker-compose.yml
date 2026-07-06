@@ -1,0 +1,25 @@
+# Local / single-node full-stack ScopeWeave SaaS.
+# Usage:
+#   export SCOPEWEAVE_JWT_SECRET=$(openssl rand -base64 32)
+#   docker compose up --build
+# Then open http://localhost:8787
+services:
+  scopeweave:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    ports:
+      - "8787:8787"
+    environment:
+      SCOPEWEAVE_JWT_SECRET: ${SCOPEWEAVE_JWT_SECRET:?set SCOPEWEAVE_JWT_SECRET to a strong random value}
+    volumes:
+      - scopeweave-data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:8787/api/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  scopeweave-data:
