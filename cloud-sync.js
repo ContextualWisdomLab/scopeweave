@@ -12,6 +12,7 @@ let version = 0;   // open project's doc version (optimistic concurrency)
 let sse = null;
 let pushTimer = null;
 let currentOrgId = null; // org of the open project, for team management
+let shareMode = false;   // viewing via a public share token → read-only
 
 const getToken = () => localStorage.getItem(TOKEN_KEY) || '';
 const setToken = (t) => (t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY));
@@ -99,6 +100,19 @@ export const cloud = {
   },
   // Returns the saved project state to hydrate, or null (→ local/seed path).
   async boot() {
+    // public read-only share view (?share=TOKEN) — no account needed
+    const shareToken = new URLSearchParams(location.search).get('share');
+    if (shareToken) {
+      try {
+        const p = await api(`/api/shared/${encodeURIComponent(shareToken)}`);
+        shareMode = true;
+        renderAuthUI();
+        toast('읽기 전용 공유 보기입니다 — 변경은 저장되지 않습니다.');
+        return { projectName: p.name, baseDate: p.baseDate, tasks: p.tasks };
+      } catch {
+        toast('공유 링크가 만료되었거나 철회되었습니다.');
+      }
+    }
     if (!isAuthed() || !getProjectId()) { renderAuthUI(); return null; }
     try {
       const p = await api(`/api/projects/${getProjectId()}`);
@@ -114,6 +128,7 @@ export const cloud = {
   },
   // Called from persistState(). No-op unless logged in with a project open.
   push(payload) {
+    if (shareMode) return; // read-only share view never writes
     if (!isAuthed() || !getProjectId()) return;
     clearTimeout(pushTimer);
     pushTimer = setTimeout(() => doPush(payload), 600);
@@ -205,6 +220,13 @@ function renderAuthUI() {
   const bar = document.getElementById('cloud-auth');
   if (!bar) return;
   bar.textContent = '';
+  if (shareMode) {
+    const tag = document.createElement('span');
+    tag.className = 'team-role-tag';
+    tag.textContent = '읽기 전용 공유 보기';
+    bar.appendChild(tag);
+    return;
+  }
   if (!isAuthed()) {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -299,6 +321,13 @@ function renderAuthUI() {
       } catch (err) { toast(err.data?.error || err.message); }
     });
     bar.appendChild(dup);
+
+    const share = document.createElement('button');
+    share.type = 'button';
+    share.className = 'secondary-button';
+    share.textContent = '공유';
+    share.addEventListener('click', () => openShareModal().catch((e) => toast(e.data?.error || e.message)));
+    bar.appendChild(share);
 
     const report = document.createElement('button');
     report.type = 'button';
@@ -448,6 +477,94 @@ async function resolveOrgId() {
   const me = await api('/api/me');
   currentOrgId = me.orgs?.[0]?.id || null;
   return currentOrgId;
+}
+
+// ---------------------------------------------------------------- share links
+async function openShareModal() {
+  const pid = getProjectId();
+  if (!pid) return;
+  let modal = document.getElementById('share-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'share-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'share-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#share-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '읽기 전용 공유';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '공유 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  const make = document.createElement('button');
+  make.type = 'button';
+  make.className = 'primary-button';
+  make.textContent = '공유 링크 만들기';
+  make.addEventListener('click', async () => {
+    try {
+      const res = await api(`/api/projects/${pid}/shares`, { method: 'POST' });
+      const url = `${location.origin}${res.url}`;
+      try { await navigator.clipboard.writeText(url); toast('공유 링크를 복사했습니다.'); }
+      catch { prompt('공유 링크 (복사하세요)', url); }
+      openShareModal();
+    } catch (e) { toast(e.data?.error || e.message); }
+  });
+  panel.appendChild(make);
+
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  panel.appendChild(list);
+  const data = await api(`/api/projects/${pid}/shares`);
+  if (!data.shares.length) {
+    const li = document.createElement('li');
+    li.textContent = '활성 공유 링크가 없습니다.';
+    list.appendChild(li);
+    return;
+  }
+  for (const sRow of data.shares) {
+    const li = document.createElement('li');
+    const who = document.createElement('span');
+    who.className = 'team-who';
+    who.textContent = `${location.origin}/?share=${sRow.token.slice(0, 8)}… · ${String(sRow.createdAt).slice(0, 10)}`;
+    const copyB = document.createElement('button');
+    copyB.type = 'button';
+    copyB.className = 'secondary-button';
+    copyB.textContent = '복사';
+    copyB.addEventListener('click', async () => {
+      const url = `${location.origin}/?share=${sRow.token}`;
+      try { await navigator.clipboard.writeText(url); toast('복사했습니다.'); } catch { prompt('공유 링크', url); }
+    });
+    const rev = document.createElement('button');
+    rev.type = 'button';
+    rev.className = 'secondary-button team-remove';
+    rev.textContent = '철회';
+    rev.addEventListener('click', () =>
+      api(`/api/projects/${pid}/shares/${sRow.id}`, { method: 'DELETE' })
+        .then(() => { toast('공유를 철회했습니다.'); openShareModal(); })
+        .catch((e) => toast(e.data?.error || e.message)));
+    li.append(who, copyB, rev);
+    list.appendChild(li);
+  }
 }
 
 // ------------------------------------------------------------ weekly report
