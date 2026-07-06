@@ -11,6 +11,7 @@ let host = null;   // { hydrateState, renderAll, getState } provided by app.js
 let version = 0;   // open project's doc version (optimistic concurrency)
 let sse = null;
 let pushTimer = null;
+let currentOrgId = null; // org of the open project, for team management
 
 const getToken = () => localStorage.getItem(TOKEN_KEY) || '';
 const setToken = (t) => (t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY));
@@ -59,6 +60,8 @@ function subscribe(id) {
 async function openProject(id, { silent = false } = {}) {
   const p = await api(`/api/projects/${id}`);
   setProjectId(id);
+  const meta = projectsCache.find((x) => String(x.id) === String(id));
+  if (meta) currentOrgId = meta.orgId;
   version = p.version;
   host?.hydrateState({ projectName: p.name, baseDate: p.baseDate, tasks: p.tasks });
   host?.renderAll();
@@ -226,6 +229,13 @@ function renderAuthUI() {
   newBtn.addEventListener('click', createProjectFlow);
   bar.appendChild(newBtn);
 
+  const team = document.createElement('button');
+  team.type = 'button';
+  team.className = 'secondary-button';
+  team.textContent = '팀';
+  team.addEventListener('click', () => openTeamModal().catch((e) => toast(e.message || '팀 정보를 불러오지 못했습니다.')));
+  bar.appendChild(team);
+
   const out = document.createElement('button');
   out.type = 'button';
   out.className = 'secondary-button';
@@ -262,6 +272,218 @@ async function createProjectFlow() {
     toast(`'${name.trim()}' 프로젝트를 만들었습니다.`);
   } catch (e) {
     toast(e.message || '프로젝트 생성 실패');
+  }
+}
+
+// ------------------------------------------------------------- team / RBAC UI
+const ROLE_LABELS = { owner: '소유자', admin: '관리자', member: '멤버', viewer: '뷰어' };
+
+async function resolveOrgId() {
+  if (currentOrgId) return currentOrgId;
+  const me = await api('/api/me');
+  currentOrgId = me.orgs?.[0]?.id || null;
+  return currentOrgId;
+}
+
+async function openTeamModal() {
+  const orgId = await resolveOrgId();
+  if (!orgId) return toast('워크스페이스를 찾을 수 없습니다.');
+  let modal = document.getElementById('team-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'team-modal';
+    modal.className = 'modal hidden';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.innerHTML = `
+      <div class="modal-backdrop" data-team-close="true"></div>
+      <div class="modal-panel cloud-panel">
+        <div class="modal-header">
+          <h2>팀 멤버</h2>
+          <button type="button" class="icon-button close-button" data-team-close="true" aria-label="닫기"><span aria-hidden="true">✕</span></button>
+        </div>
+        <div id="team-body" class="team-body"></div>
+        <form id="team-invite" class="team-invite">
+          <input id="team-email" type="email" placeholder="초대할 이메일" required />
+          <select id="team-role" class="cloud-select">
+            <option value="member">멤버</option>
+            <option value="admin">관리자</option>
+            <option value="viewer">뷰어</option>
+          </select>
+          <button type="submit" class="primary-button">초대</button>
+        </form>
+        <p id="team-msg" class="cloud-error"></p>
+      </div>`;
+    document.body.appendChild(modal);
+    modal.addEventListener('click', (e) => { if (e.target.dataset.teamClose) modal.classList.add('hidden'); });
+    modal.querySelector('#team-invite').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const email = modal.querySelector('#team-email').value.trim();
+      const role = modal.querySelector('#team-role').value;
+      try {
+        const inv = await api(`/api/orgs/${currentOrgId}/invites`, { method: 'POST', body: { email, role } });
+        const link = `${location.origin}/?invite=${inv.token}`;
+        modal.querySelector('#team-msg').textContent = `초대 링크: ${link}`;
+        modal.querySelector('#team-email').value = '';
+        await renderTeam();
+      } catch (err) {
+        modal.querySelector('#team-msg').textContent = err.data?.error || err.message;
+      }
+    });
+  }
+  modal.classList.remove('hidden');
+  await renderTeam();
+}
+
+async function renderTeam() {
+  const body = document.getElementById('team-body');
+  if (!body) return;
+  const data = await api(`/api/orgs/${currentOrgId}/members`);
+  body.textContent = '';
+
+  // plan + usage indicator
+  try {
+    const b = await api(`/api/orgs/${currentOrgId}/billing`);
+    const bar = document.createElement('div');
+    bar.className = 'billing-bar';
+    const cap = (used, limit) => `${used}/${limit == null ? '∞' : limit}`;
+    const info = document.createElement('span');
+    info.textContent = `${b.planName} · 프로젝트 ${cap(b.usage.projects, b.limits.projects)} · 멤버 ${cap(b.usage.members, b.limits.members)}`;
+    bar.appendChild(info);
+    if (b.plan === 'free') {
+      const up = document.createElement('button');
+      up.type = 'button';
+      up.className = 'primary-button billing-upgrade';
+      up.textContent = 'Pro 업그레이드';
+      up.addEventListener('click', async () => {
+        try {
+          const s = await api(`/api/orgs/${currentOrgId}/checkout`, { method: 'POST' });
+          if (s.mock) toast('결제 연동(Stripe 키)이 필요합니다 — 데모 환경입니다.');
+          else window.location.href = s.url;
+        } catch (e) { toast(e.data?.error || e.message); }
+      });
+      bar.appendChild(up);
+    }
+    body.appendChild(bar);
+  } catch { /* billing optional */ }
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  for (const m of data.members) {
+    const li = document.createElement('li');
+    const who = document.createElement('span');
+    who.className = 'team-who';
+    who.textContent = m.email;
+    li.appendChild(who);
+    if (m.role === 'owner') {
+      const tag = document.createElement('span');
+      tag.className = 'team-role-tag';
+      tag.textContent = ROLE_LABELS.owner;
+      li.appendChild(tag);
+    } else {
+      const sel = document.createElement('select');
+      sel.className = 'cloud-select';
+      for (const role of ['admin', 'member', 'viewer']) {
+        const opt = document.createElement('option');
+        opt.value = role; opt.textContent = ROLE_LABELS[role];
+        if (role === m.role) opt.selected = true;
+        sel.appendChild(opt);
+      }
+      sel.addEventListener('change', () =>
+        api(`/api/orgs/${currentOrgId}/members/${m.id}`, { method: 'PATCH', body: { role: sel.value } })
+          .then(() => toast(`${m.email} → ${ROLE_LABELS[sel.value]}`)).catch((e) => toast(e.message)));
+      li.appendChild(sel);
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'secondary-button team-remove';
+      del.textContent = '제거';
+      del.addEventListener('click', () =>
+        api(`/api/orgs/${currentOrgId}/members/${m.id}`, { method: 'DELETE' })
+          .then(() => { toast(`${m.email} 제거됨`); renderTeam(); }).catch((e) => toast(e.message)));
+      li.appendChild(del);
+    }
+    list.appendChild(li);
+  }
+  body.appendChild(list);
+  if (data.invites?.length) {
+    const pending = document.createElement('p');
+    pending.className = 'team-pending';
+    pending.textContent = `대기 중인 초대: ${data.invites.map((i) => i.email).join(', ')}`;
+    body.appendChild(pending);
+  }
+
+  await renderTokens(body);
+}
+
+// Personal Access Tokens — create/list/revoke, secret shown once.
+async function renderTokens(body) {
+  const section = document.createElement('div');
+  section.className = 'token-section';
+  const h = document.createElement('h3');
+  h.className = 'token-heading';
+  h.textContent = 'API 토큰';
+  section.appendChild(h);
+
+  let data;
+  try { data = await api('/api/tokens'); } catch { return; }
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  for (const t of data.tokens) {
+    const li = document.createElement('li');
+    const who = document.createElement('span');
+    who.className = 'team-who';
+    who.textContent = `${t.name} · ${t.prefix}… ${t.lastUsed ? '· 최근 사용 ' + t.lastUsed.slice(0, 10) : '· 미사용'}`;
+    li.appendChild(who);
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'secondary-button team-remove';
+    del.textContent = '폐기';
+    del.addEventListener('click', () =>
+      api(`/api/tokens/${t.id}`, { method: 'DELETE' }).then(() => { toast('토큰을 폐기했습니다.'); renderTeam(); }).catch((e) => toast(e.message)));
+    li.appendChild(del);
+    list.appendChild(li);
+  }
+  section.appendChild(list);
+
+  const form = document.createElement('form');
+  form.className = 'team-invite';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = '토큰 이름 (예: CI, Zapier)';
+  const btn = document.createElement('button');
+  btn.type = 'submit';
+  btn.className = 'primary-button';
+  btn.textContent = '토큰 생성';
+  form.append(input, btn);
+  const secret = document.createElement('p');
+  secret.className = 'token-secret';
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const t = await api('/api/tokens', { method: 'POST', body: { name: input.value.trim() || 'token' } });
+      secret.textContent = `한 번만 표시됩니다 — 지금 복사하세요: ${t.token}`;
+      input.value = '';
+      // append the new token to the list without wiping the shown secret
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'team-who';
+      who.textContent = `${t.name} · ${t.prefix}… · 미사용`;
+      li.appendChild(who);
+      list.appendChild(li);
+    } catch (err) { toast(err.data?.error || err.message); }
+  });
+  section.appendChild(form);
+  section.appendChild(secret);
+  body.appendChild(section);
+}
+
+// Auto-accept an invite token from the URL (?invite=...) once logged in.
+if (typeof window !== 'undefined') {
+  const params = new URLSearchParams(location.search);
+  const inviteToken = params.get('invite');
+  if (inviteToken && getToken()) {
+    api(`/api/invites/${inviteToken}/accept`, { method: 'POST' })
+      .then((res) => { currentOrgId = res.orgId; refreshProjects().then(renderAuthUI); toast('초대를 수락했습니다.'); })
+      .catch(() => {});
   }
 }
 

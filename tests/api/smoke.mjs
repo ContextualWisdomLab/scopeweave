@@ -4,6 +4,7 @@
 import assert from 'node:assert';
 
 process.env.SCOPEWEAVE_DB = ':memory:';
+process.env.SCOPEWEAVE_DEV = '1'; // enables the dev-activate-pro endpoint for this test
 const { app } = await import('../../server/app.mjs');
 
 const req = (path, opts = {}) =>
@@ -80,6 +81,52 @@ assert.equal(r.status, 404, 'cross-tenant read → 404');
 r = await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: { authorization: `Bearer ${t2}` }, body: body({ tasks: [], version: 2 }) });
 assert.equal(r.status, 404, 'cross-tenant write → 404');
 
+// ---- Teams / RBAC ----
+const orgAId = me.orgs[0].id;
+// a viewer user (its own token; not yet a member of orgA)
+r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'viewer@x.com', password: 'password123' }) });
+const vauth = { authorization: `Bearer ${(await r.json()).token}` };
+// non-member cannot invite (404 hides the org's existence)
+r = await req(`/api/orgs/${orgAId}/invites`, { method: 'POST', headers: vauth, body: body({ email: 'z@z.com' }) });
+assert.equal(r.status, 404, 'non-member invite → 404');
+// owner invites viewer@x.com as viewer
+r = await req(`/api/orgs/${orgAId}/invites`, { method: 'POST', headers: auth, body: body({ email: 'viewer@x.com', role: 'viewer' }) });
+assert.equal(r.status, 200, 'owner invite ok');
+const invite = await r.json();
+assert.ok(invite.token);
+// viewer accepts → joins orgA as viewer
+r = await req(`/api/invites/${invite.token}/accept`, { method: 'POST', headers: vauth });
+assert.equal(r.status, 200);
+assert.equal((await r.json()).role, 'viewer');
+// reused invite → 404
+r = await req(`/api/invites/${invite.token}/accept`, { method: 'POST', headers: vauth });
+assert.equal(r.status, 404, 'used invite → 404');
+// roster shows the viewer
+r = await req(`/api/orgs/${orgAId}/members`, { headers: auth });
+const roster = await r.json();
+const vmember = roster.members.find((m) => m.email === 'viewer@x.com');
+assert.ok(vmember && vmember.role === 'viewer', 'viewer in roster');
+// viewer can READ but not WRITE the project
+r = await req(`/api/projects/${proj.id}`, { headers: vauth });
+assert.equal(r.status, 200, 'viewer read ok');
+r = await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: vauth, body: body({ tasks: [], version: 2 }) });
+assert.equal(r.status, 403, 'viewer write → 403');
+// owner promotes viewer → member, who can now write
+r = await req(`/api/orgs/${orgAId}/members/${vmember.id}`, { method: 'PATCH', headers: auth, body: body({ role: 'member' }) });
+assert.equal(r.status, 200, 'promote ok');
+r = await req(`/api/projects/${proj.id}`, { headers: vauth });
+const curV = (await r.json()).version;
+r = await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: vauth, body: body({ tasks: [{ id: 'm', name: '멤버작업' }], version: curV }) });
+assert.equal(r.status, 200, 'promoted member can write');
+// owner role is protected
+r = await req(`/api/orgs/${orgAId}/members/${me.user.id}`, { method: 'PATCH', headers: auth, body: body({ role: 'member' }) });
+assert.equal(r.status, 403, 'cannot demote owner');
+// owner/admin can remove a member; owner cannot be removed
+r = await req(`/api/orgs/${orgAId}/members/${me.user.id}`, { method: 'DELETE', headers: auth });
+assert.equal(r.status, 403, 'cannot remove owner');
+r = await req(`/api/orgs/${orgAId}/members/${vmember.id}`, { method: 'DELETE', headers: auth });
+assert.equal(r.status, 200, 'remove member ok');
+
 // SSE stream: query-token auth (EventSource can't send headers)
 r = await req(`/api/projects/${proj.id}/stream?token=${encodeURIComponent(token)}`);
 assert.equal(r.status, 200, 'SSE with valid query token → 200');
@@ -90,7 +137,7 @@ assert.equal(r.status, 401, 'SSE without token → 401');
 await r.body?.cancel?.();
 
 // Static allowlist — client files served, source/db never exposed
-for (const [path, code] of [['/', 200], ['/index.html', 200], ['/app.js', 200], ['/cloud-sync.js', 200], ['/analytics.js', 200], ['/styles.css', 200], ['/wbs.json', 200]]) {
+for (const [path, code] of [['/', 200], ['/index.html', 200], ['/app.js', 200], ['/cloud-sync.js', 200], ['/analytics.js', 200], ['/styles.css', 200], ['/wbs.json', 200], ['/landing.html', 200], ['/pricing', 200]]) {
   const res = await req(path);
   assert.equal(res.status, code, `static ${path} → ${code}`);
 }
@@ -98,5 +145,65 @@ for (const path of ['/server/app.mjs', '/server/db.mjs', '/data.db', '/package.j
   const res = await req(path);
   assert.equal(res.status, 404, `blocked ${path} → 404`);
 }
+
+// ---- Billing / plan gating ----
+// orgA on Free: 1 project, 1 member so far.
+r = await req(`/api/orgs/${orgAId}/billing`, { headers: auth });
+const bill = await r.json();
+assert.equal(bill.plan, 'free');
+assert.equal(bill.limits.projects, 2);
+assert.equal(bill.usage.projects, 1);
+// 2nd project under cap → ok; 3rd → 402
+r = await req('/api/projects', { method: 'POST', headers: auth, body: body({ name: 'P2' }) });
+assert.equal(r.status, 200, '2nd project ok');
+r = await req('/api/projects', { method: 'POST', headers: auth, body: body({ name: 'P3' }) });
+assert.equal(r.status, 402, '3rd project → 402 (Free cap)');
+assert.equal((await r.json()).upgrade, true);
+// member cap: fill to 3, 4th accept → 402
+async function addMember(email) {
+  const s = await req('/api/auth/signup', { method: 'POST', body: body({ email, password: 'password123' }) });
+  const tok = (await s.json()).token;
+  const inv = await (await req(`/api/orgs/${orgAId}/invites`, { method: 'POST', headers: auth, body: body({ email, role: 'member' }) })).json();
+  return req(`/api/invites/${inv.token}/accept`, { method: 'POST', headers: { authorization: `Bearer ${tok}` } });
+}
+assert.equal((await addMember('m2@x.com')).status, 200, 'member 2 ok');
+assert.equal((await addMember('m3@x.com')).status, 200, 'member 3 ok (cap)');
+assert.equal((await addMember('m4@x.com')).status, 402, '4th member → 402');
+// checkout → mock url (no Stripe key), owner-only
+r = await req(`/api/orgs/${orgAId}/checkout`, { method: 'POST', headers: auth });
+assert.equal(r.status, 200);
+const co = await r.json();
+assert.ok(co.url && co.mock === true, 'mock checkout url');
+// dev-activate → pro, caps lifted
+r = await req(`/api/orgs/${orgAId}/_dev/activate-pro`, { method: 'POST', headers: auth });
+assert.equal(r.status, 200);
+assert.equal((await r.json()).plan, 'pro');
+r = await req('/api/projects', { method: 'POST', headers: auth, body: body({ name: 'P3-pro' }) });
+assert.equal(r.status, 200, 'project cap lifted on Pro');
+assert.equal((await addMember('m4b@x.com')).status, 200, 'member cap lifted on Pro');
+
+// ---- Personal Access Tokens (PAT) ----
+r = await req('/api/tokens', { method: 'POST', headers: auth, body: body({ name: 'CI token' }) });
+assert.equal(r.status, 200);
+const pat = await r.json();
+assert.ok(pat.token.startsWith('swk_'), 'PAT secret has swk_ prefix');
+const patAuth = { authorization: `Bearer ${pat.token}` };
+// PAT authenticates the public API as its user
+r = await req('/api/projects', { headers: patAuth });
+assert.equal(r.status, 200, 'PAT authenticates');
+assert.ok(Array.isArray((await r.json()).projects));
+// listing shows prefix + lastUsed, never the secret/hash
+r = await req('/api/tokens', { headers: auth });
+const listed = (await r.json()).tokens.find((t) => t.id === pat.id);
+assert.ok(listed && listed.prefix === pat.prefix, 'token listed by prefix');
+assert.ok(!('token' in listed) && !('token_hash' in listed) && !('hash' in listed), 'secret never returned in list');
+assert.ok(listed.lastUsed, 'lastUsed updated after PAT use');
+// revoke → PAT rejected
+r = await req(`/api/tokens/${pat.id}`, { method: 'DELETE', headers: auth });
+assert.equal(r.status, 200);
+r = await req('/api/projects', { headers: patAuth });
+assert.equal(r.status, 401, 'revoked PAT → 401');
+r = await req(`/api/tokens/${pat.id}`, { method: 'DELETE', headers: auth });
+assert.equal(r.status, 404, 'double-revoke → 404');
 
 console.log('✓ API smoke tests passed');
