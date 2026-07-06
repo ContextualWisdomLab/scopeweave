@@ -257,7 +257,55 @@ app.put('/api/projects/:id', requireAuth, async (c) => {
     "UPDATE projects SET name=?, base_date=?, tasks_json=?, version=?, updated_at=datetime('now') WHERE id=?"
   ).run(body.name ?? p.name, body.baseDate ?? p.base_date, JSON.stringify(tasks), version, id);
   logAudit(p.org_id, uid, 'project.update', 'project', id, { version, tasks: tasks.length });
+  // Revision history: snapshot every save, keep the last 20 per project.
+  try {
+    db.prepare('INSERT OR REPLACE INTO project_revisions(project_id,version,name,base_date,tasks_json,saved_by) VALUES(?,?,?,?,?,?)')
+      .run(id, version, body.name ?? p.name, body.baseDate ?? p.base_date, JSON.stringify(tasks), uid);
+    db.prepare('DELETE FROM project_revisions WHERE project_id = ? AND version <= ?').run(id, version - 20);
+  } catch { /* history must not break saves */ }
   deliver(p.org_id, 'project.update', { projectId: Number(id), version, tasks: tasks.length, by: uid });
+  broadcast(id, { type: 'update', version, by: uid });
+  return c.json({ version });
+});
+
+// Revision history: list, inspect, restore.
+app.get('/api/projects/:id/revisions', requireAuth, (c) => {
+  const p = projectAccess(c.get('user').sub, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  const revisions = db.prepare(
+    `SELECT r.version, r.created_at AS savedAt, u.email AS savedBy FROM project_revisions r
+     LEFT JOIN users u ON u.id = r.saved_by WHERE r.project_id = ? ORDER BY r.version DESC`
+  ).all(p.id);
+  return c.json({ revisions });
+});
+
+app.get('/api/projects/:id/revisions/:version', requireAuth, (c) => {
+  const p = projectAccess(c.get('user').sub, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  const r = db.prepare('SELECT version, name, base_date AS baseDate, tasks_json FROM project_revisions WHERE project_id = ? AND version = ?')
+    .get(p.id, c.req.param('version'));
+  if (!r) return c.json({ error: 'not found' }, 404);
+  return c.json({ version: r.version, name: r.name, baseDate: r.baseDate, tasks: JSON.parse(r.tasks_json) });
+});
+
+// Restore = write the old snapshot as a NEW version (history stays linear).
+app.post('/api/projects/:id/revisions/:version/restore', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const id = c.req.param('id');
+  const p = projectAccess(uid, id);
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const r = db.prepare('SELECT name, base_date, tasks_json FROM project_revisions WHERE project_id = ? AND version = ?')
+    .get(id, c.req.param('version'));
+  if (!r) return c.json({ error: 'not found' }, 404);
+  const version = p.version + 1;
+  db.prepare("UPDATE projects SET name=?, base_date=?, tasks_json=?, version=?, updated_at=datetime('now') WHERE id=?")
+    .run(r.name, r.base_date, r.tasks_json, version, id);
+  try {
+    db.prepare('INSERT OR REPLACE INTO project_revisions(project_id,version,name,base_date,tasks_json,saved_by) VALUES(?,?,?,?,?,?)')
+      .run(id, version, r.name, r.base_date, r.tasks_json, uid);
+  } catch { /* history must not break restore */ }
+  logAudit(p.org_id, uid, 'project.restore', 'project', id, { from: Number(c.req.param('version')), version });
   broadcast(id, { type: 'update', version, by: uid });
   return c.json({ version });
 });

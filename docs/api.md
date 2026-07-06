@@ -50,6 +50,17 @@ A PAT acts as your user across all your workspaces.
 | `GET` | `/api/projects/:id/stream` | **SSE** live updates. EventSource can't send headers — pass `?token=<JWT>` |
 | `GET` | `/api/search?q=` | Cross-project search (project + task names, membership-scoped; min 2 chars) |
 
+## Revisions (변경 이력)
+
+Every save snapshots the project (last 20 kept). Restore writes the old
+snapshot as a **new** version — history stays linear.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/projects/:id/revisions` | List `{ version, savedAt, savedBy }` (desc) |
+| `GET` | `/api/projects/:id/revisions/:version` | Full snapshot |
+| `POST` | `/api/projects/:id/revisions/:version/restore` | Roll back (write roles) |
+
 ## Baselines (기준선)
 
 | Method | Path | Purpose |

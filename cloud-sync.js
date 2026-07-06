@@ -535,6 +535,42 @@ async function openBaselineModal() {
   result.id = 'baseline-result';
   panel.appendChild(result);
 
+  // 변경 이력 (revision history) — related schedule-control tool, same modal.
+  const histH = document.createElement('h3');
+  histH.className = 'token-heading';
+  histH.textContent = '변경 이력';
+  const histList = document.createElement('ul');
+  histList.className = 'team-list';
+  api(`/api/projects/${pid}/revisions`).then((h) => {
+    for (const rev of h.revisions.slice(0, 10)) {
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'team-who';
+      who.textContent = `v${rev.version} · ${String(rev.savedAt).slice(0, 16)} · ${rev.savedBy || ''}`;
+      const restore = document.createElement('button');
+      restore.type = 'button';
+      restore.className = 'secondary-button';
+      restore.textContent = '복원';
+      restore.addEventListener('click', async () => {
+        if (!confirm(`v${rev.version} 시점으로 복원합니다. (새 버전으로 기록됩니다)`)) return;
+        try {
+          await api(`/api/projects/${pid}/revisions/${rev.version}/restore`, { method: 'POST' });
+          await openProject(pid);
+          toast(`v${rev.version} 시점으로 복원했습니다.`);
+          modal.classList.add('hidden');
+        } catch (e) { toast(e.data?.error || e.message); }
+      });
+      li.append(who, restore);
+      histList.appendChild(li);
+    }
+    if (!h.revisions.length) {
+      const li = document.createElement('li');
+      li.textContent = '저장 이력이 없습니다.';
+      histList.appendChild(li);
+    }
+  }).catch(() => {});
+  panel.append(histH, histList);
+
   const data = await api(`/api/projects/${pid}/baselines`);
   if (!data.baselines.length) {
     const li = document.createElement('li');

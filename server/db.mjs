@@ -106,6 +106,18 @@ CREATE TABLE IF NOT EXISTS baselines (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_baselines_project ON baselines(project_id, id);
+CREATE TABLE IF NOT EXISTS project_revisions (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  version INTEGER NOT NULL,
+  name TEXT NOT NULL,
+  base_date TEXT NOT NULL DEFAULT '',
+  tasks_json TEXT NOT NULL DEFAULT '[]',
+  saved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(project_id, version)
+);
+CREATE INDEX IF NOT EXISTS idx_revisions_project ON project_revisions(project_id, version);
 CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_id);
 CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(org_id);
 CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);

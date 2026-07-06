@@ -374,6 +374,27 @@ assert.equal((await r.json()).results.length, 0, 'tenant isolation: other user s
 r = await req('/api/search?q=x', { headers: auth });
 assert.equal(r.status, 400, 'too-short query → 400');
 
+// ---- Revision history + restore ----
+const targetV = (await (await req(`/api/projects/${proj.id}`, { headers: auth })).json()).version; // '검색표적작업' snapshot
+await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: auth, body: body({ tasks: [{ id: 'r2', name: '이후작업' }], version: targetV }) });
+r = await req(`/api/projects/${proj.id}/revisions`, { headers: auth });
+assert.equal(r.status, 200, 'revisions list');
+const revs = (await r.json()).revisions;
+assert.ok(revs.length >= 2 && revs[0].version > revs[1].version, 'revisions desc');
+assert.ok(revs[0].savedBy, 'savedBy email present');
+r = await req(`/api/projects/${proj.id}/revisions/${targetV}`, { headers: auth });
+assert.equal((await r.json()).tasks[0].name, '검색표적작업', 'old snapshot content');
+r = await req(`/api/projects/${proj.id}/revisions/${targetV}/restore`, { method: 'POST', headers: oauth });
+assert.equal(r.status, 404, 'non-member restore → 404');
+r = await req(`/api/projects/${proj.id}/revisions/${targetV}/restore`, { method: 'POST', headers: auth });
+assert.equal(r.status, 200, 'restore ok');
+r = await req(`/api/projects/${proj.id}`, { headers: auth });
+const restored = await r.json();
+assert.equal(restored.tasks[0].name, '검색표적작업', 'project content rolled back');
+assert.ok(restored.version > targetV + 1, 'restore is a NEW version (linear history)');
+r = await req(`/api/projects/${proj.id}/revisions/99999/restore`, { method: 'POST', headers: auth });
+assert.equal(r.status, 404, 'unknown revision → 404');
+
 // ---- Duplicate project (template) ----
 r = await req(`/api/projects/${proj.id}/duplicate`, { method: 'POST', headers: auth, body: body({ name: '복제본' }) });
 assert.equal(r.status, 200, 'duplicate project');
