@@ -727,7 +727,9 @@ async function importMsProjectFile(file) {
   const tasks = parseMsProjectXml(xml);
   if (!tasks.length) { toast('가져올 작업이 없습니다 (MSP XML 형식을 확인하세요).'); return; }
   if (!confirm(`MS Project에서 ${tasks.length}개 작업을 가져옵니다. 현재 프로젝트 내용을 대체합니다.`)) return;
-  host?.hydrateState({ tasks });
+  // preserve name/baseDate — only the task tree is replaced
+  const prev = host?.getState?.() || {};
+  host?.hydrateState({ projectName: prev.projectName, baseDate: prev.baseDate, tasks });
   host?.renderAll();
   const state = host?.getState?.();
   if (state) await doPush(state);
