@@ -715,6 +715,37 @@ app.get('/api/auth/oidc/callback', async (c) => {
   return c.redirect(`/#token=${token}`);
 });
 
+// Cross-project search: project names + task names, membership-scoped (tenant
+// isolation via the same JOIN as projectAccess).
+// ponytail: LIKE over tasks_json text; move to FTS5 if search gets heavy.
+app.get('/api/search', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const q = String(c.req.query('q') || '').trim();
+  if (q.length < 2) return c.json({ error: 'query too short (min 2)' }, 400);
+  const rows = db.prepare(
+    `SELECT DISTINCT p.id, p.name, p.tasks_json FROM projects p
+     JOIN memberships m ON m.org_id = p.org_id
+     WHERE m.user_id = ? AND (p.name LIKE ? OR p.tasks_json LIKE ?) LIMIT 100`
+  ).all(uid, `%${q}%`, `%${q}%`);
+  const needle = q.toLowerCase();
+  const results = [];
+  for (const p of rows) {
+    const hit = { projectId: p.id, projectName: p.name, tasks: [] };
+    if (p.name.toLowerCase().includes(needle)) hit.nameMatch = true;
+    let tasks = [];
+    try { tasks = JSON.parse(p.tasks_json); } catch { /* skip bad json */ }
+    for (const t of tasks) {
+      if (String(t.name || '').toLowerCase().includes(needle)) {
+        hit.tasks.push({ id: t.id, name: t.name });
+        if (hit.tasks.length >= 5) break;
+      }
+    }
+    if (hit.nameMatch || hit.tasks.length) results.push(hit);
+    if (results.length >= 20) break;
+  }
+  return c.json({ query: q, results });
+});
+
 // Duplicate a project (template use: copy tasks + base date into a new project
 // in the same org). Plan caps apply like any create.
 app.post('/api/projects/:id/duplicate', requireAuth, async (c) => {

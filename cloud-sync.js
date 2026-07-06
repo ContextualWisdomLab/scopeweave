@@ -271,6 +271,13 @@ function renderAuthUI() {
     bar.appendChild(dup);
   }
 
+  const search = document.createElement('button');
+  search.type = 'button';
+  search.className = 'secondary-button';
+  search.textContent = '검색';
+  search.addEventListener('click', openSearchModal);
+  bar.appendChild(search);
+
   const out = document.createElement('button');
   out.type = 'button';
   out.className = 'secondary-button';
@@ -357,6 +364,88 @@ async function resolveOrgId() {
   const me = await api('/api/me');
   currentOrgId = me.orgs?.[0]?.id || null;
   return currentOrgId;
+}
+
+// ------------------------------------------------------------- search
+function openSearchModal() {
+  let modal = document.getElementById('search-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'search-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'search-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#search-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '프로젝트 검색';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '검색 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  const form = document.createElement('form');
+  form.className = 'cloud-form';
+  const input = document.createElement('input');
+  input.type = 'search';
+  input.placeholder = '프로젝트/작업 이름 (2자 이상)';
+  input.minLength = 2;
+  const go = document.createElement('button');
+  go.type = 'submit';
+  go.className = 'primary-button';
+  go.textContent = '검색';
+  form.append(input, go);
+  panel.appendChild(form);
+
+  const out = document.createElement('div');
+  panel.appendChild(out);
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    out.textContent = '';
+    try {
+      const data = await api(`/api/search?q=${encodeURIComponent(input.value.trim())}`);
+      if (!data.results.length) { out.textContent = '검색 결과가 없습니다.'; return; }
+      const list = document.createElement('ul');
+      list.className = 'team-list';
+      for (const hit of data.results) {
+        const li = document.createElement('li');
+        const who = document.createElement('span');
+        who.className = 'team-who';
+        const taskNames = hit.tasks.map((t) => t.name).join(', ');
+        who.textContent = hit.nameMatch && !taskNames ? hit.projectName : `${hit.projectName} — ${taskNames}`;
+        const open = document.createElement('button');
+        open.type = 'button';
+        open.className = 'secondary-button';
+        open.textContent = '열기';
+        open.addEventListener('click', async () => {
+          modal.classList.add('hidden');
+          await openProject(hit.projectId).catch((err) => toast(err.message));
+        });
+        li.append(who, open);
+        list.appendChild(li);
+      }
+      out.appendChild(list);
+    } catch (err) { out.textContent = err.data?.error || err.message; }
+  });
+  input.focus();
 }
 
 // ------------------------------------------------------------- baselines

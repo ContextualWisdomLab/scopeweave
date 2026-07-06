@@ -47,6 +47,7 @@ A PAT acts as your user across all your workspaces.
 | `DELETE` | `/api/projects/:id` | Delete (write roles); fires `project.delete` |
 | `POST` | `/api/projects/:id/duplicate` | `{ name? }` — copy tasks + base date into a new project (template use) |
 | `GET` | `/api/projects/:id/stream` | **SSE** live updates. EventSource can't send headers — pass `?token=<JWT>` |
+| `GET` | `/api/search?q=` | Cross-project search (project + task names, membership-scoped; min 2 chars) |
 
 ## Baselines (기준선)
 

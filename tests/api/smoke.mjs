@@ -361,6 +361,19 @@ assert.ok(/# TYPE scopeweave_uptime_sec gauge/.test(prom), 'uptime gauge exposed
 assert.ok(/scopeweave_signups \d+/.test(prom), 'signups exposed');
 assert.ok(!prom.includes('startedAt'), 'non-numeric fields skipped');
 
+// ---- Cross-project search (tenant-scoped) ----
+r = await req(`/api/projects/${proj.id}`, { headers: auth });
+const srchV = (await r.json()).version;
+await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: auth, body: body({ tasks: [{ id: 's1', name: '검색표적작업' }], version: srchV }) });
+r = await req('/api/search?q=검색표적', { headers: auth });
+assert.equal(r.status, 200, 'search 200');
+let sr = (await r.json()).results;
+assert.ok(sr.some((h) => h.projectId === proj.id && h.tasks.some((t) => t.name === '검색표적작업')), 'finds task by name');
+r = await req('/api/search?q=검색표적', { headers: oauth });
+assert.equal((await r.json()).results.length, 0, 'tenant isolation: other user sees nothing');
+r = await req('/api/search?q=x', { headers: auth });
+assert.equal(r.status, 400, 'too-short query → 400');
+
 // ---- Duplicate project (template) ----
 r = await req(`/api/projects/${proj.id}/duplicate`, { method: 'POST', headers: auth, body: body({ name: '복제본' }) });
 assert.equal(r.status, 200, 'duplicate project');
