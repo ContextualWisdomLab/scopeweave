@@ -1,7 +1,17 @@
 // Auth primitives. ponytail: node:crypto only — no auth lib dependency.
 // Passwords: scrypt. Tokens: HS256 JWT with a PINNED algorithm (no header-alg
 // trust → immune to alg-confusion). This is a security boundary; do not simplify.
-import { scryptSync, randomBytes, timingSafeEqual, createHmac } from 'node:crypto';
+import { scryptSync, randomBytes, timingSafeEqual, createHmac, createHash } from 'node:crypto';
+
+// Personal Access Tokens. Format: swk_<random>. Only the SHA-256 hash is
+// stored; the full secret is shown to the user exactly once at creation.
+export function generateApiToken() {
+  const full = `swk_${randomBytes(24).toString('base64url')}`;
+  return { full, prefix: full.slice(0, 12), hash: createHash('sha256').update(full).digest('hex') };
+}
+export function hashApiToken(full) {
+  return createHash('sha256').update(String(full)).digest('hex');
+}
 
 const SECRET = process.env.SCOPEWEAVE_JWT_SECRET || 'dev-insecure-secret-change-me';
 if (SECRET === 'dev-insecure-secret-change-me') {
