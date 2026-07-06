@@ -1019,3 +1019,14 @@ tbody tr.cpm-critical { background: rgba(234, 88, 12, 0.04); }
 .token-heading { margin: 0 0 10px; font-size: 15px; font-weight: 700; color: var(--text); }
 .token-secret { margin: 10px 0 0; padding: 8px 10px; font-size: 12px; word-break: break-all; color: var(--status-active); background: var(--surface-depth-3); border-radius: var(--radius-sm); }
 .token-secret:empty { display: none; }
+
+/* Audit log list */
+.audit-list { list-style: none; margin: 0; padding: 0; max-height: 180px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.audit-list li { font-size: 12.5px; color: var(--text-muted); padding: 5px 0; border-bottom: 1px solid var(--depth); font-variant-numeric: tabular-nums; }
+
+/* Resource workload table (analytics panel) */
+.workload-wrap { overflow-x: auto; margin-top: 4px; }
+.workload-table { border-collapse: collapse; font-size: 12px; }
+.workload-table th, .workload-table td { border: 1px solid var(--border, #e2e8f0); padding: 4px 10px; text-align: left; }
+.workload-table th { background: var(--depth, #f1f5f9); font-weight: 700; }
+.workload-behind { color: #ea580c; font-weight: 700; }
