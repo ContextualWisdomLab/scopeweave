@@ -296,10 +296,22 @@ app.get('/api/orgs/:id/members', requireAuth, (c) => {
      JOIN users u ON u.id = m.user_id WHERE m.org_id = ? ORDER BY m.id`
   ).all(orgId);
   const invites = db.prepare(
-    `SELECT email, role, token, created_at AS createdAt FROM invites
+    `SELECT id, email, role, token, created_at AS createdAt FROM invites
      WHERE org_id = ? AND accepted_at IS NULL ORDER BY id DESC`
   ).all(orgId);
   return c.json({ members, invites });
+});
+
+// Revoke a pending invite (owner/admin). The token stops working immediately.
+app.delete('/api/orgs/:id/invites/:inviteId', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
+  const info = db.prepare('DELETE FROM invites WHERE id = ? AND org_id = ? AND accepted_at IS NULL')
+    .run(c.req.param('inviteId'), orgId);
+  if (!info.changes) return c.json({ error: 'not found' }, 404);
+  logAudit(orgId, uid, 'invite.revoke', 'invite', c.req.param('inviteId'), {});
+  return c.json({ ok: true });
 });
 
 // Invite by email (owner/admin only). Returns the token (prod: email a link).

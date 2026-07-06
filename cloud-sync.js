@@ -640,8 +640,27 @@ async function renderTeam() {
   if (data.invites?.length) {
     const pending = document.createElement('p');
     pending.className = 'team-pending';
-    pending.textContent = `대기 중인 초대: ${data.invites.map((i) => i.email).join(', ')}`;
+    pending.textContent = '대기 중인 초대:';
     body.appendChild(pending);
+    const plist = document.createElement('ul');
+    plist.className = 'team-list';
+    for (const i of data.invites) {
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'team-who';
+      who.textContent = `${i.email} · ${i.role}`;
+      const revoke = document.createElement('button');
+      revoke.type = 'button';
+      revoke.className = 'secondary-button team-remove';
+      revoke.textContent = '초대 취소';
+      revoke.addEventListener('click', () =>
+        api(`/api/orgs/${currentOrgId}/invites/${i.id}`, { method: 'DELETE' })
+          .then(() => { toast('초대를 취소했습니다.'); renderTeam(); })
+          .catch((e) => toast(e.data?.error || e.message)));
+      li.append(who, revoke);
+      plist.appendChild(li);
+    }
+    body.appendChild(plist);
   }
 
   const exportBtn = document.createElement('button');
