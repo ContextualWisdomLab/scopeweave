@@ -41,6 +41,7 @@ CREATE TABLE IF NOT EXISTS projects (
   base_date TEXT NOT NULL DEFAULT '',
   tasks_json TEXT NOT NULL DEFAULT '[]',
   version INTEGER NOT NULL DEFAULT 1,
+  archived INTEGER NOT NULL DEFAULT 0,
   created_by INTEGER NOT NULL REFERENCES users(id),
   created_at TEXT NOT NULL DEFAULT (datetime('now')),
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -127,6 +128,21 @@ CREATE TABLE IF NOT EXISTS comments (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_comments_project ON comments(project_id, id);
+CREATE TABLE IF NOT EXISTS share_tokens (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  token TEXT UNIQUE NOT NULL,
+  created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  revoked INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_share_tokens ON share_tokens(token);
+CREATE TABLE IF NOT EXISTS project_seen (
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (project_id, user_id)
+);
 CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_id);
 CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(org_id);
 CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);
@@ -134,6 +150,7 @@ CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);
 
 // Migration for pre-existing DBs: add token_version if missing (idempotent).
 try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
+try { db.exec('ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
 
 // node:sqlite returns lastInsertRowid as number|bigint; normalize to Number.
 export const rowid = (r) => Number(r.lastInsertRowid);

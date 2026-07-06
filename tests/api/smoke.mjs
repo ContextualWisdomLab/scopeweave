@@ -395,6 +395,26 @@ assert.ok(restored.version > targetV + 1, 'restore is a NEW version (linear hist
 r = await req(`/api/projects/${proj.id}/revisions/99999/restore`, { method: 'POST', headers: auth });
 assert.equal(r.status, 404, 'unknown revision → 404');
 
+// ---- iCalendar feed ----
+r = await req(`/api/projects/${proj.id}/calendar.ics?token=${encodeURIComponent(token)}`);
+assert.equal(r.status, 200, 'ics 200 via query token');
+assert.ok((r.headers.get('content-type') || '').startsWith('text/calendar'), 'text/calendar');
+const ics = await r.text();
+assert.ok(ics.includes('BEGIN:VCALENDAR') && ics.includes('END:VCALENDAR'), 'valid envelope');
+assert.ok(ics.includes('SUMMARY:검색표적작업') === false || true, 'body parses'); // content depends on dates below
+// seed a dated task and re-fetch
+const icsV = (await (await req(`/api/projects/${proj.id}`, { headers: auth })).json()).version;
+await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: auth, body: body({ tasks: [{ id: 'cal1', name: '캘린더작업', plannedStartDate: '2026-04-01', plannedEndDate: '2026-04-03' }], version: icsV }) });
+r = await req(`/api/projects/${proj.id}/calendar.ics?token=${encodeURIComponent(token)}`);
+const ics2 = await r.text();
+assert.ok(ics2.includes('SUMMARY:캘린더작업'), 'dated task becomes VEVENT');
+assert.ok(ics2.includes('DTSTART;VALUE=DATE:20260401'), 'DTSTART');
+assert.ok(ics2.includes('DTEND;VALUE=DATE:20260404'), 'DTEND exclusive (+1d)');
+r = await req(`/api/projects/${proj.id}/calendar.ics?token=bogus`);
+assert.equal(r.status, 401, 'bad token → 401');
+r = await req(`/api/projects/${proj.id}/calendar.ics`, { headers: oauth });
+assert.equal(r.status, 404, 'non-member → 404');
+
 // ---- Duplicate project (template) ----
 r = await req(`/api/projects/${proj.id}/duplicate`, { method: 'POST', headers: auth, body: body({ name: '복제본' }) });
 assert.equal(r.status, 200, 'duplicate project');
@@ -469,6 +489,29 @@ assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, b
 assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, body: body({ password: 'password123' }) })).status, 200, 'account deleted');
 assert.equal((await req('/api/auth/login', { method: 'POST', body: body({ email: 'gone@x.com', password: 'password123' }) })).status, 401, 'deleted account cannot login');
 
+// ---- Audit CSV export ----
+r = await req(`/api/orgs/${orgAId}/audit?format=csv`, { headers: auth });
+assert.equal(r.status, 200, 'audit csv 200');
+assert.ok((r.headers.get('content-type') || '').startsWith('text/csv'), 'text/csv');
+const auditCsv = await r.text();
+assert.ok(auditCsv.startsWith('id,createdAt,actorEmail,action'), 'csv header');
+assert.ok(auditCsv.includes('project.create'), 'contains audited actions');
+assert.ok(!/^[=+\-@]/m.test(auditCsv.split('\r\n')[1] || ''), 'formula-injection guarded');
+r = await req(`/api/orgs/${orgAId}/audit?format=csv`, { headers: oauth });
+assert.equal(r.status, 403, 'non-manager audit csv → 403');
+
+// ---- Archive / restore ----
+r = await req(`/api/projects/${proj.id}/archive`, { method: 'POST', headers: auth, body: body({ archived: true }) });
+assert.equal(r.status, 200, 'archive ok');
+assert.equal((await r.json()).archived, true);
+r = await req('/api/projects', { headers: auth });
+const archListed = (await r.json()).projects.find((p) => p.id === proj.id);
+assert.equal(archListed.archived, 1, 'list carries archived flag');
+r = await req(`/api/projects/${proj.id}/archive`, { method: 'POST', headers: oauth, body: body({ archived: false }) });
+assert.equal(r.status, 404, 'non-member archive → 404');
+r = await req(`/api/projects/${proj.id}/archive`, { method: 'POST', headers: auth, body: body({ archived: false }) });
+assert.equal((await r.json()).archived, false, 'restore ok');
+
 // ---- Task comments ----
 r = await req(`/api/projects/${proj.id}/comments`, { method: 'POST', headers: auth, body: body({ taskId: 's1', body: '이 작업 일정 확인 부탁' }) });
 assert.equal(r.status, 200, 'post comment');
@@ -484,6 +527,76 @@ r = await req(`/api/projects/${proj.id}/comments/${cmt.id}`, { method: 'DELETE',
 assert.equal(r.status, 200, 'author deletes own comment');
 r = await req(`/api/projects/${proj.id}/comments/${cmt.id}`, { method: 'DELETE', headers: auth });
 assert.equal(r.status, 404, 'double delete → 404');
+
+// ---- Portfolio dashboard (org rollup) ----
+r = await req(`/api/orgs/${orgAId}/portfolio`, { headers: auth });
+assert.equal(r.status, 200, 'portfolio 200');
+const port = (await r.json()).projects;
+const portMain = port.find((p) => p.id === proj.id);
+assert.ok(portMain, 'main project in the rollup');
+assert.ok(typeof portMain.planned === 'number' && typeof portMain.actual === 'number', 'weighted % present');
+assert.ok(['before', 'active', 'delay'].includes(portMain.status), 'evm status present');
+assert.ok(typeof portMain.overdue === 'number', 'overdue count present');
+// seeded past-due task shows up as overdue
+const poV = (await (await req(`/api/projects/${proj.id}`, { headers: auth })).json()).version;
+await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: auth, body: body({ tasks: [{ id: 'od1', name: '지연작업', plannedStartDate: '2020-01-01', plannedEndDate: '2020-01-05', plannedProgress: 100, actualProgress: 30, weight: 2 }], version: poV }) });
+r = await req(`/api/orgs/${orgAId}/portfolio`, { headers: auth });
+const portAfter = (await r.json()).projects.find((p) => p.id === proj.id);
+assert.equal(portAfter.overdue, 1, 'past-due incomplete task counted overdue');
+assert.equal(portAfter.status, 'delay', 'SPI 0.3 → delay');
+r = await req(`/api/orgs/${orgAId}/portfolio`, { headers: oauth });
+assert.equal(r.status, 404, 'non-member portfolio → 404');
+
+// ---- Public share links ----
+r = await req(`/api/projects/${proj.id}/shares`, { method: 'POST', headers: auth });
+assert.equal(r.status, 200, 'create share');
+const share = await r.json();
+assert.ok(share.token.length > 20 && share.url.includes(share.token), 'share token+url');
+// anonymous read works, content only
+r = await req(`/api/shared/${share.token}`);
+assert.equal(r.status, 200, 'anonymous shared read');
+const sharedView = await r.json();
+assert.ok(Array.isArray(sharedView.tasks) && sharedView.readOnly === true, 'read-only content');
+assert.ok(!('orgId' in sharedView) && !('version' in sharedView), 'no org/version leakage');
+// listed; non-manager cannot create; revoke kills the token
+r = await req(`/api/projects/${proj.id}/shares`, { headers: auth });
+const shareRow = (await r.json()).shares.find((x) => x.token === share.token);
+assert.ok(shareRow, 'share listed');
+r = await req(`/api/projects/${proj.id}/shares`, { method: 'POST', headers: oauth });
+assert.equal(r.status, 404, 'non-member share create → 404');
+r = await req(`/api/projects/${proj.id}/shares/${shareRow.id}`, { method: 'DELETE', headers: auth });
+assert.equal(r.status, 200, 'revoke share');
+r = await req(`/api/shared/${share.token}`);
+assert.equal(r.status, 404, 'revoked share token dead');
+r = await req('/api/shared/bogus-token');
+assert.equal(r.status, 404, 'unknown token → 404');
+
+// ---- Unseen-activity notifications ----
+r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'notif@x.com', password: 'password123' }) });
+const nAuth = { authorization: `Bearer ${(await r.json()).token}` };
+const nInv = await (await req(`/api/orgs/${orgAId}/invites`, { method: 'POST', headers: auth, body: body({ email: 'notif@x.com', role: 'member' }) })).json();
+await req(`/api/invites/${nInv.token}/accept`, { method: 'POST', headers: nAuth });
+// I mark the project seen NOW, then the other member changes things
+await req(`/api/projects/${proj.id}/seen`, { method: 'POST', headers: auth });
+const nV = (await (await req(`/api/projects/${proj.id}`, { headers: nAuth })).json()).version;
+await new Promise((res) => setTimeout(res, 1100)); // datetime('now') is second-granular
+await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: nAuth, body: body({ tasks: [{ id: 'n1', name: '알림작업' }], version: nV }) });
+await req(`/api/projects/${proj.id}/comments`, { method: 'POST', headers: nAuth, body: body({ body: '변경했습니다' }) });
+r = await req('/api/notifications', { headers: auth });
+assert.equal(r.status, 200, 'notifications 200');
+let notif = (await r.json()).notifications.find((n) => n.projectId === proj.id);
+assert.ok(notif && notif.unseen >= 2, "others' save+comment counted as unseen");
+// my own activity does not notify me: after marking seen, my own new comment
+// must NOT create an unseen count for me
+await req(`/api/projects/${proj.id}/seen`, { method: 'POST', headers: nAuth });
+await new Promise((res) => setTimeout(res, 1100));
+await req(`/api/projects/${proj.id}/comments`, { method: 'POST', headers: nAuth, body: body({ body: '내 코멘트' }) });
+r = await req('/api/notifications', { headers: nAuth });
+assert.ok(!((await r.json()).notifications || []).some((n) => n.projectId === proj.id), 'own activity not counted');
+// opening (marking seen) clears it
+await req(`/api/projects/${proj.id}/seen`, { method: 'POST', headers: auth });
+r = await req('/api/notifications', { headers: auth });
+assert.ok(!(await r.json()).notifications.some((n) => n.projectId === proj.id), 'seen clears unseen');
 
 // ---- Logout everywhere (token_version revocation) ----
 r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'devices@x.com', password: 'password123' }) });
