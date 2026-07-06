@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes } from 'node:crypto';
 import { db, rowid } from './db.mjs';
-import { hashPassword, verifyPassword, signToken, verifyToken } from './auth.mjs';
+import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
@@ -22,6 +22,14 @@ export const app = new Hono();
 async function requireAuth(c, next) {
   const header = c.req.header('authorization') || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
+  // Personal Access Token path (swk_...): look up by hash, act as its user.
+  if (token.startsWith('swk_')) {
+    const row = db.prepare('SELECT * FROM api_tokens WHERE token_hash = ?').get(hashApiToken(token));
+    if (!row) return c.json({ error: 'unauthorized' }, 401);
+    db.prepare("UPDATE api_tokens SET last_used = datetime('now') WHERE id = ?").run(row.id);
+    c.set('user', { sub: row.user_id, viaPat: true });
+    return next();
+  }
   try {
     c.set('user', verifyToken(token));
   } catch {
@@ -289,6 +297,32 @@ app.post('/api/orgs/:id/_dev/activate-pro', requireAuth, (c) => {
   return c.json({ plan: 'pro' });
 });
 
+// ------------------------------------------------- personal access tokens (PAT)
+app.get('/api/tokens', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const tokens = db.prepare(
+    'SELECT id, name, prefix, last_used AS lastUsed, created_at AS createdAt FROM api_tokens WHERE user_id = ? ORDER BY id DESC'
+  ).all(uid);
+  return c.json({ tokens }); // never the secret or hash
+});
+
+app.post('/api/tokens', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const { name } = await c.req.json().catch(() => ({}));
+  const t = generateApiToken();
+  const id = rowid(db.prepare('INSERT INTO api_tokens(user_id,name,token_hash,prefix) VALUES(?,?,?,?)')
+    .run(uid, String(name || 'token').slice(0, 60), t.hash, t.prefix));
+  // Full secret returned ONCE — never retrievable again.
+  return c.json({ id, name: name || 'token', prefix: t.prefix, token: t.full });
+});
+
+app.delete('/api/tokens/:id', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const info = db.prepare('DELETE FROM api_tokens WHERE id = ? AND user_id = ?').run(c.req.param('id'), uid);
+  if (!info.changes) return c.json({ error: 'not found' }, 404);
+  return c.json({ ok: true });
+});
+
 app.get('/api/health', (c) => c.json({ ok: true }));
 
 // Static client — strict allowlist so server/, data.db, package.json etc. are
@@ -297,6 +331,8 @@ const STATIC = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
   '/404.html': ['404.html', 'text/html; charset=utf-8'],
+  '/landing.html': ['landing.html', 'text/html; charset=utf-8'],
+  '/pricing': ['landing.html', 'text/html; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/cloud-sync.js': ['cloud-sync.js', 'text/javascript; charset=utf-8'],
   '/analytics.js': ['analytics.js', 'text/javascript; charset=utf-8'],

@@ -137,7 +137,7 @@ assert.equal(r.status, 401, 'SSE without token → 401');
 await r.body?.cancel?.();
 
 // Static allowlist — client files served, source/db never exposed
-for (const [path, code] of [['/', 200], ['/index.html', 200], ['/app.js', 200], ['/cloud-sync.js', 200], ['/analytics.js', 200], ['/styles.css', 200], ['/wbs.json', 200]]) {
+for (const [path, code] of [['/', 200], ['/index.html', 200], ['/app.js', 200], ['/cloud-sync.js', 200], ['/analytics.js', 200], ['/styles.css', 200], ['/wbs.json', 200], ['/landing.html', 200], ['/pricing', 200]]) {
   const res = await req(path);
   assert.equal(res.status, code, `static ${path} → ${code}`);
 }
@@ -181,5 +181,29 @@ assert.equal((await r.json()).plan, 'pro');
 r = await req('/api/projects', { method: 'POST', headers: auth, body: body({ name: 'P3-pro' }) });
 assert.equal(r.status, 200, 'project cap lifted on Pro');
 assert.equal((await addMember('m4b@x.com')).status, 200, 'member cap lifted on Pro');
+
+// ---- Personal Access Tokens (PAT) ----
+r = await req('/api/tokens', { method: 'POST', headers: auth, body: body({ name: 'CI token' }) });
+assert.equal(r.status, 200);
+const pat = await r.json();
+assert.ok(pat.token.startsWith('swk_'), 'PAT secret has swk_ prefix');
+const patAuth = { authorization: `Bearer ${pat.token}` };
+// PAT authenticates the public API as its user
+r = await req('/api/projects', { headers: patAuth });
+assert.equal(r.status, 200, 'PAT authenticates');
+assert.ok(Array.isArray((await r.json()).projects));
+// listing shows prefix + lastUsed, never the secret/hash
+r = await req('/api/tokens', { headers: auth });
+const listed = (await r.json()).tokens.find((t) => t.id === pat.id);
+assert.ok(listed && listed.prefix === pat.prefix, 'token listed by prefix');
+assert.ok(!('token' in listed) && !('token_hash' in listed) && !('hash' in listed), 'secret never returned in list');
+assert.ok(listed.lastUsed, 'lastUsed updated after PAT use');
+// revoke → PAT rejected
+r = await req(`/api/tokens/${pat.id}`, { method: 'DELETE', headers: auth });
+assert.equal(r.status, 200);
+r = await req('/api/projects', { headers: patAuth });
+assert.equal(r.status, 401, 'revoked PAT → 401');
+r = await req(`/api/tokens/${pat.id}`, { method: 'DELETE', headers: auth });
+assert.equal(r.status, 404, 'double-revoke → 404');
 
 console.log('✓ API smoke tests passed');
