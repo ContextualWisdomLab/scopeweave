@@ -638,6 +638,25 @@ app.get('/api/auth/oidc/callback', async (c) => {
   return c.redirect(`/#token=${token}`);
 });
 
+// Duplicate a project (template use: copy tasks + base date into a new project
+// in the same org). Plan caps apply like any create.
+app.post('/api/projects/:id/duplicate', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  if (wouldExceed(db, getOrg(p.org_id), 'projects')) {
+    return c.json({ error: 'project limit reached on the Free plan', upgrade: true, limit: PLANS.free.limits.projects }, 402);
+  }
+  const { name } = await c.req.json().catch(() => ({}));
+  const newName = String(name || `${p.name} (복사본)`).slice(0, 120);
+  const nid = rowid(db.prepare('INSERT INTO projects(org_id,name,base_date,tasks_json,created_by) VALUES(?,?,?,?,?)')
+    .run(p.org_id, newName, p.base_date, p.tasks_json, uid));
+  metrics.projectsCreated++;
+  logAudit(p.org_id, uid, 'project.duplicate', 'project', nid, { from: p.id, name: newName });
+  return c.json({ id: nid, name: newName, version: 1 });
+});
+
 // ------------------------------------------------------------- baselines
 // Snapshot a project's current plan as a named baseline (schedule-control:
 // compare actuals against the frozen plan later).

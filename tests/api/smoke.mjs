@@ -307,6 +307,21 @@ assert.equal((await r.json()).user.email, 'sso@corp.com', 'SSO re-login same use
 r = await req('/api/auth/oidc/callback?code=x&state=bogus');
 assert.equal(r.status, 400, 'invalid state → 400');
 
+// ---- Duplicate project (template) ----
+r = await req(`/api/projects/${proj.id}/duplicate`, { method: 'POST', headers: auth, body: body({ name: '복제본' }) });
+assert.equal(r.status, 200, 'duplicate project');
+const dup = await r.json();
+assert.notEqual(dup.id, proj.id);
+r = await req(`/api/projects/${dup.id}`, { headers: auth });
+const dupFull = await r.json();
+const origFull = await (await req(`/api/projects/${proj.id}`, { headers: auth })).json();
+assert.deepEqual(dupFull.tasks, origFull.tasks, 'duplicate copied the tasks');
+assert.equal(dupFull.baseDate, origFull.baseDate, 'duplicate copied the base date');
+assert.equal(dupFull.version, 1, 'duplicate starts at version 1');
+r = await req(`/api/projects/${proj.id}/duplicate`, { method: 'POST', headers: oauth, body: body({}) });
+assert.equal(r.status, 404, 'non-member duplicate → 404');
+await req(`/api/projects/${dup.id}`, { method: 'DELETE', headers: auth }); // keep later plan-cap expectations stable
+
 // ---- Create additional workspace (org) ----
 r = await req('/api/orgs', { method: 'POST', headers: auth, body: body({ name: '두번째 워크스페이스' }) });
 assert.equal(r.status, 200, 'create org');

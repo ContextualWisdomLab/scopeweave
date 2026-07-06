@@ -253,6 +253,22 @@ function renderAuthUI() {
     bl.textContent = '기준선';
     bl.addEventListener('click', () => openBaselineModal().catch((e) => toast(e.message || '기준선을 불러오지 못했습니다.')));
     bar.appendChild(bl);
+
+    const dup = document.createElement('button');
+    dup.type = 'button';
+    dup.className = 'secondary-button';
+    dup.textContent = '복제';
+    dup.addEventListener('click', async () => {
+      const name = prompt('새 프로젝트 이름 (템플릿으로 복제)');
+      if (name === null) return;
+      try {
+        const created = await api(`/api/projects/${getProjectId()}/duplicate`, { method: 'POST', body: { name } });
+        await refreshProjects();
+        await openProject(created.id);
+        toast(`"${created.name}" 프로젝트로 복제했습니다.`);
+      } catch (err) { toast(err.data?.error || err.message); }
+    });
+    bar.appendChild(dup);
   }
 
   const out = document.createElement('button');
