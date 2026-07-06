@@ -49,6 +49,8 @@ A PAT acts as your user across all your workspaces.
 | `POST` | `/api/projects/:id/duplicate` | `{ name? }` — copy tasks + base date into a new project (template use) |
 | `POST` | `/api/projects/:id/archive` | `{ archived: bool }` — archive/restore (write roles) |
 | `GET` | `/api/projects/:id/stream` | **SSE** live updates. EventSource can't send headers — pass `?token=<JWT>` |
+| `GET` | `/api/notifications` | Per-project unseen counts (others' saves + comments since my last open) |
+| `POST` | `/api/projects/:id/seen` | Mark a project seen (clears its unseen count) |
 | `GET` | `/api/search?q=` | Cross-project search (project + task names, membership-scoped; min 2 chars) |
 | `GET` | `/api/projects/:id/calendar.ics` | iCalendar feed of planned tasks (all-day VEVENTs). Calendar apps: pass `?token=` |
 

@@ -899,6 +899,37 @@ app.get('/api/search', requireAuth, (c) => {
   return c.json({ query: q, results });
 });
 
+// Unseen-activity notifications: per project, count others' saves + comments
+// newer than my last-seen mark. Opening a project marks it seen.
+app.get('/api/notifications', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const rows = db.prepare(
+    `SELECT p.id AS projectId,
+       (SELECT COUNT(*) FROM project_revisions r WHERE r.project_id = p.id
+          AND r.saved_by IS NOT NULL AND r.saved_by != ?
+          AND r.created_at > COALESCE(s.seen_at, '')) AS revisions,
+       (SELECT COUNT(*) FROM comments cm WHERE cm.project_id = p.id
+          AND cm.user_id IS NOT NULL AND cm.user_id != ?
+          AND cm.created_at > COALESCE(s.seen_at, '')) AS comments
+     FROM projects p
+     JOIN memberships m ON m.org_id = p.org_id AND m.user_id = ?
+     LEFT JOIN project_seen s ON s.project_id = p.id AND s.user_id = ?`
+  ).all(uid, uid, uid, uid);
+  const notifications = rows
+    .map((r) => ({ projectId: r.projectId, unseen: r.revisions + r.comments }))
+    .filter((r) => r.unseen > 0);
+  return c.json({ notifications });
+});
+
+app.post('/api/projects/:id/seen', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  db.prepare(`INSERT INTO project_seen(project_id, user_id, seen_at) VALUES(?, ?, datetime('now'))
+    ON CONFLICT(project_id, user_id) DO UPDATE SET seen_at = datetime('now')`).run(p.id, uid);
+  return c.json({ ok: true });
+});
+
 // Archive / restore a project (write roles): declutter without deleting.
 app.post('/api/projects/:id/archive', requireAuth, async (c) => {
   const uid = c.get('user').sub;

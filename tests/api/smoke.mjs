@@ -528,6 +528,33 @@ assert.equal(r.status, 200, 'author deletes own comment');
 r = await req(`/api/projects/${proj.id}/comments/${cmt.id}`, { method: 'DELETE', headers: auth });
 assert.equal(r.status, 404, 'double delete → 404');
 
+// ---- Unseen-activity notifications ----
+r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'notif@x.com', password: 'password123' }) });
+const nAuth = { authorization: `Bearer ${(await r.json()).token}` };
+const nInv = await (await req(`/api/orgs/${orgAId}/invites`, { method: 'POST', headers: auth, body: body({ email: 'notif@x.com', role: 'member' }) })).json();
+await req(`/api/invites/${nInv.token}/accept`, { method: 'POST', headers: nAuth });
+// I mark the project seen NOW, then the other member changes things
+await req(`/api/projects/${proj.id}/seen`, { method: 'POST', headers: auth });
+const nV = (await (await req(`/api/projects/${proj.id}`, { headers: nAuth })).json()).version;
+await new Promise((res) => setTimeout(res, 1100)); // datetime('now') is second-granular
+await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: nAuth, body: body({ tasks: [{ id: 'n1', name: '알림작업' }], version: nV }) });
+await req(`/api/projects/${proj.id}/comments`, { method: 'POST', headers: nAuth, body: body({ body: '변경했습니다' }) });
+r = await req('/api/notifications', { headers: auth });
+assert.equal(r.status, 200, 'notifications 200');
+let notif = (await r.json()).notifications.find((n) => n.projectId === proj.id);
+assert.ok(notif && notif.unseen >= 2, "others' save+comment counted as unseen");
+// my own activity does not notify me: after marking seen, my own new comment
+// must NOT create an unseen count for me
+await req(`/api/projects/${proj.id}/seen`, { method: 'POST', headers: nAuth });
+await new Promise((res) => setTimeout(res, 1100));
+await req(`/api/projects/${proj.id}/comments`, { method: 'POST', headers: nAuth, body: body({ body: '내 코멘트' }) });
+r = await req('/api/notifications', { headers: nAuth });
+assert.ok(!((await r.json()).notifications || []).some((n) => n.projectId === proj.id), 'own activity not counted');
+// opening (marking seen) clears it
+await req(`/api/projects/${proj.id}/seen`, { method: 'POST', headers: auth });
+r = await req('/api/notifications', { headers: auth });
+assert.ok(!(await r.json()).notifications.some((n) => n.projectId === proj.id), 'seen clears unseen');
+
 // ---- Logout everywhere (token_version revocation) ----
 r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'devices@x.com', password: 'password123' }) });
 const devTokA = (await r.json()).token;

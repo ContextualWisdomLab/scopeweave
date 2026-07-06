@@ -66,6 +66,9 @@ async function openProject(id, { silent = false } = {}) {
   host?.hydrateState({ projectName: p.name, baseDate: p.baseDate, tasks: p.tasks });
   host?.renderAll();
   subscribe(id);
+  // opening = seen: clear the unseen badge for this project
+  notifCache.delete(String(id));
+  api(`/api/projects/${id}/seen`, { method: 'POST' }).catch(() => {});
   renderAuthUI();
   if (!silent) toast(`'${p.name}' 프로젝트를 열었습니다.`);
 }
@@ -188,8 +191,14 @@ function ensureAuthUI() {
 }
 
 let projectsCache = [];
+let notifCache = new Map(); // projectId -> unseen count
+
 async function refreshProjects() {
   try { projectsCache = (await api('/api/projects')).projects || []; } catch { projectsCache = []; }
+  try {
+    const n = await api('/api/notifications');
+    notifCache = new Map((n.notifications || []).map((x) => [String(x.projectId), x.unseen]));
+  } catch { notifCache = new Map(); }
 }
 
 function renderAuthUI() {
@@ -225,7 +234,8 @@ function renderAuthUI() {
   for (const p of projectsCache.filter((x) => !x.archived)) {
     const opt = document.createElement('option');
     opt.value = String(p.id);
-    opt.textContent = p.name; // textContent → XSS-safe
+    const unseen = notifCache.get(String(p.id));
+    opt.textContent = unseen ? `${p.name} ●${unseen}` : p.name; // textContent → XSS-safe
     if (String(p.id) === String(openId)) opt.selected = true;
     select.appendChild(opt);
   }
