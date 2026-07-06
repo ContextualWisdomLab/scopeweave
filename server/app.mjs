@@ -535,6 +535,19 @@ app.get('/api/orgs/:id/webhooks/:whId/deliveries', requireAuth, (c) => {
   return c.json({ deliveries });
 });
 
+// Rotate a webhook's signing secret (leak response / periodic hygiene). The new
+// secret is returned ONCE; old signatures stop validating immediately.
+app.post('/api/orgs/:id/webhooks/:whId/rotate', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
+  const secret = `whsec_${randomBytes(24).toString('base64url')}`;
+  const info = db.prepare('UPDATE webhooks SET secret = ? WHERE id = ? AND org_id = ?').run(secret, c.req.param('whId'), orgId);
+  if (!info.changes) return c.json({ error: 'not found' }, 404);
+  logAudit(orgId, uid, 'webhook.rotate', 'webhook', c.req.param('whId'), {});
+  return c.json({ id: Number(c.req.param('whId')), secret }); // shown once
+});
+
 app.delete('/api/orgs/:id/webhooks/:whId', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');

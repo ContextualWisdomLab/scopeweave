@@ -726,6 +726,18 @@ async function renderWebhooks(body) {
     const status = w.lastOk == null ? '' : (w.lastOk ? ' · 최근 ✓' : ' · 최근 ✗ 실패');
     who.textContent = `${w.url} · ${w.events}${status}`;
     li.appendChild(who);
+    const rot = document.createElement('button');
+    rot.type = 'button';
+    rot.className = 'secondary-button';
+    rot.textContent = '키 교체';
+    rot.addEventListener('click', async () => {
+      if (!confirm('서명 시크릿을 교체합니다. 기존 시크릿은 즉시 무효화됩니다.')) return;
+      try {
+        const res = await api(`/api/orgs/${currentOrgId}/webhooks/${w.id}/rotate`, { method: 'POST' });
+        prompt('새 서명 시크릿 (지금만 표시됩니다 — 복사하세요)', res.secret);
+      } catch (e) { toast(e.data?.error || e.message); }
+    });
+    li.appendChild(rot);
     const del = document.createElement('button');
     del.type = 'button';
     del.className = 'secondary-button team-remove';

@@ -266,6 +266,16 @@ assert.ok(dels.every((d) => d.ok === 0), 'refused url recorded as failed');
 assert.ok(dels.some((d) => d.attempt === 2), 'failed delivery retried (attempt 2)');
 r = await req(`/api/orgs/${orgAId}/webhooks/${wh.id}/deliveries`, { headers: oauth });
 assert.equal(r.status, 403, 'non-member deliveries → 403');
+// secret rotation: new whsec_ shown once, differs from the original
+r = await req(`/api/orgs/${orgAId}/webhooks/${wh.id}/rotate`, { method: 'POST', headers: auth });
+assert.equal(r.status, 200, 'rotate webhook secret');
+const rotated = await r.json();
+assert.ok(rotated.secret.startsWith('whsec_'), 'rotated secret has whsec_ prefix');
+assert.notEqual(rotated.secret, wh.secret, 'rotated secret differs');
+r = await req(`/api/orgs/${orgAId}/webhooks/${wh.id}/rotate`, { method: 'POST', headers: oauth });
+assert.equal(r.status, 403, 'non-member rotate → 403');
+r = await req(`/api/orgs/${orgAId}/webhooks/99999/rotate`, { method: 'POST', headers: auth });
+assert.equal(r.status, 404, 'rotate unknown webhook → 404');
 r = await req(`/api/orgs/${orgAId}/webhooks/${wh.id}`, { method: 'DELETE', headers: auth });
 assert.equal(r.status, 200, 'delete webhook');
 
