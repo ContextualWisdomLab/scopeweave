@@ -547,6 +547,30 @@ assert.equal(portAfter.status, 'delay', 'SPI 0.3 → delay');
 r = await req(`/api/orgs/${orgAId}/portfolio`, { headers: oauth });
 assert.equal(r.status, 404, 'non-member portfolio → 404');
 
+// ---- Public share links ----
+r = await req(`/api/projects/${proj.id}/shares`, { method: 'POST', headers: auth });
+assert.equal(r.status, 200, 'create share');
+const share = await r.json();
+assert.ok(share.token.length > 20 && share.url.includes(share.token), 'share token+url');
+// anonymous read works, content only
+r = await req(`/api/shared/${share.token}`);
+assert.equal(r.status, 200, 'anonymous shared read');
+const sharedView = await r.json();
+assert.ok(Array.isArray(sharedView.tasks) && sharedView.readOnly === true, 'read-only content');
+assert.ok(!('orgId' in sharedView) && !('version' in sharedView), 'no org/version leakage');
+// listed; non-manager cannot create; revoke kills the token
+r = await req(`/api/projects/${proj.id}/shares`, { headers: auth });
+const shareRow = (await r.json()).shares.find((x) => x.token === share.token);
+assert.ok(shareRow, 'share listed');
+r = await req(`/api/projects/${proj.id}/shares`, { method: 'POST', headers: oauth });
+assert.equal(r.status, 404, 'non-member share create → 404');
+r = await req(`/api/projects/${proj.id}/shares/${shareRow.id}`, { method: 'DELETE', headers: auth });
+assert.equal(r.status, 200, 'revoke share');
+r = await req(`/api/shared/${share.token}`);
+assert.equal(r.status, 404, 'revoked share token dead');
+r = await req('/api/shared/bogus-token');
+assert.equal(r.status, 404, 'unknown token → 404');
+
 // ---- Unseen-activity notifications ----
 r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'notif@x.com', password: 'password123' }) });
 const nAuth = { authorization: `Bearer ${(await r.json()).token}` };
