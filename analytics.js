@@ -179,6 +179,54 @@ function ensurePanel() {
   return panel;
 }
 
+// Cost EVM: the money axis (schedule EVM = computeEvm above). Tasks carry
+// budget (예산) and actualCost (실투입비); progress fields are %.
+// BAC=Σbudget · PV/EV in currency · AC=ΣactualCost · CPI=EV/AC ·
+// EAC=BAC/CPI · VAC=BAC-EAC · ETC=EAC-AC.
+export function computeCostEvm(tasks) {
+  let bac = 0, pv = 0, ev = 0, ac = 0;
+  for (const t of tasks || []) {
+    const b = Number(t.budget) || 0;
+    bac += b;
+    pv += b * ((Number(t.plannedProgress) || 0) / 100);
+    ev += b * ((Number(t.actualProgress) || 0) / 100);
+    ac += Number(t.actualCost) || 0;
+  }
+  if (bac <= 0) return null; // no budgets → cost EVM not applicable
+  const cpi = ac > 0 ? ev / ac : null;
+  const cv = ev - ac;
+  const eac = cpi ? bac / cpi : null;
+  return {
+    bac, pv, ev, ac, cpi, cv,
+    eac,
+    vac: eac === null ? null : bac - eac,
+    etc: eac === null ? null : eac - ac,
+    status: cpi === null ? 'before' : cpi >= 1 ? 'active' : 'delay',
+    label: cpi === null ? '실투입 전' : cpi >= 1 ? '예산 준수' : cpi >= 0.9 ? '경미한 초과' : '예산 초과 위험',
+  };
+}
+
+function renderCostEvm(panel, tasks) {
+  const c = computeCostEvm(tasks);
+  if (!c) return;
+  const krw = (v) => `₩${Math.round(v).toLocaleString('ko-KR')}`;
+  const metric = (title, value, cls) => {
+    const card = el('div', { class: `evm-metric ${cls || ''}` });
+    card.appendChild(el('span', { class: 'evm-label' }, title));
+    card.appendChild(el('strong', { class: 'evm-value' }, value));
+    return card;
+  };
+  const row = el('div', { class: 'evm-metrics' });
+  row.appendChild(metric('BAC 총예산', krw(c.bac)));
+  row.appendChild(metric('EV 획득가치', krw(c.ev)));
+  row.appendChild(metric('AC 실투입비', krw(c.ac)));
+  row.appendChild(metric('CPI 원가효율', c.cpi === null ? 'N/A' : c.cpi.toFixed(2), `evm-${c.status}`));
+  row.appendChild(metric('EAC 완료시추정', c.eac === null ? 'N/A' : krw(c.eac), `evm-${c.status}`));
+  row.appendChild(metric('VAC 예산편차', c.vac === null ? 'N/A' : krw(c.vac), `evm-${c.status}`));
+  row.appendChild(el('span', { class: `evm-badge evm-${c.status}` }, c.label));
+  panel.appendChild(row);
+}
+
 // Resource workload: aggregate leaf-level effort per 담당자 (owner).
 // Pure — feeds the panel table and is unit-tested directly.
 export function computeWorkload(tasks) {
@@ -262,6 +310,7 @@ function renderPanel({ pv, ev, tasks, baseDate, calcPlannedRatio, calcDuration, 
   }
 
   renderCpm(panel, tasks, calcDuration);
+  renderCostEvm(panel, tasks);
   renderWorkload(panel, tasks);
 }
 
@@ -342,5 +391,5 @@ function buildScurveSvg(series, evm, baseDate) {
 }
 
 if (typeof window !== 'undefined') {
-  window.ScopeWeaveAnalytics = { render: renderPanel, computeEvm, buildScurve, computeCpm, computeWorkload };
+  window.ScopeWeaveAnalytics = { render: renderPanel, computeEvm, buildScurve, computeCpm, computeWorkload, computeCostEvm };
 }
