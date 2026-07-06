@@ -86,19 +86,33 @@ export function computeCpm(tasks, opts = {}) {
     }
     return 0;
   };
+  // Dependency token: "P100" (FS), "P100SS", "P100FF+2", "P100SF-1".
+  // If the whole token matches a task id, treat it as plain FS (ids may end
+  // in letters that look like a type).
+  const parseDep = (token) => {
+    const raw = String(token).trim();
+    if (!raw) return null;
+    if (idset.has(raw)) return { id: raw, type: 'FS', lag: 0 };
+    const m = raw.match(/^(.*?)(FS|SS|FF|SF)?([+-]\d+)?$/i);
+    const id = (m?.[1] || raw).trim();
+    return { id, type: (m?.[2] || 'FS').toUpperCase(), lag: Number(m?.[3]) || 0 };
+  };
   const predsOf = (t) => {
     let p = t.predecessors;
     if (!p) return [];
     if (typeof p === 'string') p = p.split(',').map((s) => s.trim()).filter(Boolean);
-    return Array.isArray(p) ? p.map(String) : [];
+    return (Array.isArray(p) ? p : []).map(parseDep).filter(Boolean);
   };
 
   const preds = new Map(ids.map((id) => [id, []]));
   const succ = new Map(ids.map((id) => [id, []]));
   for (const t of list) {
     const id = String(t.id);
-    for (const p of predsOf(t)) {
-      if (idset.has(p) && p !== id) { preds.get(id).push(p); succ.get(p).push(id); }
+    for (const link of predsOf(t)) {
+      if (idset.has(link.id) && link.id !== id) {
+        preds.get(id).push(link);
+        succ.get(link.id).push({ id, type: link.type, lag: link.lag });
+      }
     }
   }
 
@@ -110,8 +124,8 @@ export function computeCpm(tasks, opts = {}) {
     const id = queue.shift();
     order.push(id);
     for (const s of succ.get(id)) {
-      indeg.set(s, indeg.get(s) - 1);
-      if (indeg.get(s) === 0) queue.push(s);
+      indeg.set(s.id, indeg.get(s.id) - 1);
+      if (indeg.get(s.id) === 0) queue.push(s.id);
     }
   }
   const cycleDetected = order.length !== ids.length;
@@ -121,9 +135,20 @@ export function computeCpm(tasks, opts = {}) {
   const es = new Map();
   const ef = new Map();
   for (const id of topo) {
-    const start = preds.get(id).reduce((m, p) => Math.max(m, ef.get(p) ?? 0), 0);
-    es.set(id, start);
-    ef.set(id, start + dur.get(id));
+    // per-link earliest-start constraint by dependency type
+    const start = preds.get(id).reduce((m, l) => {
+      const pes = es.get(l.id) ?? 0;
+      const pef = ef.get(l.id) ?? 0;
+      const d = dur.get(id);
+      let c;
+      if (l.type === 'SS') c = pes + l.lag;
+      else if (l.type === 'FF') c = pef + l.lag - d;
+      else if (l.type === 'SF') c = pes + l.lag - d;
+      else c = pef + l.lag; // FS
+      return Math.max(m, c);
+    }, 0);
+    es.set(id, Math.max(0, start));
+    ef.set(id, Math.max(0, start) + dur.get(id));
   }
   const projectDurationDays = ids.reduce((m, id) => Math.max(m, ef.get(id) ?? 0), 0);
 
@@ -131,11 +156,22 @@ export function computeCpm(tasks, opts = {}) {
   const ls = new Map();
   for (const id of [...topo].reverse()) {
     const succs = succ.get(id);
+    const d = dur.get(id);
+    // per-link latest-finish constraint (mirror of the forward pass)
     const finish = succs.length
-      ? succs.reduce((m, s) => Math.min(m, ls.get(s) ?? projectDurationDays), Infinity)
+      ? succs.reduce((m, l) => {
+          const sls = ls.get(l.id) ?? projectDurationDays;
+          const slf = lf.get(l.id) ?? projectDurationDays;
+          let c;
+          if (l.type === 'SS') c = sls - l.lag + d;
+          else if (l.type === 'FF') c = slf - l.lag;
+          else if (l.type === 'SF') c = slf - l.lag + d;
+          else c = sls - l.lag; // FS
+          return Math.min(m, c);
+        }, Infinity)
       : projectDurationDays;
     lf.set(id, finish);
-    ls.set(id, finish - dur.get(id));
+    ls.set(id, finish - d);
   }
 
   const perTask = {};
