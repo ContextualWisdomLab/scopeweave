@@ -125,6 +125,27 @@ app.use('*', async (c, next) => {
   } catch { /* metrics/logging must never break a request */ }
 });
 
+// Rate limiting (opt-in via SCOPEWEAVE_RATE_LIMIT_MAX, per client IP, fixed
+// window). Protects against brute-force/abuse. Off by default so it never
+// surprises tests/dev. Ceiling: per-instance in-memory → use Redis for multi-node.
+const RL_MAX = Number(process.env.SCOPEWEAVE_RATE_LIMIT_MAX) || 0;
+const RL_WINDOW_MS = Number(process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS) || 60000;
+const rlBuckets = new Map();
+if (RL_MAX > 0) {
+  app.use('*', async (c, next) => {
+    const key = (c.req.header('x-forwarded-for') || '').split(',')[0].trim() || 'local';
+    const now = Date.now();
+    let b = rlBuckets.get(key);
+    if (!b || b.resetAt <= now) { b = { count: 0, resetAt: now + RL_WINDOW_MS }; rlBuckets.set(key, b); }
+    b.count++;
+    if (b.count > RL_MAX) {
+      const retry = Math.ceil((b.resetAt - now) / 1000);
+      return c.json({ error: 'rate limit exceeded' }, 429, { 'Retry-After': String(retry) });
+    }
+    await next();
+  });
+}
+
 app.post('/api/auth/signup', async (c) => {
   const { email, password, name } = await c.req.json().catch(() => ({}));
   if (!email || !password || String(password).length < 8) {

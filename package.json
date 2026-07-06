@@ -7,7 +7,7 @@
     "check:python-docstrings": "node scripts/ci/static_coverage_evidence.mjs docstrings",
     "coverage": "node scripts/ci/static_coverage_evidence.mjs coverage",
     "server": "node server/server.mjs",
-    "test:api": "node tests/api/smoke.mjs",
+    "test:api": "node tests/api/smoke.mjs && node tests/api/ratelimit.test.mjs",
     "test:unit": "node tests/unit/analytics.test.mjs && node tests/unit/cpm.test.mjs",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed"
