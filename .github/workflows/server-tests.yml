@@ -4,8 +4,9 @@
 name: Server Tests
 
 on:
+  # No base-branch filter: stacked PRs target feature branches, and their tests
+  # must run there too — not only after retarget to develop.
   pull_request:
-    branches: [main, master, develop]
   push:
     branches: [develop]
 
