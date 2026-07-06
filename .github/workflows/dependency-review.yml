@@ -1,0 +1,86 @@
+# Dependency Review Action
+#
+# This Action will scan dependency manifest files that change as part of a Pull Request,
+# surfacing known-vulnerable versions of the packages declared or updated in the PR.
+# Once installed, if the workflow run is marked as required, PRs introducing known-vulnerable
+# packages will be blocked from merging.
+#
+# Source repository: https://github.com/actions/dependency-review-action
+# Public documentation: https://docs.github.com/en/code-security/supply-chain-security/understanding-your-software-supply-chain/about-dependency-review#dependency-review-enforcement
+name: 'Dependency review'
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+'on':
+  pull_request:
+    types: [opened, reopened, synchronize, ready_for_review]
+    branches: ["**"]
+
+# If using a dependency submission action in this workflow this permission will need to be set to:
+#
+# permissions:
+#   contents: write
+#
+# https://docs.github.com/en/enterprise-cloud@latest/code-security/supply-chain-security/understanding-your-software-supply-chain/using-the-dependency-submission-api
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Detect dependency-review support
+        id: support
+        uses: actions/github-script@450193c5abd4cdb17ba9f3ffcfe8f635c4bb6c2a  # v8
+        with:
+          script: |
+            const { data: repo } = await github.rest.repos.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+            const status = repo.security_and_analysis?.dependency_graph?.status || 'unknown';
+            const supported = status === 'enabled';
+            core.setOutput('supported', supported ? 'true' : 'false');
+            core.setOutput('status', status);
+      - name: 'Checkout repository'
+        if: ${{ steps.support.outputs.supported == 'true' }}
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Detect dependency manifest changes
+        if: ${{ steps.support.outputs.supported == 'true' }}
+        id: manifest-guard
+        shell: bash
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          has_manifest_changes="false"
+          if git diff --name-only "$PR_BASE_SHA...$PR_HEAD_SHA" | grep -Eq '(^|/)(pom\.xml|package\.json|package-lock\.json|pnpm-lock\.yaml|yarn\.lock|pyproject\.toml|requirements(-[A-Za-z0-9._-]+)?\.txt|uv\.lock)$'; then
+            has_manifest_changes="true"
+          fi
+          echo "has_manifest_changes=$has_manifest_changes" >> "$GITHUB_OUTPUT"
+      - name: No-op when dependency graph support is unavailable
+        if: ${{ steps.support.outputs.supported != 'true' }}
+        run: |
+          echo "Dependency review is unavailable until dependency graph is enabled for this repository."
+          echo "Current reported status: ${{ steps.support.outputs.status }}"
+      - name: No-op when dependency manifests are unchanged
+        if: ${{ steps.support.outputs.supported == 'true' && steps.manifest-guard.outputs.has_manifest_changes != 'true' }}
+        run: echo 'No dependency manifest changes on this pull request head.'
+      - name: 'Dependency Review'
+        if: ${{ steps.support.outputs.supported == 'true' && steps.manifest-guard.outputs.has_manifest_changes == 'true' }}
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        # Commonly enabled options, see https://github.com/actions/dependency-review-action#configuration-options for all available options.
+        with:
+          base-ref: ${{ github.event.pull_request.base.sha }}
+          head-ref: ${{ github.event.pull_request.head.sha }}
+          comment-summary-in-pr: never
+          retry-on-snapshot-warnings: false
+          warn-on-openssf-scorecard-level: 1
+          # License policy (disabled for now): allow permissive + commonly-used gray zone licenses; still blocks strong copyleft by default (GPL/AGPL)
+          # allow-licenses: MIT, Apache-2.0, BSD-2-Clause, BSD-3-Clause, ISC, EPL-1.0, EPL-2.0, MPL-2.0, CDDL-1.0, CDDL-1.1, BSL-1.0, CC0-1.0, Unlicense, Zlib, WTFPL, EUPL-1.2
+        #   fail-on-severity: moderate
+        #   deny-licenses: GPL-1.0-or-later, LGPL-2.0-or-later
