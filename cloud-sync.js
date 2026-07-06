@@ -727,7 +727,9 @@ async function importMsProjectFile(file) {
   const tasks = parseMsProjectXml(xml);
   if (!tasks.length) { toast('가져올 작업이 없습니다 (MSP XML 형식을 확인하세요).'); return; }
   if (!confirm(`MS Project에서 ${tasks.length}개 작업을 가져옵니다. 현재 프로젝트 내용을 대체합니다.`)) return;
-  host?.hydrateState({ tasks });
+  // preserve name/baseDate — only the task tree is replaced
+  const prev = host?.getState?.() || {};
+  host?.hydrateState({ projectName: prev.projectName, baseDate: prev.baseDate, tasks });
   host?.renderAll();
   const state = host?.getState?.();
   if (state) await doPush(state);
@@ -1140,6 +1142,17 @@ async function openBaselineModal() {
       const who = document.createElement('span');
       who.className = 'team-who';
       who.textContent = `v${rev.version} · ${String(rev.savedAt).slice(0, 16)} · ${rev.savedBy || ''}`;
+      const diff = document.createElement('button');
+      diff.type = 'button';
+      diff.className = 'secondary-button';
+      diff.textContent = '비교';
+      diff.addEventListener('click', async () => {
+        try {
+          const snap = await api(`/api/projects/${pid}/revisions/${rev.version}`);
+          renderBaselineDiff(result, compareBaseline(snap.tasks, host?.getState?.()?.tasks || []));
+        } catch (e) { toast(e.data?.error || e.message); }
+      });
+      li.appendChild(diff);
       const restore = document.createElement('button');
       restore.type = 'button';
       restore.className = 'secondary-button';
