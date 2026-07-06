@@ -12,6 +12,7 @@ let version = 0;   // open project's doc version (optimistic concurrency)
 let sse = null;
 let pushTimer = null;
 let currentOrgId = null; // org of the open project, for team management
+let shareMode = false;   // viewing via a public share token → read-only
 
 const getToken = () => localStorage.getItem(TOKEN_KEY) || '';
 const setToken = (t) => (t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY));
@@ -60,12 +61,14 @@ function subscribe(id) {
 async function openProject(id, { silent = false } = {}) {
   const p = await api(`/api/projects/${id}`);
   setProjectId(id);
-  const meta = projectsCache.find((x) => String(x.id) === String(id));
-  if (meta) currentOrgId = meta.orgId;
+  currentOrgId = p.orgId || projectsCache.find((x) => String(x.id) === String(id))?.orgId || currentOrgId;
   version = p.version;
   host?.hydrateState({ projectName: p.name, baseDate: p.baseDate, tasks: p.tasks });
   host?.renderAll();
   subscribe(id);
+  // opening = seen: clear the unseen badge for this project
+  notifCache.delete(String(id));
+  api(`/api/projects/${id}/seen`, { method: 'POST' }).catch(() => {});
   renderAuthUI();
   if (!silent) toast(`'${p.name}' 프로젝트를 열었습니다.`);
 }
@@ -97,10 +100,24 @@ export const cloud = {
   },
   // Returns the saved project state to hydrate, or null (→ local/seed path).
   async boot() {
+    // public read-only share view (?share=TOKEN) — no account needed
+    const shareToken = new URLSearchParams(location.search).get('share');
+    if (shareToken) {
+      try {
+        const p = await api(`/api/shared/${encodeURIComponent(shareToken)}`);
+        shareMode = true;
+        renderAuthUI();
+        toast('읽기 전용 공유 보기입니다 — 변경은 저장되지 않습니다.');
+        return { projectName: p.name, baseDate: p.baseDate, tasks: p.tasks };
+      } catch {
+        toast('공유 링크가 만료되었거나 철회되었습니다.');
+      }
+    }
     if (!isAuthed() || !getProjectId()) { renderAuthUI(); return null; }
     try {
       const p = await api(`/api/projects/${getProjectId()}`);
       version = p.version;
+      currentOrgId = p.orgId || currentOrgId; // team/dashboard need the org right after reload
       subscribe(p.id);
       renderAuthUI();
       return { projectName: p.name, baseDate: p.baseDate, tasks: p.tasks };
@@ -111,6 +128,7 @@ export const cloud = {
   },
   // Called from persistState(). No-op unless logged in with a project open.
   push(payload) {
+    if (shareMode) return; // read-only share view never writes
     if (!isAuthed() || !getProjectId()) return;
     clearTimeout(pushTimer);
     pushTimer = setTimeout(() => doPush(payload), 600);
@@ -150,6 +168,7 @@ function ensureAuthUI() {
           <button type="submit" class="primary-button" id="cloud-submit">로그인</button>
           <button type="button" class="secondary-button" id="cloud-toggle">계정 만들기</button>
         </div>
+        <button type="button" class="secondary-button" id="cloud-sso" style="width:100%;margin-top:8px">SSO로 로그인 (OIDC)</button>
       </form>
     </div>`;
   document.body.appendChild(modal);
@@ -165,6 +184,7 @@ function ensureAuthUI() {
     $('#cloud-error').textContent = '';
   };
   $('#cloud-toggle').addEventListener('click', () => setMode(mode === 'login' ? 'signup' : 'login'));
+  $('#cloud-sso').addEventListener('click', () => { window.location.href = '/api/auth/oidc/start'; });
   modal.addEventListener('click', (e) => { if (e.target.dataset.cloudClose) modal.classList.add('hidden'); });
   $('#cloud-form').addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -186,14 +206,27 @@ function ensureAuthUI() {
 }
 
 let projectsCache = [];
+let notifCache = new Map(); // projectId -> unseen count
+
 async function refreshProjects() {
   try { projectsCache = (await api('/api/projects')).projects || []; } catch { projectsCache = []; }
+  try {
+    const n = await api('/api/notifications');
+    notifCache = new Map((n.notifications || []).map((x) => [String(x.projectId), x.unseen]));
+  } catch { notifCache = new Map(); }
 }
 
 function renderAuthUI() {
   const bar = document.getElementById('cloud-auth');
   if (!bar) return;
   bar.textContent = '';
+  if (shareMode) {
+    const tag = document.createElement('span');
+    tag.className = 'team-role-tag';
+    tag.textContent = '읽기 전용 공유 보기';
+    bar.appendChild(tag);
+    return;
+  }
   if (!isAuthed()) {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -203,7 +236,15 @@ function renderAuthUI() {
     bar.appendChild(btn);
     return;
   }
-  // logged in: project switcher + new + logout
+  // logged in: onboarding (no projects yet) → sample; else project switcher.
+  if (!projectsCache.length) {
+    const sample = document.createElement('button');
+    sample.type = 'button';
+    sample.className = 'primary-button';
+    sample.textContent = '✨ 샘플로 시작';
+    sample.addEventListener('click', sampleStart);
+    bar.appendChild(sample);
+  }
   const select = document.createElement('select');
   select.className = 'cloud-select';
   select.setAttribute('aria-label', '프로젝트 선택');
@@ -212,12 +253,26 @@ function renderAuthUI() {
   ph.value = '';
   ph.textContent = projectsCache.length ? '프로젝트 선택…' : '프로젝트 없음';
   select.appendChild(ph);
-  for (const p of projectsCache) {
+  for (const p of projectsCache.filter((x) => !x.archived)) {
     const opt = document.createElement('option');
     opt.value = String(p.id);
-    opt.textContent = p.name; // textContent → XSS-safe
+    const unseen = notifCache.get(String(p.id));
+    opt.textContent = unseen ? `${p.name} ●${unseen}` : p.name; // textContent → XSS-safe
     if (String(p.id) === String(openId)) opt.selected = true;
     select.appendChild(opt);
+  }
+  const archivedProjects = projectsCache.filter((x) => x.archived);
+  if (archivedProjects.length) {
+    const group = document.createElement('optgroup');
+    group.label = '보관됨';
+    for (const p of archivedProjects) {
+      const opt = document.createElement('option');
+      opt.value = String(p.id);
+      opt.textContent = `📦 ${p.name}`;
+      if (String(p.id) === String(openId)) opt.selected = true;
+      group.appendChild(opt);
+    }
+    select.appendChild(group);
   }
   select.addEventListener('change', () => { if (select.value) openProject(select.value).catch((e) => toast(e.message)); });
   bar.appendChild(select);
@@ -229,12 +284,112 @@ function renderAuthUI() {
   newBtn.addEventListener('click', createProjectFlow);
   bar.appendChild(newBtn);
 
+  const dash = document.createElement('button');
+  dash.type = 'button';
+  dash.className = 'secondary-button';
+  dash.textContent = '대시보드';
+  dash.addEventListener('click', () => openPortfolioModal().catch((e) => toast(e.message || '대시보드를 불러오지 못했습니다.')));
+  bar.appendChild(dash);
+
   const team = document.createElement('button');
   team.type = 'button';
   team.className = 'secondary-button';
   team.textContent = '팀';
   team.addEventListener('click', () => openTeamModal().catch((e) => toast(e.message || '팀 정보를 불러오지 못했습니다.')));
   bar.appendChild(team);
+
+  if (getProjectId()) {
+    const bl = document.createElement('button');
+    bl.type = 'button';
+    bl.className = 'secondary-button';
+    bl.textContent = '기준선';
+    bl.addEventListener('click', () => openBaselineModal().catch((e) => toast(e.message || '기준선을 불러오지 못했습니다.')));
+    bar.appendChild(bl);
+
+    const dup = document.createElement('button');
+    dup.type = 'button';
+    dup.className = 'secondary-button';
+    dup.textContent = '복제';
+    dup.addEventListener('click', async () => {
+      const name = prompt('새 프로젝트 이름 (템플릿으로 복제)');
+      if (name === null) return;
+      try {
+        const created = await api(`/api/projects/${getProjectId()}/duplicate`, { method: 'POST', body: { name } });
+        await refreshProjects();
+        await openProject(created.id);
+        toast(`"${created.name}" 프로젝트로 복제했습니다.`);
+      } catch (err) { toast(err.data?.error || err.message); }
+    });
+    bar.appendChild(dup);
+
+    const share = document.createElement('button');
+    share.type = 'button';
+    share.className = 'secondary-button';
+    share.textContent = '공유';
+    share.addEventListener('click', () => openShareModal().catch((e) => toast(e.data?.error || e.message)));
+    bar.appendChild(share);
+
+    const report = document.createElement('button');
+    report.type = 'button';
+    report.className = 'secondary-button';
+    report.textContent = '주간보고';
+    report.addEventListener('click', () => { try { openReportModal(); } catch (e) { toast(e.message || '보고서 생성 실패'); } });
+    bar.appendChild(report);
+
+    const msp = document.createElement('button');
+    msp.type = 'button';
+    msp.className = 'secondary-button';
+    msp.textContent = 'MSP 가져오기';
+    msp.addEventListener('click', () => {
+      let fi = document.getElementById('msp-file-input');
+      if (!fi) {
+        fi = document.createElement('input');
+        fi.id = 'msp-file-input';
+        fi.type = 'file';
+        fi.accept = '.xml,text/xml';
+        fi.hidden = true;
+        fi.addEventListener('change', () => {
+          const f = fi.files?.[0];
+          fi.value = '';
+          if (f) importMsProjectFile(f).catch((e) => toast(e.message || 'MSP 가져오기에 실패했습니다.'));
+        });
+        document.body.appendChild(fi);
+      }
+      fi.click();
+    });
+    bar.appendChild(msp);
+
+    const cur = projectsCache.find((x) => String(x.id) === String(getProjectId()));
+    const arch = document.createElement('button');
+    arch.type = 'button';
+    arch.className = 'secondary-button';
+    arch.textContent = cur?.archived ? '보관 해제' : '보관';
+    arch.addEventListener('click', async () => {
+      try {
+        const res = await api(`/api/projects/${getProjectId()}/archive`, { method: 'POST', body: { archived: !cur?.archived } });
+        await refreshProjects();
+        renderAuthUI();
+        toast(res.archived ? '프로젝트를 보관했습니다.' : '보관을 해제했습니다.');
+      } catch (err) { toast(err.data?.error || err.message); }
+    });
+    bar.appendChild(arch);
+  }
+
+  const search = document.createElement('button');
+  search.type = 'button';
+  search.className = 'secondary-button';
+  search.textContent = '검색';
+  search.addEventListener('click', openSearchModal);
+  bar.appendChild(search);
+
+  if (getProjectId()) {
+    const cmt = document.createElement('button');
+    cmt.type = 'button';
+    cmt.className = 'secondary-button';
+    cmt.textContent = '코멘트';
+    cmt.addEventListener('click', () => openCommentsModal().catch((e) => toast(e.message || '코멘트를 불러오지 못했습니다.')));
+    bar.appendChild(cmt);
+  }
 
   const out = document.createElement('button');
   out.type = 'button';
@@ -256,33 +411,842 @@ function openLoginModal() {
   modal?.classList.remove('hidden');
 }
 
+// Create a cloud project and seed it with `seedState` (defaults to what's on
+// screen). Used by both "새 프로젝트" and the "샘플로 시작" onboarding.
+async function makeProject(name, seedState) {
+  const r = await api('/api/projects', { method: 'POST', body: { name } });
+  await refreshProjects();
+  version = r.version;
+  setProjectId(r.id);
+  const meta = projectsCache.find((x) => String(x.id) === String(r.id));
+  if (meta) currentOrgId = meta.orgId;
+  const base = seedState || host?.getState?.() || { baseDate: '', tasks: [] };
+  await doPush({ ...base, projectName: name }); // keep the chosen project name
+  subscribe(r.id);
+  renderAuthUI();
+  return r;
+}
+
 async function createProjectFlow() {
   const name = prompt('새 프로젝트 이름');
   if (!name || !name.trim()) return;
   try {
-    const r = await api('/api/projects', { method: 'POST', body: { name: name.trim() } });
-    await refreshProjects();
-    // seed the new project with whatever is currently on screen
-    version = r.version;
-    setProjectId(r.id);
-    const s = host?.getState?.() || { projectName: name.trim(), baseDate: '', tasks: [] };
-    await doPush(s);
-    subscribe(r.id);
-    renderAuthUI();
+    await makeProject(name.trim());
     toast(`'${name.trim()}' 프로젝트를 만들었습니다.`);
   } catch (e) {
     toast(e.message || '프로젝트 생성 실패');
   }
 }
 
+// Onboarding: a first project pre-populated from the app's source-backed seed
+// (whatever app.js has loaded on screen — the wbs.json sample for a new user).
+async function sampleStart() {
+  try {
+    await makeProject('샘플 프로젝트', host?.getState?.());
+    toast('샘플 프로젝트로 시작했습니다. 자유롭게 편집하세요.');
+  } catch (e) {
+    toast(e.message || '샘플 프로젝트 생성 실패');
+  }
+}
+
 // ------------------------------------------------------------- team / RBAC UI
 const ROLE_LABELS = { owner: '소유자', admin: '관리자', member: '멤버', viewer: '뷰어' };
+
+async function exportOrg() {
+  try {
+    const res = await fetch(`/api/orgs/${currentOrgId}/export`, { headers: { authorization: `Bearer ${getToken()}` } });
+    if (res.status === 403) return toast('소유자만 데이터를 내보낼 수 있습니다.');
+    if (!res.ok) return toast('내보내기에 실패했습니다.');
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `scopeweave-org-${currentOrgId}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast('워크스페이스 데이터를 내보냈습니다.');
+  } catch {
+    toast('내보내기에 실패했습니다.');
+  }
+}
 
 async function resolveOrgId() {
   if (currentOrgId) return currentOrgId;
   const me = await api('/api/me');
   currentOrgId = me.orgs?.[0]?.id || null;
   return currentOrgId;
+}
+
+// ---------------------------------------------------------------- share links
+async function openShareModal() {
+  const pid = getProjectId();
+  if (!pid) return;
+  let modal = document.getElementById('share-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'share-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'share-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#share-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '읽기 전용 공유';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '공유 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  const make = document.createElement('button');
+  make.type = 'button';
+  make.className = 'primary-button';
+  make.textContent = '공유 링크 만들기';
+  make.addEventListener('click', async () => {
+    try {
+      const res = await api(`/api/projects/${pid}/shares`, { method: 'POST' });
+      const url = `${location.origin}${res.url}`;
+      try { await navigator.clipboard.writeText(url); toast('공유 링크를 복사했습니다.'); }
+      catch { prompt('공유 링크 (복사하세요)', url); }
+      openShareModal();
+    } catch (e) { toast(e.data?.error || e.message); }
+  });
+  panel.appendChild(make);
+
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  panel.appendChild(list);
+  const data = await api(`/api/projects/${pid}/shares`);
+  if (!data.shares.length) {
+    const li = document.createElement('li');
+    li.textContent = '활성 공유 링크가 없습니다.';
+    list.appendChild(li);
+    return;
+  }
+  for (const sRow of data.shares) {
+    const li = document.createElement('li');
+    const who = document.createElement('span');
+    who.className = 'team-who';
+    who.textContent = `${location.origin}/?share=${sRow.token.slice(0, 8)}… · ${String(sRow.createdAt).slice(0, 10)}`;
+    const copyB = document.createElement('button');
+    copyB.type = 'button';
+    copyB.className = 'secondary-button';
+    copyB.textContent = '복사';
+    copyB.addEventListener('click', async () => {
+      const url = `${location.origin}/?share=${sRow.token}`;
+      try { await navigator.clipboard.writeText(url); toast('복사했습니다.'); } catch { prompt('공유 링크', url); }
+    });
+    const rev = document.createElement('button');
+    rev.type = 'button';
+    rev.className = 'secondary-button team-remove';
+    rev.textContent = '철회';
+    rev.addEventListener('click', () =>
+      api(`/api/projects/${pid}/shares/${sRow.id}`, { method: 'DELETE' })
+        .then(() => { toast('공유를 철회했습니다.'); openShareModal(); })
+        .catch((e) => toast(e.data?.error || e.message)));
+    li.append(who, copyB, rev);
+    list.appendChild(li);
+  }
+}
+
+// ------------------------------------------------------------ weekly report
+// 주간보고 generator — the PM deliverable, straight from live data.
+// Pure: takes tasks + a reference date, returns markdown.
+export function buildWeeklyReport(tasks, refDate, projectName = '') {
+  const ref = new Date(refDate);
+  if (Number.isNaN(ref.getTime())) return '';
+  const day = (d) => d.toISOString().slice(0, 10);
+  const monday = new Date(ref);
+  monday.setDate(ref.getDate() - ((ref.getDay() + 6) % 7)); // this week's Monday
+  const weekStart = day(monday);
+  const weekEnd = day(new Date(monday.getTime() + 6 * 86400000));
+  const nextStart = day(new Date(monday.getTime() + 7 * 86400000));
+  const nextEnd = day(new Date(monday.getTime() + 13 * 86400000));
+  const today = day(ref);
+  const name = (t) => t.name || t.task || t.activity || t.phase || t.id;
+  const leaf = (tasks || []).filter((t) => !t.isSynthetic);
+
+  const done = leaf.filter((t) => t.actualEndDate && t.actualEndDate >= weekStart && t.actualEndDate <= weekEnd);
+  const doing = leaf.filter((t) => {
+    const a = Number(t.actualProgress) || 0;
+    return a > 0 && a < 100 && !t.actualEndDate;
+  });
+  const late = leaf.filter((t) => t.plannedEndDate && t.plannedEndDate < today && (Number(t.actualProgress) || 0) < 100);
+  const upcoming = leaf.filter((t) => t.plannedStartDate && t.plannedStartDate >= nextStart && t.plannedStartDate <= nextEnd);
+
+  let wSum = 0, pv = 0, ev = 0;
+  for (const t of leaf) {
+    const w = Number(t.weight) || 1;
+    wSum += w;
+    pv += w * ((Number(t.plannedProgress) || 0) / 100);
+    ev += w * ((Number(t.actualProgress) || 0) / 100);
+  }
+  const pvPct = wSum ? (pv / wSum) * 100 : 0;
+  const evPct = wSum ? (ev / wSum) * 100 : 0;
+  const spi = pvPct > 0 ? evPct / pvPct : null;
+
+  const section = (title, items, fmt) =>
+    `## ${title}\n${items.length ? items.map((t) => `- ${fmt(t)}`).join('\n') : '- (없음)'}`;
+  return [
+    `# 주간보고${projectName ? ` — ${projectName}` : ''} (${weekStart} ~ ${weekEnd})`,
+    '',
+    `**진척 요약**: 계획 ${pvPct.toFixed(1)}% · 실적 ${evPct.toFixed(1)}%` +
+      (spi === null ? '' : ` · SPI ${spi.toFixed(2)} (${spi >= 1 ? '일정 준수' : spi >= 0.9 ? '경미한 지연' : '지연 위험'})`),
+    '',
+    section('금주 완료', done, (t) => `${name(t)} (${t.actualEndDate})`),
+    '',
+    section('진행 중', doing, (t) => `${name(t)} — ${Number(t.actualProgress) || 0}%${t.owner ? ` (${t.owner})` : ''}`),
+    '',
+    section('지연', late, (t) => `${name(t)} — 계획종료 ${t.plannedEndDate}, 실적 ${Number(t.actualProgress) || 0}%${t.owner ? ` (${t.owner})` : ''}`),
+    '',
+    section('차주 예정', upcoming, (t) => `${name(t)} (${t.plannedStartDate} 시작${t.owner ? `, ${t.owner}` : ''})`),
+    '',
+  ].join('\n');
+}
+
+function openReportModal() {
+  const state = host?.getState?.();
+  if (!state) { toast('프로젝트를 먼저 여세요.'); return; }
+  const md = buildWeeklyReport(state.tasks, new Date().toISOString().slice(0, 10), state.projectName || '');
+  let modal = document.getElementById('report-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'report-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'report-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#report-panel');
+  panel.textContent = '';
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '주간보고';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '주간보고 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'primary-button';
+  copy.textContent = '마크다운 복사';
+  copy.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(md); toast('주간보고를 복사했습니다.'); }
+    catch { toast('복사에 실패했습니다 — 아래 내용을 직접 선택하세요.'); }
+  });
+  panel.appendChild(copy);
+
+  const pre = document.createElement('pre');
+  pre.id = 'report-body';
+  pre.style.whiteSpace = 'pre-wrap';
+  pre.style.userSelect = 'text';
+  pre.textContent = md;
+  panel.appendChild(pre);
+}
+
+// ------------------------------------------------------- MS Project import
+// Parse Microsoft Project XML (Project 2003+ .xml export) into ScopeWeave's
+// task schema. ponytail: regex block parsing (MSP XML is machine-generated,
+// no DOMParser needed → node-testable); swap for a real XML parser if
+// hand-edited files ever matter.
+export function parseMsProjectXml(xml) {
+  const tag = (block, name) => {
+    const m = block.match(new RegExp(`<${name}>([^<]*)</${name}>`));
+    return m ? m[1].trim() : '';
+  };
+  const unescape = (s) => s
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  const day = (s) => (/^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : '');
+  const tasks = [];
+  const parents = {}; // depth -> last task id at that depth
+  const blocks = xml.match(/<Task>[\s\S]*?<\/Task>/g) || [];
+  for (const block of blocks) {
+    const uid = tag(block, 'UID');
+    const name = unescape(tag(block, 'Name'));
+    if (!uid || uid === '0' || !name) continue; // project-summary row / blanks
+    const level = Math.max(1, Number(tag(block, 'OutlineLevel')) || 1);
+    const depth = Math.min(level, 3); // deeper levels flatten to task level
+    const preds = [...block.matchAll(/<PredecessorLink>[\s\S]*?<PredecessorUID>(\d+)<\/PredecessorUID>[\s\S]*?<\/PredecessorLink>/g)]
+      .map((m) => `msp-${m[1]}`);
+    const pct = Number(tag(block, 'PercentComplete')) || 0;
+    const t = {
+      id: `msp-${uid}`,
+      parentId: depth > 1 ? (parents[depth - 1] || '') : '',
+      depth,
+      phase: depth === 1 ? name : '',
+      activity: depth === 2 ? name : '',
+      task: depth === 3 ? name : '',
+      name,
+      plannedStartDate: day(tag(block, 'Start')),
+      plannedEndDate: day(tag(block, 'Finish')),
+      actualProgress: pct,
+      predecessors: preds.join(','),
+    };
+    tasks.push(t);
+    parents[depth] = t.id;
+    for (let d = depth + 1; d <= 3; d++) delete parents[d]; // reset deeper chain
+  }
+  return tasks;
+}
+
+async function importMsProjectFile(file) {
+  const xml = await file.text();
+  const tasks = parseMsProjectXml(xml);
+  if (!tasks.length) { toast('가져올 작업이 없습니다 (MSP XML 형식을 확인하세요).'); return; }
+  if (!confirm(`MS Project에서 ${tasks.length}개 작업을 가져옵니다. 현재 프로젝트 내용을 대체합니다.`)) return;
+  // preserve name/baseDate — only the task tree is replaced
+  const prev = host?.getState?.() || {};
+  host?.hydrateState({ projectName: prev.projectName, baseDate: prev.baseDate, tasks });
+  host?.renderAll();
+  const state = host?.getState?.();
+  if (state) await doPush(state);
+  toast(`MS Project에서 ${tasks.length}개 작업을 가져왔습니다.`);
+}
+
+// ------------------------------------------------------------- portfolio
+// Executive rollup: every project's weighted progress, SPI, and overdue count.
+async function openPortfolioModal() {
+  if (!currentOrgId) { toast('워크스페이스를 먼저 선택하세요.'); return; }
+  let modal = document.getElementById('portfolio-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'portfolio-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'portfolio-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#portfolio-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '포트폴리오 대시보드';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '대시보드 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  const data = await api(`/api/orgs/${currentOrgId}/portfolio`);
+  const active = data.projects.filter((p) => !p.archived);
+  if (!active.length) {
+    const p = document.createElement('p');
+    p.textContent = '프로젝트가 없습니다.';
+    panel.appendChild(p);
+    return;
+  }
+  const summary = document.createElement('p');
+  const late = active.filter((p) => p.status === 'delay').length;
+  const totOverdue = active.reduce((n, p) => n + p.overdue, 0);
+  summary.textContent = `프로젝트 ${active.length}개 · 주의/지연 ${late}개 · 지연 작업 합계 ${totOverdue}건`;
+  panel.appendChild(summary);
+
+  const wrap = document.createElement('div');
+  wrap.style.overflowX = 'auto';
+  const table = document.createElement('table');
+  table.className = 'wbs-table';
+  const thead = document.createElement('thead');
+  const hr = document.createElement('tr');
+  for (const t of ['프로젝트', '작업', '계획%', '실적%', 'SPI', '상태', '지연', '']) {
+    const th = document.createElement('th');
+    th.textContent = t;
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  const tbody = document.createElement('tbody');
+  for (const p of active) {
+    const tr = document.createElement('tr');
+    const cells = [p.name, String(p.tasks), `${p.planned}%`, `${p.actual}%`, p.spi === null ? '-' : p.spi.toFixed(2), p.label, p.overdue ? `${p.overdue}건` : '-'];
+    for (const cText of cells) {
+      const td = document.createElement('td');
+      td.textContent = cText;
+      tr.appendChild(td);
+    }
+    if (p.status === 'delay') tr.style.color = 'var(--delay, #ea580c)';
+    const td = document.createElement('td');
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'secondary-button';
+    open.textContent = '열기';
+    open.addEventListener('click', async () => {
+      modal.classList.add('hidden');
+      await openProject(p.id).catch((err) => toast(err.message));
+    });
+    td.appendChild(open);
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  }
+  table.append(thead, tbody);
+  wrap.appendChild(table);
+  panel.appendChild(wrap);
+}
+
+// ------------------------------------------------------------- comments
+async function openCommentsModal() {
+  const pid = getProjectId();
+  if (!pid) return;
+  let modal = document.getElementById('comments-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'comments-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'comments-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#comments-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '코멘트';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '코멘트 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  // task filter (전체 or a specific task)
+  const sel = document.createElement('select');
+  sel.className = 'cloud-select';
+  const all = document.createElement('option');
+  all.value = '';
+  all.textContent = '전체 코멘트';
+  sel.appendChild(all);
+  for (const t of host?.getState?.()?.tasks || []) {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.name || t.task || t.id;
+    sel.appendChild(opt);
+  }
+  panel.appendChild(sel);
+
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  panel.appendChild(list);
+
+  const form = document.createElement('form');
+  form.className = 'cloud-form';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = '코멘트 입력 (선택한 작업에 달림)';
+  input.maxLength = 2000;
+  const send = document.createElement('button');
+  send.type = 'submit';
+  send.className = 'primary-button';
+  send.textContent = '등록';
+  form.append(input, send);
+  panel.appendChild(form);
+
+  const taskName = (id) => {
+    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
+    return t ? (t.name || t.task || id) : id;
+  };
+
+  async function refresh() {
+    list.textContent = '';
+    const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
+    const data = await api(`/api/projects/${pid}/comments${q}`);
+    if (!data.comments.length) {
+      const li = document.createElement('li');
+      li.textContent = '코멘트가 없습니다.';
+      list.appendChild(li);
+      return;
+    }
+    for (const cm of data.comments) {
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'team-who';
+      const where = cm.taskId ? ` [${taskName(cm.taskId)}]` : '';
+      who.textContent = `${cm.email || '알 수 없음'}${where}: ${cm.body}`;
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'secondary-button team-remove';
+      del.textContent = '삭제';
+      del.addEventListener('click', () =>
+        api(`/api/projects/${pid}/comments/${cm.id}`, { method: 'DELETE' })
+          .then(refresh).catch((e) => toast(e.data?.error || e.message)));
+      li.append(who, del);
+      list.appendChild(li);
+    }
+  }
+  sel.addEventListener('change', refresh);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!input.value.trim()) return;
+    try {
+      await api(`/api/projects/${pid}/comments`, { method: 'POST', body: { taskId: sel.value, body: input.value.trim() } });
+      input.value = '';
+      refresh();
+    } catch (err) { toast(err.data?.error || err.message); }
+  });
+  await refresh();
+}
+
+// ------------------------------------------------------------- search
+function openSearchModal() {
+  let modal = document.getElementById('search-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'search-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'search-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#search-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '프로젝트 검색';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '검색 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  const form = document.createElement('form');
+  form.className = 'cloud-form';
+  const input = document.createElement('input');
+  input.type = 'search';
+  input.placeholder = '프로젝트/작업 이름 (2자 이상)';
+  input.minLength = 2;
+  const go = document.createElement('button');
+  go.type = 'submit';
+  go.className = 'primary-button';
+  go.textContent = '검색';
+  form.append(input, go);
+  panel.appendChild(form);
+
+  const out = document.createElement('div');
+  panel.appendChild(out);
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    out.textContent = '';
+    try {
+      const data = await api(`/api/search?q=${encodeURIComponent(input.value.trim())}`);
+      if (!data.results.length) { out.textContent = '검색 결과가 없습니다.'; return; }
+      const list = document.createElement('ul');
+      list.className = 'team-list';
+      for (const hit of data.results) {
+        const li = document.createElement('li');
+        const who = document.createElement('span');
+        who.className = 'team-who';
+        const taskNames = hit.tasks.map((t) => t.name).join(', ');
+        who.textContent = hit.nameMatch && !taskNames ? hit.projectName : `${hit.projectName} — ${taskNames}`;
+        const open = document.createElement('button');
+        open.type = 'button';
+        open.className = 'secondary-button';
+        open.textContent = '열기';
+        open.addEventListener('click', async () => {
+          modal.classList.add('hidden');
+          await openProject(hit.projectId).catch((err) => toast(err.message));
+        });
+        li.append(who, open);
+        list.appendChild(li);
+      }
+      out.appendChild(list);
+    } catch (err) { out.textContent = err.data?.error || err.message; }
+  });
+  input.focus();
+}
+
+// ------------------------------------------------------------- baselines
+// Compare the live plan against a frozen baseline: which tasks' planned dates
+// slipped, and by how many days.
+const dayMs = 86400000;
+const slipDays = (fromDate, toDate) => {
+  if (!fromDate || !toDate) return null;
+  const a = new Date(fromDate), b = new Date(toDate);
+  if (Number.isNaN(a) || Number.isNaN(b)) return null;
+  return Math.round((b - a) / dayMs);
+};
+
+export function compareBaseline(baselineTasks, currentTasks) {
+  const base = new Map((baselineTasks || []).map((t) => [t.id, t]));
+  const rows = [];
+  for (const cur of currentTasks || []) {
+    const old = base.get(cur.id);
+    if (!old) { rows.push({ id: cur.id, name: cur.name, kind: 'added', endSlip: null }); continue; }
+    const endSlip = slipDays(old.plannedEndDate, cur.plannedEndDate);
+    const startSlip = slipDays(old.plannedStartDate, cur.plannedStartDate);
+    if ((endSlip || 0) !== 0 || (startSlip || 0) !== 0) {
+      rows.push({ id: cur.id, name: cur.name, kind: 'moved', baseEnd: old.plannedEndDate || '', curEnd: cur.plannedEndDate || '', endSlip: endSlip ?? 0 });
+    }
+  }
+  const cur = new Set((currentTasks || []).map((t) => t.id));
+  for (const old of baselineTasks || []) {
+    if (!cur.has(old.id)) rows.push({ id: old.id, name: old.name, kind: 'removed', endSlip: null });
+  }
+  const slipped = rows.filter((r) => r.kind === 'moved' && r.endSlip > 0);
+  return { rows, summary: { changed: rows.length, slipped: slipped.length, maxSlip: slipped.reduce((m, r) => Math.max(m, r.endSlip), 0) } };
+}
+
+async function openBaselineModal() {
+  const pid = getProjectId();
+  if (!pid) return;
+  let modal = document.getElementById('baseline-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'baseline-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'baseline-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#baseline-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '기준선 (Baseline)';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '기준선 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'primary-button';
+  save.textContent = '현재 계획을 기준선으로 저장';
+  save.addEventListener('click', async () => {
+    const name = prompt('기준선 이름', `기준선 ${new Date().toISOString().slice(0, 10)}`);
+    if (!name) return;
+    await api(`/api/projects/${pid}/baselines`, { method: 'POST', body: { name } });
+    toast('기준선을 저장했습니다.');
+    openBaselineModal();
+  });
+  panel.appendChild(save);
+
+  const ics = document.createElement('button');
+  ics.type = 'button';
+  ics.className = 'secondary-button';
+  ics.style.marginLeft = '8px';
+  ics.textContent = '캘린더 내보내기 (.ics)';
+  ics.addEventListener('click', async () => {
+    try {
+      const res = await fetch(`/api/projects/${pid}/calendar.ics`, { headers: { authorization: `Bearer ${getToken()}` } });
+      if (!res.ok) return toast('캘린더 내보내기에 실패했습니다.');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `scopeweave-${pid}.ics`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('캘린더 파일(.ics)을 내려받았습니다.');
+    } catch { toast('캘린더 내보내기에 실패했습니다.'); }
+  });
+  panel.appendChild(ics);
+
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  panel.appendChild(list);
+  const result = document.createElement('div');
+  result.id = 'baseline-result';
+  panel.appendChild(result);
+
+  // 변경 이력 (revision history) — related schedule-control tool, same modal.
+  const histH = document.createElement('h3');
+  histH.className = 'token-heading';
+  histH.textContent = '변경 이력';
+  const histList = document.createElement('ul');
+  histList.className = 'team-list';
+  api(`/api/projects/${pid}/revisions`).then((h) => {
+    for (const rev of h.revisions.slice(0, 10)) {
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'team-who';
+      who.textContent = `v${rev.version} · ${String(rev.savedAt).slice(0, 16)} · ${rev.savedBy || ''}`;
+      const diff = document.createElement('button');
+      diff.type = 'button';
+      diff.className = 'secondary-button';
+      diff.textContent = '비교';
+      diff.addEventListener('click', async () => {
+        try {
+          const snap = await api(`/api/projects/${pid}/revisions/${rev.version}`);
+          renderBaselineDiff(result, compareBaseline(snap.tasks, host?.getState?.()?.tasks || []));
+        } catch (e) { toast(e.data?.error || e.message); }
+      });
+      li.appendChild(diff);
+      const restore = document.createElement('button');
+      restore.type = 'button';
+      restore.className = 'secondary-button';
+      restore.textContent = '복원';
+      restore.addEventListener('click', async () => {
+        if (!confirm(`v${rev.version} 시점으로 복원합니다. (새 버전으로 기록됩니다)`)) return;
+        try {
+          await api(`/api/projects/${pid}/revisions/${rev.version}/restore`, { method: 'POST' });
+          await openProject(pid);
+          toast(`v${rev.version} 시점으로 복원했습니다.`);
+          modal.classList.add('hidden');
+        } catch (e) { toast(e.data?.error || e.message); }
+      });
+      li.append(who, restore);
+      histList.appendChild(li);
+    }
+    if (!h.revisions.length) {
+      const li = document.createElement('li');
+      li.textContent = '저장 이력이 없습니다.';
+      histList.appendChild(li);
+    }
+  }).catch(() => {});
+  panel.append(histH, histList);
+
+  const data = await api(`/api/projects/${pid}/baselines`);
+  if (!data.baselines.length) {
+    const li = document.createElement('li');
+    li.textContent = '저장된 기준선이 없습니다.';
+    list.appendChild(li);
+    return;
+  }
+  for (const b of data.baselines) {
+    const li = document.createElement('li');
+    const who = document.createElement('span');
+    who.className = 'team-who';
+    who.textContent = `${b.name} · ${String(b.createdAt).slice(0, 10)}`;
+    const cmp = document.createElement('button');
+    cmp.type = 'button';
+    cmp.className = 'secondary-button';
+    cmp.textContent = '비교';
+    cmp.addEventListener('click', async () => {
+      const full = await api(`/api/projects/${pid}/baselines/${b.id}`);
+      renderBaselineDiff(result, compareBaseline(full.tasks, host?.getState?.()?.tasks || []));
+    });
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'secondary-button';
+    del.textContent = '삭제';
+    del.addEventListener('click', async () => {
+      await api(`/api/projects/${pid}/baselines/${b.id}`, { method: 'DELETE' });
+      openBaselineModal();
+    });
+    li.append(who, cmp, del);
+    list.appendChild(li);
+  }
+}
+
+function renderBaselineDiff(el, { rows, summary }) {
+  el.textContent = '';
+  const sum = document.createElement('p');
+  sum.textContent = rows.length
+    ? `변경 ${summary.changed}건 · 지연 ${summary.slipped}건 · 최대 지연 ${summary.maxSlip}일`
+    : '기준선과 차이가 없습니다.';
+  el.appendChild(sum);
+  if (!rows.length) return;
+  const table = document.createElement('table');
+  table.className = 'wbs-table';
+  const thead = document.createElement('thead');
+  const hr = document.createElement('tr');
+  for (const t of ['작업', '기준 종료', '현재 종료', '차이']) {
+    const th = document.createElement('th');
+    th.textContent = t;
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  const tbody = document.createElement('tbody');
+  for (const r of rows.slice(0, 50)) {
+    const tr = document.createElement('tr');
+    const cells = r.kind === 'moved'
+      ? [r.name, r.baseEnd, r.curEnd, `${r.endSlip > 0 ? '+' : ''}${r.endSlip}일`]
+      : [r.name, '', '', r.kind === 'added' ? '신규' : '삭제됨'];
+    for (const c of cells) {
+      const td = document.createElement('td');
+      td.textContent = c ?? '';
+      tr.appendChild(td);
+    }
+    if (r.kind === 'moved' && r.endSlip > 0) tr.style.color = 'var(--delay, #ea580c)';
+    tbody.appendChild(tr);
+  }
+  table.append(thead, tbody);
+  const wrap = document.createElement('div');
+  wrap.style.overflowX = 'auto';
+  wrap.appendChild(table);
+  el.appendChild(wrap);
 }
 
 async function openTeamModal() {
@@ -340,6 +1304,48 @@ async function renderTeam() {
   if (!body) return;
   const data = await api(`/api/orgs/${currentOrgId}/members`);
   body.textContent = '';
+
+  // org actions: rename (owner) / leave (everyone else)
+  try {
+    const me = await api('/api/me');
+    const myRole = me.orgs?.find((o) => String(o.id) === String(currentOrgId))?.role;
+    const actions = document.createElement('div');
+    actions.className = 'team-org-actions';
+    if (myRole === 'owner') {
+      const rename = document.createElement('button');
+      rename.type = 'button';
+      rename.className = 'secondary-button';
+      rename.textContent = '워크스페이스 이름 변경';
+      rename.addEventListener('click', async () => {
+        const name = prompt('새 워크스페이스 이름');
+        if (!name) return;
+        try {
+          await api(`/api/orgs/${currentOrgId}`, { method: 'PATCH', body: { name } });
+          toast('이름을 변경했습니다.');
+          renderTeam();
+        } catch (e) { toast(e.data?.error || e.message); }
+      });
+      actions.appendChild(rename);
+    } else if (myRole) {
+      const leave = document.createElement('button');
+      leave.type = 'button';
+      leave.className = 'secondary-button team-remove';
+      leave.textContent = '워크스페이스 나가기';
+      leave.addEventListener('click', async () => {
+        if (!confirm('이 워크스페이스에서 나갑니다. 프로젝트 접근 권한을 잃습니다.')) return;
+        try {
+          await api(`/api/orgs/${currentOrgId}/leave`, { method: 'POST' });
+          setProjectId('');
+          document.getElementById('team-modal')?.classList.add('hidden');
+          await refreshProjects();
+          renderAuthUI();
+          toast('워크스페이스에서 나왔습니다.');
+        } catch (e) { toast(e.data?.error || e.message); }
+      });
+      actions.appendChild(leave);
+    }
+    if (actions.childNodes.length) body.appendChild(actions);
+  } catch { /* org actions are best-effort */ }
 
   // plan + usage indicator
   try {
@@ -400,6 +1406,19 @@ async function renderTeam() {
         api(`/api/orgs/${currentOrgId}/members/${m.id}`, { method: 'DELETE' })
           .then(() => { toast(`${m.email} 제거됨`); renderTeam(); }).catch((e) => toast(e.message)));
       li.appendChild(del);
+      const xfer = document.createElement('button');
+      xfer.type = 'button';
+      xfer.className = 'secondary-button';
+      xfer.textContent = '소유권 이전';
+      xfer.addEventListener('click', async () => {
+        if (!confirm(`${m.email}에게 소유권을 이전합니다. 나는 관리자가 됩니다.`)) return;
+        try {
+          await api(`/api/orgs/${currentOrgId}/transfer`, { method: 'POST', body: { userId: m.id } });
+          toast('소유권을 이전했습니다.');
+          renderTeam();
+        } catch (e) { toast(e.data?.error || e.message); } // server 403s non-owners
+      });
+      li.appendChild(xfer);
     }
     list.appendChild(li);
   }
@@ -407,11 +1426,227 @@ async function renderTeam() {
   if (data.invites?.length) {
     const pending = document.createElement('p');
     pending.className = 'team-pending';
-    pending.textContent = `대기 중인 초대: ${data.invites.map((i) => i.email).join(', ')}`;
+    pending.textContent = '대기 중인 초대:';
     body.appendChild(pending);
+    const plist = document.createElement('ul');
+    plist.className = 'team-list';
+    for (const i of data.invites) {
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'team-who';
+      who.textContent = `${i.email} · ${i.role}`;
+      const revoke = document.createElement('button');
+      revoke.type = 'button';
+      revoke.className = 'secondary-button team-remove';
+      revoke.textContent = '초대 취소';
+      revoke.addEventListener('click', () =>
+        api(`/api/orgs/${currentOrgId}/invites/${i.id}`, { method: 'DELETE' })
+          .then(() => { toast('초대를 취소했습니다.'); renderTeam(); })
+          .catch((e) => toast(e.data?.error || e.message)));
+      li.append(who, revoke);
+      plist.appendChild(li);
+    }
+    body.appendChild(plist);
   }
 
+  const exportBtn = document.createElement('button');
+  exportBtn.type = 'button';
+  exportBtn.className = 'secondary-button';
+  exportBtn.textContent = '데이터 내보내기 (JSON)';
+  exportBtn.style.marginTop = '8px';
+  exportBtn.addEventListener('click', exportOrg);
+  body.appendChild(exportBtn);
+
   await renderTokens(body);
+  await renderWebhooks(body);
+  await renderAudit(body);
+  renderAccount(body);
+}
+
+// Account settings — change password / delete account.
+function renderAccount(body) {
+  const section = document.createElement('div');
+  section.className = 'token-section';
+  const h = document.createElement('h3');
+  h.className = 'token-heading';
+  h.textContent = '계정';
+  section.appendChild(h);
+
+  const form = document.createElement('form');
+  form.className = 'cloud-form';
+  const oldPw = document.createElement('input');
+  oldPw.type = 'password'; oldPw.placeholder = '현재 비밀번호'; oldPw.autocomplete = 'current-password';
+  const newPw = document.createElement('input');
+  newPw.type = 'password'; newPw.placeholder = '새 비밀번호 (8자 이상)'; newPw.minLength = 8; newPw.autocomplete = 'new-password';
+  const save = document.createElement('button');
+  save.type = 'submit'; save.className = 'secondary-button'; save.textContent = '비밀번호 변경';
+  form.append(oldPw, newPw, save);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await api('/api/auth/change-password', { method: 'POST', body: { oldPassword: oldPw.value, newPassword: newPw.value } });
+      oldPw.value = ''; newPw.value = '';
+      toast('비밀번호를 변경했습니다.');
+    } catch (err) { toast(err.data?.error || err.message); }
+  });
+  section.appendChild(form);
+
+  const outAll = document.createElement('button');
+  outAll.type = 'button';
+  outAll.className = 'secondary-button';
+  outAll.style.marginTop = '8px';
+  outAll.textContent = '다른 모든 기기에서 로그아웃';
+  outAll.addEventListener('click', async () => {
+    if (!confirm('다른 모든 기기의 세션을 무효화합니다. 이 기기는 유지됩니다.')) return;
+    try {
+      const res = await api('/api/auth/logout-all', { method: 'POST' });
+      setToken(res.token); // fresh token keeps this device signed in
+      toast('다른 모든 기기에서 로그아웃했습니다.');
+    } catch (e) { toast(e.data?.error || e.message); }
+  });
+  section.appendChild(outAll);
+
+  const del = document.createElement('button');
+  del.type = 'button';
+  del.className = 'secondary-button';
+  del.style.color = 'var(--danger)';
+  del.style.marginTop = '8px';
+  del.textContent = '계정 삭제';
+  del.addEventListener('click', async () => {
+    const pw = prompt('계정과 소유한 워크스페이스가 영구 삭제됩니다. 확인하려면 비밀번호를 입력하세요.');
+    if (!pw) return;
+    try {
+      await api('/api/account', { method: 'DELETE', body: { password: pw } });
+      setToken(''); setProjectId('');
+      document.getElementById('team-modal')?.classList.add('hidden');
+      renderAuthUI();
+      toast('계정을 삭제했습니다.');
+    } catch (err) { toast(err.data?.error || err.message); }
+  });
+  section.appendChild(del);
+  body.appendChild(section);
+}
+
+// Outbound webhooks — owner/admin. Secret shown once at creation.
+async function renderWebhooks(body) {
+  let data;
+  try { data = await api(`/api/orgs/${currentOrgId}/webhooks`); } catch { return; }
+  const section = document.createElement('div');
+  section.className = 'token-section';
+  const h = document.createElement('h3');
+  h.className = 'token-heading';
+  h.textContent = '웹훅';
+  section.appendChild(h);
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  for (const w of data.webhooks) {
+    const li = document.createElement('li');
+    const who = document.createElement('span');
+    who.className = 'team-who';
+    const status = w.lastOk == null ? '' : (w.lastOk ? ' · 최근 ✓' : ' · 최근 ✗ 실패');
+    who.textContent = `${w.url} · ${w.events}${status}`;
+    li.appendChild(who);
+    const rot = document.createElement('button');
+    rot.type = 'button';
+    rot.className = 'secondary-button';
+    rot.textContent = '키 교체';
+    rot.addEventListener('click', async () => {
+      if (!confirm('서명 시크릿을 교체합니다. 기존 시크릿은 즉시 무효화됩니다.')) return;
+      try {
+        const res = await api(`/api/orgs/${currentOrgId}/webhooks/${w.id}/rotate`, { method: 'POST' });
+        prompt('새 서명 시크릿 (지금만 표시됩니다 — 복사하세요)', res.secret);
+      } catch (e) { toast(e.data?.error || e.message); }
+    });
+    li.appendChild(rot);
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'secondary-button team-remove';
+    del.textContent = '삭제';
+    del.addEventListener('click', () =>
+      api(`/api/orgs/${currentOrgId}/webhooks/${w.id}`, { method: 'DELETE' }).then(() => { toast('웹훅을 삭제했습니다.'); renderTeam(); }).catch((e) => toast(e.message)));
+    li.appendChild(del);
+    list.appendChild(li);
+  }
+  section.appendChild(list);
+  const form = document.createElement('form');
+  form.className = 'team-invite';
+  const input = document.createElement('input');
+  input.type = 'url';
+  input.placeholder = 'https://example.com/webhook';
+  const btn = document.createElement('button');
+  btn.type = 'submit';
+  btn.className = 'primary-button';
+  btn.textContent = '웹훅 추가';
+  form.append(input, btn);
+  const secret = document.createElement('p');
+  secret.className = 'token-secret';
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      const w = await api(`/api/orgs/${currentOrgId}/webhooks`, { method: 'POST', body: { url: input.value.trim(), events: '*' } });
+      secret.textContent = `서명 시크릿(한 번만 표시): ${w.secret}`;
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'team-who';
+      who.textContent = `${w.url} · ${w.events}`;
+      li.appendChild(who);
+      list.appendChild(li);
+      input.value = '';
+    } catch (err) { toast(err.data?.error || err.message); }
+  });
+  section.appendChild(form);
+  section.appendChild(secret);
+  body.appendChild(section);
+}
+
+const AUDIT_LABELS = {
+  'project.create': '프로젝트 생성', 'project.update': '프로젝트 저장',
+  'member.invite': '멤버 초대', 'member.join': '멤버 합류',
+  'member.role_change': '역할 변경', 'member.remove': '멤버 제거',
+  'billing.upgrade': '플랜 업그레이드',
+};
+
+// Recent activity (owner/admin only; endpoint 403s otherwise → section hidden).
+async function renderAudit(body) {
+  let data;
+  try { data = await api(`/api/orgs/${currentOrgId}/audit?limit=12`); } catch { return; }
+  if (!data.events?.length) return;
+  const section = document.createElement('div');
+  section.className = 'token-section';
+  const h = document.createElement('h3');
+  h.className = 'token-heading';
+  h.textContent = '감사 로그';
+  section.appendChild(h);
+  const csvBtn = document.createElement('button');
+  csvBtn.type = 'button';
+  csvBtn.className = 'secondary-button';
+  csvBtn.textContent = 'CSV 다운로드';
+  csvBtn.addEventListener('click', async () => {
+    try {
+      const res = await fetch(`/api/orgs/${currentOrgId}/audit?format=csv&limit=500`, { headers: { authorization: `Bearer ${getToken()}` } });
+      if (!res.ok) return toast('감사 로그 내보내기에 실패했습니다.');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `scopeweave-audit-${currentOrgId}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('감사 로그 CSV를 내려받았습니다.');
+    } catch { toast('감사 로그 내보내기에 실패했습니다.'); }
+  });
+  section.appendChild(csvBtn);
+  const list = document.createElement('ul');
+  list.className = 'audit-list';
+  for (const e of data.events) {
+    const li = document.createElement('li');
+    const label = AUDIT_LABELS[e.action] || e.action;
+    const who = e.actorEmail || '시스템';
+    const when = (e.createdAt || '').replace('T', ' ').slice(0, 16);
+    li.textContent = `${when} · ${who} · ${label}`;
+    list.appendChild(li);
+  }
+  section.appendChild(list);
+  body.appendChild(section);
 }
 
 // Personal Access Tokens — create/list/revoke, secret shown once.
@@ -474,6 +1709,16 @@ async function renderTokens(body) {
   section.appendChild(form);
   section.appendChild(secret);
   body.appendChild(section);
+}
+
+// SSO (OIDC) redirect: the token arrives in the URL fragment (not query → not
+// logged). Store it and clean the URL before anything else reads auth state.
+if (typeof window !== 'undefined' && location.hash.startsWith('#token=')) {
+  const t = decodeURIComponent(location.hash.slice('#token='.length));
+  if (t) {
+    setToken(t);
+    history.replaceState(null, '', location.pathname + location.search);
+  }
 }
 
 // Auto-accept an invite token from the URL (?invite=...) once logged in.
