@@ -331,6 +331,26 @@ assert.equal((await r.json()).user.email, 'sso@corp.com', 'SSO re-login same use
 r = await req('/api/auth/oidc/callback?code=x&state=bogus');
 assert.equal(r.status, 400, 'invalid state → 400');
 
+// ---- Leave workspace + rename org ----
+// a member can leave and loses access; the owner cannot leave
+r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'leaver@x.com', password: 'password123' }) });
+const lvAuth = { authorization: `Bearer ${(await r.json()).token}` };
+const lvInv = await (await req(`/api/orgs/${orgAId}/invites`, { method: 'POST', headers: auth, body: body({ email: 'leaver@x.com', role: 'member' }) })).json();
+await req(`/api/invites/${lvInv.token}/accept`, { method: 'POST', headers: lvAuth });
+r = await req(`/api/orgs/${orgAId}/leave`, { method: 'POST', headers: lvAuth });
+assert.equal(r.status, 200, 'member leaves workspace');
+r = await req(`/api/projects/${proj.id}`, { headers: lvAuth });
+assert.equal(r.status, 404, 'left member loses project access');
+r = await req(`/api/orgs/${orgAId}/leave`, { method: 'POST', headers: auth });
+assert.equal(r.status, 403, 'owner cannot leave');
+// rename: owner only, reflected in /api/me
+r = await req(`/api/orgs/${orgAId}`, { method: 'PATCH', headers: vauth, body: body({ name: 'x' }) });
+assert.equal(r.status, 403, 'non-owner rename → 403');
+r = await req(`/api/orgs/${orgAId}`, { method: 'PATCH', headers: auth, body: body({ name: '새 이름 워크스페이스' }) });
+assert.equal(r.status, 200, 'owner renames org');
+r = await req('/api/me', { headers: auth });
+assert.ok((await r.json()).orgs.some((o) => o.name === '새 이름 워크스페이스'), 'rename reflected in /api/me');
+
 // ---- Prometheus metrics format ----
 r = await req('/api/metrics?format=prometheus');
 assert.equal(r.status, 200, 'prometheus metrics 200');

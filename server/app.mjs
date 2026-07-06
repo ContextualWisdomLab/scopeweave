@@ -382,6 +382,31 @@ app.delete('/api/orgs/:id/members/:userId', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
+// Leave a workspace voluntarily (any non-owner member). Owners must transfer or
+// delete the org instead — an org can never be left ownerless.
+app.post('/api/orgs/:id/leave', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  const role = orgRole(uid, orgId);
+  if (!role) return c.json({ error: 'not found' }, 404);
+  if (role === 'owner') return c.json({ error: 'owner cannot leave; delete the workspace or transfer ownership' }, 403);
+  db.prepare('DELETE FROM memberships WHERE org_id = ? AND user_id = ?').run(orgId, uid);
+  logAudit(orgId, uid, 'member.leave', 'user', uid, { role });
+  return c.json({ ok: true });
+});
+
+// Rename a workspace (owner only).
+app.patch('/api/orgs/:id', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const orgId = c.req.param('id');
+  if (orgRole(uid, orgId) !== 'owner') return c.json({ error: 'forbidden' }, 403);
+  const { name } = await c.req.json().catch(() => ({}));
+  if (!name || !String(name).trim()) return c.json({ error: 'name required' }, 400);
+  db.prepare('UPDATE orgs SET name = ? WHERE id = ?').run(String(name).trim().slice(0, 120), orgId);
+  logAudit(orgId, uid, 'org.rename', 'org', orgId, { name });
+  return c.json({ id: Number(orgId), name: String(name).trim() });
+});
+
 // ------------------------------------------------------------------- billing
 app.get('/api/orgs/:id/billing', requireAuth, (c) => {
   const uid = c.get('user').sub;

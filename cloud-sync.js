@@ -574,6 +574,48 @@ async function renderTeam() {
   const data = await api(`/api/orgs/${currentOrgId}/members`);
   body.textContent = '';
 
+  // org actions: rename (owner) / leave (everyone else)
+  try {
+    const me = await api('/api/me');
+    const myRole = me.orgs?.find((o) => String(o.id) === String(currentOrgId))?.role;
+    const actions = document.createElement('div');
+    actions.className = 'team-org-actions';
+    if (myRole === 'owner') {
+      const rename = document.createElement('button');
+      rename.type = 'button';
+      rename.className = 'secondary-button';
+      rename.textContent = '워크스페이스 이름 변경';
+      rename.addEventListener('click', async () => {
+        const name = prompt('새 워크스페이스 이름');
+        if (!name) return;
+        try {
+          await api(`/api/orgs/${currentOrgId}`, { method: 'PATCH', body: { name } });
+          toast('이름을 변경했습니다.');
+          renderTeam();
+        } catch (e) { toast(e.data?.error || e.message); }
+      });
+      actions.appendChild(rename);
+    } else if (myRole) {
+      const leave = document.createElement('button');
+      leave.type = 'button';
+      leave.className = 'secondary-button team-remove';
+      leave.textContent = '워크스페이스 나가기';
+      leave.addEventListener('click', async () => {
+        if (!confirm('이 워크스페이스에서 나갑니다. 프로젝트 접근 권한을 잃습니다.')) return;
+        try {
+          await api(`/api/orgs/${currentOrgId}/leave`, { method: 'POST' });
+          setProjectId('');
+          document.getElementById('team-modal')?.classList.add('hidden');
+          await refreshProjects();
+          renderAuthUI();
+          toast('워크스페이스에서 나왔습니다.');
+        } catch (e) { toast(e.data?.error || e.message); }
+      });
+      actions.appendChild(leave);
+    }
+    if (actions.childNodes.length) body.appendChild(actions);
+  } catch { /* org actions are best-effort */ }
+
   // plan + usage indicator
   try {
     const b = await api(`/api/orgs/${currentOrgId}/billing`);
