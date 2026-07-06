@@ -1142,6 +1142,17 @@ async function openBaselineModal() {
       const who = document.createElement('span');
       who.className = 'team-who';
       who.textContent = `v${rev.version} · ${String(rev.savedAt).slice(0, 16)} · ${rev.savedBy || ''}`;
+      const diff = document.createElement('button');
+      diff.type = 'button';
+      diff.className = 'secondary-button';
+      diff.textContent = '비교';
+      diff.addEventListener('click', async () => {
+        try {
+          const snap = await api(`/api/projects/${pid}/revisions/${rev.version}`);
+          renderBaselineDiff(result, compareBaseline(snap.tasks, host?.getState?.()?.tasks || []));
+        } catch (e) { toast(e.data?.error || e.message); }
+      });
+      li.appendChild(diff);
       const restore = document.createElement('button');
       restore.type = 'button';
       restore.className = 'secondary-button';
