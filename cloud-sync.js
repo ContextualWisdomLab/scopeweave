@@ -12,6 +12,7 @@ let version = 0;   // open project's doc version (optimistic concurrency)
 let sse = null;
 let pushTimer = null;
 let currentOrgId = null; // org of the open project, for team management
+let shareMode = false;   // viewing via a public share token → read-only
 
 const getToken = () => localStorage.getItem(TOKEN_KEY) || '';
 const setToken = (t) => (t ? localStorage.setItem(TOKEN_KEY, t) : localStorage.removeItem(TOKEN_KEY));
@@ -60,12 +61,14 @@ function subscribe(id) {
 async function openProject(id, { silent = false } = {}) {
   const p = await api(`/api/projects/${id}`);
   setProjectId(id);
-  const meta = projectsCache.find((x) => String(x.id) === String(id));
-  if (meta) currentOrgId = meta.orgId;
+  currentOrgId = p.orgId || projectsCache.find((x) => String(x.id) === String(id))?.orgId || currentOrgId;
   version = p.version;
   host?.hydrateState({ projectName: p.name, baseDate: p.baseDate, tasks: p.tasks });
   host?.renderAll();
   subscribe(id);
+  // opening = seen: clear the unseen badge for this project
+  notifCache.delete(String(id));
+  api(`/api/projects/${id}/seen`, { method: 'POST' }).catch(() => {});
   renderAuthUI();
   if (!silent) toast(`'${p.name}' 프로젝트를 열었습니다.`);
 }
@@ -97,10 +100,24 @@ export const cloud = {
   },
   // Returns the saved project state to hydrate, or null (→ local/seed path).
   async boot() {
+    // public read-only share view (?share=TOKEN) — no account needed
+    const shareToken = new URLSearchParams(location.search).get('share');
+    if (shareToken) {
+      try {
+        const p = await api(`/api/shared/${encodeURIComponent(shareToken)}`);
+        shareMode = true;
+        renderAuthUI();
+        toast('읽기 전용 공유 보기입니다 — 변경은 저장되지 않습니다.');
+        return { projectName: p.name, baseDate: p.baseDate, tasks: p.tasks };
+      } catch {
+        toast('공유 링크가 만료되었거나 철회되었습니다.');
+      }
+    }
     if (!isAuthed() || !getProjectId()) { renderAuthUI(); return null; }
     try {
       const p = await api(`/api/projects/${getProjectId()}`);
       version = p.version;
+      currentOrgId = p.orgId || currentOrgId; // team/dashboard need the org right after reload
       subscribe(p.id);
       renderAuthUI();
       return { projectName: p.name, baseDate: p.baseDate, tasks: p.tasks };
@@ -111,6 +128,7 @@ export const cloud = {
   },
   // Called from persistState(). No-op unless logged in with a project open.
   push(payload) {
+    if (shareMode) return; // read-only share view never writes
     if (!isAuthed() || !getProjectId()) return;
     clearTimeout(pushTimer);
     pushTimer = setTimeout(() => doPush(payload), 600);
@@ -188,14 +206,27 @@ function ensureAuthUI() {
 }
 
 let projectsCache = [];
+let notifCache = new Map(); // projectId -> unseen count
+
 async function refreshProjects() {
   try { projectsCache = (await api('/api/projects')).projects || []; } catch { projectsCache = []; }
+  try {
+    const n = await api('/api/notifications');
+    notifCache = new Map((n.notifications || []).map((x) => [String(x.projectId), x.unseen]));
+  } catch { notifCache = new Map(); }
 }
 
 function renderAuthUI() {
   const bar = document.getElementById('cloud-auth');
   if (!bar) return;
   bar.textContent = '';
+  if (shareMode) {
+    const tag = document.createElement('span');
+    tag.className = 'team-role-tag';
+    tag.textContent = '읽기 전용 공유 보기';
+    bar.appendChild(tag);
+    return;
+  }
   if (!isAuthed()) {
     const btn = document.createElement('button');
     btn.type = 'button';
@@ -222,12 +253,26 @@ function renderAuthUI() {
   ph.value = '';
   ph.textContent = projectsCache.length ? '프로젝트 선택…' : '프로젝트 없음';
   select.appendChild(ph);
-  for (const p of projectsCache) {
+  for (const p of projectsCache.filter((x) => !x.archived)) {
     const opt = document.createElement('option');
     opt.value = String(p.id);
-    opt.textContent = p.name; // textContent → XSS-safe
+    const unseen = notifCache.get(String(p.id));
+    opt.textContent = unseen ? `${p.name} ●${unseen}` : p.name; // textContent → XSS-safe
     if (String(p.id) === String(openId)) opt.selected = true;
     select.appendChild(opt);
+  }
+  const archivedProjects = projectsCache.filter((x) => x.archived);
+  if (archivedProjects.length) {
+    const group = document.createElement('optgroup');
+    group.label = '보관됨';
+    for (const p of archivedProjects) {
+      const opt = document.createElement('option');
+      opt.value = String(p.id);
+      opt.textContent = `📦 ${p.name}`;
+      if (String(p.id) === String(openId)) opt.selected = true;
+      group.appendChild(opt);
+    }
+    select.appendChild(group);
   }
   select.addEventListener('change', () => { if (select.value) openProject(select.value).catch((e) => toast(e.message)); });
   bar.appendChild(select);
@@ -238,6 +283,13 @@ function renderAuthUI() {
   newBtn.textContent = '+ 새 프로젝트';
   newBtn.addEventListener('click', createProjectFlow);
   bar.appendChild(newBtn);
+
+  const dash = document.createElement('button');
+  dash.type = 'button';
+  dash.className = 'secondary-button';
+  dash.textContent = '대시보드';
+  dash.addEventListener('click', () => openPortfolioModal().catch((e) => toast(e.message || '대시보드를 불러오지 못했습니다.')));
+  bar.appendChild(dash);
 
   const team = document.createElement('button');
   team.type = 'button';
@@ -269,6 +321,58 @@ function renderAuthUI() {
       } catch (err) { toast(err.data?.error || err.message); }
     });
     bar.appendChild(dup);
+
+    const share = document.createElement('button');
+    share.type = 'button';
+    share.className = 'secondary-button';
+    share.textContent = '공유';
+    share.addEventListener('click', () => openShareModal().catch((e) => toast(e.data?.error || e.message)));
+    bar.appendChild(share);
+
+    const report = document.createElement('button');
+    report.type = 'button';
+    report.className = 'secondary-button';
+    report.textContent = '주간보고';
+    report.addEventListener('click', () => { try { openReportModal(); } catch (e) { toast(e.message || '보고서 생성 실패'); } });
+    bar.appendChild(report);
+
+    const msp = document.createElement('button');
+    msp.type = 'button';
+    msp.className = 'secondary-button';
+    msp.textContent = 'MSP 가져오기';
+    msp.addEventListener('click', () => {
+      let fi = document.getElementById('msp-file-input');
+      if (!fi) {
+        fi = document.createElement('input');
+        fi.id = 'msp-file-input';
+        fi.type = 'file';
+        fi.accept = '.xml,text/xml';
+        fi.hidden = true;
+        fi.addEventListener('change', () => {
+          const f = fi.files?.[0];
+          fi.value = '';
+          if (f) importMsProjectFile(f).catch((e) => toast(e.message || 'MSP 가져오기에 실패했습니다.'));
+        });
+        document.body.appendChild(fi);
+      }
+      fi.click();
+    });
+    bar.appendChild(msp);
+
+    const cur = projectsCache.find((x) => String(x.id) === String(getProjectId()));
+    const arch = document.createElement('button');
+    arch.type = 'button';
+    arch.className = 'secondary-button';
+    arch.textContent = cur?.archived ? '보관 해제' : '보관';
+    arch.addEventListener('click', async () => {
+      try {
+        const res = await api(`/api/projects/${getProjectId()}/archive`, { method: 'POST', body: { archived: !cur?.archived } });
+        await refreshProjects();
+        renderAuthUI();
+        toast(res.archived ? '프로젝트를 보관했습니다.' : '보관을 해제했습니다.');
+      } catch (err) { toast(err.data?.error || err.message); }
+    });
+    bar.appendChild(arch);
   }
 
   const search = document.createElement('button');
@@ -277,6 +381,15 @@ function renderAuthUI() {
   search.textContent = '검색';
   search.addEventListener('click', openSearchModal);
   bar.appendChild(search);
+
+  if (getProjectId()) {
+    const cmt = document.createElement('button');
+    cmt.type = 'button';
+    cmt.className = 'secondary-button';
+    cmt.textContent = '코멘트';
+    cmt.addEventListener('click', () => openCommentsModal().catch((e) => toast(e.message || '코멘트를 불러오지 못했습니다.')));
+    bar.appendChild(cmt);
+  }
 
   const out = document.createElement('button');
   out.type = 'button';
@@ -364,6 +477,468 @@ async function resolveOrgId() {
   const me = await api('/api/me');
   currentOrgId = me.orgs?.[0]?.id || null;
   return currentOrgId;
+}
+
+// ---------------------------------------------------------------- share links
+async function openShareModal() {
+  const pid = getProjectId();
+  if (!pid) return;
+  let modal = document.getElementById('share-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'share-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'share-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#share-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '읽기 전용 공유';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '공유 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  const make = document.createElement('button');
+  make.type = 'button';
+  make.className = 'primary-button';
+  make.textContent = '공유 링크 만들기';
+  make.addEventListener('click', async () => {
+    try {
+      const res = await api(`/api/projects/${pid}/shares`, { method: 'POST' });
+      const url = `${location.origin}${res.url}`;
+      try { await navigator.clipboard.writeText(url); toast('공유 링크를 복사했습니다.'); }
+      catch { prompt('공유 링크 (복사하세요)', url); }
+      openShareModal();
+    } catch (e) { toast(e.data?.error || e.message); }
+  });
+  panel.appendChild(make);
+
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  panel.appendChild(list);
+  const data = await api(`/api/projects/${pid}/shares`);
+  if (!data.shares.length) {
+    const li = document.createElement('li');
+    li.textContent = '활성 공유 링크가 없습니다.';
+    list.appendChild(li);
+    return;
+  }
+  for (const sRow of data.shares) {
+    const li = document.createElement('li');
+    const who = document.createElement('span');
+    who.className = 'team-who';
+    who.textContent = `${location.origin}/?share=${sRow.token.slice(0, 8)}… · ${String(sRow.createdAt).slice(0, 10)}`;
+    const copyB = document.createElement('button');
+    copyB.type = 'button';
+    copyB.className = 'secondary-button';
+    copyB.textContent = '복사';
+    copyB.addEventListener('click', async () => {
+      const url = `${location.origin}/?share=${sRow.token}`;
+      try { await navigator.clipboard.writeText(url); toast('복사했습니다.'); } catch { prompt('공유 링크', url); }
+    });
+    const rev = document.createElement('button');
+    rev.type = 'button';
+    rev.className = 'secondary-button team-remove';
+    rev.textContent = '철회';
+    rev.addEventListener('click', () =>
+      api(`/api/projects/${pid}/shares/${sRow.id}`, { method: 'DELETE' })
+        .then(() => { toast('공유를 철회했습니다.'); openShareModal(); })
+        .catch((e) => toast(e.data?.error || e.message)));
+    li.append(who, copyB, rev);
+    list.appendChild(li);
+  }
+}
+
+// ------------------------------------------------------------ weekly report
+// 주간보고 generator — the PM deliverable, straight from live data.
+// Pure: takes tasks + a reference date, returns markdown.
+export function buildWeeklyReport(tasks, refDate, projectName = '') {
+  const ref = new Date(refDate);
+  if (Number.isNaN(ref.getTime())) return '';
+  const day = (d) => d.toISOString().slice(0, 10);
+  const monday = new Date(ref);
+  monday.setDate(ref.getDate() - ((ref.getDay() + 6) % 7)); // this week's Monday
+  const weekStart = day(monday);
+  const weekEnd = day(new Date(monday.getTime() + 6 * 86400000));
+  const nextStart = day(new Date(monday.getTime() + 7 * 86400000));
+  const nextEnd = day(new Date(monday.getTime() + 13 * 86400000));
+  const today = day(ref);
+  const name = (t) => t.name || t.task || t.activity || t.phase || t.id;
+  const leaf = (tasks || []).filter((t) => !t.isSynthetic);
+
+  const done = leaf.filter((t) => t.actualEndDate && t.actualEndDate >= weekStart && t.actualEndDate <= weekEnd);
+  const doing = leaf.filter((t) => {
+    const a = Number(t.actualProgress) || 0;
+    return a > 0 && a < 100 && !t.actualEndDate;
+  });
+  const late = leaf.filter((t) => t.plannedEndDate && t.plannedEndDate < today && (Number(t.actualProgress) || 0) < 100);
+  const upcoming = leaf.filter((t) => t.plannedStartDate && t.plannedStartDate >= nextStart && t.plannedStartDate <= nextEnd);
+
+  let wSum = 0, pv = 0, ev = 0;
+  for (const t of leaf) {
+    const w = Number(t.weight) || 1;
+    wSum += w;
+    pv += w * ((Number(t.plannedProgress) || 0) / 100);
+    ev += w * ((Number(t.actualProgress) || 0) / 100);
+  }
+  const pvPct = wSum ? (pv / wSum) * 100 : 0;
+  const evPct = wSum ? (ev / wSum) * 100 : 0;
+  const spi = pvPct > 0 ? evPct / pvPct : null;
+
+  const section = (title, items, fmt) =>
+    `## ${title}\n${items.length ? items.map((t) => `- ${fmt(t)}`).join('\n') : '- (없음)'}`;
+  return [
+    `# 주간보고${projectName ? ` — ${projectName}` : ''} (${weekStart} ~ ${weekEnd})`,
+    '',
+    `**진척 요약**: 계획 ${pvPct.toFixed(1)}% · 실적 ${evPct.toFixed(1)}%` +
+      (spi === null ? '' : ` · SPI ${spi.toFixed(2)} (${spi >= 1 ? '일정 준수' : spi >= 0.9 ? '경미한 지연' : '지연 위험'})`),
+    '',
+    section('금주 완료', done, (t) => `${name(t)} (${t.actualEndDate})`),
+    '',
+    section('진행 중', doing, (t) => `${name(t)} — ${Number(t.actualProgress) || 0}%${t.owner ? ` (${t.owner})` : ''}`),
+    '',
+    section('지연', late, (t) => `${name(t)} — 계획종료 ${t.plannedEndDate}, 실적 ${Number(t.actualProgress) || 0}%${t.owner ? ` (${t.owner})` : ''}`),
+    '',
+    section('차주 예정', upcoming, (t) => `${name(t)} (${t.plannedStartDate} 시작${t.owner ? `, ${t.owner}` : ''})`),
+    '',
+  ].join('\n');
+}
+
+function openReportModal() {
+  const state = host?.getState?.();
+  if (!state) { toast('프로젝트를 먼저 여세요.'); return; }
+  const md = buildWeeklyReport(state.tasks, new Date().toISOString().slice(0, 10), state.projectName || '');
+  let modal = document.getElementById('report-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'report-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'report-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#report-panel');
+  panel.textContent = '';
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '주간보고';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '주간보고 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'primary-button';
+  copy.textContent = '마크다운 복사';
+  copy.addEventListener('click', async () => {
+    try { await navigator.clipboard.writeText(md); toast('주간보고를 복사했습니다.'); }
+    catch { toast('복사에 실패했습니다 — 아래 내용을 직접 선택하세요.'); }
+  });
+  panel.appendChild(copy);
+
+  const pre = document.createElement('pre');
+  pre.id = 'report-body';
+  pre.style.whiteSpace = 'pre-wrap';
+  pre.style.userSelect = 'text';
+  pre.textContent = md;
+  panel.appendChild(pre);
+}
+
+// ------------------------------------------------------- MS Project import
+// Parse Microsoft Project XML (Project 2003+ .xml export) into ScopeWeave's
+// task schema. ponytail: regex block parsing (MSP XML is machine-generated,
+// no DOMParser needed → node-testable); swap for a real XML parser if
+// hand-edited files ever matter.
+export function parseMsProjectXml(xml) {
+  const tag = (block, name) => {
+    const m = block.match(new RegExp(`<${name}>([^<]*)</${name}>`));
+    return m ? m[1].trim() : '';
+  };
+  const unescape = (s) => s
+    .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'").replace(/&amp;/g, '&');
+  const day = (s) => (/^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : '');
+  const tasks = [];
+  const parents = {}; // depth -> last task id at that depth
+  const blocks = xml.match(/<Task>[\s\S]*?<\/Task>/g) || [];
+  for (const block of blocks) {
+    const uid = tag(block, 'UID');
+    const name = unescape(tag(block, 'Name'));
+    if (!uid || uid === '0' || !name) continue; // project-summary row / blanks
+    const level = Math.max(1, Number(tag(block, 'OutlineLevel')) || 1);
+    const depth = Math.min(level, 3); // deeper levels flatten to task level
+    const preds = [...block.matchAll(/<PredecessorLink>[\s\S]*?<PredecessorUID>(\d+)<\/PredecessorUID>[\s\S]*?<\/PredecessorLink>/g)]
+      .map((m) => `msp-${m[1]}`);
+    const pct = Number(tag(block, 'PercentComplete')) || 0;
+    const t = {
+      id: `msp-${uid}`,
+      parentId: depth > 1 ? (parents[depth - 1] || '') : '',
+      depth,
+      phase: depth === 1 ? name : '',
+      activity: depth === 2 ? name : '',
+      task: depth === 3 ? name : '',
+      name,
+      plannedStartDate: day(tag(block, 'Start')),
+      plannedEndDate: day(tag(block, 'Finish')),
+      actualProgress: pct,
+      predecessors: preds.join(','),
+    };
+    tasks.push(t);
+    parents[depth] = t.id;
+    for (let d = depth + 1; d <= 3; d++) delete parents[d]; // reset deeper chain
+  }
+  return tasks;
+}
+
+async function importMsProjectFile(file) {
+  const xml = await file.text();
+  const tasks = parseMsProjectXml(xml);
+  if (!tasks.length) { toast('가져올 작업이 없습니다 (MSP XML 형식을 확인하세요).'); return; }
+  if (!confirm(`MS Project에서 ${tasks.length}개 작업을 가져옵니다. 현재 프로젝트 내용을 대체합니다.`)) return;
+  // preserve name/baseDate — only the task tree is replaced
+  const prev = host?.getState?.() || {};
+  host?.hydrateState({ projectName: prev.projectName, baseDate: prev.baseDate, tasks });
+  host?.renderAll();
+  const state = host?.getState?.();
+  if (state) await doPush(state);
+  toast(`MS Project에서 ${tasks.length}개 작업을 가져왔습니다.`);
+}
+
+// ------------------------------------------------------------- portfolio
+// Executive rollup: every project's weighted progress, SPI, and overdue count.
+async function openPortfolioModal() {
+  if (!currentOrgId) { toast('워크스페이스를 먼저 선택하세요.'); return; }
+  let modal = document.getElementById('portfolio-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'portfolio-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'portfolio-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#portfolio-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '포트폴리오 대시보드';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '대시보드 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  const data = await api(`/api/orgs/${currentOrgId}/portfolio`);
+  const active = data.projects.filter((p) => !p.archived);
+  if (!active.length) {
+    const p = document.createElement('p');
+    p.textContent = '프로젝트가 없습니다.';
+    panel.appendChild(p);
+    return;
+  }
+  const summary = document.createElement('p');
+  const late = active.filter((p) => p.status === 'delay').length;
+  const totOverdue = active.reduce((n, p) => n + p.overdue, 0);
+  summary.textContent = `프로젝트 ${active.length}개 · 주의/지연 ${late}개 · 지연 작업 합계 ${totOverdue}건`;
+  panel.appendChild(summary);
+
+  const wrap = document.createElement('div');
+  wrap.style.overflowX = 'auto';
+  const table = document.createElement('table');
+  table.className = 'wbs-table';
+  const thead = document.createElement('thead');
+  const hr = document.createElement('tr');
+  for (const t of ['프로젝트', '작업', '계획%', '실적%', 'SPI', '상태', '지연', '']) {
+    const th = document.createElement('th');
+    th.textContent = t;
+    hr.appendChild(th);
+  }
+  thead.appendChild(hr);
+  const tbody = document.createElement('tbody');
+  for (const p of active) {
+    const tr = document.createElement('tr');
+    const cells = [p.name, String(p.tasks), `${p.planned}%`, `${p.actual}%`, p.spi === null ? '-' : p.spi.toFixed(2), p.label, p.overdue ? `${p.overdue}건` : '-'];
+    for (const cText of cells) {
+      const td = document.createElement('td');
+      td.textContent = cText;
+      tr.appendChild(td);
+    }
+    if (p.status === 'delay') tr.style.color = 'var(--delay, #ea580c)';
+    const td = document.createElement('td');
+    const open = document.createElement('button');
+    open.type = 'button';
+    open.className = 'secondary-button';
+    open.textContent = '열기';
+    open.addEventListener('click', async () => {
+      modal.classList.add('hidden');
+      await openProject(p.id).catch((err) => toast(err.message));
+    });
+    td.appendChild(open);
+    tr.appendChild(td);
+    tbody.appendChild(tr);
+  }
+  table.append(thead, tbody);
+  wrap.appendChild(table);
+  panel.appendChild(wrap);
+}
+
+// ------------------------------------------------------------- comments
+async function openCommentsModal() {
+  const pid = getProjectId();
+  if (!pid) return;
+  let modal = document.getElementById('comments-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'comments-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'comments-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#comments-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '코멘트';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '코멘트 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  // task filter (전체 or a specific task)
+  const sel = document.createElement('select');
+  sel.className = 'cloud-select';
+  const all = document.createElement('option');
+  all.value = '';
+  all.textContent = '전체 코멘트';
+  sel.appendChild(all);
+  for (const t of host?.getState?.()?.tasks || []) {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.name || t.task || t.id;
+    sel.appendChild(opt);
+  }
+  panel.appendChild(sel);
+
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  panel.appendChild(list);
+
+  const form = document.createElement('form');
+  form.className = 'cloud-form';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = '코멘트 입력 (선택한 작업에 달림)';
+  input.maxLength = 2000;
+  const send = document.createElement('button');
+  send.type = 'submit';
+  send.className = 'primary-button';
+  send.textContent = '등록';
+  form.append(input, send);
+  panel.appendChild(form);
+
+  const taskName = (id) => {
+    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
+    return t ? (t.name || t.task || id) : id;
+  };
+
+  async function refresh() {
+    list.textContent = '';
+    const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
+    const data = await api(`/api/projects/${pid}/comments${q}`);
+    if (!data.comments.length) {
+      const li = document.createElement('li');
+      li.textContent = '코멘트가 없습니다.';
+      list.appendChild(li);
+      return;
+    }
+    for (const cm of data.comments) {
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'team-who';
+      const where = cm.taskId ? ` [${taskName(cm.taskId)}]` : '';
+      who.textContent = `${cm.email || '알 수 없음'}${where}: ${cm.body}`;
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'secondary-button team-remove';
+      del.textContent = '삭제';
+      del.addEventListener('click', () =>
+        api(`/api/projects/${pid}/comments/${cm.id}`, { method: 'DELETE' })
+          .then(refresh).catch((e) => toast(e.data?.error || e.message)));
+      li.append(who, del);
+      list.appendChild(li);
+    }
+  }
+  sel.addEventListener('change', refresh);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!input.value.trim()) return;
+    try {
+      await api(`/api/projects/${pid}/comments`, { method: 'POST', body: { taskId: sel.value, body: input.value.trim() } });
+      input.value = '';
+      refresh();
+    } catch (err) { toast(err.data?.error || err.message); }
+  });
+  await refresh();
 }
 
 // ------------------------------------------------------------- search
@@ -528,12 +1103,79 @@ async function openBaselineModal() {
   });
   panel.appendChild(save);
 
+  const ics = document.createElement('button');
+  ics.type = 'button';
+  ics.className = 'secondary-button';
+  ics.style.marginLeft = '8px';
+  ics.textContent = '캘린더 내보내기 (.ics)';
+  ics.addEventListener('click', async () => {
+    try {
+      const res = await fetch(`/api/projects/${pid}/calendar.ics`, { headers: { authorization: `Bearer ${getToken()}` } });
+      if (!res.ok) return toast('캘린더 내보내기에 실패했습니다.');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `scopeweave-${pid}.ics`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('캘린더 파일(.ics)을 내려받았습니다.');
+    } catch { toast('캘린더 내보내기에 실패했습니다.'); }
+  });
+  panel.appendChild(ics);
+
   const list = document.createElement('ul');
   list.className = 'team-list';
   panel.appendChild(list);
   const result = document.createElement('div');
   result.id = 'baseline-result';
   panel.appendChild(result);
+
+  // 변경 이력 (revision history) — related schedule-control tool, same modal.
+  const histH = document.createElement('h3');
+  histH.className = 'token-heading';
+  histH.textContent = '변경 이력';
+  const histList = document.createElement('ul');
+  histList.className = 'team-list';
+  api(`/api/projects/${pid}/revisions`).then((h) => {
+    for (const rev of h.revisions.slice(0, 10)) {
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'team-who';
+      who.textContent = `v${rev.version} · ${String(rev.savedAt).slice(0, 16)} · ${rev.savedBy || ''}`;
+      const diff = document.createElement('button');
+      diff.type = 'button';
+      diff.className = 'secondary-button';
+      diff.textContent = '비교';
+      diff.addEventListener('click', async () => {
+        try {
+          const snap = await api(`/api/projects/${pid}/revisions/${rev.version}`);
+          renderBaselineDiff(result, compareBaseline(snap.tasks, host?.getState?.()?.tasks || []));
+        } catch (e) { toast(e.data?.error || e.message); }
+      });
+      li.appendChild(diff);
+      const restore = document.createElement('button');
+      restore.type = 'button';
+      restore.className = 'secondary-button';
+      restore.textContent = '복원';
+      restore.addEventListener('click', async () => {
+        if (!confirm(`v${rev.version} 시점으로 복원합니다. (새 버전으로 기록됩니다)`)) return;
+        try {
+          await api(`/api/projects/${pid}/revisions/${rev.version}/restore`, { method: 'POST' });
+          await openProject(pid);
+          toast(`v${rev.version} 시점으로 복원했습니다.`);
+          modal.classList.add('hidden');
+        } catch (e) { toast(e.data?.error || e.message); }
+      });
+      li.append(who, restore);
+      histList.appendChild(li);
+    }
+    if (!h.revisions.length) {
+      const li = document.createElement('li');
+      li.textContent = '저장 이력이 없습니다.';
+      histList.appendChild(li);
+    }
+  }).catch(() => {});
+  panel.append(histH, histList);
 
   const data = await api(`/api/projects/${pid}/baselines`);
   if (!data.baselines.length) {
@@ -849,6 +1491,21 @@ function renderAccount(body) {
   });
   section.appendChild(form);
 
+  const outAll = document.createElement('button');
+  outAll.type = 'button';
+  outAll.className = 'secondary-button';
+  outAll.style.marginTop = '8px';
+  outAll.textContent = '다른 모든 기기에서 로그아웃';
+  outAll.addEventListener('click', async () => {
+    if (!confirm('다른 모든 기기의 세션을 무효화합니다. 이 기기는 유지됩니다.')) return;
+    try {
+      const res = await api('/api/auth/logout-all', { method: 'POST' });
+      setToken(res.token); // fresh token keeps this device signed in
+      toast('다른 모든 기기에서 로그아웃했습니다.');
+    } catch (e) { toast(e.data?.error || e.message); }
+  });
+  section.appendChild(outAll);
+
   const del = document.createElement('button');
   del.type = 'button';
   del.className = 'secondary-button';
@@ -960,6 +1617,24 @@ async function renderAudit(body) {
   h.className = 'token-heading';
   h.textContent = '감사 로그';
   section.appendChild(h);
+  const csvBtn = document.createElement('button');
+  csvBtn.type = 'button';
+  csvBtn.className = 'secondary-button';
+  csvBtn.textContent = 'CSV 다운로드';
+  csvBtn.addEventListener('click', async () => {
+    try {
+      const res = await fetch(`/api/orgs/${currentOrgId}/audit?format=csv&limit=500`, { headers: { authorization: `Bearer ${getToken()}` } });
+      if (!res.ok) return toast('감사 로그 내보내기에 실패했습니다.');
+      const blob = await res.blob();
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `scopeweave-audit-${currentOrgId}.csv`;
+      a.click();
+      URL.revokeObjectURL(a.href);
+      toast('감사 로그 CSV를 내려받았습니다.');
+    } catch { toast('감사 로그 내보내기에 실패했습니다.'); }
+  });
+  section.appendChild(csvBtn);
   const list = document.createElement('ul');
   list.className = 'audit-list';
   for (const e of data.events) {

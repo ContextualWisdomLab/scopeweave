@@ -33,6 +33,7 @@ A PAT acts as your user across all your workspaces.
 | `GET` | `/api/auth/oidc/start` | Begin SSO (OIDC + PKCE). Redirects to the IdP (or the built-in mock when `OIDC_ISSUER` is unset) |
 | `GET` | `/api/auth/oidc/callback` | IdP redirect target; issues the app JWT via URL fragment |
 | `POST` | `/api/auth/change-password` | `{ oldPassword, newPassword }` (min 8) |
+| `POST` | `/api/auth/logout-all` | Invalidate every existing session JWT; returns a fresh token for this device (PATs unaffected) |
 | `DELETE` | `/api/account` | `{ password }` — GDPR delete: removes owned workspaces + the user |
 | `GET` | `/api/me` | Current user + workspaces (`orgs[].role`) |
 
@@ -46,8 +47,33 @@ A PAT acts as your user across all your workspaces.
 | `PUT` | `/api/projects/:id` | Save `{ tasks, baseDate?, version }` — write roles; `409` on stale version; fires `project.update` webhooks |
 | `DELETE` | `/api/projects/:id` | Delete (write roles); fires `project.delete` |
 | `POST` | `/api/projects/:id/duplicate` | `{ name? }` — copy tasks + base date into a new project (template use) |
+| `POST` | `/api/projects/:id/archive` | `{ archived: bool }` — archive/restore (write roles) |
 | `GET` | `/api/projects/:id/stream` | **SSE** live updates. EventSource can't send headers — pass `?token=<JWT>` |
+| `GET` | `/api/notifications` | Per-project unseen counts (others' saves + comments since my last open) |
+| `POST` | `/api/projects/:id/seen` | Mark a project seen (clears its unseen count) |
 | `GET` | `/api/search?q=` | Cross-project search (project + task names, membership-scoped; min 2 chars) |
+| `POST/GET/DELETE` | `/api/projects/:id/shares[/:sid]` | Read-only share links (manage roles): create → token shown in URL form, list, revoke |
+| `GET` | `/api/shared/:token` | **Anonymous** read-only project view (name/baseDate/tasks only) |
+| `GET` | `/api/projects/:id/calendar.ics` | iCalendar feed of planned tasks (all-day VEVENTs). Calendar apps: pass `?token=` |
+
+## Comments (코멘트)
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/projects/:id/comments?taskId=` | List (latest first, author email; optional task filter) |
+| `POST` | `/api/projects/:id/comments` | `{ taskId?, body }` (write roles, max 2000 chars) |
+| `DELETE` | `/api/projects/:id/comments/:cid` | Author or manage |
+
+## Revisions (변경 이력)
+
+Every save snapshots the project (last 20 kept). Restore writes the old
+snapshot as a **new** version — history stays linear.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/api/projects/:id/revisions` | List `{ version, savedAt, savedBy }` (desc) |
+| `GET` | `/api/projects/:id/revisions/:version` | Full snapshot |
+| `POST` | `/api/projects/:id/revisions/:version/restore` | Roll back (write roles) |
 
 ## Baselines (기준선)
 
@@ -77,6 +103,7 @@ A PAT acts as your user across all your workspaces.
 
 | Method | Path | Purpose |
 | --- | --- | --- |
+| `GET` | `/api/orgs/:id/portfolio` | Executive rollup: per-project weighted plan/actual %, SPI + status, overdue counts |
 | `GET` | `/api/orgs/:id/billing` | Plan, limits, usage |
 | `POST` | `/api/orgs/:id/checkout` | Start a Pro checkout (Stripe when configured; mock URL otherwise) |
 
@@ -113,7 +140,7 @@ const ok = req.headers['x-scopeweave-signature'] ===
 | `GET` | `/api/tokens` | List your PATs (prefix + last-used, never the secret) |
 | `POST` | `/api/tokens` | Create `{ name }` → secret shown once |
 | `DELETE` | `/api/tokens/:id` | Revoke a token |
-| `GET` | `/api/orgs/:id/audit` | Audit log (manage) |
+| `GET` | `/api/orgs/:id/audit` | Audit log (manage; `?format=csv` for a compliance CSV) |
 | `GET` | `/api/orgs/:id/export` | Full workspace export JSON (owner) |
 | `GET` | `/api/metrics` | Ops counters (JSON; add `?format=prometheus` for scrape-ready text) |
 | `GET` | `/api/health` | Liveness |
