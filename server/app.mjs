@@ -939,6 +939,51 @@ app.get('/api/orgs/:id/portfolio', requireAuth, (c) => {
   return c.json({ projects });
 });
 
+// Public read-only share links: a random token grants VIEW access to one
+// project (no account needed) — revocable. Never exposes org/member data.
+app.post('/api/projects/:id/shares', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canManage(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const token = randomBytes(18).toString('base64url');
+  db.prepare('INSERT INTO share_tokens(project_id, token, created_by) VALUES(?,?,?)').run(p.id, token, uid);
+  logAudit(p.org_id, uid, 'share.create', 'project', p.id, {});
+  return c.json({ token, url: `/?share=${token}` });
+});
+
+app.get('/api/projects/:id/shares', requireAuth, (c) => {
+  const p = projectAccess(c.get('user').sub, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canManage(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const shares = db.prepare(
+    'SELECT id, token, created_at AS createdAt FROM share_tokens WHERE project_id = ? AND revoked = 0 ORDER BY id DESC'
+  ).all(p.id);
+  return c.json({ shares });
+});
+
+app.delete('/api/projects/:id/shares/:sid', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canManage(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const info = db.prepare('UPDATE share_tokens SET revoked = 1 WHERE id = ? AND project_id = ? AND revoked = 0')
+    .run(c.req.param('sid'), p.id);
+  if (!info.changes) return c.json({ error: 'not found' }, 404);
+  logAudit(p.org_id, uid, 'share.revoke', 'project', p.id, { shareId: Number(c.req.param('sid')) });
+  return c.json({ ok: true });
+});
+
+// Anonymous read via share token — project content only.
+app.get('/api/shared/:token', (c) => {
+  const row = db.prepare(
+    `SELECT p.name, p.base_date AS baseDate, p.tasks_json FROM share_tokens s
+     JOIN projects p ON p.id = s.project_id WHERE s.token = ? AND s.revoked = 0`
+  ).get(c.req.param('token'));
+  if (!row) return c.json({ error: 'not found' }, 404);
+  return c.json({ name: row.name, baseDate: row.baseDate, tasks: JSON.parse(row.tasks_json), readOnly: true });
+});
+
 // Unseen-activity notifications: per project, count others' saves + comments
 // newer than my last-seen mark. Opening a project marks it seen.
 app.get('/api/notifications', requireAuth, (c) => {
