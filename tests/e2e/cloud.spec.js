@@ -95,6 +95,62 @@ test('comments: post appears in the list with author', async ({ page }) => {
   await expect(page.locator('#comments-panel .team-list')).toContainText('일정 확인 부탁드립니다');
 });
 
+test('portfolio dashboard: rollup renders SPI/status per project', async ({ page }) => {
+  await loginAndOpen(page);
+  await page.click('#cloud-auth button:has-text("대시보드")');
+  await page.waitForSelector('#portfolio-panel tbody tr');
+  const summary = await page.locator('#portfolio-panel p').first().textContent();
+  expect(summary).toContain('프로젝트');
+  const row = await page.locator('#portfolio-panel tbody tr').first().textContent();
+  expect(row).toContain('E2E 프로젝트');
+  expect(row).toMatch(/\d+(\.\d+)?%/); // planned/actual percentages present
+});
+
+test('weekly report: modal renders sections + summary and copies markdown', async ({ page }) => {
+  await loginAndOpen(page);
+  await page.click('#cloud-auth button:has-text("주간보고")');
+  await page.waitForSelector('#report-body');
+  const body = await page.locator('#report-body').textContent();
+  expect(body).toContain('# 주간보고');
+  for (const sec of ['금주 완료', '진행 중', '지연', '차주 예정']) expect(body).toContain(`## ${sec}`);
+  expect(body).toMatch(/계획 \d+(\.\d+)?% · 실적 \d+(\.\d+)?%/);
+});
+
+test('share link: anonymous visitor gets a read-only view; revoke kills it', async ({ page, context }) => {
+  await loginAndOpen(page);
+  // create a share via API (clipboard is flaky headless), then visit anonymously
+  const share = await api('/api/projects/1/shares', { method: 'POST', tok: token });
+  const anon = await context.newPage();
+  await anon.goto(`${BASE}/?share=${share.token}`);
+  await anon.evaluate(() => localStorage.clear());
+  await anon.reload();
+  await anon.waitForSelector('#cloud-auth .team-role-tag');
+  expect(await anon.locator('#cloud-auth .team-role-tag').textContent()).toBe('읽기 전용 공유 보기');
+  expect(await anon.locator('#cloud-auth button').count()).toBe(0);
+  // revoke → the same link dies
+  const list = await api('/api/projects/1/shares', { tok: token });
+  await api(`/api/projects/1/shares/${list.shares[0].id}`, { method: 'DELETE', tok: token });
+  const res = await fetch(`${BASE}/api/shared/${share.token}`);
+  expect(res.status).toBe(404);
+  await anon.close();
+});
+
+test('MSP import: XML file populates the tree and saves to the cloud', async ({ page }) => {
+  await loginAndOpen(page);
+  page.on('dialog', (d) => d.accept());
+  await page.click('#cloud-auth button:has-text("MSP 가져오기")');
+  const xml = `<?xml version="1.0"?><Project><Tasks>
+    <Task><UID>1</UID><Name>MSP단계</Name><OutlineLevel>1</OutlineLevel><Start>2026-03-02T08:00:00</Start><Finish>2026-03-13T17:00:00</Finish></Task>
+    <Task><UID>2</UID><Name>MSP액티비티</Name><OutlineLevel>2</OutlineLevel><Start>2026-03-02T08:00:00</Start><Finish>2026-03-06T17:00:00</Finish></Task>
+  </Tasks></Project>`;
+  await page.setInputFiles('#msp-file-input', { name: 'plan.xml', mimeType: 'text/xml', buffer: Buffer.from(xml) });
+  await page.waitForFunction(() => document.querySelector('#task-table-body')?.textContent.includes('MSP단계'));
+  // wait for the debounced cloud push, then confirm server state
+  await page.waitForTimeout(1200);
+  const server = await api('/api/projects/1', { tok: token });
+  expect(server.tasks.some((t) => t.id === 'msp-1' && t.depth === 1)).toBeTruthy();
+});
+
 test('archive: project moves under the 보관됨 optgroup and restores', async ({ page }) => {
   await loginAndOpen(page);
   await page.click('#cloud-auth button:has-text("보관")');

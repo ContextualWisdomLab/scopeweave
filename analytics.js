@@ -86,19 +86,33 @@ export function computeCpm(tasks, opts = {}) {
     }
     return 0;
   };
+  // Dependency token: "P100" (FS), "P100SS", "P100FF+2", "P100SF-1".
+  // If the whole token matches a task id, treat it as plain FS (ids may end
+  // in letters that look like a type).
+  const parseDep = (token) => {
+    const raw = String(token).trim();
+    if (!raw) return null;
+    if (idset.has(raw)) return { id: raw, type: 'FS', lag: 0 };
+    const m = raw.match(/^(.*?)(FS|SS|FF|SF)?([+-]\d+)?$/i);
+    const id = (m?.[1] || raw).trim();
+    return { id, type: (m?.[2] || 'FS').toUpperCase(), lag: Number(m?.[3]) || 0 };
+  };
   const predsOf = (t) => {
     let p = t.predecessors;
     if (!p) return [];
     if (typeof p === 'string') p = p.split(',').map((s) => s.trim()).filter(Boolean);
-    return Array.isArray(p) ? p.map(String) : [];
+    return (Array.isArray(p) ? p : []).map(parseDep).filter(Boolean);
   };
 
   const preds = new Map(ids.map((id) => [id, []]));
   const succ = new Map(ids.map((id) => [id, []]));
   for (const t of list) {
     const id = String(t.id);
-    for (const p of predsOf(t)) {
-      if (idset.has(p) && p !== id) { preds.get(id).push(p); succ.get(p).push(id); }
+    for (const link of predsOf(t)) {
+      if (idset.has(link.id) && link.id !== id) {
+        preds.get(id).push(link);
+        succ.get(link.id).push({ id, type: link.type, lag: link.lag });
+      }
     }
   }
 
@@ -110,8 +124,8 @@ export function computeCpm(tasks, opts = {}) {
     const id = queue.shift();
     order.push(id);
     for (const s of succ.get(id)) {
-      indeg.set(s, indeg.get(s) - 1);
-      if (indeg.get(s) === 0) queue.push(s);
+      indeg.set(s.id, indeg.get(s.id) - 1);
+      if (indeg.get(s.id) === 0) queue.push(s.id);
     }
   }
   const cycleDetected = order.length !== ids.length;
@@ -121,9 +135,20 @@ export function computeCpm(tasks, opts = {}) {
   const es = new Map();
   const ef = new Map();
   for (const id of topo) {
-    const start = preds.get(id).reduce((m, p) => Math.max(m, ef.get(p) ?? 0), 0);
-    es.set(id, start);
-    ef.set(id, start + dur.get(id));
+    // per-link earliest-start constraint by dependency type
+    const start = preds.get(id).reduce((m, l) => {
+      const pes = es.get(l.id) ?? 0;
+      const pef = ef.get(l.id) ?? 0;
+      const d = dur.get(id);
+      let c;
+      if (l.type === 'SS') c = pes + l.lag;
+      else if (l.type === 'FF') c = pef + l.lag - d;
+      else if (l.type === 'SF') c = pes + l.lag - d;
+      else c = pef + l.lag; // FS
+      return Math.max(m, c);
+    }, 0);
+    es.set(id, Math.max(0, start));
+    ef.set(id, Math.max(0, start) + dur.get(id));
   }
   const projectDurationDays = ids.reduce((m, id) => Math.max(m, ef.get(id) ?? 0), 0);
 
@@ -131,11 +156,22 @@ export function computeCpm(tasks, opts = {}) {
   const ls = new Map();
   for (const id of [...topo].reverse()) {
     const succs = succ.get(id);
+    const d = dur.get(id);
+    // per-link latest-finish constraint (mirror of the forward pass)
     const finish = succs.length
-      ? succs.reduce((m, s) => Math.min(m, ls.get(s) ?? projectDurationDays), Infinity)
+      ? succs.reduce((m, l) => {
+          const sls = ls.get(l.id) ?? projectDurationDays;
+          const slf = lf.get(l.id) ?? projectDurationDays;
+          let c;
+          if (l.type === 'SS') c = sls - l.lag + d;
+          else if (l.type === 'FF') c = slf - l.lag;
+          else if (l.type === 'SF') c = slf - l.lag + d;
+          else c = sls - l.lag; // FS
+          return Math.min(m, c);
+        }, Infinity)
       : projectDurationDays;
     lf.set(id, finish);
-    ls.set(id, finish - dur.get(id));
+    ls.set(id, finish - d);
   }
 
   const perTask = {};
@@ -177,6 +213,54 @@ function ensurePanel() {
   panel = el('section', { id: 'evm-panel', class: 'evm-panel', 'aria-label': '일정성과지표(EVM)' });
   anchor.insertAdjacentElement('afterend', panel);
   return panel;
+}
+
+// Cost EVM: the money axis (schedule EVM = computeEvm above). Tasks carry
+// budget (예산) and actualCost (실투입비); progress fields are %.
+// BAC=Σbudget · PV/EV in currency · AC=ΣactualCost · CPI=EV/AC ·
+// EAC=BAC/CPI · VAC=BAC-EAC · ETC=EAC-AC.
+export function computeCostEvm(tasks) {
+  let bac = 0, pv = 0, ev = 0, ac = 0;
+  for (const t of tasks || []) {
+    const b = Number(t.budget) || 0;
+    bac += b;
+    pv += b * ((Number(t.plannedProgress) || 0) / 100);
+    ev += b * ((Number(t.actualProgress) || 0) / 100);
+    ac += Number(t.actualCost) || 0;
+  }
+  if (bac <= 0) return null; // no budgets → cost EVM not applicable
+  const cpi = ac > 0 ? ev / ac : null;
+  const cv = ev - ac;
+  const eac = cpi ? bac / cpi : null;
+  return {
+    bac, pv, ev, ac, cpi, cv,
+    eac,
+    vac: eac === null ? null : bac - eac,
+    etc: eac === null ? null : eac - ac,
+    status: cpi === null ? 'before' : cpi >= 1 ? 'active' : 'delay',
+    label: cpi === null ? '실투입 전' : cpi >= 1 ? '예산 준수' : cpi >= 0.9 ? '경미한 초과' : '예산 초과 위험',
+  };
+}
+
+function renderCostEvm(panel, tasks) {
+  const c = computeCostEvm(tasks);
+  if (!c) return;
+  const krw = (v) => `₩${Math.round(v).toLocaleString('ko-KR')}`;
+  const metric = (title, value, cls) => {
+    const card = el('div', { class: `evm-metric ${cls || ''}` });
+    card.appendChild(el('span', { class: 'evm-label' }, title));
+    card.appendChild(el('strong', { class: 'evm-value' }, value));
+    return card;
+  };
+  const row = el('div', { class: 'evm-metrics' });
+  row.appendChild(metric('BAC 총예산', krw(c.bac)));
+  row.appendChild(metric('EV 획득가치', krw(c.ev)));
+  row.appendChild(metric('AC 실투입비', krw(c.ac)));
+  row.appendChild(metric('CPI 원가효율', c.cpi === null ? 'N/A' : c.cpi.toFixed(2), `evm-${c.status}`));
+  row.appendChild(metric('EAC 완료시추정', c.eac === null ? 'N/A' : krw(c.eac), `evm-${c.status}`));
+  row.appendChild(metric('VAC 예산편차', c.vac === null ? 'N/A' : krw(c.vac), `evm-${c.status}`));
+  row.appendChild(el('span', { class: `evm-badge evm-${c.status}` }, c.label));
+  panel.appendChild(row);
 }
 
 // Resource workload: aggregate leaf-level effort per 담당자 (owner).
@@ -262,6 +346,7 @@ function renderPanel({ pv, ev, tasks, baseDate, calcPlannedRatio, calcDuration, 
   }
 
   renderCpm(panel, tasks, calcDuration);
+  renderCostEvm(panel, tasks);
   renderWorkload(panel, tasks);
 }
 
@@ -342,5 +427,5 @@ function buildScurveSvg(series, evm, baseDate) {
 }
 
 if (typeof window !== 'undefined') {
-  window.ScopeWeaveAnalytics = { render: renderPanel, computeEvm, buildScurve, computeCpm, computeWorkload };
+  window.ScopeWeaveAnalytics = { render: renderPanel, computeEvm, buildScurve, computeCpm, computeWorkload, computeCostEvm };
 }
