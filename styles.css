@@ -1030,3 +1030,8 @@ tbody tr.cpm-critical { background: rgba(234, 88, 12, 0.04); }
 .workload-table th, .workload-table td { border: 1px solid var(--border, #e2e8f0); padding: 4px 10px; text-align: left; }
 .workload-table th { background: var(--depth, #f1f5f9); font-weight: 700; }
 .workload-behind { color: #ea580c; font-weight: 700; }
+
+/* Agile 모드: 예측형 지표는 참고용 — 살짝 낮춘 시각 위계 */
+.evm-panel.evm-reference .evm-metrics,
+.evm-panel.evm-reference .evm-scurve-wrap,
+.evm-panel.evm-reference .cpm-summary:not(:first-child) { opacity: 0.72; }
