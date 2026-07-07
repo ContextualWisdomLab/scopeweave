@@ -1,8 +1,19 @@
-# Local / single-node full-stack ScopeWeave SaaS.
+# Local / single-node full-stack ScopeWeave SaaS + vendored sidecars.
 # Usage:
+#   git submodule update --init --recursive        # bring in vendor/*
 #   export SCOPEWEAVE_JWT_SECRET=$(openssl rand -base64 32)
 #   docker compose up --build
 # Then open http://localhost:8787
+#
+# ScopeWeave talks to two vendored services (git submodules under vendor/):
+#   - clearfolio               → 산출물 첨부 문서 뷰어  (CLEARFOLIO_URL)
+#   - contextual-orchestrator  → AI 브리핑 LLM 오케스트레이션 (ORCHESTRATOR_URL)
+# Both default to built-in mocks when their URLs are unset. The sidecars live
+# under the optional `full` compose profile so the default `docker compose
+# build/config` (CI evidence gate) only touches scopeweave; run the whole
+# stack with `docker compose --profile full up --build` once the sidecar
+# images are buildable (orchestrator Dockerfile via its PR #42; clearfolio
+# Dockerfile is a follow-up).
 services:
   scopeweave:
     build:
@@ -14,6 +25,11 @@ services:
       # Default keeps `docker compose config/build` runnable (CI evidence gate);
       # the server logs a loud warning if this insecure default reaches runtime.
       SCOPEWEAVE_JWT_SECRET: ${SCOPEWEAVE_JWT_SECRET:-insecure-dev-secret-CHANGE-ME}
+      # Point at the sidecars; when they are not running (default profile),
+      # the server transparently falls back to its built-in mocks.
+      CLEARFOLIO_URL: ${CLEARFOLIO_URL:-}
+      ORCHESTRATOR_URL: ${ORCHESTRATOR_URL:-}
+      ORCHESTRATOR_TOKEN: ${ORCHESTRATOR_TOKEN:-insecure-dev-orchestrator-token}
     volumes:
       - scopeweave-data:/data
     restart: unless-stopped
@@ -22,6 +38,25 @@ services:
       interval: 30s
       timeout: 3s
       retries: 3
+
+  clearfolio:
+    profiles: ["full"]
+    build:
+      context: ./vendor/clearfolio
+    expose:
+      - "8080"
+    restart: unless-stopped
+
+  orchestrator:
+    profiles: ["full"]
+    build:
+      context: ./vendor/contextual-orchestrator
+    environment:
+      CONTEXTUAL_ORCHESTRATOR_TOKEN: ${ORCHESTRATOR_TOKEN:-insecure-dev-orchestrator-token}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+    expose:
+      - "8000"
+    restart: unless-stopped
 
 volumes:
   scopeweave-data:

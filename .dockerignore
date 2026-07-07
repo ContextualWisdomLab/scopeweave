@@ -13,3 +13,4 @@ playwright.config.js
 pnpm-lock.yaml
 infra
 Dockerfile
+vendor

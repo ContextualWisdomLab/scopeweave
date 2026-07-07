@@ -85,6 +85,24 @@ npm run server                # serves the API + the static client on :8787
 
 Docker: `docker compose up` (see `Dockerfile.server` / `docs/deploy.md`).
 
+### Vendored services (git submodules)
+
+ScopeWeave integrates two sibling services, vendored under `vendor/` as git
+submodules so the whole stack can build together:
+
+- **`vendor/clearfolio`** — 산출물 첨부 문서 뷰어 (`CLEARFOLIO_URL`).
+- **`vendor/contextual-orchestrator`** — AI 브리핑 LLM 오케스트레이션 (`ORCHESTRATOR_URL`).
+
+Both are optional: when their URLs are unset the server uses built-in mocks.
+
+```bash
+git submodule update --init --recursive     # bring in vendor/*
+docker compose --profile full up --build     # scopeweave + both sidecars
+```
+
+The default compose profile builds only `scopeweave` (the sidecars sit behind
+the `full` profile), so CI and quick local runs are unaffected.
+
 ### Environment
 
 | Var | Purpose |
