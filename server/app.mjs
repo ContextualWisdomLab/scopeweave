@@ -8,6 +8,7 @@ import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
+import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
@@ -240,7 +241,7 @@ app.post('/api/projects', requireAuth, async (c) => {
 app.get('/api/projects/:id', requireAuth, (c) => {
   const p = projectAccess(c.get('user').sub, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
-  return c.json({ id: p.id, name: p.name, orgId: p.org_id, baseDate: p.base_date, tasks: JSON.parse(p.tasks_json), version: p.version });
+  return c.json({ id: p.id, name: p.name, orgId: p.org_id, baseDate: p.base_date, methodology: p.methodology || 'waterfall', tasks: JSON.parse(p.tasks_json), version: p.version });
 });
 
 app.put('/api/projects/:id', requireAuth, async (c) => {
@@ -255,9 +256,10 @@ app.put('/api/projects/:id', requireAuth, async (c) => {
   }
   const tasks = Array.isArray(body.tasks) ? body.tasks : JSON.parse(p.tasks_json);
   const version = p.version + 1;
+  const methodology = ['waterfall', 'agile', 'hybrid'].includes(body.methodology) ? body.methodology : (p.methodology || 'waterfall');
   db.prepare(
-    "UPDATE projects SET name=?, base_date=?, tasks_json=?, version=?, updated_at=datetime('now') WHERE id=?"
-  ).run(body.name ?? p.name, body.baseDate ?? p.base_date, JSON.stringify(tasks), version, id);
+    "UPDATE projects SET name=?, base_date=?, tasks_json=?, version=?, methodology=?, updated_at=datetime('now') WHERE id=?"
+  ).run(body.name ?? p.name, body.baseDate ?? p.base_date, JSON.stringify(tasks), version, methodology, id);
   logAudit(p.org_id, uid, 'project.update', 'project', id, { version, tasks: tasks.length });
   // Revision history: snapshot every save, keep the last 20 per project.
   try {
@@ -940,6 +942,50 @@ app.get('/api/orgs/:id/portfolio', requireAuth, (c) => {
   return c.json({ projects });
 });
 
+// AI 브리핑: 프로젝트 스냅샷(요약 지표 + 지연/차주 작업)을 contextual-
+// orchestrator(LLM)로 보내 경영진용 리스크 분석을 생성. 원문 데이터는 서버가
+// 요약해 전송하며, LLM 자격은 서버 환경변수에만 존재.
+app.post('/api/projects/:id/ai/brief', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  let tasks = [];
+  try { tasks = JSON.parse(p.tasks_json); } catch { /* empty */ }
+  const today = new Date().toISOString().slice(0, 10);
+  let wSum = 0, pv = 0, ev = 0;
+  const late = [], upcoming = [];
+  for (const t of tasks) {
+    const w = Number(t.weight) || 1;
+    wSum += w;
+    pv += w * ((Number(t.plannedProgress) || 0) / 100);
+    ev += w * ((Number(t.actualProgress) || 0) / 100);
+    const name = t.name || t.task || t.activity || t.phase || t.id;
+    if (t.plannedEndDate && t.plannedEndDate < today && (Number(t.actualProgress) || 0) < 100) {
+      late.push(`${name}(계획종료 ${t.plannedEndDate}, 실적 ${Number(t.actualProgress) || 0}%${t.owner ? `, ${t.owner}` : ''})`);
+    } else if (t.plannedStartDate && t.plannedStartDate >= today) {
+      upcoming.push(`${name}(${t.plannedStartDate} 시작)`);
+    }
+  }
+  const pvPct = wSum ? ((pv / wSum) * 100).toFixed(1) : '0';
+  const evPct = wSum ? ((ev / wSum) * 100).toFixed(1) : '0';
+  const context = [
+    `프로젝트: ${p.name}`,
+    `작업 수: ${tasks.length} · 계획진척 ${pvPct}% · 실적진척 ${evPct}%`,
+    `지연 작업(${late.length}): ${late.slice(0, 8).join(' / ') || '없음'}`,
+    `예정 작업(${upcoming.length}): ${upcoming.slice(0, 5).join(' / ') || '없음'}`,
+  ].join('\n');
+  try {
+    const analysis = await orchestratorChat([
+      { role: 'system', content: '너는 공정관리(schedule control) 전문가다. 주어진 프로젝트 지표를 근거로 한국어 경영진 브리핑을 작성하라: ①일정 상태 한 줄 판정 ②핵심 리스크 2~3개(근거 지표 인용) ③실행 권고 2~3개. 지표에 없는 사실은 만들지 마라.' },
+      { role: 'user', content: context },
+    ]);
+    logAudit(p.org_id, uid, 'ai.brief', 'project', p.id, { tasks: tasks.length });
+    return c.json({ analysis });
+  } catch (e) {
+    return c.json({ error: `AI 분석 실패: ${e.message}` }, 502);
+  }
+});
+
 // 산출물 첨부(Clearfolio 통합 문서 뷰어 프록시): 업로드→변환 잡, 목록(+상태
 // 갱신), 서명 아티팩트 열람(302), 삭제. 테넌트 = 조직, 브라우저에는 Clearfolio
 // 자격이 절대 노출되지 않음.
@@ -1154,6 +1200,43 @@ app.post('/api/projects/:id/duplicate', requireAuth, async (c) => {
   metrics.projectsCreated++;
   logAudit(p.org_id, uid, 'project.duplicate', 'project', nid, { from: p.id, name: newName });
   return c.json({ id: nid, name: newName, version: 1 });
+});
+
+// -------------------------------------------------------------- sprints
+// Agile/Hybrid: 시간상자(스프린트) CRUD. 작업은 task.sprint(이름)로 배정되고
+// task.storyPoints로 추정된다 — 지표(커밋/완료 포인트, 벨로시티)는 클라이언트
+// 순수 함수(computeSprintStats)가 계산한다.
+app.post('/api/projects/:id/sprints', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const { name, startDate, endDate, goal } = await c.req.json().catch(() => ({}));
+  if (!name || !String(name).trim()) return c.json({ error: 'name required' }, 400);
+  const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? v : '');
+  const sid = rowid(db.prepare('INSERT INTO sprints(project_id,name,start_date,end_date,goal) VALUES(?,?,?,?,?)')
+    .run(p.id, String(name).trim().slice(0, 80), day(startDate), day(endDate), String(goal || '').slice(0, 300)));
+  logAudit(p.org_id, uid, 'sprint.create', 'project', p.id, { sprintId: sid, name });
+  return c.json({ id: sid, name: String(name).trim() });
+});
+
+app.get('/api/projects/:id/sprints', requireAuth, (c) => {
+  const p = projectAccess(c.get('user').sub, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  const sprints = db.prepare(
+    'SELECT id, name, start_date AS startDate, end_date AS endDate, goal FROM sprints WHERE project_id = ? ORDER BY start_date, id'
+  ).all(p.id);
+  return c.json({ sprints, methodology: p.methodology || 'waterfall' });
+});
+
+app.delete('/api/projects/:id/sprints/:sid', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const info = db.prepare('DELETE FROM sprints WHERE id = ? AND project_id = ?').run(c.req.param('sid'), p.id);
+  if (!info.changes) return c.json({ error: 'not found' }, 404);
+  return c.json({ ok: true });
 });
 
 // ------------------------------------------------------------- baselines

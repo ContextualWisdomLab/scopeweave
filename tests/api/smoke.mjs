@@ -547,6 +547,39 @@ assert.equal(portAfter.status, 'delay', 'SPI 0.3 → delay');
 r = await req(`/api/orgs/${orgAId}/portfolio`, { headers: oauth });
 assert.equal(r.status, 404, 'non-member portfolio → 404');
 
+// ---- 스프린트 + 방법론 (Agile/Hybrid) ----
+r = await req(`/api/projects/${proj.id}/sprints`, { method: 'POST', headers: auth, body: body({ name: 'Sprint 1', startDate: '2026-06-01', endDate: '2026-06-14' }) });
+assert.equal(r.status, 200, 'sprint create');
+const sp1 = await r.json();
+r = await req(`/api/projects/${proj.id}/sprints`, { headers: auth });
+let spData = await r.json();
+assert.ok(spData.sprints.some((x) => x.id === sp1.id && x.startDate === '2026-06-01'), 'sprint listed');
+assert.equal(spData.methodology, 'waterfall', 'default methodology');
+// 방법론 변경(hybrid) → GET 반영
+let mv = (await (await req(`/api/projects/${proj.id}`, { headers: auth })).json()).version;
+r = await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: auth, body: body({ methodology: 'hybrid', version: mv }) });
+assert.equal(r.status, 200);
+r = await req(`/api/projects/${proj.id}`, { headers: auth });
+assert.equal((await r.json()).methodology, 'hybrid', 'methodology persisted');
+// 불량 값은 무시(기존 유지)
+mv = (await (await req(`/api/projects/${proj.id}`, { headers: auth })).json()).version;
+await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: auth, body: body({ methodology: 'chaos', version: mv }) });
+assert.equal((await (await req(`/api/projects/${proj.id}`, { headers: auth })).json()).methodology, 'hybrid', 'invalid methodology ignored');
+// 가드 + 삭제
+r = await req(`/api/projects/${proj.id}/sprints`, { method: 'POST', headers: oauth, body: body({ name: 'X' }) });
+assert.equal(r.status, 404, 'non-member sprint → 404');
+r = await req(`/api/projects/${proj.id}/sprints/${sp1.id}`, { method: 'DELETE', headers: auth });
+assert.equal(r.status, 200, 'sprint delete');
+
+// ---- AI 브리핑 (orchestrator mock) ----
+r = await req(`/api/projects/${proj.id}/ai/brief`, { method: 'POST', headers: auth });
+assert.equal(r.status, 200, 'ai brief 200');
+const brief = await r.json();
+assert.ok(brief.analysis.includes('mock-orchestrator'), 'mock analysis returned');
+assert.ok(brief.analysis.length > 40, 'non-trivial analysis');
+r = await req(`/api/projects/${proj.id}/ai/brief`, { method: 'POST', headers: oauth });
+assert.equal(r.status, 404, 'non-member ai brief → 404');
+
 // ---- 산출물 첨부 (Clearfolio mock) ----
 {
   const fd = new FormData();
