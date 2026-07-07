@@ -8,7 +8,7 @@
     "coverage": "node scripts/ci/static_coverage_evidence.mjs coverage",
     "server": "node server/server.mjs",
     "test:api": "node tests/api/smoke.mjs && node tests/api/ratelimit.test.mjs",
-    "test:unit": "node tests/unit/analytics.test.mjs && node tests/unit/cpm.test.mjs && node tests/unit/baseline-compare.test.mjs && node tests/unit/workload.test.mjs && node tests/unit/cost-evm.test.mjs && node tests/unit/msproject.test.mjs && node tests/unit/dep-types.test.mjs && node tests/unit/weekly-report.test.mjs && node tests/unit/clearfolio.test.mjs && node tests/unit/sprint-stats.test.mjs",
+    "test:unit": "node tests/unit/analytics.test.mjs && node tests/unit/cpm.test.mjs && node tests/unit/baseline-compare.test.mjs && node tests/unit/workload.test.mjs && node tests/unit/cost-evm.test.mjs && node tests/unit/msproject.test.mjs && node tests/unit/dep-types.test.mjs && node tests/unit/weekly-report.test.mjs && node tests/unit/clearfolio.test.mjs && node tests/unit/sprint-stats.test.mjs && node tests/unit/burndown.test.mjs",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:cloud": "playwright test tests/e2e/cloud.spec.js"
