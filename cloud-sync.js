@@ -888,6 +888,67 @@ export function computeSprintStats(tasks, sprints, today) {
   return { rows, velocity, backlogCount: backlog.length };
 }
 
+// 번다운 (순수): 스프린트 기간의 일별 잔여 포인트 — ideal(선형 소진) vs
+// actual(완료일 actualEndDate 기준; 완료일 없는 100% 작업은 오늘 완료로 간주).
+export function computeBurndown(tasks, sprint, today) {
+  if (!sprint?.startDate || !sprint?.endDate || sprint.endDate < sprint.startDate) return null;
+  const leaf = (tasks || []).filter((t) => !t.isSynthetic && String(t.sprint || '').trim() === sprint.name);
+  const pts = (t) => Number(t.storyPoints) || 0;
+  const committed = leaf.reduce((n, t) => n + pts(t), 0);
+  if (committed <= 0) return null;
+  const days = [];
+  for (let d = new Date(sprint.startDate); ; d.setDate(d.getDate() + 1)) {
+    const iso = d.toISOString().slice(0, 10);
+    days.push(iso);
+    if (iso >= sprint.endDate) break;
+    if (days.length > 120) break; // 안전 상한
+  }
+  const n = days.length;
+  const ideal = days.map((_, i) => committed * (1 - (n === 1 ? 1 : i / (n - 1))));
+  const doneAt = (t) => t.actualEndDate || ((Number(t.actualProgress) || 0) >= 100 ? today : null);
+  const actual = days.map((day) => {
+    if (today && day > today) return null; // 미래는 미기록
+    const burned = leaf.filter((t) => { const d = doneAt(t); return d && d <= day; }).reduce((s2, t) => s2 + pts(t), 0);
+    return committed - burned;
+  });
+  return { days, committed, ideal, actual };
+}
+
+function renderBurndownSvg(bd) {
+  const W = 420, H = 110, PAD = 6;
+  const n = bd.days.length;
+  const x = (i) => PAD + (n === 1 ? 0 : (i / (n - 1)) * (W - 2 * PAD));
+  const y = (v) => H - PAD - (v / bd.committed) * (H - 2 * PAD);
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', `번다운: 커밋 ${bd.committed}pt`);
+  svg.style.width = '100%';
+  svg.style.maxWidth = '460px';
+  const grid = document.createElementNS(NS, 'line');
+  grid.setAttribute('x1', PAD); grid.setAttribute('x2', W - PAD);
+  grid.setAttribute('y1', y(0)); grid.setAttribute('y2', y(0));
+  grid.setAttribute('stroke', '#e2e8f0');
+  svg.appendChild(grid);
+  const idealLine = document.createElementNS(NS, 'polyline');
+  idealLine.setAttribute('points', bd.ideal.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' '));
+  idealLine.setAttribute('fill', 'none');
+  idealLine.setAttribute('stroke', '#94a3b8');
+  idealLine.setAttribute('stroke-dasharray', '4 3');
+  svg.appendChild(idealLine);
+  const actualPts = bd.actual.map((v, i) => (v === null ? null : `${x(i).toFixed(1)},${y(v).toFixed(1)}`)).filter(Boolean);
+  if (actualPts.length) {
+    const actualLine = document.createElementNS(NS, 'polyline');
+    actualLine.setAttribute('points', actualPts.join(' '));
+    actualLine.setAttribute('fill', 'none');
+    actualLine.setAttribute('stroke', '#2563eb');
+    actualLine.setAttribute('stroke-width', '2');
+    svg.appendChild(actualLine);
+  }
+  return svg;
+}
+
 const METHODOLOGY_LABELS = { waterfall: 'Waterfall (예측형)', agile: 'Agile (적응형)', hybrid: 'Hybrid (혼합형)' };
 
 async function openSprintModal() {
@@ -968,6 +1029,20 @@ async function openSprintModal() {
     who.className = 'team-who';
     const period = r.startDate || r.endDate ? ` (${r.startDate}~${r.endDate})` : '';
     who.textContent = `${r.name}${period} · ${r.taskCount}작업 · ${r.completed}/${r.committed}pt${r.closed ? ' · 종료' : ''}`;
+    const bdBtn = document.createElement('button');
+    bdBtn.type = 'button';
+    bdBtn.className = 'secondary-button';
+    bdBtn.textContent = '번다운';
+    bdBtn.addEventListener('click', () => {
+      const holder = document.getElementById('burndown-holder');
+      holder.textContent = '';
+      const bd = computeBurndown(host?.getState?.()?.tasks || [], r, new Date().toISOString().slice(0, 10));
+      if (!bd) { holder.textContent = '번다운을 그리려면 스프린트 기간과 스토리포인트가 필요합니다.'; return; }
+      const cap = document.createElement('p');
+      cap.className = 'evm-caption';
+      cap.textContent = `${r.name} 번다운 — 커밋 ${bd.committed}pt · 점선=이상적 소진, 실선=실제 잔여`;
+      holder.append(cap, renderBurndownSvg(bd));
+    });
     const del = document.createElement('button');
     del.type = 'button';
     del.className = 'secondary-button team-remove';
@@ -975,7 +1050,7 @@ async function openSprintModal() {
     del.addEventListener('click', () =>
       api(`/api/projects/${pid}/sprints/${r.id}`, { method: 'DELETE' })
         .then(() => openSprintModal()).catch((e) => toast(e.data?.error || e.message)));
-    li.append(who, del);
+    li.append(who, bdBtn, del);
     list.appendChild(li);
   }
   if (!stats.rows.length) {
@@ -984,6 +1059,10 @@ async function openSprintModal() {
     list.appendChild(li);
   }
   panel.appendChild(list);
+
+  const bdHolder = document.createElement('div');
+  bdHolder.id = 'burndown-holder';
+  panel.appendChild(bdHolder);
 
   const form = document.createElement('form');
   form.className = 'cloud-form';
