@@ -14,3 +14,4 @@ pnpm-lock.yaml
 infra
 !infra/nginx
 Dockerfile
+!docs/user-guide.md
