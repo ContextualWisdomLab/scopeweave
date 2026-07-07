@@ -39,7 +39,6 @@ jobs:
           output: trivy-results.sarif
           severity: MEDIUM,HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: 0
 
       - name: Upload Trivy SARIF
         if: ${{ always() }}

@@ -101,6 +101,3 @@
 ## 2026-06-30 - Restore keyboard focus after synchronous DOM replacement
 **Learning:** In applications that rely on replacing large chunks of the DOM tree (e.g., calling `renderAll()` on every state change), elements that triggered the change (like dropdowns or toggle buttons) get destroyed and recreated. This causes the browser to reset focus to the `<body>` element, completely breaking keyboard navigation and forcing screen reader users to start over.
 **Action:** When implementing interactions that trigger a full re-render, identify the element that triggered the change (e.g., using its ID or data attributes), and use `requestAnimationFrame` to manually call `.focus()` on the newly rendered equivalent element after the DOM has been updated.
-## 2026-07-05 - Enhance shortcut discoverability
-**Learning:** Tooltips (`title`) containing shortcut hints like `(Esc)` are not reliably read by screen readers.
-**Action:** Added `aria-keyshortcuts="Escape"` to complement the existing tooltip for better accessibility.
