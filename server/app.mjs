@@ -241,7 +241,7 @@ app.post('/api/projects', requireAuth, async (c) => {
 app.get('/api/projects/:id', requireAuth, (c) => {
   const p = projectAccess(c.get('user').sub, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
-  return c.json({ id: p.id, name: p.name, orgId: p.org_id, baseDate: p.base_date, tasks: JSON.parse(p.tasks_json), version: p.version });
+  return c.json({ id: p.id, name: p.name, orgId: p.org_id, baseDate: p.base_date, methodology: p.methodology || 'waterfall', tasks: JSON.parse(p.tasks_json), version: p.version });
 });
 
 app.put('/api/projects/:id', requireAuth, async (c) => {
@@ -256,9 +256,10 @@ app.put('/api/projects/:id', requireAuth, async (c) => {
   }
   const tasks = Array.isArray(body.tasks) ? body.tasks : JSON.parse(p.tasks_json);
   const version = p.version + 1;
+  const methodology = ['waterfall', 'agile', 'hybrid'].includes(body.methodology) ? body.methodology : (p.methodology || 'waterfall');
   db.prepare(
-    "UPDATE projects SET name=?, base_date=?, tasks_json=?, version=?, updated_at=datetime('now') WHERE id=?"
-  ).run(body.name ?? p.name, body.baseDate ?? p.base_date, JSON.stringify(tasks), version, id);
+    "UPDATE projects SET name=?, base_date=?, tasks_json=?, version=?, methodology=?, updated_at=datetime('now') WHERE id=?"
+  ).run(body.name ?? p.name, body.baseDate ?? p.base_date, JSON.stringify(tasks), version, methodology, id);
   logAudit(p.org_id, uid, 'project.update', 'project', id, { version, tasks: tasks.length });
   // Revision history: snapshot every save, keep the last 20 per project.
   try {
@@ -1199,6 +1200,43 @@ app.post('/api/projects/:id/duplicate', requireAuth, async (c) => {
   metrics.projectsCreated++;
   logAudit(p.org_id, uid, 'project.duplicate', 'project', nid, { from: p.id, name: newName });
   return c.json({ id: nid, name: newName, version: 1 });
+});
+
+// -------------------------------------------------------------- sprints
+// Agile/Hybrid: 시간상자(스프린트) CRUD. 작업은 task.sprint(이름)로 배정되고
+// task.storyPoints로 추정된다 — 지표(커밋/완료 포인트, 벨로시티)는 클라이언트
+// 순수 함수(computeSprintStats)가 계산한다.
+app.post('/api/projects/:id/sprints', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const { name, startDate, endDate, goal } = await c.req.json().catch(() => ({}));
+  if (!name || !String(name).trim()) return c.json({ error: 'name required' }, 400);
+  const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? v : '');
+  const sid = rowid(db.prepare('INSERT INTO sprints(project_id,name,start_date,end_date,goal) VALUES(?,?,?,?,?)')
+    .run(p.id, String(name).trim().slice(0, 80), day(startDate), day(endDate), String(goal || '').slice(0, 300)));
+  logAudit(p.org_id, uid, 'sprint.create', 'project', p.id, { sprintId: sid, name });
+  return c.json({ id: sid, name: String(name).trim() });
+});
+
+app.get('/api/projects/:id/sprints', requireAuth, (c) => {
+  const p = projectAccess(c.get('user').sub, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  const sprints = db.prepare(
+    'SELECT id, name, start_date AS startDate, end_date AS endDate, goal FROM sprints WHERE project_id = ? ORDER BY start_date, id'
+  ).all(p.id);
+  return c.json({ sprints, methodology: p.methodology || 'waterfall' });
+});
+
+app.delete('/api/projects/:id/sprints/:sid', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const info = db.prepare('DELETE FROM sprints WHERE id = ? AND project_id = ?').run(c.req.param('sid'), p.id);
+  if (!info.changes) return c.json({ error: 'not found' }, 404);
+  return c.json({ ok: true });
 });
 
 // ------------------------------------------------------------- baselines

@@ -56,6 +56,20 @@ A PAT acts as your user across all your workspaces.
 | `GET` | `/api/shared/:token` | **Anonymous** read-only project view (name/baseDate/tasks only) |
 | `GET` | `/api/projects/:id/calendar.ics` | iCalendar feed of planned tasks (all-day VEVENTs). Calendar apps: pass `?token=` |
 
+## Sprints & Methodology (Agile / Hybrid)
+
+Projects carry `methodology` (`waterfall` default · `agile` · `hybrid`) — set it
+via `PUT /api/projects/:id { methodology }`. Tasks join a sprint by name
+(`task.sprint`) and are estimated with `task.storyPoints`; committed/completed
+points and velocity are computed client-side (`computeSprintStats`). Hybrid =
+waterfall metrics (EVM/CPM) and sprint metrics coexist on the same plan.
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/projects/:id/sprints` | `{ name, startDate?, endDate?, goal? }` (write roles) |
+| `GET` | `/api/projects/:id/sprints` | List + project methodology |
+| `DELETE` | `/api/projects/:id/sprints/:sid` | Remove a sprint |
+
 ## AI (contextual-orchestrator)
 
 | Method | Path | Purpose |

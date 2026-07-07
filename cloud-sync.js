@@ -383,6 +383,13 @@ function renderAuthUI() {
   bar.appendChild(search);
 
   if (getProjectId()) {
+    const spr = document.createElement('button');
+    spr.type = 'button';
+    spr.className = 'secondary-button';
+    spr.textContent = '스프린트';
+    spr.addEventListener('click', () => openSprintModal().catch((e) => toast(e.data?.error || e.message)));
+    bar.appendChild(spr);
+
     const att = document.createElement('button');
     att.type = 'button';
     att.className = 'secondary-button';
@@ -857,6 +864,151 @@ async function openPortfolioModal() {
   table.append(thead, tbody);
   wrap.appendChild(table);
   panel.appendChild(wrap);
+}
+
+// --------------------------------------------------------------- sprints
+// Agile/Hybrid 지표 (순수): 스프린트별 커밋/완료 스토리포인트와 팀 벨로시티.
+// 작업 배정 = task.sprint(이름 일치), 추정 = task.storyPoints, 완료 = 실적 100%.
+export function computeSprintStats(tasks, sprints, today) {
+  const leaf = (tasks || []).filter((t) => !t.isSynthetic);
+  const rows = (sprints || []).map((sp) => {
+    const mine = leaf.filter((t) => String(t.sprint || '').trim() === sp.name);
+    const pts = (t) => Number(t.storyPoints) || 0;
+    const committed = mine.reduce((n, t) => n + pts(t), 0);
+    const completed = mine.filter((t) => (Number(t.actualProgress) || 0) >= 100).reduce((n, t) => n + pts(t), 0);
+    const closed = Boolean(sp.endDate && today && sp.endDate < today);
+    return { id: sp.id, name: sp.name, startDate: sp.startDate, endDate: sp.endDate, goal: sp.goal, taskCount: mine.length, committed, completed, remaining: committed - completed, closed };
+  });
+  const closedWithWork = rows.filter((r) => r.closed && r.committed > 0);
+  const velocity = closedWithWork.length
+    ? closedWithWork.reduce((n, r) => n + r.completed, 0) / closedWithWork.length
+    : null;
+  const assigned = new Set(rows.flatMap((r) => [r.name]));
+  const backlog = leaf.filter((t) => !String(t.sprint || '').trim() || !(sprints || []).some((sp) => sp.name === String(t.sprint).trim()));
+  return { rows, velocity, backlogCount: backlog.length };
+}
+
+const METHODOLOGY_LABELS = { waterfall: 'Waterfall (예측형)', agile: 'Agile (적응형)', hybrid: 'Hybrid (혼합형)' };
+
+async function openSprintModal() {
+  const pid = getProjectId();
+  if (!pid) return;
+  let modal = document.getElementById('sprint-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'sprint-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'sprint-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#sprint-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '스프린트 (Agile / Hybrid)';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '스프린트 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  const data = await api(`/api/projects/${pid}/sprints`);
+
+  // 방법론 선택 — 프로젝트 메타로 저장
+  const mLabel = document.createElement('label');
+  mLabel.className = 'meta-field';
+  const mSpan = document.createElement('span');
+  mSpan.textContent = '프로젝트 방법론';
+  const mSel = document.createElement('select');
+  mSel.className = 'cloud-select';
+  mSel.id = 'methodology-select';
+  for (const [v, label] of Object.entries(METHODOLOGY_LABELS)) {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = label;
+    if (v === (data.methodology || 'waterfall')) opt.selected = true;
+    mSel.appendChild(opt);
+  }
+  mSel.addEventListener('change', async () => {
+    try {
+      const cur = await api(`/api/projects/${pid}`);
+      await api(`/api/projects/${pid}`, { method: 'PUT', body: { methodology: mSel.value, version: cur.version } });
+      toast(`방법론: ${METHODOLOGY_LABELS[mSel.value]}`);
+    } catch (e) { toast(e.data?.error || e.message); }
+  });
+  mLabel.append(mSpan, mSel);
+  panel.appendChild(mLabel);
+
+  // 지표 + 목록
+  const stats = computeSprintStats(host?.getState?.()?.tasks || [], data.sprints, new Date().toISOString().slice(0, 10));
+  const summary = document.createElement('p');
+  summary.className = 'cpm-summary';
+  summary.textContent = `스프린트 ${stats.rows.length}개 · 벨로시티 ${stats.velocity === null ? 'N/A (종료 스프린트 없음)' : stats.velocity.toFixed(1) + 'pt'} · 백로그 ${stats.backlogCount}건`;
+  panel.appendChild(summary);
+
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  for (const r of stats.rows) {
+    const li = document.createElement('li');
+    const who = document.createElement('span');
+    who.className = 'team-who';
+    const period = r.startDate || r.endDate ? ` (${r.startDate}~${r.endDate})` : '';
+    who.textContent = `${r.name}${period} · ${r.taskCount}작업 · ${r.completed}/${r.committed}pt${r.closed ? ' · 종료' : ''}`;
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'secondary-button team-remove';
+    del.textContent = '삭제';
+    del.addEventListener('click', () =>
+      api(`/api/projects/${pid}/sprints/${r.id}`, { method: 'DELETE' })
+        .then(() => openSprintModal()).catch((e) => toast(e.data?.error || e.message)));
+    li.append(who, del);
+    list.appendChild(li);
+  }
+  if (!stats.rows.length) {
+    const li = document.createElement('li');
+    li.textContent = '스프린트가 없습니다. 아래에서 추가하세요. (작업 배정: 편집기의 스프린트 필드)';
+    list.appendChild(li);
+  }
+  panel.appendChild(list);
+
+  const form = document.createElement('form');
+  form.className = 'cloud-form';
+  const nameIn = document.createElement('input');
+  nameIn.type = 'text';
+  nameIn.placeholder = '스프린트 이름 (예: Sprint 3)';
+  nameIn.required = true;
+  const startIn = document.createElement('input');
+  startIn.type = 'date';
+  const endIn = document.createElement('input');
+  endIn.type = 'date';
+  const add = document.createElement('button');
+  add.type = 'submit';
+  add.className = 'primary-button';
+  add.textContent = '추가';
+  form.append(nameIn, startIn, endIn, add);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await api(`/api/projects/${pid}/sprints`, { method: 'POST', body: { name: nameIn.value.trim(), startDate: startIn.value, endDate: endIn.value } });
+      toast('스프린트를 추가했습니다.');
+      openSprintModal();
+    } catch (err) { toast(err.data?.error || err.message); }
+  });
+  panel.appendChild(form);
 }
 
 // ----------------------------------------------------------- attachments
