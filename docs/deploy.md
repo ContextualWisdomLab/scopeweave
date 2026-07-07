@@ -24,6 +24,10 @@ persists the database in the `scopeweave-data` volume.
 | `SCOPEWEAVE_DEV` | no | Must be `1` to enable the dev `activate-pro` endpoint. **Never set in production.** |
 | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | for live billing | Enables real Stripe Checkout (`npm i stripe` too). Without them, billing uses the mock path. |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI` | for real SSO | Points the OIDC login at your IdP. Unset → a built-in mock IdP (dev/test only). |
+| `ORCHESTRATOR_URL` | for AI 브리핑 | contextual-orchestrator 주소. Unset → deterministic mock. |
+| `ORCHESTRATOR_TOKEN` | with URL | orchestrator Bearer 토큰 (`CONTEXTUAL_ORCHESTRATOR_TOKEN`). |
+| `CLEARFOLIO_URL` | for 산출물 viewer | Clearfolio 문서 뷰어 백엔드 주소. Unset → built-in mock (dev/test). |
+| `CLEARFOLIO_HMAC_SECRET` | optional | Signs tenant-claim headers (`clearfolio.tenant-claims.hmac-secret`와 동일 값). |
 | `SCOPEWEAVE_RATE_LIMIT_MAX` (+ `SCOPEWEAVE_RATE_LIMIT_WINDOW_MS`) | recommended | Per-IP fixed-window rate limiting (429 + Retry-After). Off when unset. |
 
 ## Data & scale path

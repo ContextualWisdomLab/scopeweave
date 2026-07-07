@@ -383,6 +383,20 @@ function renderAuthUI() {
   bar.appendChild(search);
 
   if (getProjectId()) {
+    const spr = document.createElement('button');
+    spr.type = 'button';
+    spr.className = 'secondary-button';
+    spr.textContent = '스프린트';
+    spr.addEventListener('click', () => openSprintModal().catch((e) => toast(e.data?.error || e.message)));
+    bar.appendChild(spr);
+
+    const att = document.createElement('button');
+    att.type = 'button';
+    att.className = 'secondary-button';
+    att.textContent = '산출물';
+    att.addEventListener('click', () => openAttachmentsModal().catch((e) => toast(e.data?.error || e.message)));
+    bar.appendChild(att);
+
     const cmt = document.createElement('button');
     cmt.type = 'button';
     cmt.className = 'secondary-button';
@@ -668,6 +682,31 @@ function openReportModal() {
   });
   panel.appendChild(copy);
 
+  const ai = document.createElement('button');
+  ai.type = 'button';
+  ai.className = 'secondary-button';
+  ai.style.marginLeft = '8px';
+  ai.textContent = 'AI 요약';
+  ai.addEventListener('click', async () => {
+    ai.disabled = true;
+    ai.textContent = '분석 중…';
+    try {
+      const res = await api(`/api/projects/${getProjectId()}/ai/brief`, { method: 'POST' });
+      let box = document.getElementById('report-ai');
+      if (!box) {
+        box = document.createElement('pre');
+        box.id = 'report-ai';
+        box.style.whiteSpace = 'pre-wrap';
+        box.style.borderLeft = '3px solid var(--primary, #2563eb)';
+        box.style.paddingLeft = '10px';
+        panel.insertBefore(box, panel.querySelector('#report-body'));
+      }
+      box.textContent = `🤖 AI 브리핑\n${res.analysis}`;
+    } catch (e) { toast(e.data?.error || e.message); }
+    finally { ai.disabled = false; ai.textContent = 'AI 요약'; }
+  });
+  panel.appendChild(ai);
+
   const pre = document.createElement('pre');
   pre.id = 'report-body';
   pre.style.whiteSpace = 'pre-wrap';
@@ -825,6 +864,369 @@ async function openPortfolioModal() {
   table.append(thead, tbody);
   wrap.appendChild(table);
   panel.appendChild(wrap);
+}
+
+// --------------------------------------------------------------- sprints
+// Agile/Hybrid 지표 (순수): 스프린트별 커밋/완료 스토리포인트와 팀 벨로시티.
+// 작업 배정 = task.sprint(이름 일치), 추정 = task.storyPoints, 완료 = 실적 100%.
+export function computeSprintStats(tasks, sprints, today) {
+  const leaf = (tasks || []).filter((t) => !t.isSynthetic);
+  const rows = (sprints || []).map((sp) => {
+    const mine = leaf.filter((t) => String(t.sprint || '').trim() === sp.name);
+    const pts = (t) => Number(t.storyPoints) || 0;
+    const committed = mine.reduce((n, t) => n + pts(t), 0);
+    const completed = mine.filter((t) => (Number(t.actualProgress) || 0) >= 100).reduce((n, t) => n + pts(t), 0);
+    const closed = Boolean(sp.endDate && today && sp.endDate < today);
+    return { id: sp.id, name: sp.name, startDate: sp.startDate, endDate: sp.endDate, goal: sp.goal, taskCount: mine.length, committed, completed, remaining: committed - completed, closed };
+  });
+  const closedWithWork = rows.filter((r) => r.closed && r.committed > 0);
+  const velocity = closedWithWork.length
+    ? closedWithWork.reduce((n, r) => n + r.completed, 0) / closedWithWork.length
+    : null;
+  const assigned = new Set(rows.flatMap((r) => [r.name]));
+  const backlog = leaf.filter((t) => !String(t.sprint || '').trim() || !(sprints || []).some((sp) => sp.name === String(t.sprint).trim()));
+  return { rows, velocity, backlogCount: backlog.length };
+}
+
+// 번다운 (순수): 스프린트 기간의 일별 잔여 포인트 — ideal(선형 소진) vs
+// actual(완료일 actualEndDate 기준; 완료일 없는 100% 작업은 오늘 완료로 간주).
+export function computeBurndown(tasks, sprint, today) {
+  if (!sprint?.startDate || !sprint?.endDate || sprint.endDate < sprint.startDate) return null;
+  const leaf = (tasks || []).filter((t) => !t.isSynthetic && String(t.sprint || '').trim() === sprint.name);
+  const pts = (t) => Number(t.storyPoints) || 0;
+  const committed = leaf.reduce((n, t) => n + pts(t), 0);
+  if (committed <= 0) return null;
+  const days = [];
+  for (let d = new Date(sprint.startDate); ; d.setDate(d.getDate() + 1)) {
+    const iso = d.toISOString().slice(0, 10);
+    days.push(iso);
+    if (iso >= sprint.endDate) break;
+    if (days.length > 120) break; // 안전 상한
+  }
+  const n = days.length;
+  const ideal = days.map((_, i) => committed * (1 - (n === 1 ? 1 : i / (n - 1))));
+  const doneAt = (t) => t.actualEndDate || ((Number(t.actualProgress) || 0) >= 100 ? today : null);
+  const actual = days.map((day) => {
+    if (today && day > today) return null; // 미래는 미기록
+    const burned = leaf.filter((t) => { const d = doneAt(t); return d && d <= day; }).reduce((s2, t) => s2 + pts(t), 0);
+    return committed - burned;
+  });
+  return { days, committed, ideal, actual };
+}
+
+function renderBurndownSvg(bd) {
+  const W = 420, H = 110, PAD = 6;
+  const n = bd.days.length;
+  const x = (i) => PAD + (n === 1 ? 0 : (i / (n - 1)) * (W - 2 * PAD));
+  const y = (v) => H - PAD - (v / bd.committed) * (H - 2 * PAD);
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+  svg.setAttribute('role', 'img');
+  svg.setAttribute('aria-label', `번다운: 커밋 ${bd.committed}pt`);
+  svg.style.width = '100%';
+  svg.style.maxWidth = '460px';
+  const grid = document.createElementNS(NS, 'line');
+  grid.setAttribute('x1', PAD); grid.setAttribute('x2', W - PAD);
+  grid.setAttribute('y1', y(0)); grid.setAttribute('y2', y(0));
+  grid.setAttribute('stroke', '#e2e8f0');
+  svg.appendChild(grid);
+  const idealLine = document.createElementNS(NS, 'polyline');
+  idealLine.setAttribute('points', bd.ideal.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' '));
+  idealLine.setAttribute('fill', 'none');
+  idealLine.setAttribute('stroke', '#94a3b8');
+  idealLine.setAttribute('stroke-dasharray', '4 3');
+  svg.appendChild(idealLine);
+  const actualPts = bd.actual.map((v, i) => (v === null ? null : `${x(i).toFixed(1)},${y(v).toFixed(1)}`)).filter(Boolean);
+  if (actualPts.length) {
+    const actualLine = document.createElementNS(NS, 'polyline');
+    actualLine.setAttribute('points', actualPts.join(' '));
+    actualLine.setAttribute('fill', 'none');
+    actualLine.setAttribute('stroke', '#2563eb');
+    actualLine.setAttribute('stroke-width', '2');
+    svg.appendChild(actualLine);
+  }
+  return svg;
+}
+
+const METHODOLOGY_LABELS = { waterfall: 'Waterfall (예측형)', agile: 'Agile (적응형)', hybrid: 'Hybrid (혼합형)' };
+
+async function openSprintModal() {
+  const pid = getProjectId();
+  if (!pid) return;
+  let modal = document.getElementById('sprint-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'sprint-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'sprint-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#sprint-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '스프린트 (Agile / Hybrid)';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '스프린트 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  const data = await api(`/api/projects/${pid}/sprints`);
+
+  // 방법론 선택 — 프로젝트 메타로 저장
+  const mLabel = document.createElement('label');
+  mLabel.className = 'meta-field';
+  const mSpan = document.createElement('span');
+  mSpan.textContent = '프로젝트 방법론';
+  const mSel = document.createElement('select');
+  mSel.className = 'cloud-select';
+  mSel.id = 'methodology-select';
+  for (const [v, label] of Object.entries(METHODOLOGY_LABELS)) {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = label;
+    if (v === (data.methodology || 'waterfall')) opt.selected = true;
+    mSel.appendChild(opt);
+  }
+  mSel.addEventListener('change', async () => {
+    try {
+      const cur = await api(`/api/projects/${pid}`);
+      await api(`/api/projects/${pid}`, { method: 'PUT', body: { methodology: mSel.value, version: cur.version } });
+      toast(`방법론: ${METHODOLOGY_LABELS[mSel.value]}`);
+    } catch (e) { toast(e.data?.error || e.message); }
+  });
+  mLabel.append(mSpan, mSel);
+  panel.appendChild(mLabel);
+
+  // 지표 + 목록
+  const stats = computeSprintStats(host?.getState?.()?.tasks || [], data.sprints, new Date().toISOString().slice(0, 10));
+  const summary = document.createElement('p');
+  summary.className = 'cpm-summary';
+  summary.textContent = `스프린트 ${stats.rows.length}개 · 벨로시티 ${stats.velocity === null ? 'N/A (종료 스프린트 없음)' : stats.velocity.toFixed(1) + 'pt'} · 백로그 ${stats.backlogCount}건`;
+  panel.appendChild(summary);
+
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  for (const r of stats.rows) {
+    const li = document.createElement('li');
+    const who = document.createElement('span');
+    who.className = 'team-who';
+    const period = r.startDate || r.endDate ? ` (${r.startDate}~${r.endDate})` : '';
+    who.textContent = `${r.name}${period} · ${r.taskCount}작업 · ${r.completed}/${r.committed}pt${r.closed ? ' · 종료' : ''}`;
+    const bdBtn = document.createElement('button');
+    bdBtn.type = 'button';
+    bdBtn.className = 'secondary-button';
+    bdBtn.textContent = '번다운';
+    bdBtn.addEventListener('click', () => {
+      const holder = document.getElementById('burndown-holder');
+      holder.textContent = '';
+      const bd = computeBurndown(host?.getState?.()?.tasks || [], r, new Date().toISOString().slice(0, 10));
+      if (!bd) { holder.textContent = '번다운을 그리려면 스프린트 기간과 스토리포인트가 필요합니다.'; return; }
+      const cap = document.createElement('p');
+      cap.className = 'evm-caption';
+      cap.textContent = `${r.name} 번다운 — 커밋 ${bd.committed}pt · 점선=이상적 소진, 실선=실제 잔여`;
+      holder.append(cap, renderBurndownSvg(bd));
+    });
+    const del = document.createElement('button');
+    del.type = 'button';
+    del.className = 'secondary-button team-remove';
+    del.textContent = '삭제';
+    del.addEventListener('click', () =>
+      api(`/api/projects/${pid}/sprints/${r.id}`, { method: 'DELETE' })
+        .then(() => openSprintModal()).catch((e) => toast(e.data?.error || e.message)));
+    li.append(who, bdBtn, del);
+    list.appendChild(li);
+  }
+  if (!stats.rows.length) {
+    const li = document.createElement('li');
+    li.textContent = '스프린트가 없습니다. 아래에서 추가하세요. (작업 배정: 편집기의 스프린트 필드)';
+    list.appendChild(li);
+  }
+  panel.appendChild(list);
+
+  const bdHolder = document.createElement('div');
+  bdHolder.id = 'burndown-holder';
+  panel.appendChild(bdHolder);
+
+  const form = document.createElement('form');
+  form.className = 'cloud-form';
+  const nameIn = document.createElement('input');
+  nameIn.type = 'text';
+  nameIn.placeholder = '스프린트 이름 (예: Sprint 3)';
+  nameIn.required = true;
+  const startIn = document.createElement('input');
+  startIn.type = 'date';
+  const endIn = document.createElement('input');
+  endIn.type = 'date';
+  const add = document.createElement('button');
+  add.type = 'submit';
+  add.className = 'primary-button';
+  add.textContent = '추가';
+  form.append(nameIn, startIn, endIn, add);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await api(`/api/projects/${pid}/sprints`, { method: 'POST', body: { name: nameIn.value.trim(), startDate: startIn.value, endDate: endIn.value } });
+      toast('스프린트를 추가했습니다.');
+      openSprintModal();
+    } catch (err) { toast(err.data?.error || err.message); }
+  });
+  panel.appendChild(form);
+}
+
+// ----------------------------------------------------------- attachments
+// 산출물 첨부: Clearfolio 통합 문서 뷰어로 업로드/열람. 서버가 프록시하므로
+// 브라우저에는 Clearfolio 자격/시크릿이 노출되지 않는다.
+async function openAttachmentsModal() {
+  const pid = getProjectId();
+  if (!pid) return;
+  let modal = document.getElementById('attachments-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'attachments-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'attachments-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#attachments-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '산출물 (문서 뷰어)';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '산출물 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  // 작업 선택 + 파일 업로드
+  const sel = document.createElement('select');
+  sel.className = 'cloud-select';
+  const optAll = document.createElement('option');
+  optAll.value = '';
+  optAll.textContent = '전체 산출물';
+  sel.appendChild(optAll);
+  for (const t of host?.getState?.()?.tasks || []) {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.name || t.task || t.activity || t.phase || t.id;
+    sel.appendChild(opt);
+  }
+  panel.appendChild(sel);
+
+  const form = document.createElement('form');
+  form.className = 'cloud-form';
+  const fi = document.createElement('input');
+  fi.type = 'file';
+  fi.id = 'attachment-file-input';
+  fi.accept = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.txt,.md';
+  const up = document.createElement('button');
+  up.type = 'submit';
+  up.className = 'primary-button';
+  up.textContent = '업로드';
+  form.append(fi, up);
+  panel.appendChild(form);
+
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  panel.appendChild(list);
+
+  const taskName = (id) => {
+    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
+    return t ? (t.name || t.task || id) : id;
+  };
+
+  async function refresh() {
+    list.textContent = '';
+    const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
+    const data = await api(`/api/projects/${pid}/attachments${q}`);
+    if (!data.attachments.length) {
+      const li = document.createElement('li');
+      li.textContent = '첨부된 산출물이 없습니다.';
+      list.appendChild(li);
+      return;
+    }
+    for (const a of data.attachments) {
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'team-who';
+      const where = a.taskId ? ` [${taskName(a.taskId)}]` : '';
+      const st = a.status === 'SUCCEEDED' ? '' : ` · ${a.status}`;
+      who.textContent = `${a.name}${where}${st}`;
+      li.appendChild(who);
+      if (a.status === 'SUCCEEDED') {
+        const view = document.createElement('button');
+        view.type = 'button';
+        view.className = 'secondary-button';
+        view.textContent = '보기';
+        view.addEventListener('click', () => {
+          window.open(`/api/projects/${pid}/attachments/${a.id}/view?token=${encodeURIComponent(getToken())}`, '_blank', 'noopener');
+        });
+        li.appendChild(view);
+      }
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'secondary-button team-remove';
+      del.textContent = '삭제';
+      del.addEventListener('click', () =>
+        api(`/api/projects/${pid}/attachments/${a.id}`, { method: 'DELETE' })
+          .then(refresh).catch((e) => toast(e.data?.error || e.message)));
+      li.appendChild(del);
+      list.appendChild(li);
+    }
+  }
+  sel.addEventListener('change', refresh);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = fi.files?.[0];
+    if (!f) return;
+    const fd = new FormData();
+    fd.append('file', f);
+    fd.append('taskId', sel.value);
+    try {
+      const res = await fetch(`/api/projects/${pid}/attachments`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${getToken()}` },
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      fi.value = '';
+      toast(`'${f.name}' 산출물을 업로드했습니다.`);
+      refresh();
+    } catch (err) { toast(err.message); }
+  });
+  await refresh();
 }
 
 // ------------------------------------------------------------- comments
