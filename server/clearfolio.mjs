@@ -75,5 +75,12 @@ export async function artifactUrl(orgId, userId, jobId) {
   const data = await res.json().catch(() => ({}));
   const link = data.artifactUrl || data.url || data.signedUrl;
   if (!res.ok || !link) throw new Error(data.message || `clearfolio artifact-link failed (${res.status})`);
+  // PDF.js 뷰어 페이지 우선(clearfolio external artifactToken 모드): 토큰을
+  // 추출해 /viewer/{docId}?artifactToken=… 으로 보낸다. 실패 시 원시 아티팩트.
+  try {
+    const u = new URL(link, CF_URL);
+    const tok = u.searchParams.get('artifactToken');
+    if (tok) return `${CF_URL}/viewer/${encodeURIComponent(jobId)}?artifactToken=${encodeURIComponent(tok)}`;
+  } catch { /* fall through to raw link */ }
   return link.startsWith('http') ? link : `${CF_URL}${link}`;
 }
