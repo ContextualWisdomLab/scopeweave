@@ -188,6 +188,14 @@ test('sprint: create → stats/velocity render → burndown SVG', async ({ page 
   await page.waitForTimeout(600);
   const meta = await api('/api/projects/1', { tok: token });
   expect(meta.methodology).toBe('hybrid');
+  // hybrid: EVM 패널 표시 유지
+  expect(await page.locator('#evm-panel').textContent()).toContain('PV 계획가치');
+  // agile 전환: 예측형 지표 숨김 + 안내 문구
+  await page.selectOption('#methodology-select', 'agile');
+  await page.waitForTimeout(600);
+  const agilePanel = await page.locator('#evm-panel').textContent();
+  expect(agilePanel).not.toContain('PV 계획가치');
+  expect(agilePanel).toContain('Agile 모드');
 });
 
 test('archive: project moves under the 보관됨 optgroup and restores', async ({ page }) => {

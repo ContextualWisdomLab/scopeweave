@@ -63,6 +63,7 @@ async function openProject(id, { silent = false } = {}) {
   setProjectId(id);
   currentOrgId = p.orgId || projectsCache.find((x) => String(x.id) === String(id))?.orgId || currentOrgId;
   version = p.version;
+  document.body.dataset.swMethodology = p.methodology || 'waterfall';
   host?.hydrateState({ projectName: p.name, baseDate: p.baseDate, tasks: p.tasks });
   host?.renderAll();
   subscribe(id);
@@ -118,6 +119,7 @@ export const cloud = {
       const p = await api(`/api/projects/${getProjectId()}`);
       version = p.version;
       currentOrgId = p.orgId || currentOrgId; // team/dashboard need the org right after reload
+      document.body.dataset.swMethodology = p.methodology || 'waterfall';
       subscribe(p.id);
       renderAuthUI();
       return { projectName: p.name, baseDate: p.baseDate, tasks: p.tasks };
@@ -970,6 +972,8 @@ async function openSprintModal() {
     try {
       const cur = await api(`/api/projects/${pid}`);
       await api(`/api/projects/${pid}`, { method: 'PUT', body: { methodology: mSel.value, version: cur.version } });
+      document.body.dataset.swMethodology = mSel.value;
+      host?.renderAll(); // 패널 가시성 즉시 반영
       toast(`방법론: ${METHODOLOGY_LABELS[mSel.value]}`);
     } catch (e) { toast(e.data?.error || e.message); }
   });

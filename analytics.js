@@ -322,8 +322,18 @@ function renderWorkload(panel, tasks) {
 function renderPanel({ pv, ev, tasks, baseDate, calcPlannedRatio, calcDuration, buildTimeline }) {
   const panel = ensurePanel();
   if (!panel) return;
-  const evm = computeEvm({ pv, ev });
   panel.textContent = '';
+
+  // 방법론 인지: cloud-sync가 body.dataset.swMethodology를 설정한다.
+  // agile → 예측형 지표(EVM·S-curve·CPM·비용EVM) 숨김(스프린트 지표는 스프린트
+  // 모달 담당); hybrid/waterfall(기본) → 전체 표시. 워크로드는 방법론 무관.
+  const methodology = (typeof document !== 'undefined' && document.body?.dataset?.swMethodology) || 'waterfall';
+  if (methodology === 'agile') {
+    panel.appendChild(el('p', { class: 'cpm-summary' }, 'Agile 모드 — 스프린트 지표는 [스프린트] 도구에서 확인하세요.'));
+    renderWorkload(panel, tasks);
+    return;
+  }
+  const evm = computeEvm({ pv, ev });
 
   const metric = (title, value, cls) => {
     const card = el('div', { class: `evm-metric ${cls || ''}` });
