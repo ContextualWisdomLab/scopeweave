@@ -12,4 +12,5 @@ pr_desc.md
 playwright.config.js
 pnpm-lock.yaml
 infra
+!infra/nginx
 Dockerfile
