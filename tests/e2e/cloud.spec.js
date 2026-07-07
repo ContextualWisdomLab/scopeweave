@@ -50,6 +50,10 @@ test.beforeAll(async () => {
 
 test.afterAll(() => { server?.kill(); });
 
+async function useTool(page, label) {
+  await page.selectOption('#project-tools', label);
+}
+
 async function loginAndOpen(page) {
   await page.goto(`${BASE}/`);
   await page.evaluate(([t]) => {
@@ -63,8 +67,12 @@ async function loginAndOpen(page) {
 test('cloud bar renders the full toolset when logged in', async ({ page }) => {
   await loginAndOpen(page);
   const labels = await page.$$eval('#cloud-auth button', (bs) => bs.map((b) => b.textContent));
-  for (const expected of ['+ 새 프로젝트', '팀', '기준선', '복제', '검색', '코멘트', '로그아웃']) {
+  for (const expected of ['+ 새 프로젝트', '팀', '검색', '로그아웃']) {
     expect(labels).toContain(expected);
+  }
+  const toolOptions = await page.$$eval('#project-tools option', (os) => os.map((o) => o.value));
+  for (const expected of ['기준선', '스프린트', '주간보고', '공유', '산출물', '코멘트', '복제', 'MSP 가져오기', '보관']) {
+    expect(toolOptions).toContain(expected);
   }
 });
 
@@ -79,7 +87,7 @@ test('workload table aggregates per owner with behind highlight', async ({ page 
 test('baseline: save then compare reports no diff', async ({ page }) => {
   await loginAndOpen(page);
   page.on('dialog', (d) => d.accept('착수 기준선'));
-  await page.click('#cloud-auth button:has-text("기준선")');
+  await useTool(page, '기준선');
   await page.click('#baseline-panel button:has-text("기준선으로 저장")');
   await page.waitForSelector('#baseline-panel .team-list li');
   await page.click('#baseline-panel button:has-text("비교")');
@@ -88,7 +96,7 @@ test('baseline: save then compare reports no diff', async ({ page }) => {
 
 test('comments: post appears in the list with author', async ({ page }) => {
   await loginAndOpen(page);
-  await page.click('#cloud-auth button:has-text("코멘트")');
+  await useTool(page, '코멘트');
   await page.fill('#comments-panel input[type="text"]', '일정 확인 부탁드립니다');
   await page.click('#comments-panel button:has-text("등록")');
   await expect(page.locator('#comments-panel .team-list')).toContainText('e2e@cloud.com');
@@ -108,7 +116,7 @@ test('portfolio dashboard: rollup renders SPI/status per project', async ({ page
 
 test('weekly report: modal renders sections + summary and copies markdown', async ({ page }) => {
   await loginAndOpen(page);
-  await page.click('#cloud-auth button:has-text("주간보고")');
+  await useTool(page, '주간보고');
   await page.waitForSelector('#report-body');
   const body = await page.locator('#report-body').textContent();
   expect(body).toContain('# 주간보고');
@@ -138,7 +146,7 @@ test('share link: anonymous visitor gets a read-only view; revoke kills it', asy
 test('MSP import: XML file populates the tree and saves to the cloud', async ({ page }) => {
   await loginAndOpen(page);
   page.on('dialog', (d) => d.accept());
-  await page.click('#cloud-auth button:has-text("MSP 가져오기")');
+  await useTool(page, 'MSP 가져오기');
   const xml = `<?xml version="1.0"?><Project><Tasks>
     <Task><UID>1</UID><Name>MSP단계</Name><OutlineLevel>1</OutlineLevel><Start>2026-03-02T08:00:00</Start><Finish>2026-03-13T17:00:00</Finish></Task>
     <Task><UID>2</UID><Name>MSP액티비티</Name><OutlineLevel>2</OutlineLevel><Start>2026-03-02T08:00:00</Start><Finish>2026-03-06T17:00:00</Finish></Task>
@@ -153,10 +161,10 @@ test('MSP import: XML file populates the tree and saves to the cloud', async ({ 
 
 test('archive: project moves under the 보관됨 optgroup and restores', async ({ page }) => {
   await loginAndOpen(page);
-  await page.click('#cloud-auth button:has-text("보관")');
+  await useTool(page, '보관');
   await page.waitForSelector('#cloud-auth select optgroup[label="보관됨"]', { state: 'attached' });
   const archived = await page.$$eval('#cloud-auth select optgroup[label="보관됨"] option', (os) => os.map((o) => o.textContent));
   expect(archived.some((t) => t.includes('E2E 프로젝트'))).toBeTruthy();
-  await page.click('#cloud-auth button:has-text("보관 해제")');
+  await useTool(page, '보관 해제');
   await page.waitForFunction(() => !document.querySelector('#cloud-auth select optgroup[label="보관됨"]'));
 });

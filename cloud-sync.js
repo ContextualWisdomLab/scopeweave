@@ -299,80 +299,65 @@ function renderAuthUI() {
   bar.appendChild(team);
 
   if (getProjectId()) {
-    const bl = document.createElement('button');
-    bl.type = 'button';
-    bl.className = 'secondary-button';
-    bl.textContent = '기준선';
-    bl.addEventListener('click', () => openBaselineModal().catch((e) => toast(e.message || '기준선을 불러오지 못했습니다.')));
-    bar.appendChild(bl);
-
-    const dup = document.createElement('button');
-    dup.type = 'button';
-    dup.className = 'secondary-button';
-    dup.textContent = '복제';
-    dup.addEventListener('click', async () => {
-      const name = prompt('새 프로젝트 이름 (템플릿으로 복제)');
-      if (name === null) return;
-      try {
+    // codegraph 리팩터: 프로젝트 도구 13버튼 → 네이티브 select 액션 메뉴 1개.
+    const cur = projectsCache.find((x) => String(x.id) === String(getProjectId()));
+    const tools = document.createElement('select');
+    tools.className = 'cloud-select';
+    tools.id = 'project-tools';
+    tools.setAttribute('aria-label', '프로젝트 도구');
+    const actions = {
+      '': null,
+      '기준선': () => openBaselineModal(),
+      '스프린트': () => openSprintModal(),
+      '주간보고': async () => openReportModal(),
+      '공유': () => openShareModal(),
+      '산출물': () => openAttachmentsModal(),
+      '코멘트': () => openCommentsModal(),
+      '복제': async () => {
+        const name = prompt('새 프로젝트 이름 (템플릿으로 복제)');
+        if (name === null) return;
         const created = await api(`/api/projects/${getProjectId()}/duplicate`, { method: 'POST', body: { name } });
         await refreshProjects();
         await openProject(created.id);
         toast(`"${created.name}" 프로젝트로 복제했습니다.`);
-      } catch (err) { toast(err.data?.error || err.message); }
+      },
+      'MSP 가져오기': async () => {
+        let fi = document.getElementById('msp-file-input');
+        if (!fi) {
+          fi = document.createElement('input');
+          fi.id = 'msp-file-input';
+          fi.type = 'file';
+          fi.accept = '.xml,text/xml';
+          fi.hidden = true;
+          fi.addEventListener('change', () => {
+            const f = fi.files?.[0];
+            fi.value = '';
+            if (f) importMsProjectFile(f).catch((e) => toast(e.message || 'MSP 가져오기에 실패했습니다.'));
+          });
+          document.body.appendChild(fi);
+        }
+        fi.click();
+      },
+    };
+    actions[cur?.archived ? '보관 해제' : '보관'] = async () => {
+      const res = await api(`/api/projects/${getProjectId()}/archive`, { method: 'POST', body: { archived: !cur?.archived } });
+      await refreshProjects();
+      renderAuthUI();
+      toast(res.archived ? '프로젝트를 보관했습니다.' : '보관을 해제했습니다.');
+    };
+    for (const label of Object.keys(actions)) {
+      const opt = document.createElement('option');
+      opt.value = label;
+      opt.textContent = label || '프로젝트 도구…';
+      tools.appendChild(opt);
+    }
+    tools.addEventListener('change', async () => {
+      const fn = actions[tools.value];
+      tools.value = '';
+      if (!fn) return;
+      try { await fn(); } catch (e) { toast(e.data?.error || e.message || '도구 실행 실패'); }
     });
-    bar.appendChild(dup);
-
-    const share = document.createElement('button');
-    share.type = 'button';
-    share.className = 'secondary-button';
-    share.textContent = '공유';
-    share.addEventListener('click', () => openShareModal().catch((e) => toast(e.data?.error || e.message)));
-    bar.appendChild(share);
-
-    const report = document.createElement('button');
-    report.type = 'button';
-    report.className = 'secondary-button';
-    report.textContent = '주간보고';
-    report.addEventListener('click', () => { try { openReportModal(); } catch (e) { toast(e.message || '보고서 생성 실패'); } });
-    bar.appendChild(report);
-
-    const msp = document.createElement('button');
-    msp.type = 'button';
-    msp.className = 'secondary-button';
-    msp.textContent = 'MSP 가져오기';
-    msp.addEventListener('click', () => {
-      let fi = document.getElementById('msp-file-input');
-      if (!fi) {
-        fi = document.createElement('input');
-        fi.id = 'msp-file-input';
-        fi.type = 'file';
-        fi.accept = '.xml,text/xml';
-        fi.hidden = true;
-        fi.addEventListener('change', () => {
-          const f = fi.files?.[0];
-          fi.value = '';
-          if (f) importMsProjectFile(f).catch((e) => toast(e.message || 'MSP 가져오기에 실패했습니다.'));
-        });
-        document.body.appendChild(fi);
-      }
-      fi.click();
-    });
-    bar.appendChild(msp);
-
-    const cur = projectsCache.find((x) => String(x.id) === String(getProjectId()));
-    const arch = document.createElement('button');
-    arch.type = 'button';
-    arch.className = 'secondary-button';
-    arch.textContent = cur?.archived ? '보관 해제' : '보관';
-    arch.addEventListener('click', async () => {
-      try {
-        const res = await api(`/api/projects/${getProjectId()}/archive`, { method: 'POST', body: { archived: !cur?.archived } });
-        await refreshProjects();
-        renderAuthUI();
-        toast(res.archived ? '프로젝트를 보관했습니다.' : '보관을 해제했습니다.');
-      } catch (err) { toast(err.data?.error || err.message); }
-    });
-    bar.appendChild(arch);
+    bar.appendChild(tools);
   }
 
   const search = document.createElement('button');
@@ -381,29 +366,6 @@ function renderAuthUI() {
   search.textContent = '검색';
   search.addEventListener('click', openSearchModal);
   bar.appendChild(search);
-
-  if (getProjectId()) {
-    const spr = document.createElement('button');
-    spr.type = 'button';
-    spr.className = 'secondary-button';
-    spr.textContent = '스프린트';
-    spr.addEventListener('click', () => openSprintModal().catch((e) => toast(e.data?.error || e.message)));
-    bar.appendChild(spr);
-
-    const att = document.createElement('button');
-    att.type = 'button';
-    att.className = 'secondary-button';
-    att.textContent = '산출물';
-    att.addEventListener('click', () => openAttachmentsModal().catch((e) => toast(e.data?.error || e.message)));
-    bar.appendChild(att);
-
-    const cmt = document.createElement('button');
-    cmt.type = 'button';
-    cmt.className = 'secondary-button';
-    cmt.textContent = '코멘트';
-    cmt.addEventListener('click', () => openCommentsModal().catch((e) => toast(e.message || '코멘트를 불러오지 못했습니다.')));
-    bar.appendChild(cmt);
-  }
 
   const out = document.createElement('button');
   out.type = 'button';
