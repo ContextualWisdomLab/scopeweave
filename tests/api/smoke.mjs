@@ -547,6 +547,15 @@ assert.equal(portAfter.status, 'delay', 'SPI 0.3 → delay');
 r = await req(`/api/orgs/${orgAId}/portfolio`, { headers: oauth });
 assert.equal(r.status, 404, 'non-member portfolio → 404');
 
+// ---- AI 브리핑 (orchestrator mock) ----
+r = await req(`/api/projects/${proj.id}/ai/brief`, { method: 'POST', headers: auth });
+assert.equal(r.status, 200, 'ai brief 200');
+const brief = await r.json();
+assert.ok(brief.analysis.includes('mock-orchestrator'), 'mock analysis returned');
+assert.ok(brief.analysis.length > 40, 'non-trivial analysis');
+r = await req(`/api/projects/${proj.id}/ai/brief`, { method: 'POST', headers: oauth });
+assert.equal(r.status, 404, 'non-member ai brief → 404');
+
 // ---- 산출물 첨부 (Clearfolio mock) ----
 {
   const fd = new FormData();

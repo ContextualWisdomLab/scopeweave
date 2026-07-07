@@ -56,6 +56,12 @@ A PAT acts as your user across all your workspaces.
 | `GET` | `/api/shared/:token` | **Anonymous** read-only project view (name/baseDate/tasks only) |
 | `GET` | `/api/projects/:id/calendar.ics` | iCalendar feed of planned tasks (all-day VEVENTs). Calendar apps: pass `?token=` |
 
+## AI (contextual-orchestrator)
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/projects/:id/ai/brief` | 프로젝트 지표 요약 → LLM 경영진 브리핑(일정 판정·리스크·권고). Env: `ORCHESTRATOR_URL/TOKEN` (unset → mock) |
+
 ## Attachments (산출물 — Clearfolio 문서 뷰어)
 
 Files attach to a project (optionally a task), convert via

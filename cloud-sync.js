@@ -675,6 +675,31 @@ function openReportModal() {
   });
   panel.appendChild(copy);
 
+  const ai = document.createElement('button');
+  ai.type = 'button';
+  ai.className = 'secondary-button';
+  ai.style.marginLeft = '8px';
+  ai.textContent = 'AI 요약';
+  ai.addEventListener('click', async () => {
+    ai.disabled = true;
+    ai.textContent = '분석 중…';
+    try {
+      const res = await api(`/api/projects/${getProjectId()}/ai/brief`, { method: 'POST' });
+      let box = document.getElementById('report-ai');
+      if (!box) {
+        box = document.createElement('pre');
+        box.id = 'report-ai';
+        box.style.whiteSpace = 'pre-wrap';
+        box.style.borderLeft = '3px solid var(--primary, #2563eb)';
+        box.style.paddingLeft = '10px';
+        panel.insertBefore(box, panel.querySelector('#report-body'));
+      }
+      box.textContent = `🤖 AI 브리핑\n${res.analysis}`;
+    } catch (e) { toast(e.data?.error || e.message); }
+    finally { ai.disabled = false; ai.textContent = 'AI 요약'; }
+  });
+  panel.appendChild(ai);
+
   const pre = document.createElement('pre');
   pre.id = 'report-body';
   pre.style.whiteSpace = 'pre-wrap';
