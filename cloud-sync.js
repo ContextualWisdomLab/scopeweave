@@ -383,6 +383,13 @@ function renderAuthUI() {
   bar.appendChild(search);
 
   if (getProjectId()) {
+    const att = document.createElement('button');
+    att.type = 'button';
+    att.className = 'secondary-button';
+    att.textContent = '산출물';
+    att.addEventListener('click', () => openAttachmentsModal().catch((e) => toast(e.data?.error || e.message)));
+    bar.appendChild(att);
+
     const cmt = document.createElement('button');
     cmt.type = 'button';
     cmt.className = 'secondary-button';
@@ -825,6 +832,145 @@ async function openPortfolioModal() {
   table.append(thead, tbody);
   wrap.appendChild(table);
   panel.appendChild(wrap);
+}
+
+// ----------------------------------------------------------- attachments
+// 산출물 첨부: Clearfolio 통합 문서 뷰어로 업로드/열람. 서버가 프록시하므로
+// 브라우저에는 Clearfolio 자격/시크릿이 노출되지 않는다.
+async function openAttachmentsModal() {
+  const pid = getProjectId();
+  if (!pid) return;
+  let modal = document.getElementById('attachments-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'attachments-modal';
+    modal.className = 'modal';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel';
+    panel.id = 'attachments-panel';
+    modal.append(backdrop, panel);
+    document.body.appendChild(modal);
+  }
+  modal.classList.remove('hidden');
+  const panel = modal.querySelector('#attachments-panel');
+  panel.textContent = '';
+
+  const head = document.createElement('div');
+  head.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.textContent = '산출물 (문서 뷰어)';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'icon-button close-button';
+  close.setAttribute('aria-label', '산출물 닫기');
+  close.textContent = '✕';
+  close.addEventListener('click', () => modal.classList.add('hidden'));
+  head.append(h2, close);
+  panel.appendChild(head);
+
+  // 작업 선택 + 파일 업로드
+  const sel = document.createElement('select');
+  sel.className = 'cloud-select';
+  const optAll = document.createElement('option');
+  optAll.value = '';
+  optAll.textContent = '전체 산출물';
+  sel.appendChild(optAll);
+  for (const t of host?.getState?.()?.tasks || []) {
+    const opt = document.createElement('option');
+    opt.value = t.id;
+    opt.textContent = t.name || t.task || t.activity || t.phase || t.id;
+    sel.appendChild(opt);
+  }
+  panel.appendChild(sel);
+
+  const form = document.createElement('form');
+  form.className = 'cloud-form';
+  const fi = document.createElement('input');
+  fi.type = 'file';
+  fi.id = 'attachment-file-input';
+  fi.accept = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.txt,.md';
+  const up = document.createElement('button');
+  up.type = 'submit';
+  up.className = 'primary-button';
+  up.textContent = '업로드';
+  form.append(fi, up);
+  panel.appendChild(form);
+
+  const list = document.createElement('ul');
+  list.className = 'team-list';
+  panel.appendChild(list);
+
+  const taskName = (id) => {
+    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
+    return t ? (t.name || t.task || id) : id;
+  };
+
+  async function refresh() {
+    list.textContent = '';
+    const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
+    const data = await api(`/api/projects/${pid}/attachments${q}`);
+    if (!data.attachments.length) {
+      const li = document.createElement('li');
+      li.textContent = '첨부된 산출물이 없습니다.';
+      list.appendChild(li);
+      return;
+    }
+    for (const a of data.attachments) {
+      const li = document.createElement('li');
+      const who = document.createElement('span');
+      who.className = 'team-who';
+      const where = a.taskId ? ` [${taskName(a.taskId)}]` : '';
+      const st = a.status === 'SUCCEEDED' ? '' : ` · ${a.status}`;
+      who.textContent = `${a.name}${where}${st}`;
+      li.appendChild(who);
+      if (a.status === 'SUCCEEDED') {
+        const view = document.createElement('button');
+        view.type = 'button';
+        view.className = 'secondary-button';
+        view.textContent = '보기';
+        view.addEventListener('click', () => {
+          window.open(`/api/projects/${pid}/attachments/${a.id}/view?token=${encodeURIComponent(getToken())}`, '_blank', 'noopener');
+        });
+        li.appendChild(view);
+      }
+      const del = document.createElement('button');
+      del.type = 'button';
+      del.className = 'secondary-button team-remove';
+      del.textContent = '삭제';
+      del.addEventListener('click', () =>
+        api(`/api/projects/${pid}/attachments/${a.id}`, { method: 'DELETE' })
+          .then(refresh).catch((e) => toast(e.data?.error || e.message)));
+      li.appendChild(del);
+      list.appendChild(li);
+    }
+  }
+  sel.addEventListener('change', refresh);
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const f = fi.files?.[0];
+    if (!f) return;
+    const fd = new FormData();
+    fd.append('file', f);
+    fd.append('taskId', sel.value);
+    try {
+      const res = await fetch(`/api/projects/${pid}/attachments`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${getToken()}` },
+        body: fd,
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || res.statusText);
+      fi.value = '';
+      toast(`'${f.name}' 산출물을 업로드했습니다.`);
+      refresh();
+    } catch (err) { toast(err.message); }
+  });
+  await refresh();
 }
 
 // ------------------------------------------------------------- comments

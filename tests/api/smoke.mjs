@@ -547,6 +547,43 @@ assert.equal(portAfter.status, 'delay', 'SPI 0.3 → delay');
 r = await req(`/api/orgs/${orgAId}/portfolio`, { headers: oauth });
 assert.equal(r.status, 404, 'non-member portfolio → 404');
 
+// ---- 산출물 첨부 (Clearfolio mock) ----
+{
+  const fd = new FormData();
+  fd.append('file', new Blob(['%PDF-산출물-데모'], { type: 'application/pdf' }), '요구사항정의서.pdf');
+  fd.append('taskId', 's1');
+  r = await app.request(`/api/projects/${proj.id}/attachments`, { method: 'POST', headers: auth, body: fd });
+  assert.equal(r.status, 200, 'attachment upload');
+  const att = await r.json();
+  assert.ok(att.id && att.jobId.startsWith('mockcf-'), 'mock job id');
+  assert.equal(att.status, 'SUCCEEDED', 'mock converts immediately');
+  // 목록 + 작업 바인딩 + 업로더
+  r = await req(`/api/projects/${proj.id}/attachments?taskId=s1`, { headers: auth });
+  const list = (await r.json()).attachments;
+  assert.ok(list.some((x) => x.id === att.id && x.name === '요구사항정의서.pdf' && x.uploadedBy), 'listed with meta');
+  // 열람: 302 → mock 아티팩트 → 바이트 왕복
+  r = await req(`/api/projects/${proj.id}/attachments/${att.id}/view?token=${encodeURIComponent(token)}`);
+  assert.equal(r.status, 302, 'view redirects');
+  const loc = r.headers.get('location');
+  assert.ok(loc.includes('/api/mock-clearfolio/'), 'redirect to signed artifact');
+  r = await req(loc);
+  assert.equal(r.status, 200);
+  assert.ok((r.headers.get('content-type') || '').includes('application/pdf'), 'artifact mime');
+  assert.equal(await r.text(), '%PDF-산출물-데모', 'artifact bytes round-trip');
+  // 가드: HWP 차단, 비멤버 404, 뷰 무토큰 401
+  const bad = new FormData();
+  bad.append('file', new Blob(['x']), '문서.hwp');
+  r = await app.request(`/api/projects/${proj.id}/attachments`, { method: 'POST', headers: auth, body: bad });
+  assert.equal(r.status, 400, 'hwp blocked');
+  r = await req(`/api/projects/${proj.id}/attachments`, { headers: oauth });
+  assert.equal(r.status, 404, 'non-member attachments → 404');
+  r = await req(`/api/projects/${proj.id}/attachments/${att.id}/view`);
+  assert.equal(r.status, 401, 'view without token → 401');
+  // 삭제(업로더)
+  r = await req(`/api/projects/${proj.id}/attachments/${att.id}`, { method: 'DELETE', headers: auth });
+  assert.equal(r.status, 200, 'uploader deletes attachment');
+}
+
 // ---- Public share links ----
 r = await req(`/api/projects/${proj.id}/shares`, { method: 'POST', headers: auth });
 assert.equal(r.status, 200, 'create share');

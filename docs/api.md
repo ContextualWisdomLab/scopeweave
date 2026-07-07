@@ -56,6 +56,23 @@ A PAT acts as your user across all your workspaces.
 | `GET` | `/api/shared/:token` | **Anonymous** read-only project view (name/baseDate/tasks only) |
 | `GET` | `/api/projects/:id/calendar.ics` | iCalendar feed of planned tasks (all-day VEVENTs). Calendar apps: pass `?token=` |
 
+## Attachments (산출물 — Clearfolio 문서 뷰어)
+
+Files attach to a project (optionally a task), convert via
+[Clearfolio](https://github.com/ContextualWisdomLab/clearfolio), and open as
+signed artifacts. The server proxies all Clearfolio calls (tenant = workspace);
+credentials never reach the browser. HWP/HWPX are rejected (Clearfolio policy).
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/projects/:id/attachments` | multipart `file` (+`taskId?`, ≤10MB) → conversion job (write roles) |
+| `GET` | `/api/projects/:id/attachments?taskId=` | List (+ refreshes pending statuses) |
+| `GET` | `/api/projects/:id/attachments/:aid/view` | 302 → signed artifact URL (`?token=` for new-tab opens) |
+| `DELETE` | `/api/projects/:id/attachments/:aid` | Uploader or manage |
+
+Env: `CLEARFOLIO_URL` (+ optional `CLEARFOLIO_HMAC_SECRET` for gateway-signed
+tenant claims). Unset → a built-in mock converter (dev/test only).
+
 ## Comments (코멘트)
 
 | Method | Path | Purpose |

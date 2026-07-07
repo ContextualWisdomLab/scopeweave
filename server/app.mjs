@@ -7,6 +7,7 @@ import { randomBytes, createHmac, createHash } from 'node:crypto';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
+import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
@@ -938,6 +939,114 @@ app.get('/api/orgs/:id/portfolio', requireAuth, (c) => {
   });
   return c.json({ projects });
 });
+
+// 산출물 첨부(Clearfolio 통합 문서 뷰어 프록시): 업로드→변환 잡, 목록(+상태
+// 갱신), 서명 아티팩트 열람(302), 삭제. 테넌트 = 조직, 브라우저에는 Clearfolio
+// 자격이 절대 노출되지 않음.
+const ATTACH_MAX_BYTES = 10 * 1024 * 1024;
+app.post('/api/projects/:id/attachments', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const form = await c.req.formData().catch(() => null);
+  const file = form?.get('file');
+  if (!file || typeof file === 'string') return c.json({ error: 'multipart file required' }, 400);
+  const taskId = String(form.get('taskId') || '');
+  if (/\.(hwp|hwpx)$/i.test(file.name || '')) return c.json({ error: 'HWP/HWPX는 지원되지 않습니다 (Clearfolio 정책)' }, 400);
+  if (file.size > ATTACH_MAX_BYTES) return c.json({ error: 'file too large (max 10MB)' }, 400);
+  const bytes = Buffer.from(await file.arrayBuffer());
+  let job;
+  try {
+    job = await submitJob(p.org_id, uid, { name: file.name || 'document', mime: file.type || '', bytes });
+  } catch (e) {
+    return c.json({ error: `문서 변환 제출 실패: ${e.message}` }, 502);
+  }
+  const aid = rowid(db.prepare(
+    'INSERT INTO attachments(project_id,task_id,name,mime,size,job_id,status,created_by) VALUES(?,?,?,?,?,?,?,?)'
+  ).run(p.id, taskId, file.name || 'document', file.type || '', file.size, job.jobId, job.status, uid));
+  logAudit(p.org_id, uid, 'attachment.upload', 'project', p.id, { attachmentId: aid, name: file.name, taskId: taskId || null });
+  return c.json({ id: aid, jobId: job.jobId, status: job.status });
+});
+
+app.get('/api/projects/:id/attachments', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  const taskId = c.req.query('taskId');
+  const rows = (taskId
+    ? db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.status, a.created_at AS createdAt, u.email AS uploadedBy
+        FROM attachments a LEFT JOIN users u ON u.id = a.created_by
+        WHERE a.project_id = ? AND a.task_id = ? ORDER BY a.id DESC`).all(p.id, taskId)
+    : db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.status, a.created_at AS createdAt, u.email AS uploadedBy
+        FROM attachments a LEFT JOIN users u ON u.id = a.created_by
+        WHERE a.project_id = ? ORDER BY a.id DESC`).all(p.id));
+  // PENDING 잡 상태 갱신(최선 노력)
+  for (const r of rows) {
+    if (r.status === 'PENDING' || r.status === 'RUNNING') {
+      try {
+        const jid = db.prepare('SELECT job_id FROM attachments WHERE id = ?').get(r.id).job_id;
+        const st = await jobStatus(p.org_id, uid, jid);
+        if (st !== r.status) {
+          db.prepare('UPDATE attachments SET status = ? WHERE id = ?').run(st, r.id);
+          r.status = st;
+        }
+      } catch { /* keep stale status */ }
+    }
+  }
+  return c.json({ attachments: rows });
+});
+
+// 열람: 서명 아티팩트 URL로 302. 새 탭 열기용으로 ?token=도 허용(ics/stream 패턴).
+app.get('/api/projects/:id/attachments/:aid/view', (c) => {
+  const header = c.req.header('authorization') || '';
+  const raw = header.startsWith('Bearer ') ? header.slice(7) : (c.req.query('token') || '');
+  let uid;
+  if (raw.startsWith('swk_')) {
+    const row = db.prepare('SELECT user_id FROM api_tokens WHERE token_hash = ?').get(hashApiToken(raw));
+    if (!row) return c.json({ error: 'unauthorized' }, 401);
+    uid = row.user_id;
+  } else {
+    try {
+      const payload = verifyToken(raw);
+      const u = db.prepare('SELECT token_version FROM users WHERE id = ?').get(payload.sub);
+      if (!u || (payload.tv || 0) !== u.token_version) return c.json({ error: 'unauthorized' }, 401);
+      uid = payload.sub;
+    } catch { return c.json({ error: 'unauthorized' }, 401); }
+  }
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  const a = db.prepare('SELECT job_id, status FROM attachments WHERE id = ? AND project_id = ?').get(c.req.param('aid'), p.id);
+  if (!a) return c.json({ error: 'not found' }, 404);
+  if (a.status !== 'SUCCEEDED') return c.json({ error: `문서가 아직 준비되지 않았습니다 (${a.status})` }, 409);
+  return artifactUrl(p.org_id, uid, a.job_id)
+    .then((url) => c.redirect(url))
+    .catch((e) => c.json({ error: `열람 링크 발급 실패: ${e.message}` }, 502));
+});
+
+app.delete('/api/projects/:id/attachments/:aid', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  const a = db.prepare('SELECT created_by FROM attachments WHERE id = ? AND project_id = ?').get(c.req.param('aid'), p.id);
+  if (!a) return c.json({ error: 'not found' }, 404);
+  if (a.created_by !== uid && !canManage(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  db.prepare('DELETE FROM attachments WHERE id = ?').run(c.req.param('aid'));
+  logAudit(p.org_id, uid, 'attachment.delete', 'project', p.id, { attachmentId: Number(c.req.param('aid')) });
+  return c.json({ ok: true });
+});
+
+// mock Clearfolio 아티팩트 서빙(dev/test 전용)
+if (clearfolioMock) {
+  app.get('/api/mock-clearfolio/:jobId', (c) => {
+    const doc = mockArtifact(c.req.param('jobId'));
+    if (!doc) return c.json({ error: 'not found' }, 404);
+    return c.body(doc.bytes, 200, {
+      'content-type': doc.mime || 'application/octet-stream',
+      'content-disposition': `inline; filename="${encodeURIComponent(doc.name)}"`,
+    });
+  });
+}
 
 // Public read-only share links: a random token grants VIEW access to one
 // project (no account needed) — revocable. Never exposes org/member data.
