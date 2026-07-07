@@ -159,6 +159,37 @@ test('MSP import: XML file populates the tree and saves to the cloud', async ({ 
   expect(server.tasks.some((t) => t.id === 'msp-1' && t.depth === 1)).toBeTruthy();
 });
 
+test('sprint: create → stats/velocity render → burndown SVG', async ({ page }) => {
+  await loginAndOpen(page);
+  // 스프린트 배정 작업 시드 (storyPoints + 완료일)
+  const today = new Date().toISOString().slice(0, 10);
+  const cur = await api('/api/projects/1', { tok: token });
+  await api('/api/projects/1', { method: 'PUT', tok: token, body: {
+    tasks: [
+      { id: 'sp1', task: '완료작업', depth: 3, sprint: 'S-e2e', storyPoints: 5, actualProgress: 100, actualEndDate: today },
+      { id: 'sp2', task: '진행작업', depth: 3, sprint: 'S-e2e', storyPoints: 8, actualProgress: 40 },
+    ],
+    version: cur.version,
+  }});
+  await api('/api/projects/1/sprints', { method: 'POST', tok: token, body: { name: 'S-e2e', startDate: today, endDate: today } });
+  await page.reload();
+  await page.waitForSelector('#cloud-auth select');
+  await useTool(page, '스프린트');
+  await page.waitForSelector('#sprint-panel .team-list li');
+  const row = await page.locator('#sprint-panel .team-list li').first().textContent();
+  expect(row).toContain('S-e2e');
+  expect(row).toContain('5/13pt');
+  // 번다운 렌더
+  await page.click('#sprint-panel button:has-text("번다운")');
+  await page.waitForSelector('#burndown-holder svg');
+  expect(await page.locator('#burndown-holder svg polyline').count()).toBeGreaterThanOrEqual(2);
+  // 방법론 hybrid 저장
+  await page.selectOption('#methodology-select', 'hybrid');
+  await page.waitForTimeout(600);
+  const meta = await api('/api/projects/1', { tok: token });
+  expect(meta.methodology).toBe('hybrid');
+});
+
 test('archive: project moves under the 보관됨 optgroup and restores', async ({ page }) => {
   await loginAndOpen(page);
   await useTool(page, '보관');
