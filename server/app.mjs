@@ -20,7 +20,6 @@ function logAudit(orgId, userId, action, targetType, targetId, meta) {
 }
 
 // --- RBAC. Roles (highest→lowest): owner > admin > member > viewer.
-const ROLES = ['owner', 'admin', 'member', 'viewer'];
 const orgRole = (userId, orgId) =>
   db.prepare('SELECT role FROM memberships WHERE user_id = ? AND org_id = ?').get(userId, orgId)?.role || null;
 const canManage = (role) => role === 'owner' || role === 'admin';
