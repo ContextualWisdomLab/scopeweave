@@ -2,6 +2,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: scopeweave-deployment
+  namespace: scopeweave
   labels:
     app: scopeweave
 spec:
@@ -16,9 +17,13 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        runAsUser: 101
-        runAsGroup: 101
-        fsGroup: 101
+        # Trivy KSV-0020/KSV-0021: run with a high, unprivileged UID/GID
+        # (> 10000) that cannot collide with a host user. Writable paths are
+        # emptyDir volumes group-owned via fsGroup, so nginx runs fine as 10001
+        # even though the image's baked dirs are owned by the nginx user.
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
         seccompProfile:
           type: RuntimeDefault
       containers:
