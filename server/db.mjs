@@ -4,9 +4,10 @@
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { config } from './config.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const dbPath = process.env.SCOPEWEAVE_DB || join(__dirname, '..', 'data.db');
+const dbPath = config.db.path || join(__dirname, '..', 'data.db');
 export const db = new DatabaseSync(dbPath);
 db.exec("PRAGMA journal_mode = WAL");
 db.exec("PRAGMA foreign_keys = ON");
@@ -170,6 +171,52 @@ CREATE TABLE IF NOT EXISTS project_seen (
 CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_id);
 CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(org_id);
 CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);
+
+-- Service Requests (ITSM intake layer). This is the REQUESTER-facing ticket:
+-- catalog/intake → approval → fulfillment → closure, with an SLA. On approval it
+-- decomposes into one or more work items (tasks) on the project tree assigned to
+-- the PERFORMING team; those tasks carry service_request_id = this row's id, and
+-- their completion ROLLS UP into fulfillment_state (see server/import-map.mjs).
+-- All object + column names are 2+ word snake_case, per repo convention.
+CREATE TABLE IF NOT EXISTS service_requests (
+  id INTEGER PRIMARY KEY,
+  project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  org_id INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  catalog_item TEXT NOT NULL DEFAULT '',
+  request_title TEXT NOT NULL,
+  request_body TEXT NOT NULL DEFAULT '',
+  request_kind TEXT NOT NULL DEFAULT 'service_request',
+  request_status TEXT NOT NULL DEFAULT 'submitted',
+  request_priority TEXT NOT NULL DEFAULT 'medium',
+  requested_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  performing_team TEXT NOT NULL DEFAULT '',
+  approved_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  approved_at TEXT,
+  fulfilled_at TEXT,
+  closed_at TEXT,
+  sla_due_at TEXT NOT NULL DEFAULT '',
+  fulfillment_state TEXT NOT NULL DEFAULT 'pending',
+  source_segment_uids TEXT NOT NULL DEFAULT '[]',
+  evidence_confidence REAL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_service_requests_project ON service_requests(project_id, id);
+CREATE INDEX IF NOT EXISTS idx_service_requests_org ON service_requests(org_id, id);
+
+-- Append-only status-transition log for a Service Request — the auditable trail
+-- of its state machine (submitted → approved → in_progress → fulfilled → closed,
+-- plus rejected/cancelled). Drives requester-visible history + SLA analytics.
+CREATE TABLE IF NOT EXISTS service_request_events (
+  id INTEGER PRIMARY KEY,
+  request_id INTEGER NOT NULL REFERENCES service_requests(id) ON DELETE CASCADE,
+  from_status TEXT NOT NULL DEFAULT '',
+  to_status TEXT NOT NULL,
+  actor_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  note_text TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_service_request_events ON service_request_events(request_id, id);
 `);
 
 // Migration for pre-existing DBs: add token_version if missing (idempotent).

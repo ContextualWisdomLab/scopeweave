@@ -2,9 +2,10 @@
 // 실서버: CLEARFOLIO_URL(+선택 CLEARFOLIO_HMAC_SECRET) 설정 시 사용.
 // 미설정 시 내장 MOCK(즉시 SUCCEEDED, 바이트 인메모리)으로 전 플로우 테스트 가능.
 import { createHmac } from 'node:crypto';
+import { config } from './config.mjs';
 
-const CF_URL = (process.env.CLEARFOLIO_URL || '').replace(/\/$/, '');
-const CF_SECRET = process.env.CLEARFOLIO_HMAC_SECRET || '';
+const CF_URL = config.clearfolio.url;
+const CF_SECRET = config.clearfolio.hmacSecret;
 const PERMISSIONS = 'job:create,job:read,viewer:read,artifact-link:create';
 
 export const clearfolioMock = !CF_URL;

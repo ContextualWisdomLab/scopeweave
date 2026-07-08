@@ -2,6 +2,7 @@
 // dynamically only when STRIPE_SECRET_KEY is set, so it is not a hard dependency
 // (npm i stripe + keys required for live payments; without them the mock path
 // keeps the whole flow testable). Plan changes only ever happen server-side.
+import { config } from './config.mjs';
 
 export const PLANS = {
   free: { name: 'Free', limits: { projects: 2, members: 3 }, priceKrw: 0 },
@@ -29,13 +30,13 @@ export function wouldExceed(db, org, kind) {
 // Create a checkout session. Real Stripe when a key is present, else a mock URL
 // that the dev-activate endpoint / webhook stub can complete.
 export async function createCheckout({ orgId, origin }) {
-  const key = process.env.STRIPE_SECRET_KEY;
+  const key = config.billing.stripeSecretKey;
   if (key) {
     const { default: Stripe } = await import('stripe');
     const stripe = new Stripe(key);
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',
-      line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
+      line_items: [{ price: config.billing.stripePriceId, quantity: 1 }],
       success_url: `${origin}/?billing=success`,
       cancel_url: `${origin}/?billing=cancel`,
       client_reference_id: String(orgId),
