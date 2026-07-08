@@ -2,6 +2,7 @@
 // Passwords: scrypt. Tokens: HS256 JWT with a PINNED algorithm (no header-alg
 // trust → immune to alg-confusion). This is a security boundary; do not simplify.
 import { scryptSync, randomBytes, timingSafeEqual, createHmac, createHash } from 'node:crypto';
+import { config } from './config.mjs';
 
 // Personal Access Tokens. Format: swk_<random>. Only the SHA-256 hash is
 // stored; the full secret is shown to the user exactly once at creation.
@@ -13,10 +14,10 @@ export function hashApiToken(full) {
   return createHash('sha256').update(String(full)).digest('hex');
 }
 
-const SECRET = process.env.SCOPEWEAVE_JWT_SECRET || 'dev-insecure-secret-change-me';
-if (SECRET === 'dev-insecure-secret-change-me') {
-  console.warn('[auth] INSECURE dev JWT secret in use — set SCOPEWEAVE_JWT_SECRET in production');
-}
+// Signing secret comes from the centralized config module, which guarantees a
+// strong secret (fail-closed in production, ephemeral-random in dev) — there is
+// no hardcoded default here anymore.
+const SECRET = config.auth.jwtSecret;
 
 export function hashPassword(pw) {
   const salt = randomBytes(16).toString('hex');

@@ -1,8 +1,10 @@
 // contextual-orchestrator(LLM 오케스트레이션) 클라이언트.
 // 실서버: ORCHESTRATOR_URL + ORCHESTRATOR_TOKEN 설정 시 OpenAI 호환
 // /v1/chat/completions 호출. 미설정 시 결정적 MOCK으로 전 플로우 테스트 가능.
-const OC_URL = (process.env.ORCHESTRATOR_URL || '').replace(/\/$/, '');
-const OC_TOKEN = process.env.ORCHESTRATOR_TOKEN || '';
+import { config } from './config.mjs';
+
+const OC_URL = config.orchestrator.url;
+const OC_TOKEN = config.orchestrator.token;
 
 export const orchestratorMock = !OC_URL;
 

@@ -14,11 +14,26 @@ docker compose up --build
 That builds `Dockerfile.server`, runs the Node backend as a non-root user, and
 persists the database in the `scopeweave-data` volume.
 
+## Configuration
+
+All environment access is centralized in **`server/config.mjs`** — the single
+module that reads `process.env`. Every other server module imports typed,
+validated values from it, so there is one place to audit every knob and to swap
+in a KV / secrets-manager backend (replace the `env()` accessor; callers never
+touch `process.env`).
+
+> **Security:** there is **no** hardcoded default JWT secret. With
+> `NODE_ENV=production`, an unset or too-short `SCOPEWEAVE_JWT_SECRET`
+> (< 16 chars) is **fatal** — the process refuses to start (fail closed). In
+> dev/test an ephemeral random secret is generated per process (tokens simply do
+> not survive a restart).
+
 ## Required / optional environment
 
 | Var | Required | Purpose |
 | --- | --- | --- |
-| `SCOPEWEAVE_JWT_SECRET` | **yes** | Signs session JWTs. Use a long random value. The app warns loudly if the dev default is used. |
+| `SCOPEWEAVE_JWT_SECRET` | **yes (prod)** | Signs session JWTs (min 16 chars). In production an unset/weak value aborts startup. In dev/test an ephemeral random secret is used. |
+| `NODE_ENV` | recommended | Set to `production` to enforce the fail-closed secret check. |
 | `PORT` | no (default 8787) | Listen port |
 | `SCOPEWEAVE_DB` | no (default `/data/scopeweave.db`) | SQLite file path (on the volume) |
 | `SCOPEWEAVE_DEV` | no | Must be `1` to enable the dev `activate-pro` endpoint. **Never set in production.** |

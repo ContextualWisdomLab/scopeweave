@@ -4,12 +4,18 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import { config } from './config.mjs';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
+import {
+  TASK_STATUSES, deriveTaskStatus, applyTaskTransition,
+  SR_STATUSES, canTransitionSr, isSrLive,
+} from './lifecycle.mjs';
+import { mapPayload, mergeWorkItems, rollupChildren, childrenOf } from './import-map.mjs';
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
 
@@ -73,6 +79,97 @@ function projectAccess(userId, projectId) {
   ).get(projectId, userId);
 }
 
+const safeParseTasks = (json) => { try { const t = JSON.parse(json); return Array.isArray(t) ? t : []; } catch { return []; } };
+const sqlNow = () => new Date().toISOString().replace('T', ' ').slice(0, 19);
+
+// Persist a new task tree for a project: bump version (optimistic-concurrency
+// coherent with PUT), snapshot a revision, and fan out realtime — the single
+// write path shared by import, service-request decomposition and status changes,
+// so none of them clobber the tree or diverge from the PUT semantics.
+function persistTasks(p, tasks, uid, extra = {}) {
+  const version = p.version + 1;
+  const name = extra.name ?? p.name;
+  const baseDate = extra.baseDate ?? p.base_date;
+  const json = JSON.stringify(tasks);
+  db.prepare("UPDATE projects SET name=?, base_date=?, tasks_json=?, version=?, updated_at=datetime('now') WHERE id=?")
+    .run(name, baseDate, json, version, p.id);
+  try {
+    db.prepare('INSERT OR REPLACE INTO project_revisions(project_id,version,name,base_date,tasks_json,saved_by) VALUES(?,?,?,?,?,?)')
+      .run(p.id, version, name, baseDate, json, uid);
+    db.prepare('DELETE FROM project_revisions WHERE project_id = ? AND version <= ?').run(p.id, version - 20);
+  } catch { /* history must not break writes */ }
+  broadcast(p.id, { type: 'update', version, by: uid });
+  return version;
+}
+
+function recordSrEvent(requestId, from, to, actorId, note) {
+  try {
+    db.prepare('INSERT INTO service_request_events(request_id,from_status,to_status,actor_id,note_text) VALUES(?,?,?,?,?)')
+      .run(requestId, from || '', to, actorId ?? null, String(note || '').slice(0, 500));
+  } catch { /* event log must not break the transition */ }
+}
+
+// Public (camelCase) view of a service_requests row + its live rollup.
+function srPublic(sr, rollup) {
+  let uids = [];
+  try { uids = JSON.parse(sr.source_segment_uids || '[]'); } catch { /* keep [] */ }
+  return {
+    id: sr.id,
+    projectId: sr.project_id,
+    catalogItem: sr.catalog_item,
+    title: sr.request_title,
+    body: sr.request_body,
+    kind: sr.request_kind,
+    status: sr.request_status,
+    priority: sr.request_priority,
+    performingTeam: sr.performing_team,
+    requestedBy: sr.requested_by,
+    approvedBy: sr.approved_by,
+    approvedAt: sr.approved_at,
+    fulfilledAt: sr.fulfilled_at,
+    closedAt: sr.closed_at,
+    slaDueAt: sr.sla_due_at,
+    fulfillmentState: sr.fulfillment_state,
+    sourceSegmentUids: uids,
+    confidence: sr.evidence_confidence,
+    createdAt: sr.created_at,
+    updatedAt: sr.updated_at,
+    ...(rollup ? { rollup } : {}),
+  };
+}
+
+// Recompute a Service Request's fulfillment from its linked work items and
+// auto-advance its lifecycle while it is live: approved → in_progress once work
+// starts, → fulfilled once every active child is done, and back to in_progress
+// if a completed child is later reopened (the rollup regressed). Returns the
+// refreshed row plus the rollup, or null if the request is gone.
+function recomputeServiceRequest(sid, actorId = null) {
+  const sr = db.prepare('SELECT * FROM service_requests WHERE id = ?').get(sid);
+  if (!sr) return null;
+  const proj = db.prepare('SELECT tasks_json FROM projects WHERE id = ?').get(sr.project_id);
+  const children = childrenOf(safeParseTasks(proj?.tasks_json), sr.id);
+  const roll = rollupChildren(children);
+  let status = sr.request_status;
+  let fulfilledAt = sr.fulfilled_at;
+  if (isSrLive(sr.request_status)) {
+    if (roll.fulfillmentState === 'fulfilled' && status !== 'fulfilled') {
+      recordSrEvent(sr.id, status, 'fulfilled', actorId, 'auto: all linked work items done');
+      status = 'fulfilled';
+      fulfilledAt = fulfilledAt || sqlNow();
+    } else if (status === 'fulfilled' && roll.fulfillmentState !== 'fulfilled') {
+      recordSrEvent(sr.id, status, 'in_progress', actorId, 'auto: linked work item reopened');
+      status = 'in_progress';
+      fulfilledAt = null;
+    } else if (status === 'approved' && roll.fulfillmentState === 'in_progress') {
+      recordSrEvent(sr.id, status, 'in_progress', actorId, 'auto: fulfillment started');
+      status = 'in_progress';
+    }
+  }
+  db.prepare("UPDATE service_requests SET fulfillment_state=?, request_status=?, fulfilled_at=?, updated_at=datetime('now') WHERE id=?")
+    .run(roll.fulfillmentState, status, fulfilledAt, sr.id);
+  return { sr: { ...sr, request_status: status, fulfillment_state: roll.fulfillmentState, fulfilled_at: fulfilledAt }, rollup: roll };
+}
+
 // --- observability: in-process counters + structured request log.
 const metrics = { startedAt: new Date().toISOString(), requests: 0, s2xx: 0, s4xx: 0, s5xx: 0, signups: 0, projectsCreated: 0, webhookDeliveries: 0 };
 
@@ -117,7 +214,7 @@ function deliver(orgId, event, payload) {
     sendWebhook(h.id, h.url, sig, event, body, 1);
   }
 }
-const quietLogs = String(process.env.SCOPEWEAVE_DB || '').includes(':memory:'); // silence during tests
+const quietLogs = config.db.inMemory; // silence during tests
 app.use('*', async (c, next) => {
   const t = Date.now();
   await next();
@@ -135,8 +232,8 @@ app.use('*', async (c, next) => {
 // Rate limiting (opt-in via SCOPEWEAVE_RATE_LIMIT_MAX, per client IP, fixed
 // window). Protects against brute-force/abuse. Off by default so it never
 // surprises tests/dev. Ceiling: per-instance in-memory → use Redis for multi-node.
-const RL_MAX = Number(process.env.SCOPEWEAVE_RATE_LIMIT_MAX) || 0;
-const RL_WINDOW_MS = Number(process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS) || 60000;
+const RL_MAX = config.rateLimit.max;
+const RL_WINDOW_MS = config.rateLimit.windowMs;
 const rlBuckets = new Map();
 if (RL_MAX > 0) {
   app.use('*', async (c, next) => {
@@ -600,7 +697,7 @@ app.post('/api/stripe/webhook', async (c) => {
 // Dev-only: simulate a successful checkout upgrading the org to Pro.
 // Disabled unless SCOPEWEAVE_DEV=1 (never reachable in production).
 app.post('/api/orgs/:id/_dev/activate-pro', requireAuth, (c) => {
-  if (process.env.SCOPEWEAVE_DEV !== '1') return c.json({ error: 'not found' }, 404);
+  if (!config.devMode) return c.json({ error: 'not found' }, 404);
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
   if (orgRole(uid, orgId) !== 'owner') return c.json({ error: 'forbidden' }, 403);
@@ -776,10 +873,10 @@ app.delete('/api/orgs/:id/webhooks/:whId', requireAuth, (c) => {
 // Real IdP via env (OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI). When
 // unset, a built-in mock provider makes the whole flow self-contained + testable.
 const OIDC = {
-  issuer: process.env.OIDC_ISSUER,
-  clientId: process.env.OIDC_CLIENT_ID,
-  clientSecret: process.env.OIDC_CLIENT_SECRET,
-  redirectUri: process.env.OIDC_REDIRECT_URI,
+  issuer: config.oidc.issuer,
+  clientId: config.oidc.clientId,
+  clientSecret: config.oidc.clientSecret,
+  redirectUri: config.oidc.redirectUri,
 };
 const oidcMock = !OIDC.issuer;
 const oidcStates = new Map(); // state -> { verifier, exp }
@@ -1330,6 +1427,198 @@ app.delete('/api/account', requireAuth, async (c) => {
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
   return c.json({ ok: true });
+});
+
+// ============================================================================
+// ISSUE / SERVICE-REQUEST MANAGEMENT LAYER
+// ============================================================================
+
+// --- INGESTION: append/merge external issues into the work-item tree ----------
+// POST /api/projects/:id/tasks:import  (PAT- or JWT-authenticated, write role)
+// Maps an external issue / Service-Request payload (naruon ProjectSemanticObject:
+// title, kind ∈ {issue,requirement,feature,service_request}, source_segment_uids,
+// confidence, edges) into ScopeWeave work items and MERGES them into the existing
+// tree WITHOUT clobbering it (unknown ids appended, known ids updated in place).
+// Unlike the whole-document PUT and the MS-Project XML import (both replace the
+// tree), this is additive — ideal for a webhook / CI ingest driven by a PAT.
+app.post('/api/projects/:id/tasks:import', requireAuth, async (c) => {
+  // Hono parses ':import' as a greedy param; pin the endpoint to its literal URL.
+  if (!c.req.path.endsWith('/tasks:import')) return c.notFound();
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden: viewer role is read-only' }, 403);
+  const payload = await c.req.json().catch(() => null);
+  if (!payload) return c.json({ error: 'invalid JSON body' }, 400);
+  let workItems;
+  try {
+    workItems = mapPayload(payload);
+  } catch (e) {
+    return c.json({ error: `import mapping failed: ${e.message}` }, 400);
+  }
+  const existing = safeParseTasks(p.tasks_json);
+  const { tasks, created, updated } = mergeWorkItems(existing, workItems);
+  const version = persistTasks(p, tasks, uid);
+  logAudit(p.org_id, uid, 'tasks.import', 'project', p.id, { created, updated, via: c.get('user').viaPat ? 'pat' : 'jwt' });
+  deliver(p.org_id, 'tasks.import', { projectId: Number(p.id), created, updated, version });
+  return c.json({ created, updated, imported: workItems.length, version });
+});
+
+// --- STATUS LIFECYCLE: explicit work-item state machine -----------------------
+// PATCH /api/projects/:id/tasks/:taskId/status  { to }
+// Moves a work item through open → in_progress → done (+ cancel/reopen) via the
+// real state machine — not just a progress percent. If the task is linked to a
+// Service Request, its rollup is recomputed so completion propagates upward.
+app.patch('/api/projects/:id/tasks/:taskId/status', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const { to } = await c.req.json().catch(() => ({}));
+  if (!TASK_STATUSES.includes(to)) return c.json({ error: `status must be one of ${TASK_STATUSES.join(', ')}` }, 400);
+  const tasks = safeParseTasks(p.tasks_json);
+  const idx = tasks.findIndex((t) => String(t.id) === String(c.req.param('taskId')));
+  if (idx < 0) return c.json({ error: 'task not found' }, 404);
+  let updatedTask;
+  try {
+    updatedTask = applyTaskTransition(tasks[idx], to);
+  } catch (e) {
+    return c.json({ error: e.message, from: deriveTaskStatus(tasks[idx]) }, 409);
+  }
+  tasks[idx] = updatedTask;
+  const version = persistTasks(p, tasks, uid);
+  logAudit(p.org_id, uid, 'task.status', 'project', p.id, { taskId: updatedTask.id, status: to });
+  let serviceRequest = null;
+  if (updatedTask.service_request_id != null) {
+    const r = recomputeServiceRequest(updatedTask.service_request_id, uid);
+    if (r) serviceRequest = srPublic(r.sr, r.rollup);
+  }
+  return c.json({ taskId: updatedTask.id, status: to, version, serviceRequest });
+});
+
+// --- SERVICE REQUESTS: the requester-facing ITSM ticket -----------------------
+// Intake (catalog/intake). Any write-role member can raise a request.
+app.post('/api/projects/:id/service-requests', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const b = await c.req.json().catch(() => ({}));
+  const title = String(b.title || '').trim();
+  if (!title) return c.json({ error: 'title required' }, 400);
+  const priority = ['low', 'medium', 'high', 'urgent'].includes(b.priority) ? b.priority : 'medium';
+  const uids = Array.isArray(b.sourceSegmentUids) ? b.sourceSegmentUids.map(String).filter(Boolean) : [];
+  const conf = Number.isFinite(Number(b.confidence)) ? Math.max(0, Math.min(1, Number(b.confidence))) : null;
+  const id = rowid(db.prepare(
+    `INSERT INTO service_requests(project_id,org_id,catalog_item,request_title,request_body,request_priority,requested_by,performing_team,sla_due_at,source_segment_uids,evidence_confidence)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?)`
+  ).run(p.id, p.org_id, String(b.catalogItem || '').slice(0, 120), title.slice(0, 200), String(b.body || '').slice(0, 4000),
+    priority, uid, String(b.performingTeam || '').slice(0, 120), String(b.slaDueAt || '').slice(0, 40),
+    JSON.stringify(uids), conf));
+  recordSrEvent(id, '', 'submitted', uid, 'intake');
+  logAudit(p.org_id, uid, 'service_request.create', 'service_request', id, { title, priority });
+  deliver(p.org_id, 'service_request.create', { projectId: Number(p.id), serviceRequestId: id, title });
+  const sr = db.prepare('SELECT * FROM service_requests WHERE id = ?').get(id);
+  return c.json(srPublic(sr, rollupChildren([])));
+});
+
+app.get('/api/projects/:id/service-requests', requireAuth, (c) => {
+  const p = projectAccess(c.get('user').sub, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  const tasks = safeParseTasks(p.tasks_json);
+  const rows = db.prepare('SELECT * FROM service_requests WHERE project_id = ? ORDER BY id DESC').all(p.id);
+  const serviceRequests = rows.map((sr) => srPublic(sr, rollupChildren(childrenOf(tasks, sr.id))));
+  return c.json({ serviceRequests });
+});
+
+app.get('/api/projects/:id/service-requests/:sid', requireAuth, (c) => {
+  const p = projectAccess(c.get('user').sub, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  const sr = db.prepare('SELECT * FROM service_requests WHERE id = ? AND project_id = ?').get(c.req.param('sid'), p.id);
+  if (!sr) return c.json({ error: 'not found' }, 404);
+  const tasks = safeParseTasks(p.tasks_json);
+  const children = childrenOf(tasks, sr.id);
+  const events = db.prepare(
+    `SELECT e.from_status AS fromStatus, e.to_status AS toStatus, e.note_text AS note, e.created_at AS createdAt, u.email AS actorEmail
+     FROM service_request_events e LEFT JOIN users u ON u.id = e.actor_id WHERE e.request_id = ? ORDER BY e.id`
+  ).all(sr.id);
+  const linkedTasks = children.map((t) => ({ id: t.id, name: t.name || t.task || t.phase || t.id, kind: t.kind || 'task', status: deriveTaskStatus(t), owner: t.owner || '' }));
+  return c.json({ ...srPublic(sr, rollupChildren(children)), events, linkedTasks });
+});
+
+// APPROVAL → decomposition. Owner/admin approves the request, which decomposes it
+// into one or more linked work items on the PERFORMING team's board (appended to
+// the tree, never clobbering it). Their completion then rolls up to fulfill it.
+app.post('/api/projects/:id/service-requests/:sid/approve', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canManage(p.memberRole)) return c.json({ error: 'forbidden: approval requires owner/admin' }, 403);
+  const sr = db.prepare('SELECT * FROM service_requests WHERE id = ? AND project_id = ?').get(c.req.param('sid'), p.id);
+  if (!sr) return c.json({ error: 'not found' }, 404);
+  if (!canTransitionSr(sr.request_status, 'approved')) {
+    return c.json({ error: `cannot approve from status '${sr.request_status}'` }, 409);
+  }
+  const b = await c.req.json().catch(() => ({}));
+  const specs = Array.isArray(b.tasks) && b.tasks.length
+    ? b.tasks
+    : [{ name: sr.request_title, kind: 'issue' }]; // sensible default: one issue mirroring the request
+  const tasks = safeParseTasks(p.tasks_json);
+  const team = String(b.performingTeam || sr.performing_team || '').slice(0, 120);
+  const created = [];
+  specs.forEach((spec, i) => {
+    const wi = {
+      id: `sr${sr.id}-t${i + 1}`,
+      parentId: null,
+      name: String(spec.name || spec.title || `${sr.request_title} #${i + 1}`).slice(0, 200),
+      kind: ['issue', 'requirement', 'feature', 'task'].includes(spec.kind) ? spec.kind : 'issue',
+      status: 'open',
+      actualProgress: 0,
+      owner: String(spec.owner || team || '').slice(0, 120),
+      service_request_id: sr.id,
+      source_segment_uids: Array.isArray(spec.sourceSegmentUids) ? spec.sourceSegmentUids.map(String) : [],
+      ...(spec.plannedStartDate ? { plannedStartDate: String(spec.plannedStartDate) } : {}),
+      ...(spec.plannedEndDate ? { plannedEndDate: String(spec.plannedEndDate) } : {}),
+    };
+    tasks.push(wi);
+    created.push({ id: wi.id, name: wi.name, kind: wi.kind, owner: wi.owner });
+  });
+  const version = persistTasks(p, tasks, uid);
+  db.prepare("UPDATE service_requests SET request_status='approved', approved_by=?, approved_at=datetime('now'), performing_team=?, updated_at=datetime('now') WHERE id=?")
+    .run(uid, team, sr.id);
+  recordSrEvent(sr.id, sr.request_status, 'approved', uid, `decomposed into ${created.length} work item(s)`);
+  logAudit(p.org_id, uid, 'service_request.approve', 'service_request', sr.id, { tasks: created.length });
+  deliver(p.org_id, 'service_request.approve', { projectId: Number(p.id), serviceRequestId: sr.id, tasks: created.length });
+  const r = recomputeServiceRequest(sr.id, uid); // reflects any pre-done children immediately
+  return c.json({ ...srPublic(r.sr, r.rollup), createdTasks: created, version });
+});
+
+// Generic guarded lifecycle transition (reject / cancel / close, and manual
+// approved↔in_progress). Fulfillment auto-transitions happen via rollup; this is
+// the human-driven path for the rest of the state machine.
+app.post('/api/projects/:id/service-requests/:sid/transition', requireAuth, async (c) => {
+  const uid = c.get('user').sub;
+  const p = projectAccess(uid, c.req.param('id'));
+  if (!p) return c.json({ error: 'not found' }, 404);
+  if (!canManage(p.memberRole)) return c.json({ error: 'forbidden: owner/admin only' }, 403);
+  const sr = db.prepare('SELECT * FROM service_requests WHERE id = ? AND project_id = ?').get(c.req.param('sid'), p.id);
+  if (!sr) return c.json({ error: 'not found' }, 404);
+  const { to, note } = await c.req.json().catch(() => ({}));
+  if (!SR_STATUSES.includes(to)) return c.json({ error: `status must be one of ${SR_STATUSES.join(', ')}` }, 400);
+  if (!canTransitionSr(sr.request_status, to)) {
+    return c.json({ error: `invalid transition: ${sr.request_status} → ${to}`, from: sr.request_status }, 409);
+  }
+  const cols = ['request_status=?'];
+  const vals = [to];
+  if (to === 'closed') { cols.push("closed_at=datetime('now')"); }
+  if (to === 'fulfilled') { cols.push("fulfilled_at=COALESCE(fulfilled_at, datetime('now'))"); }
+  cols.push("updated_at=datetime('now')");
+  db.prepare(`UPDATE service_requests SET ${cols.join(', ')} WHERE id = ?`).run(...vals, sr.id);
+  recordSrEvent(sr.id, sr.request_status, to, uid, note);
+  logAudit(p.org_id, uid, 'service_request.transition', 'service_request', sr.id, { from: sr.request_status, to });
+  const fresh = db.prepare('SELECT * FROM service_requests WHERE id = ?').get(sr.id);
+  const tasks = safeParseTasks(p.tasks_json);
+  return c.json(srPublic(fresh, rollupChildren(childrenOf(tasks, sr.id))));
 });
 
 app.get('/api/health', (c) => c.json({ ok: true }));
