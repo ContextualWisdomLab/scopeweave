@@ -15,19 +15,23 @@ name: OSV-Scanner
   schedule:
     - cron: '20 19 * * 5'
 
+# Principle of least privilege: default all tokens to read-only at the top
+# level and grant only the required write scope at the job level.
 permissions:
-  # Require writing security events to upload SARIF file to security tab
-  security-events: write
-  # Read commit contents
   contents: read
-  # Read PR metadata for comparison of introduced vulnerabilities
-  pull-requests: read
-  # Read workflow runs to check for duplicates
-  actions: read
 
 jobs:
   scan:
     runs-on: ubuntu-latest
+    permissions:
+      # Write security events to upload SARIF file to the security tab
+      security-events: write
+      # Read commit contents
+      contents: read
+      # Read PR metadata for comparison of introduced vulnerabilities
+      pull-requests: read
+      # Read workflow runs to check for duplicates
+      actions: read
     concurrency:
       # Avoid canceling this workflow due to other workflows' concurrency queues (e.g., CodeQL).
       # Key off PR number for PR/merge_group, otherwise ref.
