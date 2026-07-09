@@ -75,3 +75,6 @@
 ## 2026-06-29 - Cache active drag-and-drop elements
 **Learning:** Cleaning drag/drop classes by querying every table row on each drag event adds avoidable DOM traversal cost.
 **Action:** Cache the active drag element and current drop target in state, then clear only those elements during drag cleanup.
+## 2024-05-24 - [빈 셀 DOM 요소 생성 최적화]
+**Learning:** 렌더링 루프 내부에서 `document.createElement`를 반복적으로 호출하여 복잡한 DOM 트리를 생성하는 것은 메모리 할당 및 성능에 악영향을 줍니다. 템플릿 요소를 캐싱하고 `cloneNode(true)`를 사용하면 성능을 유의미하게 향상시킬 수 있습니다.
+**Action:** 테이블이나 리스트와 같이 반복적으로 동일한 구조를 렌더링하는 경우, 템플릿을 캐싱하고 `cloneNode`를 적극적으로 활용합니다.
