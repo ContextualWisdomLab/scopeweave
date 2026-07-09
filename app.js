@@ -1313,24 +1313,27 @@ function computeTaskMetrics() {
   };
 }
 
+const PROGRESS_STATE_EMPTY = Object.freeze({ label: '', className: '' });
+const PROGRESS_STATE_DONE = Object.freeze({ label: '완료', className: 'done' });
+const PROGRESS_STATE_DELAY = Object.freeze({ label: '지연', className: 'delay' });
+const PROGRESS_STATE_ACTIVE = Object.freeze({ label: '진행', className: 'active' });
+const PROGRESS_STATE_BEFORE = Object.freeze({ label: '진행전', className: 'before' });
+
 function deriveProgressState(task, baseDate) {
   if (!task.plannedStartDate || !task.plannedEndDate) {
-    return { label: '', className: '' };
+    return PROGRESS_STATE_EMPTY;
   }
 
   if (task.actualStartDate && task.actualEndDate) {
-    return { label: '완료', className: 'done' };
+    return PROGRESS_STATE_DONE;
   }
   if (compareDateStrings(baseDate, task.plannedEndDate) >= 0 && (!task.actualStartDate || !task.actualEndDate)) {
-    return { label: '지연', className: 'delay' };
+    return PROGRESS_STATE_DELAY;
   }
   if (task.actualStartDate && !task.actualEndDate) {
-    return { label: '진행', className: 'active' };
+    return PROGRESS_STATE_ACTIVE;
   }
-  if (compareDateStrings(baseDate, task.plannedStartDate) < 0) {
-    return { label: '진행전', className: 'before' };
-  }
-  return { label: '진행전', className: 'before' };
+  return PROGRESS_STATE_BEFORE;
 }
 
 function calculatePlannedProgressRatio(baseDate, startDate, endDate, durationDays) {
