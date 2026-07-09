@@ -1,7 +1,15 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: scopeweave
+  labels:
+    app: scopeweave
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: scopeweave-deployment
+  namespace: scopeweave
   labels:
     app: scopeweave
 spec:
@@ -16,9 +24,10 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        runAsUser: 101
-        runAsGroup: 101
-        fsGroup: 101
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -26,6 +35,9 @@ spec:
         image: scopeweave:1.0.0
         imagePullPolicy: IfNotPresent
         securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          runAsGroup: 10001
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           capabilities:
@@ -72,6 +84,7 @@ apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
   name: scopeweave-pdb
+  namespace: scopeweave
 spec:
   minAvailable: 1
   selector:

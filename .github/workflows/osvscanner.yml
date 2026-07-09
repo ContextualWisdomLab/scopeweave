@@ -16,8 +16,6 @@ name: OSV-Scanner
     - cron: '20 19 * * 5'
 
 permissions:
-  # Require writing security events to upload SARIF file to security tab
-  security-events: write
   # Read commit contents
   contents: read
   # Read PR metadata for comparison of introduced vulnerabilities
@@ -28,6 +26,11 @@ permissions:
 jobs:
   scan:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+      security-events: write
     concurrency:
       # Avoid canceling this workflow due to other workflows' concurrency queues (e.g., CodeQL).
       # Key off PR number for PR/merge_group, otherwise ref.

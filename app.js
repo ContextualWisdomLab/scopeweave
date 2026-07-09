@@ -2484,6 +2484,8 @@ function debounce(callback, wait) {
 // Export for testing
 if (typeof window !== 'undefined') {
   window.validateDraft = validateDraft;
+  window.sanitizeCsvFormulaValue = sanitizeCsvFormulaValue;
+  window.csvEscape = csvEscape;
 }
 
 bootstrap();
