@@ -1003,7 +1003,10 @@ function handleInlineProgressChange(event) {
   if (!task) {
     return;
   }
-  task.actualProgressStatus = event.target.value;
+
+  const rawValue = event.target.value;
+  task.actualProgressStatus = ACTUAL_PROGRESS_OPTIONS.includes(rawValue) ? rawValue : '미착수(0%)';
+
   persistState();
   renderAll();
 

@@ -120,3 +120,7 @@
 **Vulnerability:** Persisted metadata can bypass UI constraints, and localStorage quota failures can silently prevent state from being saved.
 **Learning:** Client-side storage is both attacker-controlled input during hydration and a fallible persistence boundary during writes.
 **Prevention:** Apply explicit length limits to hydrated metadata and show a bounded user-facing failure message when localStorage writes fail.
+## 2024-05-28 - Fix missing input validation on inline progress
+**Vulnerability:** Inline progress dropdown update bypassed central sanitization logic.
+**Learning:** Event handlers that modify state directly from DOM values must independently validate input.
+**Prevention:** Apply validation rules (like ACTUAL_PROGRESS_OPTIONS) at all state mutation boundaries, not just in main form submission.
