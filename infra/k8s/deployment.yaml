@@ -27,6 +27,7 @@ spec:
         runAsUser: 10001
         runAsGroup: 10001
         fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
         seccompProfile:
           type: RuntimeDefault
       containers:
@@ -34,6 +35,9 @@ spec:
         image: scopeweave:1.0.0
         imagePullPolicy: IfNotPresent
         securityContext:
+          runAsNonRoot: true
+          runAsUser: 10001
+          runAsGroup: 10001
           allowPrivilegeEscalation: false
           readOnlyRootFilesystem: true
           capabilities:

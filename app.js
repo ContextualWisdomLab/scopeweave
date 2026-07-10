@@ -132,6 +132,36 @@ const EDITOR_FIELD_TEST_IDS = Object.freeze(Object.assign(Object.create(null), {
 }));
 
 const LEGACY_PLANNED_END_FIELD = 'plannedEnd' + 'Ddate';
+const TASK_STORAGE_FIELDS = Object.freeze([
+  'id',
+  'parentId',
+  'depth',
+  'expanded',
+  'pendingDelete',
+  'isSynthetic',
+  'phase',
+  'activity',
+  'task',
+  'categoryLarge',
+  'categoryMedium',
+  'documentName',
+  'owner',
+  'supportTeam',
+  'plannedStartDate',
+  'plannedEndDate',
+  'plannedProgress',
+  'actualProgress',
+  'weight',
+  'actualProgressStatus',
+  'actualStartDate',
+  'actualEndDate',
+  'name',
+  'predecessors',
+  'budget',
+  'actualCost',
+  'sprint',
+  'storyPoints'
+]);
 
 const DEFAULT_EDITOR_STATE = {
   mode: null,
@@ -215,10 +245,12 @@ async function bootstrap() {
   const cloudState = cloudApi ? await cloudApi.boot() : null;
   if (cloudState) {
     hydrateState(cloudState);
+    persistState({ syncCloud: false });
   } else {
     const savedState = loadLocalState();
     if (savedState) {
       hydrateState(savedState);
+      persistState();
     } else {
       const seedData = await loadSeedTasks();
       state.tasks = normalizeImportedTasks(seedData);
@@ -524,6 +556,7 @@ function setTableBodyRows(rows) {
 function createEmptyStateRow() {
   const row = document.createElement('tr');
   const cell = document.createElement('td');
+  cell.className = 'empty-state-cell';
   cell.colSpan = 21;
 
   const emptyState = document.createElement('div');
@@ -1474,12 +1507,11 @@ function findTask(taskId) {
   return index !== -1 ? state.tasks[index] : null;
 }
 
-function persistState() {
-  // ⚡ Bolt: Remove redundant O(N) object cloning before JSON.stringify to prevent massive memory allocations on every keystroke
+function persistState({ syncCloud = true } = {}) {
   const payload = {
     projectName: state.projectName,
     baseDate: state.baseDate,
-    tasks: state.tasks
+    tasks: state.tasks.map(createPersistableTask)
   };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -1494,7 +1526,7 @@ function persistState() {
     });
   }
 
-  if (typeof window !== 'undefined') {
+  if (syncCloud && typeof window !== 'undefined') {
     window.ScopeWeaveCloud?.push?.(payload);
   }
 }
@@ -1519,13 +1551,26 @@ function hydrateState(savedState) {
 
 function normalizeStoredTask(task) {
   const safeTask = isTaskRecord(task) ? task : {};
-  const normalizedTask = {
+  return createPersistableTask({
     ...safeTask,
     plannedEndDate: getPlannedEndDateValue(safeTask),
     expanded: safeTask.expanded !== false
-  };
-  delete normalizedTask[LEGACY_PLANNED_END_FIELD];
-  return normalizedTask;
+  });
+}
+
+function createPersistableTask(task) {
+  const safeTask = isTaskRecord(task) ? task : {};
+  const persistableTask = Object.create(null);
+  for (const field of TASK_STORAGE_FIELDS) {
+    if (safeTask[field] !== undefined) {
+      persistableTask[field] = safeTask[field];
+    }
+  }
+  persistableTask.plannedEndDate = getPlannedEndDateValue(safeTask);
+  persistableTask.expanded = safeTask.expanded !== false;
+  persistableTask.pendingDelete = Boolean(safeTask.pendingDelete);
+  persistableTask.isSynthetic = Boolean(safeTask.isSynthetic);
+  return persistableTask;
 }
 
 async function loadSeedTasks() {
@@ -2557,6 +2602,9 @@ function debounce(callback, wait) {
 // Export for testing
 if (typeof window !== 'undefined') {
   window.validateDraft = validateDraft;
+  window.sanitizeCsvFormulaValue = sanitizeCsvFormulaValue;
+  window.csvEscape = csvEscape;
+  window.createTextCellContent = createTextCellContent;
 }
 
 bootstrap();

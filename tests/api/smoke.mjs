@@ -5,6 +5,7 @@ import assert from 'node:assert';
 
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_DEV = '1'; // enables the dev-activate-pro endpoint for this test
+process.env.SCOPEWEAVE_JWT_SECRET = 'test-secret';
 const { app } = await import('../../server/app.mjs');
 
 const req = (path, opts = {}) =>

@@ -74,6 +74,8 @@ async function openProject(id, { silent = false } = {}) {
 }
 
 async function doPush(payload) {
+  clearTimeout(pushTimer);
+  pushTimer = null;
   try {
     const r = await api(`/api/projects/${getProjectId()}`, {
       method: 'PUT',
@@ -883,7 +885,6 @@ export function computeSprintStats(tasks, sprints, today) {
   const velocity = closedWithWork.length
     ? closedWithWork.reduce((n, r) => n + r.completed, 0) / closedWithWork.length
     : null;
-  const assigned = new Set(rows.flatMap((r) => [r.name]));
   const backlog = leaf.filter((t) => !String(t.sprint || '').trim() || !(sprints || []).some((sp) => sp.name === String(t.sprint).trim()));
   return { rows, velocity, backlogCount: backlog.length };
 }

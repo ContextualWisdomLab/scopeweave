@@ -1,8 +1,8 @@
 // Cloud (SaaS) UI e2e — self-contained: spawns the Node API server itself, so
 // the static python webServer from playwright.config is untouched.
 // Run: npx playwright test tests/e2e/cloud.spec.js
-const { test, expect } = require('@playwright/test');
-const { spawn } = require('node:child_process');
+import { test, expect } from '@playwright/test';
+import { spawn } from 'node:child_process';
 
 const PORT = 8830;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -20,7 +20,7 @@ async function api(path, { method = 'GET', body, tok } = {}) {
 
 test.beforeAll(async () => {
   server = spawn(process.execPath, ['server/server.mjs'], {
-    env: { ...process.env, SCOPEWEAVE_DB: ':memory:', PORT: String(PORT) },
+    env: { ...process.env, SCOPEWEAVE_DB: ':memory:', SCOPEWEAVE_JWT_SECRET: 'test-secret', PORT: String(PORT) },
     stdio: 'ignore',
   });
   // wait for the API to come up

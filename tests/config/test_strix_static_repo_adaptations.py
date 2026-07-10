@@ -40,8 +40,11 @@ def test_kubernetes_deployment_uses_non_root_versioned_runtime() -> None:
 
     assert 'image: scopeweave:latest' not in deployment_source
     assert 'image: scopeweave:1.0.0' in deployment_source
+    assert 'namespace: scopeweave' in deployment_source
+    assert 'namespace: scopeweave' in service_source
     assert 'runAsNonRoot: true' in deployment_source
-    assert 'runAsUser: 101' in deployment_source
+    assert 'runAsUser: 10001' in deployment_source
+    assert 'runAsGroup: 10001' in deployment_source
     assert 'allowPrivilegeEscalation: false' in deployment_source
     assert 'readOnlyRootFilesystem: true' in deployment_source
     assert 'drop:' in deployment_source
@@ -54,10 +57,7 @@ def test_kubernetes_deployment_uses_non_root_versioned_runtime() -> None:
 
 
 def test_companion_workflows_cover_named_requirements_manifests_and_full_history() -> None:
-    dependency_review_source = DEPENDENCY_REVIEW_WORKFLOW.read_text(encoding="utf-8")
     osv_source = OSV_WORKFLOW.read_text(encoding="utf-8")
 
-    assert 'fetch-depth: 0' in dependency_review_source
-    assert 'dependency_graph?.status || \'unknown\'' in dependency_review_source
-    assert 'requirements(-[A-Za-z0-9._-]+)?\\.txt' in dependency_review_source
+    assert not DEPENDENCY_REVIEW_WORKFLOW.exists()
     assert 'requirements(-[A-Za-z0-9._-]+)?\\.txt' in osv_source
