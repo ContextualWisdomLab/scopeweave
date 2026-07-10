@@ -1,0 +1,17 @@
+node_modules
+tests
+docs
+.git
+.github
+.jules
+.agents
+data.db
+data.db-*
+*.md
+pr_desc.md
+playwright.config.js
+pnpm-lock.yaml
+infra
+!infra/nginx
+Dockerfile
+!docs/user-guide.md

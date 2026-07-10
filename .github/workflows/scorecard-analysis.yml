@@ -10,6 +10,10 @@ on:
 
 permissions: read-all
 
+concurrency:
+  group: scorecard-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analysis:
     name: Scorecard analysis

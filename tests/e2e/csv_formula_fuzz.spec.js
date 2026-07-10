@@ -1,5 +1,5 @@
-const { test, expect } = require('@playwright/test');
-const fc = require('fast-check');
+import { test, expect } from '@playwright/test';
+import fc from 'fast-check';
 
 test.describe('CSV formula fuzzing', () => {
   test.beforeEach(async ({ page }) => {

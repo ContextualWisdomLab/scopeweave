@@ -1,4 +1,4 @@
-const { test, expect } = require('@playwright/test');
+import { test, expect } from '@playwright/test';
 
 test.describe('getTaskSubtreeRange function tests', () => {
   test('should return correct range for root task, sub task and non-existent task', async ({ page }) => {

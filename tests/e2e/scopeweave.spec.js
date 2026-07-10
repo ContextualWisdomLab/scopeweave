@@ -1,6 +1,6 @@
-const { test, expect } = require('@playwright/test');
+import { test, expect } from '@playwright/test';
 
-const fs = require('fs');
+import fs from 'node:fs';
 
 const addTopLevelTask = async (page, values) => {
   await page.getByRole('button', { name: '최상위 작업 추가' }).click();
@@ -119,10 +119,10 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
     const mobileColumns = await page.evaluate(() => {
       const isVisible = (element) => getComputedStyle(element).display !== 'none';
-      const headers = Array.from(document.querySelectorAll('thead th'))
+      const headers = Array.from(document.querySelectorAll('.wbs-table thead th'))
         .filter(isVisible)
         .map((cell) => cell.textContent.trim());
-      const firstTaskRow = document.querySelector('tbody tr[data-task-id]');
+      const firstTaskRow = document.querySelector('#task-table-body tr[data-task-id]');
       const firstRowCells = Array.from(firstTaskRow?.querySelectorAll('td') || [])
         .filter(isVisible)
         .map((cell) => cell.innerText.trim());
@@ -817,7 +817,7 @@ test.describe('ScopeWeave Planner', () => {
 
     await expect(page.locator('#toast')).toContainText('HTML 태그 문자를 사용할 수 없습니다');
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
-    await expect(page.locator('tbody')).not.toContainText('onerror');
+    await expect(page.locator('#task-table-body')).not.toContainText('onerror');
   });
 
   test('rejects HTML payloads from imported CSV internal columns', async ({ page }) => {
@@ -828,7 +828,7 @@ test.describe('ScopeWeave Planner', () => {
 
     await expect(page.locator('#toast')).toContainText('HTML 태그 문자를 사용할 수 없습니다');
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
-    await expect(page.locator('tbody')).not.toContainText('onerror');
+    await expect(page.locator('#task-table-body')).not.toContainText('onerror');
   });
 
   test('rejects overlong imported CSV cells without truncating', async ({ page }) => {
@@ -838,7 +838,7 @@ test.describe('ScopeWeave Planner', () => {
 
     await expect(page.locator('#toast')).toContainText('Task 컬럼은 1000자 이하로 입력해야 합니다');
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
-    await expect(page.locator('tbody')).not.toContainText(overlongTaskName.substring(0, 1000));
+    await expect(page.locator('#task-table-body')).not.toContainText(overlongTaskName.substring(0, 1000));
   });
 
   test('normalizes imported task rows into a full phase-activity-task hierarchy', async ({ page }) => {
@@ -980,7 +980,7 @@ test.describe('ScopeWeave Planner', () => {
 
   test('buildWeekdayTimeline handles normal, same, reversed, and weekend dates', async ({ page }) => {
     await page.goto('./');
-    const appJsCode = require('fs').readFileSync('app.js', 'utf-8');
+    const appJsCode = fs.readFileSync('app.js', 'utf-8');
     await page.evaluate((code) => {
       const func = new Function('minDate', 'maxDate', code + '\nreturn buildWeekdayTimeline(minDate, maxDate);');
       window.__buildWeekdayTimeline = func;
