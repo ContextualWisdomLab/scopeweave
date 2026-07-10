@@ -606,8 +606,13 @@ function createEmptyStateRow() {
   return row;
 }
 
+// Cache an unattached td shell so hot render loops clone instead of allocate.
+let tableCellTemplate = null;
 function createTableCell(className, content) {
-  const cell = document.createElement('td');
+  if (!tableCellTemplate) {
+    tableCellTemplate = document.createElement('td');
+  }
+  const cell = tableCellTemplate.cloneNode(false);
   if (className) {
     cell.className = className;
   }
