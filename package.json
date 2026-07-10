@@ -8,7 +8,7 @@
     "coverage": "node scripts/ci/static_coverage_evidence.mjs coverage && npm run test:fuzz",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:fuzz": "playwright test tests/e2e/csv_formula_fuzz.spec.js"
+    "test:fuzz": "playwright install chromium && playwright test tests/e2e/csv_formula_fuzz.spec.js"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",

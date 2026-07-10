@@ -112,6 +112,27 @@ const EDITOR_FIELD_TEST_IDS = Object.freeze(Object.assign(Object.create(null), {
 }));
 
 const LEGACY_PLANNED_END_FIELD = 'plannedEnd' + 'Ddate';
+const TASK_STORAGE_FIELDS = Object.freeze([
+  'id',
+  'parentId',
+  'depth',
+  'expanded',
+  'pendingDelete',
+  'isSynthetic',
+  'phase',
+  'activity',
+  'task',
+  'categoryLarge',
+  'categoryMedium',
+  'documentName',
+  'owner',
+  'supportTeam',
+  'plannedStartDate',
+  'plannedEndDate',
+  'actualProgressStatus',
+  'actualStartDate',
+  'actualEndDate'
+]);
 
 const DEFAULT_EDITOR_STATE = {
   mode: null,
@@ -187,6 +208,7 @@ async function bootstrap() {
   const savedState = loadLocalState();
   if (savedState) {
     hydrateState(savedState);
+    persistState();
   } else {
     const seedData = await loadSeedTasks();
     state.tasks = normalizeImportedTasks(seedData);
@@ -1421,11 +1443,10 @@ function findTask(taskId) {
 }
 
 function persistState() {
-  // ⚡ Bolt: Remove redundant O(N) object cloning before JSON.stringify to prevent massive memory allocations on every keystroke
   const payload = {
     projectName: state.projectName,
     baseDate: state.baseDate,
-    tasks: state.tasks
+    tasks: state.tasks.map(createPersistableTask)
   };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -1461,13 +1482,26 @@ function hydrateState(savedState) {
 
 function normalizeStoredTask(task) {
   const safeTask = isTaskRecord(task) ? task : {};
-  const normalizedTask = {
+  return createPersistableTask({
     ...safeTask,
     plannedEndDate: getPlannedEndDateValue(safeTask),
     expanded: safeTask.expanded !== false
-  };
-  delete normalizedTask[LEGACY_PLANNED_END_FIELD];
-  return normalizedTask;
+  });
+}
+
+function createPersistableTask(task) {
+  const safeTask = isTaskRecord(task) ? task : {};
+  const persistableTask = Object.create(null);
+  for (const field of TASK_STORAGE_FIELDS) {
+    if (safeTask[field] !== undefined) {
+      persistableTask[field] = safeTask[field];
+    }
+  }
+  persistableTask.plannedEndDate = getPlannedEndDateValue(safeTask);
+  persistableTask.expanded = safeTask.expanded !== false;
+  persistableTask.pendingDelete = Boolean(safeTask.pendingDelete);
+  persistableTask.isSynthetic = Boolean(safeTask.isSynthetic);
+  return persistableTask;
 }
 
 async function loadSeedTasks() {
@@ -2486,6 +2520,7 @@ if (typeof window !== 'undefined') {
   window.validateDraft = validateDraft;
   window.sanitizeCsvFormulaValue = sanitizeCsvFormulaValue;
   window.csvEscape = csvEscape;
+  window.createTextCellContent = createTextCellContent;
 }
 
 bootstrap();

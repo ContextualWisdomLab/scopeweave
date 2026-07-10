@@ -12,6 +12,13 @@ const addTopLevelTask = async (page, values) => {
   await page.getByRole('button', { name: '저장', exact: true }).click();
 };
 
+const expectSaveBlockedWith = async (page, message) => {
+  const saveButton = page.getByRole('button', { name: '저장', exact: true });
+  await expect(saveButton).toBeDisabled();
+  await expect(page.locator('#editor-errors')).toContainText(message);
+  await expect(page.locator('.editor-panel')).toBeVisible();
+};
+
 const readHierarchySnapshot = async (page) => page.locator('tbody tr[data-task-id]').evaluateAll((rows) => rows.map((row) => ({
   phase: row.children[1]?.innerText.replace(/-\s*값 없음/g, '-').trim() || '',
   activity: row.children[2]?.innerText.replace(/-\s*값 없음/g, '-').trim() || '',
@@ -239,7 +246,7 @@ test.describe('ScopeWeave Planner', () => {
     await expect(leafRow).toHaveCount(1);
     const leafAddChildButton = leafRow.getByRole('button', { name: '하위 추가' });
     await expect(leafAddChildButton).toHaveAttribute('aria-disabled', 'true');
-    await leafAddChildButton.click();
+    await leafAddChildButton.dispatchEvent('click');
     await expect(page.locator('#toast')).toContainText('최대 3단계까지만 추가할 수 있습니다.');
     await expect(page.locator('.editor-panel')).toHaveCount(0);
   });
@@ -279,12 +286,12 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.getByRole('dialog', { name: '간트 차트' })).toBeVisible();
 
     const closeButton = page.getByRole('button', { name: '간트 차트 닫기' });
-    const firstBar = page.locator('.gantt-bar.plan').first();
-    await expect(firstBar).toBeVisible();
+    const wrappedBar = page.locator('.gantt-bar.plan[aria-label*="포커스 순환 검증"]').first();
+    await expect(wrappedBar).toBeVisible();
 
     await closeButton.focus();
     await page.keyboard.press('Shift+Tab');
-    await expect(firstBar).toBeFocused();
+    await expect(wrappedBar).toBeFocused();
 
     await page.keyboard.press('Tab');
     await expect(closeButton).toBeFocused();
@@ -297,13 +304,26 @@ test.describe('ScopeWeave Planner', () => {
       await dialog.dismiss();
     });
 
-    await addTopLevelTask(page, {
-      phase: '<svg/onload=alert(1)>',
-      categoryLarge: '간트검증',
-      owner: '담당자A',
-      plannedStartDate: '2026-05-18',
-      plannedEndDate: '2026-05-20'
+    await page.evaluate(() => {
+      localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
+        projectName: 'Legacy XSS Project',
+        baseDate: '2026-05-18',
+        tasks: [{
+          id: 'legacy-xss-task',
+          parentId: null,
+          depth: 1,
+          expanded: true,
+          phase: '<svg/onload=alert(1)>',
+          categoryLarge: '간트검증',
+          owner: '담당자A',
+          plannedStartDate: '2026-05-18',
+          plannedEndDate: '2026-05-20',
+          actualProgressStatus: '미착수(0%)',
+          isSynthetic: false
+        }]
+      }));
     });
+    await page.reload();
 
     await page.getByRole('button', { name: '간트차트보기' }).click();
     await expect(page.getByRole('dialog', { name: '간트 차트' })).toBeVisible();
@@ -728,28 +748,19 @@ test.describe('ScopeWeave Planner', () => {
   test('rejects saving a top-level task with HTML tags in the phase field', async ({ page }) => {
     await page.getByRole('button', { name: '최상위 작업 추가' }).click();
     await page.locator('[data-testid="editor-phase"]').fill('Test Phase <script>');
-    await page.getByRole('button', { name: '저장', exact: true }).click();
-
-    await expect(page.locator('#editor-errors')).toContainText('HTML 태그 문자를 사용할 수 없습니다');
-    await expect(page.locator('.editor-panel')).toBeVisible();
+    await expectSaveBlockedWith(page, 'HTML 태그 문자를 사용할 수 없습니다');
   });
 
   test('rejects saving a top-level task without a phase', async ({ page }) => {
     await page.getByRole('button', { name: '최상위 작업 추가' }).click();
     await page.locator('[data-testid="editor-phase"]').fill('');
-    await page.getByRole('button', { name: '저장', exact: true }).click();
-
-    await expect(page.locator('#editor-errors')).toContainText('최상위 작업은 단계 값을 입력해야 합니다.');
-    await expect(page.locator('.editor-panel')).toBeVisible();
+    await expectSaveBlockedWith(page, '최상위 작업은 단계 값을 입력해야 합니다.');
   });
 
   test('rejects saving a depth 2 task without an activity', async ({ page }) => {
     await page.locator('tbody tr[data-task-id]').first().getByRole('button', { name: '하위 추가' }).click();
     await page.locator('[data-testid="editor-activity"]').fill('');
-    await page.getByRole('button', { name: '저장', exact: true }).click();
-
-    await expect(page.locator('#editor-errors')).toContainText('2단계 작업은 Activity 값을 입력해야 합니다.');
-    await expect(page.locator('.editor-panel')).toBeVisible();
+    await expectSaveBlockedWith(page, '2단계 작업은 Activity 값을 입력해야 합니다.');
   });
 
   test('rejects saving a depth 3 task without a task value', async ({ page }) => {
@@ -760,10 +771,7 @@ test.describe('ScopeWeave Planner', () => {
     const activityRow = page.locator('tbody tr[data-task-id].depth-2').filter({ has: page.locator('td:nth-child(3)', { hasText: /^Test Activity$/ }) });
     await activityRow.getByRole('button', { name: '하위 추가' }).click();
     await page.locator('[data-testid="editor-task"]').fill('');
-    await page.getByRole('button', { name: '저장', exact: true }).click();
-
-    await expect(page.locator('#editor-errors')).toContainText('3단계 작업은 Task 값을 입력해야 합니다.');
-    await expect(page.locator('.editor-panel')).toBeVisible();
+    await expectSaveBlockedWith(page, '3단계 작업은 Task 값을 입력해야 합니다.');
   });
 
   test('rejects empty CSV import', async ({ page }) => {
