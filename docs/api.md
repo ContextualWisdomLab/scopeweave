@@ -182,7 +182,79 @@ const ok = req.headers['x-scopeweave-signature'] ===
 | `GET` | `/api/metrics` | Ops counters (JSON; add `?format=prometheus` for scrape-ready text) |
 | `GET` | `/api/health` | Liveness |
 
+## Issue / Service-Request management
+
+Evidence-grounded ingestion, an explicit work-item status state machine, and a
+two-layer ITSM Service-Request model whose fulfillment is driven by the rollup of
+its decomposed work items.
+
+### Ingestion (append/merge — does NOT clobber the tree)
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/projects/:id/tasks:import` | Map an external issue payload into work items and **merge** them into the tree (write role; PAT-friendly) |
+
+Body is a naruon-style `ProjectSemanticObject` payload (a single object, an
+array, or `{ items: [...] }`):
+
+```jsonc
+{ "items": [
+  { "uid": "EPIC-1", "title": "인증 개선", "kind": "feature" },
+  { "uid": "REQ-42", "title": "비밀번호 재설정", "kind": "requirement",
+    "source_segment_uids": ["seg-1","seg-2"], "confidence": 0.9,
+    "edges": [{ "rel": "child_of", "to": "EPIC-1" }] }
+]}
+```
+
+`kind ∈ {issue, requirement, feature, service_request}`. `title → name`,
+`source_segment_uids →` a first-class evidence array on the work item,
+`confidence → evidence_confidence`, a parent/`child_of` edge nests the item.
+Re-importing the same `uid` **updates in place** (existing progress/owner/status
+preserved) — unknown ids are appended. Returns `{ created, updated, imported, version }`.
+
+Unlike the whole-document `PUT /api/projects/:id` and the MS-Project XML import
+(both replace the tree), this endpoint is additive.
+
+### Work-item status lifecycle
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `PATCH` | `/api/projects/:id/tasks/:taskId/status` | `{ to }` — move a work item through `open → in_progress → done` (+ `cancelled`, reopen). Illegal transitions → `409`. |
+
+Status is now an explicit state machine, not just a derived progress percent
+(legacy percent-only tasks are bridged: 0% → open, 1–99% → in_progress, 100% →
+done). Changing a linked task recomputes its Service Request's rollup.
+
+### Service Requests (two-layer ITSM)
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `POST` | `/api/projects/:id/service-requests` | Intake `{ title, catalogItem?, priority?, performingTeam?, slaDueAt?, sourceSegmentUids?, confidence? }` → `submitted` (write role) |
+| `GET` | `/api/projects/:id/service-requests` | List requests with live rollup |
+| `GET` | `/api/projects/:id/service-requests/:sid` | Detail + linked work items + status-event history |
+| `POST` | `/api/projects/:id/service-requests/:sid/approve` | Approve + **decompose** into linked work items `{ tasks: [{ name, owner, kind }] }` (owner/admin) |
+| `POST` | `/api/projects/:id/service-requests/:sid/transition` | Guarded lifecycle move `{ to, note }` — reject / cancel / close (owner/admin) |
+
+The requester-facing request follows `submitted → approved → in_progress →
+fulfilled → closed` (plus `rejected` / `cancelled`). On approval it decomposes
+into one or more work items assigned to the **performing team** on the board;
+those tasks carry `service_request_id`, and their completion **rolls up** to
+drive the request: it auto-advances to `in_progress` when work starts and
+`fulfilled` when every active child is `done` (and regresses if one is reopened).
+
 ## Example
+
+```bash
+TOKEN=swk_xxxxxxxxxxxxxxxxxxxxxxxx
+# ingest external issues into the tree (append/merge, no clobber)
+curl -s -X POST https://YOUR_HOST/api/projects/42/tasks:import \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"items":[{"uid":"ISS-7","title":"로그인 실패 로깅 누락","kind":"issue","confidence":0.6}]}'
+# raise + approve a service request, then complete its work item
+curl -s -X POST https://YOUR_HOST/api/projects/42/service-requests \
+  -H "Authorization: Bearer $TOKEN" -H 'content-type: application/json' \
+  -d '{"title":"신규 담당자 온보딩","priority":"high","performingTeam":"플랫폼팀"}'
+```
 
 ```bash
 TOKEN=swk_xxxxxxxxxxxxxxxxxxxxxxxx

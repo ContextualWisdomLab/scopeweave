@@ -1,0 +1,6 @@
+[submodule "vendor/clearfolio"]
+	path = vendor/clearfolio
+	url = https://github.com/ContextualWisdomLab/clearfolio.git
+[submodule "vendor/contextual-orchestrator"]
+	path = vendor/contextual-orchestrator
+	url = https://github.com/ContextualWisdomLab/contextual-orchestrator.git

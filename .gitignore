@@ -12,3 +12,6 @@ __pycache__/
 # SaaS dev database
 data.db
 data.db-*
+
+# CodeGraph local index (developer-local; not source)
+.codegraph/
