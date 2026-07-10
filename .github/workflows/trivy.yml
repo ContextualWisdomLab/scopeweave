@@ -15,7 +15,7 @@ permissions:
 
 concurrency:
   group: trivy-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   trivy:
@@ -40,9 +40,43 @@ jobs:
           output: trivy-results.sarif
           severity: MEDIUM,HIGH,CRITICAL
           ignore-unfixed: true
+          exit-code: "1"
+          limit-severities-for-sarif: true
+
+      - name: Print Trivy findings that failed the gate
+        if: failure() && hashFiles('trivy-results.sarif') != ''
+        shell: python3 {0}
+        run: |
+          import json, pathlib
+
+          sarif = json.loads(pathlib.Path("trivy-results.sarif").read_text(encoding="utf-8"))
+          findings = []
+          for run in sarif.get("runs", []):
+              rules = {rule.get("id"): rule for rule in run.get("tool", {}).get("driver", {}).get("rules", [])}
+              for result in run.get("results", []):
+                  rule_id = result.get("ruleId") or "unknown"
+                  rule = rules.get(rule_id, {})
+                  severity = rule.get("properties", {}).get("security-severity", "?")
+                  message = (result.get("message", {}).get("text") or rule_id).strip().splitlines()[0]
+                  locations = result.get("locations", [])
+                  if locations:
+                      phys = locations[0].get("physicalLocation", {})
+                      uri = phys.get("artifactLocation", {}).get("uri", "?")
+                      line = phys.get("region", {}).get("startLine", "?")
+                      where = f"{uri}:{line}"
+                  else:
+                      where = "-"
+                  findings.append((severity, rule_id, where, message))
+
+          if not findings:
+              print("Trivy failed but produced no SARIF findings.")
+          else:
+              print(f"Trivy filesystem scan reported {len(findings)} MEDIUM-or-higher finding(s):")
+              for severity, rule_id, where, message in findings:
+                  print(f"  [{severity}] {rule_id} {where} - {message}")
 
       - name: Upload Trivy SARIF
-        if: ${{ always() }}
+        if: ${{ always() && hashFiles('trivy-results.sarif') != '' }}
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
         with:
           sarif_file: trivy-results.sarif
