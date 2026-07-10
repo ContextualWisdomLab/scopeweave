@@ -8,7 +8,3 @@ registered_agents.json
 task_agent_mapping.json
 __pycache__/
 *.py[cod]
-
-# SaaS dev database
-data.db
-data.db-*

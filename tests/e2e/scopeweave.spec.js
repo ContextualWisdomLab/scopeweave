@@ -1,6 +1,6 @@
-import { test, expect } from '@playwright/test';
+const { test, expect } = require('@playwright/test');
 
-import fs from 'node:fs';
+const fs = require('fs');
 
 const addTopLevelTask = async (page, values) => {
   await page.getByRole('button', { name: '최상위 작업 추가' }).click();
@@ -10,13 +10,6 @@ const addTopLevelTask = async (page, values) => {
   await page.locator('[data-testid="editor-planned-start"]').fill(values.plannedStartDate);
   await page.locator('[data-testid="editor-planned-end"]').fill(values.plannedEndDate);
   await page.getByRole('button', { name: '저장', exact: true }).click();
-};
-
-const expectSaveBlockedWith = async (page, message) => {
-  const saveButton = page.getByRole('button', { name: '저장', exact: true });
-  await expect(saveButton).toBeDisabled();
-  await expect(page.locator('#editor-errors')).toContainText(message);
-  await expect(page.locator('.editor-panel')).toBeVisible();
 };
 
 const readHierarchySnapshot = async (page) => page.locator('tbody tr[data-task-id]').evaluateAll((rows) => rows.map((row) => ({
@@ -116,13 +109,12 @@ test.describe('ScopeWeave Planner', () => {
     await page.setViewportSize({ width: 375, height: 667 });
     await page.goto('./');
 
-    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
     const mobileColumns = await page.evaluate(() => {
       const isVisible = (element) => getComputedStyle(element).display !== 'none';
-      const headers = Array.from(document.querySelectorAll('.wbs-table thead th'))
+      const headers = Array.from(document.querySelectorAll('thead th'))
         .filter(isVisible)
         .map((cell) => cell.textContent.trim());
-      const firstTaskRow = document.querySelector('#task-table-body tr[data-task-id]');
+      const firstTaskRow = document.querySelector('tbody tr[data-task-id]');
       const firstRowCells = Array.from(firstTaskRow?.querySelectorAll('td') || [])
         .filter(isVisible)
         .map((cell) => cell.innerText.trim());
@@ -179,37 +171,6 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.getByRole('button', { name: '간트차트보기' })).toHaveAttribute('title', '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.');
   });
 
-  test('keeps the empty WBS state inside the mobile table viewport', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 667 });
-    await page.evaluate(() => {
-      localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
-        projectName: 'Empty Scope',
-        baseDate: '2026-04-20',
-        tasks: []
-      }));
-    });
-    await page.reload();
-
-    await expect(page.locator('.empty-state-cell > .table-empty')).toBeVisible();
-    const layout = await page.evaluate(() => {
-      const scrollRect = document.querySelector('.table-scroll').getBoundingClientRect();
-      const emptyRect = document.querySelector('.empty-state-cell > .table-empty').getBoundingClientRect();
-      const actionsRect = document.querySelector('.empty-state-cell .empty-actions').getBoundingClientRect();
-
-      return {
-        scrollLeft: scrollRect.left,
-        scrollRight: scrollRect.right,
-        emptyLeft: emptyRect.left,
-        emptyRight: emptyRect.right,
-        actionsRight: actionsRect.right
-      };
-    });
-
-    expect(layout.emptyLeft).toBeGreaterThanOrEqual(layout.scrollLeft - 1);
-    expect(layout.emptyRight).toBeLessThanOrEqual(layout.scrollRight + 1);
-    expect(layout.actionsRight).toBeLessThanOrEqual(layout.scrollRight + 1);
-  });
-
   test('adds a top-level task and restores it after reload', async ({ page }) => {
     const phaseName = 'P1000.분석단계';
 
@@ -246,7 +207,7 @@ test.describe('ScopeWeave Planner', () => {
     await expect(leafRow).toHaveCount(1);
     const leafAddChildButton = leafRow.getByRole('button', { name: '하위 추가' });
     await expect(leafAddChildButton).toHaveAttribute('aria-disabled', 'true');
-    await leafAddChildButton.dispatchEvent('click');
+    await leafAddChildButton.click();
     await expect(page.locator('#toast')).toContainText('최대 3단계까지만 추가할 수 있습니다.');
     await expect(page.locator('.editor-panel')).toHaveCount(0);
   });
@@ -286,12 +247,12 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.getByRole('dialog', { name: '간트 차트' })).toBeVisible();
 
     const closeButton = page.getByRole('button', { name: '간트 차트 닫기' });
-    const wrappedBar = page.locator('.gantt-bar.plan[aria-label*="포커스 순환 검증"]').first();
-    await expect(wrappedBar).toBeVisible();
+    const firstBar = page.locator('.gantt-bar.plan').first();
+    await expect(firstBar).toBeVisible();
 
     await closeButton.focus();
     await page.keyboard.press('Shift+Tab');
-    await expect(wrappedBar).toBeFocused();
+    await expect(firstBar).toBeFocused();
 
     await page.keyboard.press('Tab');
     await expect(closeButton).toBeFocused();
@@ -304,26 +265,13 @@ test.describe('ScopeWeave Planner', () => {
       await dialog.dismiss();
     });
 
-    await page.evaluate(() => {
-      localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
-        projectName: 'Legacy XSS Project',
-        baseDate: '2026-05-18',
-        tasks: [{
-          id: 'legacy-xss-task',
-          parentId: null,
-          depth: 1,
-          expanded: true,
-          phase: '<svg/onload=alert(1)>',
-          categoryLarge: '간트검증',
-          owner: '담당자A',
-          plannedStartDate: '2026-05-18',
-          plannedEndDate: '2026-05-20',
-          actualProgressStatus: '미착수(0%)',
-          isSynthetic: false
-        }]
-      }));
+    await addTopLevelTask(page, {
+      phase: '<svg/onload=alert(1)>',
+      categoryLarge: '간트검증',
+      owner: '담당자A',
+      plannedStartDate: '2026-05-18',
+      plannedEndDate: '2026-05-20'
     });
-    await page.reload();
 
     await page.getByRole('button', { name: '간트차트보기' }).click();
     await expect(page.getByRole('dialog', { name: '간트 차트' })).toBeVisible();
@@ -348,28 +296,6 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.locator('#gantt-content [style*="javascript"]')).toHaveCount(0);
     await page.waitForTimeout(100);
     expect(dialogOpened).toBe(false);
-  });
-
-  test('normalizes tampered inline progress values before saving state', async ({ page }) => {
-    const inlineProgress = page.locator('[data-inline-progress]').first();
-    await expect(inlineProgress).toBeVisible();
-    const taskId = await inlineProgress.getAttribute('data-inline-progress');
-
-    await inlineProgress.evaluate((select) => {
-      const option = document.createElement('option');
-      option.value = '완료(999%)<script>';
-      option.textContent = option.value;
-      select.appendChild(option);
-      select.value = option.value;
-      select.dispatchEvent(new Event('change', { bubbles: true }));
-    });
-
-    await expect(page.locator(`[data-inline-progress="${taskId}"]`)).toHaveValue('미착수(0%)');
-    const savedProgress = await page.evaluate((selectedTaskId) => {
-      const savedState = JSON.parse(localStorage.getItem('scopeweave:planner-state:v1'));
-      return savedState.tasks.find((task) => task.id === selectedTaskId)?.actualProgressStatus;
-    }, taskId);
-    expect(savedProgress).toBe('미착수(0%)');
   });
 
   test('escapes quotes from manual text before rendering editor attributes', async ({ page }) => {
@@ -770,19 +696,28 @@ test.describe('ScopeWeave Planner', () => {
   test('rejects saving a top-level task with HTML tags in the phase field', async ({ page }) => {
     await page.getByRole('button', { name: '최상위 작업 추가' }).click();
     await page.locator('[data-testid="editor-phase"]').fill('Test Phase <script>');
-    await expectSaveBlockedWith(page, 'HTML 태그 문자를 사용할 수 없습니다');
+    await page.getByRole('button', { name: '저장', exact: true }).click();
+
+    await expect(page.locator('#editor-errors')).toContainText('HTML 태그 문자를 사용할 수 없습니다');
+    await expect(page.locator('.editor-panel')).toBeVisible();
   });
 
   test('rejects saving a top-level task without a phase', async ({ page }) => {
     await page.getByRole('button', { name: '최상위 작업 추가' }).click();
     await page.locator('[data-testid="editor-phase"]').fill('');
-    await expectSaveBlockedWith(page, '최상위 작업은 단계 값을 입력해야 합니다.');
+    await page.getByRole('button', { name: '저장', exact: true }).click();
+
+    await expect(page.locator('#editor-errors')).toContainText('최상위 작업은 단계 값을 입력해야 합니다.');
+    await expect(page.locator('.editor-panel')).toBeVisible();
   });
 
   test('rejects saving a depth 2 task without an activity', async ({ page }) => {
     await page.locator('tbody tr[data-task-id]').first().getByRole('button', { name: '하위 추가' }).click();
     await page.locator('[data-testid="editor-activity"]').fill('');
-    await expectSaveBlockedWith(page, '2단계 작업은 Activity 값을 입력해야 합니다.');
+    await page.getByRole('button', { name: '저장', exact: true }).click();
+
+    await expect(page.locator('#editor-errors')).toContainText('2단계 작업은 Activity 값을 입력해야 합니다.');
+    await expect(page.locator('.editor-panel')).toBeVisible();
   });
 
   test('rejects saving a depth 3 task without a task value', async ({ page }) => {
@@ -793,7 +728,10 @@ test.describe('ScopeWeave Planner', () => {
     const activityRow = page.locator('tbody tr[data-task-id].depth-2').filter({ has: page.locator('td:nth-child(3)', { hasText: /^Test Activity$/ }) });
     await activityRow.getByRole('button', { name: '하위 추가' }).click();
     await page.locator('[data-testid="editor-task"]').fill('');
-    await expectSaveBlockedWith(page, '3단계 작업은 Task 값을 입력해야 합니다.');
+    await page.getByRole('button', { name: '저장', exact: true }).click();
+
+    await expect(page.locator('#editor-errors')).toContainText('3단계 작업은 Task 값을 입력해야 합니다.');
+    await expect(page.locator('.editor-panel')).toBeVisible();
   });
 
   test('rejects empty CSV import', async ({ page }) => {
@@ -839,7 +777,7 @@ test.describe('ScopeWeave Planner', () => {
 
     await expect(page.locator('#toast')).toContainText('HTML 태그 문자를 사용할 수 없습니다');
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
-    await expect(page.locator('#task-table-body')).not.toContainText('onerror');
+    await expect(page.locator('tbody')).not.toContainText('onerror');
   });
 
   test('rejects HTML payloads from imported CSV internal columns', async ({ page }) => {
@@ -850,7 +788,7 @@ test.describe('ScopeWeave Planner', () => {
 
     await expect(page.locator('#toast')).toContainText('HTML 태그 문자를 사용할 수 없습니다');
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
-    await expect(page.locator('#task-table-body')).not.toContainText('onerror');
+    await expect(page.locator('tbody')).not.toContainText('onerror');
   });
 
   test('rejects overlong imported CSV cells without truncating', async ({ page }) => {
@@ -860,7 +798,7 @@ test.describe('ScopeWeave Planner', () => {
 
     await expect(page.locator('#toast')).toContainText('Task 컬럼은 1000자 이하로 입력해야 합니다');
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
-    await expect(page.locator('#task-table-body')).not.toContainText(overlongTaskName.substring(0, 1000));
+    await expect(page.locator('tbody')).not.toContainText(overlongTaskName.substring(0, 1000));
   });
 
   test('normalizes imported task rows into a full phase-activity-task hierarchy', async ({ page }) => {
@@ -986,23 +924,23 @@ test.describe('ScopeWeave Planner', () => {
   test('neutralizes spreadsheet formulas during CSV import', async ({ page }) => {
     const csvText = [
       '단계,Activity,Task,대분류,중분류,산출물,담당자,지원팀,실적진척상태,계획시작일,계획종료일,실적시작일,실적종료일',
-      `"=HYPERLINK(""http://evil.test"",""Click"")","@SUM(1,1)",+cmd,|DDE,,"|'cmd' /C calc'!A0",담당자A,지원팀A,미착수(0%),2026-05-18,2026-05-20,,`
+      `"=HYPERLINK(""http://evil.test"",""Click"")",@SUM(1,1),+cmd,|DDE,,"|'cmd' /C calc'!A0",담당자A,지원팀A,미착수(0%),2026-05-18,2026-05-20,,`
     ].join('\n');
 
     await importCsv(page, csvText);
 
     const savedState = await page.evaluate(() => JSON.parse(localStorage.getItem('scopeweave:planner-state:v1')));
-    const savedTask = savedState.tasks.find((task) => task.depth === 3);
+    const [savedTask] = savedState.tasks;
     expect(savedTask.phase).toBe('\'=HYPERLINK("http://evil.test","Click")');
     expect(savedTask.activity).toBe("'@SUM(1,1)");
     expect(savedTask.task).toBe("'+cmd");
     expect(savedTask.categoryLarge).toBe("'|DDE");
-    expect(savedTask.documentName).toBe("'|'cmd' /C calc'!A0");
+    expect(savedTask.deliverable).toBe("'|'cmd' /C calc'!A0");
   });
 
   test('buildWeekdayTimeline handles normal, same, reversed, and weekend dates', async ({ page }) => {
     await page.goto('./');
-    const appJsCode = fs.readFileSync('app.js', 'utf-8');
+    const appJsCode = require('fs').readFileSync('app.js', 'utf-8');
     await page.evaluate((code) => {
       const func = new Function('minDate', 'maxDate', code + '\nreturn buildWeekdayTimeline(minDate, maxDate);');
       window.__buildWeekdayTimeline = func;

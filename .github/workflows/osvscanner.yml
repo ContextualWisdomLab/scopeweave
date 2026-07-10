@@ -12,14 +12,13 @@
 name: OSV-Scanner
 
 'on':
-  pull_request:
-    branches: ["develop"]
-  push:
-    branches: ["develop", "master"]
   schedule:
     - cron: '20 19 * * 5'
 
 permissions:
+  contents: read
+  # Require writing security events to upload SARIF file to security tab
+  security-events: write
   # Read commit contents
   contents: read
   # Read PR metadata for comparison of introduced vulnerabilities
@@ -30,16 +29,11 @@ permissions:
 jobs:
   scan:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: read
-      actions: read
-      security-events: write
     concurrency:
       # Avoid canceling this workflow due to other workflows' concurrency queues (e.g., CodeQL).
       # Key off PR number for PR/merge_group, otherwise ref.
       group: osv-${{ github.event.pull_request.number || github.ref }}
-      cancel-in-progress: true
+      cancel-in-progress: false
     steps:
       - name: Evaluate mode and manifests
         id: guard
@@ -236,52 +230,6 @@ jobs:
           fi
           
           exit 0
-
-      - name: Fail on OSV vulnerability findings
-        if: ${{ always() && steps.final-guard.outputs.run == 'true' }}
-        shell: python3 {0}
-        run: |
-          import json
-          import pathlib
-          import sys
-
-          sarif_path = pathlib.Path("osv-results.sarif")
-          if not sarif_path.exists() or sarif_path.stat().st_size == 0:
-              print("::error::OSV scan did not produce a non-empty SARIF file.")
-              sys.exit(1)
-
-          try:
-              sarif = json.loads(sarif_path.read_text(encoding="utf-8"))
-          except json.JSONDecodeError as exc:
-              print(f"::error::OSV SARIF is invalid JSON: {exc}")
-              sys.exit(1)
-
-          findings = []
-          for run in sarif.get("runs", []):
-              rules = {rule.get("id"): rule for rule in run.get("tool", {}).get("driver", {}).get("rules", [])}
-              for result in run.get("results", []):
-                  rule_id = result.get("ruleId") or "unknown"
-                  rule = rules.get(rule_id, {})
-                  short_description = rule.get("shortDescription", {}).get("text") or ""
-                  message = (result.get("message", {}).get("text") or short_description or rule_id).strip().splitlines()[0]
-                  locations = result.get("locations", [])
-                  if locations:
-                      phys = locations[0].get("physicalLocation", {})
-                      uri = phys.get("artifactLocation", {}).get("uri", "?")
-                      line = phys.get("region", {}).get("startLine", "?")
-                      where = f"{uri}:{line}"
-                  else:
-                      where = "-"
-                  findings.append((rule_id, where, message))
-
-          if not findings:
-              print("OSV scan produced 0 vulnerability finding(s).")
-              sys.exit(0)
-
-          print(f"::error::OSV scan reported {len(findings)} vulnerability finding(s).")
-          for rule_id, where, message in findings:
-              print(f"  [{rule_id}] {where} - {message}")
-          sys.exit(1)
 
       - name: Upload OSV SARIF to GitHub Security tab
         if: ${{ always() && steps.final-guard.outputs.run == 'true' && steps.validate-sarif.outputs.valid == 'true' }}

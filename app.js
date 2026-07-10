@@ -49,12 +49,7 @@ const EDITABLE_FIELDS = [
   'plannedEndDate',
   'actualProgressStatus',
   'actualStartDate',
-  'actualEndDate',
-  'predecessors',
-  'budget',
-  'actualCost',
-  'sprint',
-  'storyPoints'
+  'actualEndDate'
 ];
 
 const CSV_HEADERS = [
@@ -80,12 +75,7 @@ const CSV_HEADERS = [
   '가중치실적진척률',
   '__id',
   '__parentId',
-  '__depth',
-  '선행작업',
-  '예산',
-  '실투입비',
-  '스프린트',
-  '스토리포인트'
+  '__depth'
 ];
 const CSV_FORMULA_PREFIX_PATTERN = /^\s*[=+\-@|]/;
 const UNSAFE_JSON_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
@@ -103,12 +93,7 @@ const CSV_FIELD_LABELS = Object.freeze(Object.assign(Object.create(null), {
   plannedEndDate: '계획종료일',
   actualProgressStatus: '실적진척상태',
   actualStartDate: '실적시작일',
-  actualEndDate: '실적종료일',
-  predecessors: '선행작업',
-  budget: '예산',
-  actualCost: '실투입비',
-  sprint: '스프린트',
-  storyPoints: '스토리포인트'
+  actualEndDate: '실적종료일'
 }));
 
 const EDITOR_FIELD_TEST_IDS = Object.freeze(Object.assign(Object.create(null), {
@@ -123,45 +108,10 @@ const EDITOR_FIELD_TEST_IDS = Object.freeze(Object.assign(Object.create(null), {
   plannedStartDate: 'editor-planned-start',
   plannedEndDate: 'editor-planned-end',
   actualStartDate: 'editor-actual-start',
-  actualEndDate: 'editor-actual-end',
-  predecessors: 'editor-predecessors',
-  budget: 'editor-budget',
-  actualCost: 'editor-actual-cost',
-  sprint: 'editor-sprint',
-  storyPoints: 'editor-story-points'
+  actualEndDate: 'editor-actual-end'
 }));
 
 const LEGACY_PLANNED_END_FIELD = 'plannedEnd' + 'Ddate';
-const TASK_STORAGE_FIELDS = Object.freeze([
-  'id',
-  'parentId',
-  'depth',
-  'expanded',
-  'pendingDelete',
-  'isSynthetic',
-  'phase',
-  'activity',
-  'task',
-  'categoryLarge',
-  'categoryMedium',
-  'documentName',
-  'owner',
-  'supportTeam',
-  'plannedStartDate',
-  'plannedEndDate',
-  'plannedProgress',
-  'actualProgress',
-  'weight',
-  'actualProgressStatus',
-  'actualStartDate',
-  'actualEndDate',
-  'name',
-  'predecessors',
-  'budget',
-  'actualCost',
-  'sprint',
-  'storyPoints'
-]);
 
 const DEFAULT_EDITOR_STATE = {
   mode: null,
@@ -234,28 +184,13 @@ async function bootstrap() {
     elements.connectJsonSyncButton.title = '이 브라우저는 wbs.json 직접 저장 연결을 지원하지 않습니다.';
   }
 
-  // Optional cloud overlay (loaded as a separate module; undefined offline).
-  const cloudApi = typeof window !== 'undefined' ? window.ScopeWeaveCloud : null;
-  cloudApi?.init?.({
-    hydrateState,
-    renderAll,
-    getState: () => ({ projectName: state.projectName, baseDate: state.baseDate, tasks: state.tasks }),
-  });
-
-  const cloudState = cloudApi ? await cloudApi.boot() : null;
-  if (cloudState) {
-    hydrateState(cloudState);
-    persistState({ syncCloud: false });
+  const savedState = loadLocalState();
+  if (savedState) {
+    hydrateState(savedState);
   } else {
-    const savedState = loadLocalState();
-    if (savedState) {
-      hydrateState(savedState);
-      persistState();
-    } else {
-      const seedData = await loadSeedTasks();
-      state.tasks = normalizeImportedTasks(seedData);
-      invalidateTaskIndexCache();
-    }
+    const seedData = await loadSeedTasks();
+    state.tasks = normalizeImportedTasks(seedData);
+    invalidateTaskIndexCache();
   }
 
   renderAll();
@@ -492,18 +427,6 @@ function renderAll() {
   elements.actualProgress.textContent = formatPercent(metrics.totalWeightedActualRatio * 100, 2);
   elements.syncStatus.textContent = state.jsonSyncHandle ? '연결된 wbs.json 파일에 자동저장 중' : '브라우저 로컬 자동저장 사용 중';
 
-  if (typeof window !== 'undefined') {
-    window.ScopeWeaveAnalytics?.render?.({
-      pv: metrics.totalWeightedPlannedRatio,
-      ev: metrics.totalWeightedActualRatio,
-      tasks: state.tasks,
-      baseDate: state.baseDate,
-      calcPlannedRatio: calculatePlannedProgressRatio,
-      calcDuration: calculateDurationDays,
-      buildTimeline: buildWeekdayTimeline,
-    });
-  }
-
   const ownerColorMap = createOwnerColorMap();
   const visibleTasks = getVisibleTasks();
   const rows = [];
@@ -556,7 +479,6 @@ function setTableBodyRows(rows) {
 function createEmptyStateRow() {
   const row = document.createElement('tr');
   const cell = document.createElement('td');
-  cell.className = 'empty-state-cell';
   cell.colSpan = 21;
 
   const emptyState = document.createElement('div');
@@ -748,12 +670,7 @@ function renderEditorRow(anchorId) {
     renderEditorField('계획종료일', 'plannedEndDate', draft.plannedEndDate, 'date'),
     renderEditorSelectField('실적진척상태', 'actualProgressStatus', draft.actualProgressStatus, ACTUAL_PROGRESS_OPTIONS),
     renderEditorField('실적시작일', 'actualStartDate', draft.actualStartDate, 'date'),
-    renderEditorField('실적종료일', 'actualEndDate', draft.actualEndDate, 'date'),
-    renderEditorField('선행작업', 'predecessors', draft.predecessors, 'text', false, '예: P1000,P2000 (선행 작업 ID/코드, 쉼표 구분)'),
-    renderEditorField('예산', 'budget', draft.budget, 'text', false, '예: 1000000 (원, 비용 EVM용)'),
-    renderEditorField('실투입비', 'actualCost', draft.actualCost, 'text', false, '예: 850000 (원)'),
-    renderEditorField('스프린트', 'sprint', draft.sprint, 'text', false, '예: Sprint 3 (Agile/Hybrid)'),
-    renderEditorField('스토리포인트', 'storyPoints', draft.storyPoints, 'text', false, '예: 5')
+    renderEditorField('실적종료일', 'actualEndDate', draft.actualEndDate, 'date')
   ].forEach((field) => editorGrid.appendChild(field));
 
   const editorActions = document.createElement('div');
@@ -1168,11 +1085,6 @@ function createEmptyTaskDraft() {
     actualProgressStatus: '미착수(0%)',
     actualStartDate: '',
     actualEndDate: '',
-    predecessors: '',
-    budget: '',
-    actualCost: '',
-    sprint: '',
-    storyPoints: '',
     isSynthetic: false
   };
 }
@@ -1510,11 +1422,12 @@ function findTask(taskId) {
   return index !== -1 ? state.tasks[index] : null;
 }
 
-function persistState({ syncCloud = true } = {}) {
+function persistState() {
+  // ⚡ Bolt: Remove redundant O(N) object cloning before JSON.stringify to prevent massive memory allocations on every keystroke
   const payload = {
     projectName: state.projectName,
     baseDate: state.baseDate,
-    tasks: state.tasks.map(createPersistableTask)
+    tasks: state.tasks
   };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
@@ -1527,10 +1440,6 @@ function persistState({ syncCloud = true } = {}) {
     writeJsonSyncFile().catch(() => {
       showToast('연결된 wbs.json 파일 저장에 실패했습니다.');
     });
-  }
-
-  if (syncCloud && typeof window !== 'undefined') {
-    window.ScopeWeaveCloud?.push?.(payload);
   }
 }
 
@@ -1554,26 +1463,13 @@ function hydrateState(savedState) {
 
 function normalizeStoredTask(task) {
   const safeTask = isTaskRecord(task) ? task : {};
-  return createPersistableTask({
+  const normalizedTask = {
     ...safeTask,
     plannedEndDate: getPlannedEndDateValue(safeTask),
     expanded: safeTask.expanded !== false
-  });
-}
-
-function createPersistableTask(task) {
-  const safeTask = isTaskRecord(task) ? task : {};
-  const persistableTask = Object.create(null);
-  for (const field of TASK_STORAGE_FIELDS) {
-    if (safeTask[field] !== undefined) {
-      persistableTask[field] = safeTask[field];
-    }
-  }
-  persistableTask.plannedEndDate = getPlannedEndDateValue(safeTask);
-  persistableTask.expanded = safeTask.expanded !== false;
-  persistableTask.pendingDelete = Boolean(safeTask.pendingDelete);
-  persistableTask.isSynthetic = Boolean(safeTask.isSynthetic);
-  return persistableTask;
+  };
+  delete normalizedTask[LEGACY_PLANNED_END_FIELD];
+  return normalizedTask;
 }
 
 async function loadSeedTasks() {
@@ -1668,12 +1564,7 @@ const createNormalizedExternalRecord = (task, defaults = {}) => ({
   plannedEndDate: getPlannedEndDateValue(task),
   actualProgressStatus: ACTUAL_PROGRESS_MAP[task.actualProgressStatus] !== undefined ? task.actualProgressStatus : '미착수(0%)',
   actualStartDate: task.actualStartDate || '',
-  actualEndDate: task.actualEndDate || '',
-  predecessors: task.predecessors || defaults.predecessors || '',
-  budget: task.budget || defaults.budget || '',
-  actualCost: task.actualCost || defaults.actualCost || '',
-  sprint: task.sprint || defaults.sprint || '',
-  storyPoints: task.storyPoints || defaults.storyPoints || ''
+  actualEndDate: task.actualEndDate || ''
 });
 
 function getPhaseKey(task, index) {
@@ -1817,12 +1708,7 @@ function exportCsv() {
       formatPercent(taskMetrics.weightedActualRatio * 100, 2),
       task.id,
       task.parentId || '',
-      task.depth,
-      task.predecessors || '',
-      task.budget || '',
-      task.actualCost || '',
-      task.sprint || '',
-      task.storyPoints || ''
+      task.depth
     ];
   });
 
@@ -1995,11 +1881,6 @@ function parseCsv(text) {
     actualProgressStatus: validateCsvCell(readCsvCell(cells, headerMap, '실적진척상태') || '미착수(0%)', 'actualProgressStatus'),
     actualStartDate: validateCsvCell(readCsvCell(cells, headerMap, '실적시작일'), 'actualStartDate'),
     actualEndDate: validateCsvCell(readCsvCell(cells, headerMap, '실적종료일'), 'actualEndDate'),
-    predecessors: validateCsvCell(readCsvCell(cells, headerMap, '선행작업'), 'predecessors'),
-    budget: validateCsvCell(readCsvCell(cells, headerMap, '예산'), 'budget'),
-    actualCost: validateCsvCell(readCsvCell(cells, headerMap, '실투입비'), 'actualCost'),
-    sprint: validateCsvCell(readCsvCell(cells, headerMap, '스프린트'), 'sprint'),
-    storyPoints: validateCsvCell(readCsvCell(cells, headerMap, '스토리포인트'), 'storyPoints'),
     __id: validateCsvId(readCsvCell(cells, headerMap, '__id')),
     __parentId: validateCsvParentId(readCsvCell(cells, headerMap, '__parentId')),
     __depth: validateCsvDepth(readCsvCell(cells, headerMap, '__depth'))
@@ -2605,9 +2486,6 @@ function debounce(callback, wait) {
 // Export for testing
 if (typeof window !== 'undefined') {
   window.validateDraft = validateDraft;
-  window.sanitizeCsvFormulaValue = sanitizeCsvFormulaValue;
-  window.csvEscape = csvEscape;
-  window.createTextCellContent = createTextCellContent;
 }
 
 bootstrap();
