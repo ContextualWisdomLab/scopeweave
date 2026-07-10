@@ -1067,6 +1067,32 @@ test.describe('ScopeWeave Planner', () => {
     expect(result.text).toContain('날짜 오류');
   });
 
+  test('renders empty cells as independent DOM clones', async ({ page }) => {
+    const result = await page.evaluate(() => {
+      const emptyCells = Array.from(document.querySelectorAll('.empty-cell'));
+      const [first, second] = emptyCells;
+
+      if (!first || !second) {
+        return { count: emptyCells.length, uniqueCount: new Set(emptyCells).size };
+      }
+
+      first.querySelector('[aria-hidden="true"]').textContent = 'x';
+      first.querySelector('.sr-only').textContent = 'mutated';
+
+      return {
+        count: emptyCells.length,
+        uniqueCount: new Set(emptyCells).size,
+        secondDash: second.querySelector('[aria-hidden="true"]')?.textContent,
+        secondScreenReaderText: second.querySelector('.sr-only')?.textContent
+      };
+    });
+
+    expect(result.count).toBeGreaterThan(1);
+    expect(result.uniqueCount).toBe(result.count);
+    expect(result.secondDash).toBe('-');
+    expect(result.secondScreenReaderText).toBe('값 없음');
+  });
+
   test('hardens dynamically generated download links', async ({ page }) => {
     await addTopLevelTask(page, {
       phase: 'Download hardening',
