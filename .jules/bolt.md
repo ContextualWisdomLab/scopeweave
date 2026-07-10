@@ -76,5 +76,5 @@
 **Learning:** Cleaning drag/drop classes by querying every table row on each drag event adds avoidable DOM traversal cost.
 **Action:** Cache the active drag element and current drop target in state, then clear only those elements during drag cleanup.
 ## 2026-07-07 - Reduce JS-to-C++ DOM instantiation overhead via template caching
-**Learning:** Repeatedly creating multiple DOM elements (e.g., via `document.createElement`, `setAttribute`, and `textContent`) in hot rendering paths like empty cell generation causes massive JS-to-C++ bridge overhead and GC pressure.
-**Action:** Cache static DOM structures as unattached templates and use `.cloneNode(true)` instead of creating them from scratch inside O(N) mapping loops.
+**Learning:** Repeatedly creating DOM nodes or static `{ label, className }` objects in hot rendering paths causes avoidable JS-to-C++ bridge overhead, allocation churn, and GC pressure.
+**Action:** Cache static DOM structures as unattached templates with `.cloneNode(true)`, and return shared immutable progress-state constants instead of allocating equivalent objects inside O(N) mapping loops.
