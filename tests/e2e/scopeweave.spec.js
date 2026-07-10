@@ -350,6 +350,28 @@ test.describe('ScopeWeave Planner', () => {
     expect(dialogOpened).toBe(false);
   });
 
+  test('normalizes tampered inline progress values before saving state', async ({ page }) => {
+    const inlineProgress = page.locator('[data-inline-progress]').first();
+    await expect(inlineProgress).toBeVisible();
+    const taskId = await inlineProgress.getAttribute('data-inline-progress');
+
+    await inlineProgress.evaluate((select) => {
+      const option = document.createElement('option');
+      option.value = '완료(999%)<script>';
+      option.textContent = option.value;
+      select.appendChild(option);
+      select.value = option.value;
+      select.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+
+    await expect(page.locator(`[data-inline-progress="${taskId}"]`)).toHaveValue('미착수(0%)');
+    const savedProgress = await page.evaluate((selectedTaskId) => {
+      const savedState = JSON.parse(localStorage.getItem('scopeweave:planner-state:v1'));
+      return savedState.tasks.find((task) => task.id === selectedTaskId)?.actualProgressStatus;
+    }, taskId);
+    expect(savedProgress).toBe('미착수(0%)');
+  });
+
   test('escapes quotes from manual text before rendering editor attributes', async ({ page }) => {
     const ownerPayload = '" onmouseover="alert(1)';
 
