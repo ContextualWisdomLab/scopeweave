@@ -55,6 +55,7 @@ button {
 }
 
 .app-shell {
+  --table-empty-page-gutter: 98px; /* 2 * 48px shell padding + 2px table-section border */
   display: flex;
   min-height: 100vh;
   flex-direction: column;
@@ -801,6 +802,14 @@ select[data-inline-progress]:focus {
   font-weight: 500;
 }
 
+.empty-state-cell {
+  padding: 0 !important;
+}
+
+.empty-state-cell > .table-empty {
+  width: min(100%, calc(100vw - var(--table-empty-page-gutter)));
+}
+
 @media (max-width: 1400px) {
   .meta-grid-primary,
   .meta-grid-secondary,
@@ -817,6 +826,7 @@ select[data-inline-progress]:focus {
 
 @media (max-width: 800px) {
   .app-shell {
+    --table-empty-page-gutter: 34px; /* 2 * 16px shell padding + 2px table-section border */
     padding: 16px;
     gap: 16px;
   }
@@ -839,6 +849,10 @@ select[data-inline-progress]:focus {
     position: static;
     border-radius: var(--radius-sm);
     padding: 16px;
+  }
+
+  .empty-state-cell > .table-empty {
+    padding: 48px 24px;
   }
 }
 
