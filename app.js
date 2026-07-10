@@ -504,7 +504,6 @@ function renderAll() {
     });
   }
 
-  const ownerColorMap = createOwnerColorMap();
   const visibleTasks = getVisibleTasks();
   const rows = [];
 
@@ -528,7 +527,7 @@ function renderAll() {
   visibleTasks.forEach((task, index) => {
     const taskMetrics = metrics.byTask.get(task.id);
     const hasChildren = cachedHasChildrenSet.has(task.id);
-    rows.push(renderTaskRow(task, taskMetrics, ownerColorMap, index, hasChildren));
+    rows.push(renderTaskRow(task, taskMetrics, index, hasChildren));
     if (state.editor.mode && state.editor.mode === 'edit' && state.editor.targetId === task.id) {
       rows.push(renderEditorRow(task.id));
     }
@@ -622,7 +621,7 @@ function createTableCell(className, content) {
   return cell;
 }
 
-function renderTaskRow(task, taskMetrics, ownerColorMap, index, hasChildren) {
+function renderTaskRow(task, taskMetrics, index, hasChildren) {
   const row = document.createElement('tr');
   row.className = `task-row depth-${task.depth} ${index % 2 === 1 ? 'striped-even' : ''}`;
   row.dataset.taskId = task.id;
@@ -690,7 +689,7 @@ function renderTaskRow(task, taskMetrics, ownerColorMap, index, hasChildren) {
     createTableCell('priority-mobile', createTextCellContent(task.categoryLarge)),
     createTableCell('priority-mobile', createTextCellContent(task.categoryMedium)),
     createTableCell('priority-desktop', createTextCellContent(task.documentName)),
-    createTableCell('priority-mobile', createOwnerCellContent(task.owner, ownerColorMap)),
+    createTableCell('priority-mobile', createOwnerCellContent(task.owner)),
     createTableCell('priority-desktop', createTextCellContent(task.supportTeam)),
     createTableCell('priority-mobile', createStatusCellContent(taskMetrics.progressState)),
     createTableCell('priority-mobile', createTextCellContent(task.plannedStartDate)),
@@ -908,13 +907,20 @@ function createWarningBadge(warning) {
   return badge;
 }
 
-function createOwnerCellContent(owner, ownerColorMap) {
+const persistentOwnerColorMap = new Map();
+
+function createOwnerCellContent(owner) {
   if (!owner) {
     return createEmptyCell();
   }
+
+  if (!persistentOwnerColorMap.has(owner)) {
+    persistentOwnerColorMap.set(owner, OWNER_COLORS[persistentOwnerColorMap.size % OWNER_COLORS.length]);
+  }
+
   const badge = document.createElement('span');
   badge.className = 'owner-badge';
-  badge.style.background = ownerColorMap.get(owner);
+  badge.style.background = persistentOwnerColorMap.get(owner);
   badge.textContent = owner;
   return badge;
 }
@@ -933,9 +939,10 @@ function createStatusCellContent(progressState) {
   return badge;
 }
 
+const metricTextTemplate = document.createElement('span');
+metricTextTemplate.className = 'metric-text';
 function createMetricText(value, testId = '') {
-  const metric = document.createElement('span');
-  metric.className = 'metric-text';
+  const metric = metricTextTemplate.cloneNode(false);
   if (testId) {
     metric.setAttribute('data-testid', testId);
   }
@@ -1483,16 +1490,6 @@ function reorderTaskWithinLevel(draggedId, targetId, placeAfter = true) {
 
 function canReorderWithinLevel(draggedTask, targetTask) {
   return draggedTask.depth === targetTask.depth && draggedTask.parentId === targetTask.parentId;
-}
-
-function createOwnerColorMap() {
-  const ownerColorMap = new Map();
-  state.tasks.forEach((task) => {
-    if (task.owner && !ownerColorMap.has(task.owner)) {
-      ownerColorMap.set(task.owner, OWNER_COLORS[ownerColorMap.size % OWNER_COLORS.length]);
-    }
-  });
-  return ownerColorMap;
 }
 
 function getLastRootTaskId() {
