@@ -926,6 +926,10 @@ function createStatusCellContent(progressState) {
   const badge = document.createElement('span');
   badge.className = `status-badge ${progressState.className}`;
   badge.textContent = progressState.label;
+  if (progressState.description) {
+    badge.title = progressState.description;
+    badge.setAttribute('aria-label', `${progressState.label} - ${progressState.description}`);
+  }
   return badge;
 }
 
@@ -1313,11 +1317,27 @@ function computeTaskMetrics() {
   };
 }
 
-const PROGRESS_STATE_EMPTY = Object.freeze({ label: '', className: '' });
-const PROGRESS_STATE_DONE = Object.freeze({ label: '완료', className: 'done' });
-const PROGRESS_STATE_DELAY = Object.freeze({ label: '지연', className: 'delay' });
-const PROGRESS_STATE_ACTIVE = Object.freeze({ label: '진행', className: 'active' });
-const PROGRESS_STATE_BEFORE = Object.freeze({ label: '진행전', className: 'before' });
+const PROGRESS_STATE_EMPTY = Object.freeze({ label: '', className: '', description: '' });
+const PROGRESS_STATE_DONE = Object.freeze({
+  label: '완료',
+  className: 'done',
+  description: '실적이 모두 입력되어 완료된 작업입니다.',
+});
+const PROGRESS_STATE_DELAY = Object.freeze({
+  label: '지연',
+  className: 'delay',
+  description: '계획 종료일이 지났으나 아직 완료되지 않은 작업입니다.',
+});
+const PROGRESS_STATE_ACTIVE = Object.freeze({
+  label: '진행',
+  className: 'active',
+  description: '실적이 입력되어 진행 중인 작업입니다.',
+});
+const PROGRESS_STATE_BEFORE = Object.freeze({
+  label: '진행전',
+  className: 'before',
+  description: '아직 계획 시작일이 도래하지 않은 작업입니다.',
+});
 
 function deriveProgressState(task, baseDate) {
   if (!task.plannedStartDate || !task.plannedEndDate) {
