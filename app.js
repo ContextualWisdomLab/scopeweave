@@ -2198,6 +2198,8 @@ function renderGantt() {
     backBtn.type = 'button';
     backBtn.className = 'primary-button';
     backBtn.textContent = '작업 목록으로 돌아가기';
+    backBtn.title = '작업 목록으로 돌아가기 (Esc)';
+    backBtn.setAttribute('aria-keyshortcuts', 'Escape');
     backBtn.addEventListener('click', closeGanttModal);
 
     actions.appendChild(backBtn);

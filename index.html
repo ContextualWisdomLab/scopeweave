@@ -35,11 +35,11 @@
         </div>
 
         <div class="meta-grid meta-grid-secondary">
-          <div class="meta-value-card accent-card plan-card">
+          <div class="meta-value-card accent-card plan-card" title="기간(일수) 가중치가 반영된 프로젝트 전체 계획 진척률입니다.">
             <span class="meta-label">계획진척률(누적)</span>
             <strong data-testid="summary-planned-progress" id="summary-planned-progress">0.00%</strong>
           </div>
-          <div class="meta-value-card accent-card actual-card">
+          <div class="meta-value-card accent-card actual-card" title="기간(일수) 가중치가 반영된 프로젝트 전체 실적 진척률입니다.">
             <span class="meta-label">실적진척률(누적)</span>
             <strong data-testid="summary-actual-progress" id="summary-actual-progress">0.00%</strong>
           </div>
@@ -89,7 +89,7 @@
         <button id="add-root-task" type="button" class="primary-button">최상위 작업 추가</button>
         <button id="export-csv" type="button" class="secondary-button">CSV 내보내기</button>
         <button id="import-csv" type="button" class="secondary-button">CSV 가져오기</button>
-        <button id="open-gantt" type="button" class="secondary-button">간트차트보기</button>
+        <button id="open-gantt" type="button" class="secondary-button" aria-haspopup="dialog" aria-controls="gantt-modal">간트차트보기</button>
       </footer>
     </div>
 
@@ -105,7 +105,7 @@
             <h2 id="gantt-title">간트 차트</h2>
             <p>계획은 진회색, 실적은 초록색으로 표시됩니다.</p>
           </div>
-          <button id="close-gantt" type="button" class="icon-button close-button" aria-label="간트 차트 닫기" title="닫기 (Esc)"><span aria-hidden="true">✕</span></button>
+          <button id="close-gantt" type="button" class="icon-button close-button" aria-label="간트 차트 닫기" title="닫기 (Esc)" aria-keyshortcuts="Escape"><span aria-hidden="true">✕</span></button>
         </div>
         <div id="gantt-content" class="gantt-content"></div>
       </div>
