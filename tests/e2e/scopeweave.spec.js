@@ -662,18 +662,28 @@ test.describe('ScopeWeave Planner', () => {
 
     await expect(getBadge('완료테스트')).toHaveText('완료');
     await expect(getBadge('완료테스트')).toHaveClass(/done/);
+    await expect(getBadge('완료테스트')).toHaveAttribute('title', '실적이 모두 입력되어 완료된 작업입니다.');
+    await expect(getBadge('완료테스트')).toHaveAttribute('aria-label', '완료 - 실적이 모두 입력되어 완료된 작업입니다.');
 
     await expect(getBadge('지연테스트')).toHaveText('지연');
     await expect(getBadge('지연테스트')).toHaveClass(/delay/);
+    await expect(getBadge('지연테스트')).toHaveAttribute('title', '계획 종료일이 지났으나 아직 완료되지 않은 작업입니다.');
+    await expect(getBadge('지연테스트')).toHaveAttribute('aria-label', '지연 - 계획 종료일이 지났으나 아직 완료되지 않은 작업입니다.');
 
     await expect(getBadge('진행테스트')).toHaveText('진행');
     await expect(getBadge('진행테스트')).toHaveClass(/active/);
+    await expect(getBadge('진행테스트')).toHaveAttribute('title', '실적이 입력되어 진행 중인 작업입니다.');
+    await expect(getBadge('진행테스트')).toHaveAttribute('aria-label', '진행 - 실적이 입력되어 진행 중인 작업입니다.');
 
     await expect(getBadge('진행전기본테스트')).toHaveText('진행전');
     await expect(getBadge('진행전기본테스트')).toHaveClass(/before/);
+    await expect(getBadge('진행전기본테스트')).toHaveAttribute('title', '아직 계획 시작일이 도래하지 않은 작업입니다.');
+    await expect(getBadge('진행전기본테스트')).toHaveAttribute('aria-label', '진행전 - 아직 계획 시작일이 도래하지 않은 작업입니다.');
 
     await expect(getBadge('진행전미래테스트')).toHaveText('진행전');
     await expect(getBadge('진행전미래테스트')).toHaveClass(/before/);
+    await expect(getBadge('진행전미래테스트')).toHaveAttribute('title', '아직 계획 시작일이 도래하지 않은 작업입니다.');
+    await expect(getBadge('진행전미래테스트')).toHaveAttribute('aria-label', '진행전 - 아직 계획 시작일이 도래하지 않은 작업입니다.');
   });
 
   test('rejects planned end dates before start dates in the editor', async ({ page }) => {
