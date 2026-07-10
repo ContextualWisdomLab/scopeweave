@@ -1619,20 +1619,36 @@ function normalizeImportedTasks(sourceTasks) {
   if (!Array.isArray(sourceTasks)) {
     return [];
   }
-  sourceTasks.forEach((task, index) => validateImportedTask(task, index));
-  const hasExplicitDepth = sourceTasks.some((task) => task.__depth || task.__id || task.__parentId);
+  // Defensive: a hand-edited or tampered wbs.json / localStorage payload can
+  // contain non-object entries (null, numbers, arrays). Drop them so a junk
+  // seed row degrades gracefully instead of throwing an uncaught TypeError
+  // during bootstrap() (which does not wrap this call in try/catch).
+  const records = sourceTasks.filter(isTaskRecord);
+  records.forEach((task, index) => validateImportedTask(task, index));
+  const hasExplicitDepth = records.some((task) => task.__depth || task.__id || task.__parentId);
   if (!hasExplicitDepth) {
-    return buildHierarchicalTasksFromFlatSource(sourceTasks);
+    return buildHierarchicalTasksFromFlatSource(records);
   }
-  return sourceTasks.map((task, index) => ({
+  return records.map((task, index) => ({
     ...createNormalizedExternalRecord(task),
     id: task.__id || createId(index + 1),
     parentId: task.__parentId || null,
-    depth: Number(task.__depth) || inferDepth(task),
+    depth: clampImportedDepth(task),
     expanded: true,
     pendingDelete: false,
     isSynthetic: Boolean(task.isSynthetic)
   }));
+}
+
+function clampImportedDepth(task) {
+  // The CSV path enforces __depth in {1,2,3} (validateCsvDepth). Apply the same
+  // contract to the JSON seed path so a tampered wbs.json can't inject an
+  // out-of-range depth (e.g. "4") that the 3-level renderer never expects.
+  const parsedDepth = Number(task.__depth);
+  if (Number.isInteger(parsedDepth) && parsedDepth >= 1 && parsedDepth <= 3) {
+    return parsedDepth;
+  }
+  return inferDepth(task);
 }
 
 function validateImportedTask(task, index) {
