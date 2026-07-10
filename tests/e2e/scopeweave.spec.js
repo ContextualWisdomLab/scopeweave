@@ -1232,4 +1232,42 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
     const projectNameInput = page.getByTestId('project-name-input');
     await expect(projectNameInput).toHaveAttribute('placeholder', '예: 신규 서비스 구축 프로젝트');
   });
+
+  test('adds helpful tooltips and ARIA attributes for progress cards and gantt buttons', async ({ page }) => {
+    await page.goto('./');
+
+    // Verify progress card tooltips
+    await expect(page.locator('.plan-card')).toHaveAttribute('title', '기간(일수) 가중치가 반영된 프로젝트 전체 계획 진척률입니다.');
+    await expect(page.locator('.actual-card')).toHaveAttribute('title', '기간(일수) 가중치가 반영된 프로젝트 전체 실적 진척률입니다.');
+
+    // Verify open-gantt button ARIA attributes
+    const openGanttBtn = page.locator('#open-gantt');
+    await expect(openGanttBtn).toHaveAttribute('aria-haspopup', 'dialog');
+    await expect(openGanttBtn).toHaveAttribute('aria-controls', 'gantt-modal');
+
+    // Verify close-gantt button ARIA keyshortcut
+    const closeGanttBtn = page.locator('#close-gantt');
+    await expect(closeGanttBtn).toHaveAttribute('aria-keyshortcuts', 'Escape');
+
+    // Create a task without dates to trigger empty gantt chart
+    await page.evaluate(() => {
+      localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
+        projectName: 'ScopeWeave Planner',
+        baseDate: '2026-07-10',
+        tasks: [{
+          id: 'task-1',
+          phase: 'P1',
+          depth: 1,
+          expanded: true
+        }]
+      }));
+    });
+    await page.reload();
+
+    // We can now click open gantt normally because there are tasks
+    await page.locator('#open-gantt').click();
+    const backBtn = page.getByRole('button', { name: '작업 목록으로 돌아가기' });
+    await expect(backBtn).toHaveAttribute('title', '작업 목록으로 돌아가기 (Esc)');
+    await expect(backBtn).toHaveAttribute('aria-keyshortcuts', 'Escape');
+  });
 });
