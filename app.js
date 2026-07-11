@@ -708,17 +708,23 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
   return row;
 }
 
+let actionButtonTemplate = null;
+
 function createActionButton(label, text, action, title) {
-  const button = document.createElement('button');
-  button.type = 'button';
-  button.className = 'icon-button';
+  if (!actionButtonTemplate) {
+    actionButtonTemplate = document.createElement('button');
+    actionButtonTemplate.type = 'button';
+    actionButtonTemplate.className = 'icon-button';
+    const iconSpan = document.createElement('span');
+    iconSpan.setAttribute('aria-hidden', 'true');
+    iconSpan.className = 'action-icon-span';
+    actionButtonTemplate.appendChild(iconSpan);
+  }
+  const button = actionButtonTemplate.cloneNode(true);
   button.dataset.action = action;
   button.setAttribute('aria-label', label);
   button.title = title;
-  const iconSpan = document.createElement('span');
-  iconSpan.setAttribute('aria-hidden', 'true');
-  iconSpan.textContent = text;
-  button.appendChild(iconSpan);
+  button.querySelector('.action-icon-span').textContent = text;
   return button;
 }
 
@@ -849,8 +855,13 @@ function renderEditorSelectField(label, field, value, options) {
   return labelElement;
 }
 
+let treeValueTemplate = null;
+
 function createTreeCellContent(value, depth) {
-  const treeValue = document.createElement('div');
+  if (!treeValueTemplate) {
+    treeValueTemplate = document.createElement('div');
+  }
+  const treeValue = treeValueTemplate.cloneNode(false);
   treeValue.className = `tree-value indent-${depth}`;
   if (value) {
     treeValue.textContent = value;
@@ -900,9 +911,14 @@ function createEmptyCell() {
   return emptyCellTemplate.cloneNode(true);
 }
 
+let warningBadgeTemplate = null;
+
 function createWarningBadge(warning) {
-  const badge = document.createElement('span');
-  badge.className = 'warning-badge';
+  if (!warningBadgeTemplate) {
+    warningBadgeTemplate = document.createElement('span');
+    warningBadgeTemplate.className = 'warning-badge';
+  }
+  const badge = warningBadgeTemplate.cloneNode(false);
   badge.textContent = warning;
   return badge;
 }
