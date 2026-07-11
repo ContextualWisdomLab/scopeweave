@@ -718,7 +718,6 @@ function getDragHandleTemplate() {
 }
 
 let actionButtonTemplate = null;
-
 function createActionButton(label, text, action, title) {
   if (!actionButtonTemplate) {
     actionButtonTemplate = document.createElement('button');
@@ -1105,10 +1104,31 @@ function handleRowAction(action, taskId) {
 
   if (action === 'delete') {
     if (window.confirm(`'${task.task || task.activity || task.phase || '선택한 작업'}' 항목과 모든 하위 작업을 삭제하시겠습니까?`)) {
+      const visibleTasksBefore = getVisibleTasks();
+      const currentIndex = visibleTasksBefore.findIndex(t => t.id === taskId);
+
       deleteTaskAndDescendants(taskId);
       persistState();
       renderAll();
       showToast('작업을 삭제했습니다.');
+
+      // 🎨 Palette: Restore focus after deletion to keep keyboard flow
+      requestAnimationFrame(() => {
+        const visibleTasksAfter = getVisibleTasks();
+        if (visibleTasksAfter.length > 0) {
+          const nextTargetIndex = Math.min(currentIndex, visibleTasksAfter.length - 1);
+          const nextTargetId = visibleTasksAfter[nextTargetIndex].id;
+          const nextTargetBtn = document.querySelector(`tr[data-task-id="${nextTargetId}"] button[data-action="delete"]`);
+          if (nextTargetBtn) {
+            nextTargetBtn.focus();
+          }
+        } else {
+          const addRootBtn = document.getElementById('add-root-task');
+          if (addRootBtn) {
+            addRootBtn.focus();
+          }
+        }
+      });
     }
     return;
   }

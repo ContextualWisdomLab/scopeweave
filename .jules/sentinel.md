@@ -124,3 +124,7 @@
 **Vulnerability:** Inline progress dropdown update bypassed central sanitization logic.
 **Learning:** Event handlers that modify state directly from DOM values must independently validate input.
 **Prevention:** Apply validation rules (like ACTUAL_PROGRESS_OPTIONS) at all state mutation boundaries, not just in main form submission.
+## 2024-07-11 - Prevent CSV DDE injection via pipe-prefixed formulas in backend audit export
+**Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
+**Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
+**Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
