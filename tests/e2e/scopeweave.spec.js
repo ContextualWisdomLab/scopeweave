@@ -76,6 +76,8 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.getByTestId('summary-total-days')).not.toHaveText('0일');
     await expect(page.getByTestId('summary-planned-progress')).toContainText('%');
     await expect(page.getByTestId('summary-actual-progress')).toContainText('%');
+    await expect(page.getByLabel('요구사항 RFI RFP WBS 추정 분석')).toContainText('PM 분석');
+    await expect(page.getByLabel('요구사항 RFI RFP WBS 추정 분석')).toContainText('RFI/RFP');
     await expect(page).toHaveTitle('ScopeWeave Planner');
 
     await page.getByTestId('project-name-input').fill('My New Project');
