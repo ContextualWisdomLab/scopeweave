@@ -40,6 +40,9 @@ two modes:
 - **Schedule control**: EVM (SPI·SV) + S-curve, CPM critical path with slack,
   predecessors, baselines (freeze/compare — slip table), revision history +
   restore
+- **PM analysis**: deterministic requirements/RFI/RFP readiness, WBS estimation
+  coverage, inter-event dependency risk, and procurement package section checks
+  from the existing WBS fields
 - **Billing**: Free (2 projects / 3 members) vs Pro ₩19,000/mo — server-enforced
   402 caps; Stripe when configured, mock otherwise
 - **Platform**: signed webhooks (HMAC-SHA256, retry + delivery log, secret
@@ -175,6 +178,9 @@ the previous; merging in order auto-retargets the next):
 - Synthetic hierarchy wrapper rows generated from imported flat records are
   excluded from external `wbs.json` sync so the saved JSON remains in the
   user-facing schema.
+- Requirements/RFI/RFP and WBS-estimation analysis is computed locally from the
+  single `tasks` array. It is a readiness signal over evidence already present
+  in the plan, not an external estimator or LLM judgment.
 
 ## Security workflow
 
