@@ -653,11 +653,7 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
     actionStack.appendChild(placeholder);
   }
 
-  const dragHandle = document.createElement('div');
-  dragHandle.className = 'drag-handle';
-  dragHandle.setAttribute('aria-hidden', 'true');
-  dragHandle.title = '드래그하여 순서 변경';
-  dragHandle.textContent = '⋮⋮';
+  const dragHandle = getDragHandleTemplate();
 
   const isLeaf = task.depth >= 3;
   const addChildButton = createActionButton(`하위 추가 - ${rowEntityName}`, '＋', 'add-child', isLeaf ? '최대 3단계까지만 추가할 수 있습니다.' : `하위 추가 - ${rowEntityName}`);
@@ -708,6 +704,19 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
   return row;
 }
 
+// ⚡ Bolt: Cache static DOM structures to avoid JS-to-C++ instantiation overhead in hot rendering paths.
+let dragHandleTemplate = null;
+function getDragHandleTemplate() {
+  if (!dragHandleTemplate) {
+    dragHandleTemplate = document.createElement('div');
+    dragHandleTemplate.className = 'drag-handle';
+    dragHandleTemplate.setAttribute('aria-hidden', 'true');
+    dragHandleTemplate.title = '드래그하여 순서 변경';
+    dragHandleTemplate.textContent = '⋮⋮';
+  }
+  return dragHandleTemplate.cloneNode(true);
+}
+
 let actionButtonTemplate = null;
 
 function createActionButton(label, text, action, title) {
@@ -717,14 +726,13 @@ function createActionButton(label, text, action, title) {
     actionButtonTemplate.className = 'icon-button';
     const iconSpan = document.createElement('span');
     iconSpan.setAttribute('aria-hidden', 'true');
-    iconSpan.className = 'action-icon-span';
     actionButtonTemplate.appendChild(iconSpan);
   }
   const button = actionButtonTemplate.cloneNode(true);
   button.dataset.action = action;
   button.setAttribute('aria-label', label);
   button.title = title;
-  button.querySelector('.action-icon-span').textContent = text;
+  button.firstChild.textContent = text;
   return button;
 }
 
