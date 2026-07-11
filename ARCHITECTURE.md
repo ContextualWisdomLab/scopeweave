@@ -7,6 +7,8 @@
   presentation.
 - `app.js`: state, rendering, editing, validation, persistence,
   import/export, and Gantt logic.
+- `analytics.js`: EVM, S-curve, CPM, workload, cost, and requirements/RFI/RFP
+  WBS-estimation readiness analysis.
 - `wbs.json`: seed data in the user-specified JSON array format.
 
 ## CI and security structure

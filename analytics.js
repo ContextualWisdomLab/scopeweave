@@ -289,6 +289,239 @@ export function computeWorkload(tasks) {
     .sort((a, b) => b.count - a.count || a.owner.localeCompare(b.owner));
 }
 
+const PM_SIGNAL_GROUPS = Object.freeze({
+  requirements: [
+    'requirement', 'requisite', 'stakeholder', '요구사항', '요건', '요구정의',
+    '요구 정의', '요구사항정의', '인터뷰', 'workshop', '워크숍'
+  ],
+  procurement: [
+    'rfi', 'rfp', 'request for information', 'request for proposal',
+    '제안요청', '정보요청', '제안서', '입찰', '공급사', '벤더', 'vendor'
+  ],
+  business: [
+    'business', '사업계획', '사업 계획', 'business case', 'roi', '효익',
+    '편익', '예산', 'budget', 'commercial', '비용'
+  ],
+  evaluation: [
+    'evaluation', 'criteria', 'acceptance', '평가', '배점', '선정기준',
+    '평가기준', '검수', '수락기준', '인수기준'
+  ],
+  questions: ['질의', '질문', 'q&a', 'qa', 'clarification', '답변', '응답'],
+});
+
+function taskSearchText(task) {
+  return [
+    task.phase,
+    task.activity,
+    task.task,
+    task.categoryLarge,
+    task.categoryMedium,
+    task.documentName,
+    task.owner,
+    task.supportTeam,
+    task.sprint,
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function hasSignal(text, keywords) {
+  return keywords.some((keyword) => text.includes(keyword.toLowerCase()));
+}
+
+function taskDurationDays(task, calcDuration) {
+  if (typeof task.duration === 'number' && task.duration >= 0) return task.duration;
+  if (task.plannedStartDate && task.plannedEndDate) {
+    if (calcDuration) return calcDuration(task.plannedStartDate, task.plannedEndDate);
+    const ms = Date.parse(task.plannedEndDate) - Date.parse(task.plannedStartDate);
+    if (Number.isFinite(ms) && ms >= 0) return Math.max(1, Math.round(ms / 86400000));
+  }
+  return 0;
+}
+
+function predecessorTokens(value) {
+  if (!value) return [];
+  const values = Array.isArray(value) ? value : String(value).split(',');
+  return values.map((v) => String(v).trim()).filter(Boolean);
+}
+
+function predecessorId(token, idset) {
+  if (idset.has(token)) return token;
+  const m = token.match(/^(.*?)(FS|SS|FF|SF)?([+-]\d+)?$/i);
+  return (m?.[1] || token).trim();
+}
+
+function scoreRatio(numerator, denominator) {
+  return denominator > 0 ? numerator / denominator : 0;
+}
+
+function scoreClass(score) {
+  if (score >= 80) return 'active';
+  if (score >= 55) return 'delay';
+  return 'before';
+}
+
+// PM readiness analysis for requirements/RFI/RFP/WBS estimation. This is a
+// deterministic first slice: it extracts auditable signals from existing WBS
+// fields rather than introducing an LLM/runtime dependency.
+export function computePmAnalysis(tasks, opts = {}) {
+  const list = Array.isArray(tasks) ? tasks : [];
+  if (!list.length) {
+    return {
+      tasks: { total: 0, leaf: 0 },
+      readinessScore: 0,
+      readinessClass: 'before',
+      signals: { requirements: 0, procurement: 0, business: 0, evaluation: 0, questions: 0 },
+      coverage: { requirements: 0, estimate: 0, owner: 0, dates: 0, deliverables: 0, procurement: 0 },
+      estimates: {
+        totalDurationDays: 0,
+        storyPoints: 0,
+        budget: 0,
+        estimateReady: 0,
+        ownerReady: 0,
+        dateReady: 0,
+        deliverableReady: 0,
+      },
+      dependencies: {
+        declaredLinks: 0,
+        density: 0,
+        risk: 'low',
+        danglingPredecessors: [],
+        cycleDetected: false,
+        criticalPath: [],
+        projectDurationDays: 0,
+      },
+      procurement: { ready: 0, total: 6, sections: [] },
+      recommendations: [],
+    };
+  }
+  const parentIds = new Set(list.map((t) => t.parentId).filter(Boolean).map(String));
+  const leaves = list.filter((t) => !parentIds.has(String(t.id)));
+  const workItems = leaves.length ? leaves : list;
+  const idset = new Set(list.map((t) => String(t.id)));
+
+  const signalCounts = {
+    requirements: 0,
+    procurement: 0,
+    business: 0,
+    evaluation: 0,
+    questions: 0,
+  };
+
+  let ownerReady = 0;
+  let dateReady = 0;
+  let deliverableReady = 0;
+  let estimateReady = 0;
+  let totalDurationDays = 0;
+  let storyPoints = 0;
+  let budget = 0;
+  let declaredLinks = 0;
+  const danglingPredecessors = [];
+
+  for (const task of workItems) {
+    const text = taskSearchText(task);
+    for (const key of Object.keys(signalCounts)) {
+      if (hasSignal(text, PM_SIGNAL_GROUPS[key])) signalCounts[key] += 1;
+    }
+    if (String(task.owner || '').trim()) ownerReady += 1;
+    if (task.plannedStartDate && task.plannedEndDate) dateReady += 1;
+    if (String(task.documentName || '').trim()) deliverableReady += 1;
+
+    const duration = taskDurationDays(task, opts.calcDuration);
+    const points = Number(task.storyPoints) || 0;
+    const taskBudget = Number(task.budget) || 0;
+    totalDurationDays += duration;
+    storyPoints += points;
+    budget += taskBudget;
+    if (duration > 0 || points > 0 || taskBudget > 0) estimateReady += 1;
+
+    for (const token of predecessorTokens(task.predecessors)) {
+      declaredLinks += 1;
+      const pid = predecessorId(token, idset);
+      if (!idset.has(pid)) danglingPredecessors.push({ taskId: task.id, predecessor: token });
+    }
+  }
+
+  const cpm = computeCpm(list, opts);
+  const procurementSections = [
+    { id: 'requirements', label: '요구사항/요건 정의', present: signalCounts.requirements > 0 || deliverableReady > 0 },
+    { id: 'scope', label: 'WBS 범위와 산출물', present: workItems.length > 0 && deliverableReady > 0 },
+    { id: 'schedule', label: '일정/마일스톤', present: dateReady > 0 },
+    { id: 'commercial', label: '예산/사업성', present: budget > 0 || signalCounts.business > 0 },
+    { id: 'evaluation', label: '평가/검수 기준', present: signalCounts.evaluation > 0 },
+    { id: 'questions', label: '질의응답/RFI 루프', present: signalCounts.questions > 0 || signalCounts.procurement > 0 },
+  ];
+  const procurementReady = procurementSections.filter((s) => s.present).length;
+
+  const dependencyDensity = scoreRatio(declaredLinks, Math.max(workItems.length, 1));
+  const dependencyRisk = cpm.cycleDetected || danglingPredecessors.length
+    ? 'high'
+    : workItems.length >= 4 && dependencyDensity < 0.2
+      ? 'medium'
+      : 'low';
+
+  const requirementScore = Math.min(1, scoreRatio(signalCounts.requirements, Math.max(1, Math.ceil(workItems.length / 4))));
+  const estimateScore = scoreRatio(estimateReady, workItems.length);
+  const ownerScore = scoreRatio(ownerReady, workItems.length);
+  const dateScore = scoreRatio(dateReady, workItems.length);
+  const dependencyScore = dependencyRisk === 'high' ? 0 : dependencyRisk === 'medium' ? 0.5 : 1;
+  const procurementScore = scoreRatio(procurementReady, procurementSections.length);
+  const readinessScore = Math.round(
+    (requirementScore * 20)
+    + (estimateScore * 25)
+    + (ownerScore * 15)
+    + (dateScore * 15)
+    + (dependencyScore * 15)
+    + (procurementScore * 10)
+  );
+
+  const recommendations = [];
+  if (signalCounts.requirements === 0) recommendations.push('요구사항/요건 정의 작업 또는 산출물을 WBS에 추가하십시오.');
+  if (estimateReady < workItems.length) recommendations.push('모든 leaf 작업에 기간, 스토리포인트, 또는 예산 중 하나 이상의 추정값을 채우십시오.');
+  if (ownerReady < workItems.length) recommendations.push('담당자 미지정 leaf 작업을 줄여 RFI/RFP 책임 추적성을 높이십시오.');
+  if (dateReady < workItems.length) recommendations.push('계획 시작/종료일을 채워 일정 기반 WBS 추정을 완성하십시오.');
+  if (dependencyRisk === 'high') recommendations.push('순환 또는 존재하지 않는 선행작업을 먼저 정리하십시오.');
+  else if (dependencyRisk === 'medium') recommendations.push('leaf 작업 간 선행작업을 더 명시해 inter-event dependency 추정의 근거를 보강하십시오.');
+  if (procurementReady < procurementSections.length) recommendations.push('RFI/RFP 패키지에 빠진 요구사항, 일정, 예산, 평가, 질의응답 섹션을 보강하십시오.');
+
+  return {
+    tasks: { total: list.length, leaf: workItems.length },
+    readinessScore,
+    readinessClass: scoreClass(readinessScore),
+    signals: signalCounts,
+    coverage: {
+      requirements: requirementScore,
+      estimate: estimateScore,
+      owner: ownerScore,
+      dates: dateScore,
+      deliverables: scoreRatio(deliverableReady, workItems.length),
+      procurement: procurementScore,
+    },
+    estimates: {
+      totalDurationDays,
+      storyPoints,
+      budget,
+      estimateReady,
+      ownerReady,
+      dateReady,
+      deliverableReady,
+    },
+    dependencies: {
+      declaredLinks,
+      density: dependencyDensity,
+      risk: dependencyRisk,
+      danglingPredecessors,
+      cycleDetected: cpm.cycleDetected,
+      criticalPath: cpm.criticalPath,
+      projectDurationDays: cpm.projectDurationDays,
+    },
+    procurement: {
+      ready: procurementReady,
+      total: procurementSections.length,
+      sections: procurementSections,
+    },
+    recommendations,
+  };
+}
+
 function renderWorkload(panel, tasks) {
   const rows = computeWorkload(tasks);
   const named = rows.filter((r) => r.owner !== '미지정');
@@ -348,6 +581,7 @@ function renderPanel({ pv, ev, tasks, baseDate, calcPlannedRatio, calcDuration, 
   renderCpm(panel, tasks, calcDuration);
   renderCostEvm(panel, tasks);
   renderWorkload(panel, tasks);
+  renderPmAnalysis(panel, tasks, calcDuration);
 }
 
 // Critical-path summary + row highlighting. Only shown when tasks declare
@@ -426,6 +660,55 @@ function buildScurveSvg(series, evm, baseDate) {
   return wrap;
 }
 
+function renderPmAnalysis(panel, tasks, calcDuration) {
+  const analysis = computePmAnalysis(tasks, { calcDuration });
+  if (!analysis.tasks.total) return;
+  const krw = (v) => `₩${Math.round(v).toLocaleString('ko-KR')}`;
+  const section = el('section', { class: 'pm-analysis', 'aria-label': '요구사항 RFI RFP WBS 추정 분석' });
+  section.appendChild(el('p', { class: 'pm-title' }, 'PM 분석: 요구사항 · RFI/RFP · WBS 추정'));
+
+  const metric = (title, value, cls) => {
+    const card = el('div', { class: `evm-metric ${cls || ''}` });
+    card.appendChild(el('span', { class: 'evm-label' }, title));
+    card.appendChild(el('strong', { class: 'evm-value' }, value));
+    return card;
+  };
+  const row = el('div', { class: 'evm-metrics pm-metrics' });
+  row.appendChild(metric('준비도', `${analysis.readinessScore}점`, `evm-${analysis.readinessClass}`));
+  row.appendChild(metric('추정 WBS', `${analysis.estimates.estimateReady}/${analysis.tasks.leaf}`, ''));
+  row.appendChild(metric('의존성', `${analysis.dependencies.declaredLinks}개`, `evm-${analysis.dependencies.risk === 'low' ? 'active' : 'delay'}`));
+  row.appendChild(metric('RFI/RFP', `${analysis.procurement.ready}/${analysis.procurement.total}`, ''));
+  row.appendChild(metric('총예산', analysis.estimates.budget ? krw(analysis.estimates.budget) : 'N/A', ''));
+  section.appendChild(row);
+
+  const summary = `기간합 ${analysis.estimates.totalDurationDays}일 · 스토리포인트 ${analysis.estimates.storyPoints || 0} · 임계경로 ${analysis.dependencies.criticalPath.length}개 작업`;
+  section.appendChild(el('p', { class: 'pm-summary' }, summary));
+
+  const list = el('ul', { class: 'pm-section-list' });
+  for (const item of analysis.procurement.sections) {
+    const li = el('li', { class: item.present ? 'pm-present' : 'pm-missing' });
+    li.appendChild(el('span', {}, item.label));
+    li.appendChild(el('strong', {}, item.present ? '있음' : '보강'));
+    list.appendChild(li);
+  }
+  section.appendChild(list);
+
+  if (analysis.recommendations.length) {
+    const rec = el('ol', { class: 'pm-recommendations' });
+    analysis.recommendations.slice(0, 4).forEach((text) => rec.appendChild(el('li', {}, text)));
+    section.appendChild(rec);
+  }
+  panel.appendChild(section);
+}
+
 if (typeof window !== 'undefined') {
-  window.ScopeWeaveAnalytics = { render: renderPanel, computeEvm, buildScurve, computeCpm, computeWorkload, computeCostEvm };
+  window.ScopeWeaveAnalytics = {
+    render: renderPanel,
+    computeEvm,
+    buildScurve,
+    computeCpm,
+    computeWorkload,
+    computeCostEvm,
+    computePmAnalysis,
+  };
 }

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS
+  estimation coverage, dependency risk, and procurement package section checks.
+- Preserved PM-analysis research papers, NASA WBS handbook, BCP 14, and JSON
+  Schema 2020-12 source documents under `docs/research/pm-analysis/`.
 - Added companion dependency-review and OSV workflows so Strix
   manifest-only findings can be verified against authoritative PR-head
   checks.

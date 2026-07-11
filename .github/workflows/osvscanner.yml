@@ -1,0 +1,39 @@
+name: OSV Scanner
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: osvscanner-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  osv-scan:
+    if: github.event_name == 'pull_request'
+    # Companion SCA lane for manifest evidence. Central .github still owns the
+    # required review/security/scheduler workflows.
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@3a7550f43ba5b58905a821ce3a0ed24c4858b3f4 # v2.3.8 + export-results gate
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    with:
+      scan-args: |-
+        --maven-registry=https://maven-central.storage-download.googleapis.com/maven2
+        --no-resolve
+        -r
+        ./
+      fail-on-vuln: false
+
+  manifest-pattern-coverage:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Document manifest coverage
+        run: |
+          echo 'Recursive OSV scanning covers package-lock.json and requirements(-[A-Za-z0-9._-]+)?\.txt manifests when present.'
