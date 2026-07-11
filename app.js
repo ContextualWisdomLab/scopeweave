@@ -862,8 +862,13 @@ function renderEditorSelectField(label, field, value, options) {
   return labelElement;
 }
 
+let treeValueTemplate = null;
+
 function createTreeCellContent(value, depth) {
-  const treeValue = document.createElement('div');
+  if (!treeValueTemplate) {
+    treeValueTemplate = document.createElement('div');
+  }
+  const treeValue = treeValueTemplate.cloneNode(false);
   treeValue.className = `tree-value indent-${depth}`;
   if (value) {
     treeValue.textContent = value;
@@ -913,9 +918,14 @@ function createEmptyCell() {
   return emptyCellTemplate.cloneNode(true);
 }
 
+let warningBadgeTemplate = null;
+
 function createWarningBadge(warning) {
-  const badge = document.createElement('span');
-  badge.className = 'warning-badge';
+  if (!warningBadgeTemplate) {
+    warningBadgeTemplate = document.createElement('span');
+    warningBadgeTemplate.className = 'warning-badge';
+  }
+  const badge = warningBadgeTemplate.cloneNode(false);
   badge.textContent = warning;
   return badge;
 }
