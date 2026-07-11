@@ -104,3 +104,6 @@
 ## 2024-05-24 - 상태 배지 접근성 및 컨텍스트 개선
 **Learning:** 상태 배지와 같은 시각적 요소는 색상이나 짧은 텍스트(예: "완료", "지연")만으로는 모든 사용자(특히 화면 판독기 사용자나 의미를 모르는 사용자)에게 충분한 정보를 제공하지 못할 수 있다.
 **Action:** 상태 배지에 `title`과 `aria-label` 속성을 추가하여 상황에 맞는 구체적인 설명(툴팁)을 제공함으로써 스크린 리더 접근성과 일반 사용자의 이해도를 모두 향상시킨다.
+## 2024-05-31 - [Keyboard Navigation Focus Management on Deletion]
+**Learning:** [When an element is removed from the DOM, focus naturally resets to the document body, breaking the keyboard navigation flow. It is critical to calculate the next logical focus target prior to deletion and programmatically restore focus post-render.]
+**Action:** [In future components involving item deletion within lists or tables, proactively incorporate index calculations before removing items to manage focus restoration correctly.]
