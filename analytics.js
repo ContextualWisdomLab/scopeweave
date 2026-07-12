@@ -120,8 +120,9 @@ export function computeCpm(tasks, opts = {}) {
   const indeg = new Map(ids.map((id) => [id, preds.get(id).length]));
   const queue = ids.filter((id) => indeg.get(id) === 0);
   const order = [];
-  while (queue.length) {
-    const id = queue.shift();
+  let queueIndex = 0; // ⚡ Optimization: Use tracked index instead of O(K) queue.shift()
+  while (queueIndex < queue.length) {
+    const id = queue[queueIndex++];
     order.push(id);
     for (const s of succ.get(id)) {
       indeg.set(s.id, indeg.get(s.id) - 1);
