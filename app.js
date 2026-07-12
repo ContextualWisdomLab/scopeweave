@@ -1931,6 +1931,13 @@ async function handleCsvImport(event) {
     return;
   }
 
+  if (state.tasks.length > 0) {
+    if (!window.confirm('새 CSV 파일을 가져오면 현재 등록된 모든 작업 데이터가 지워집니다.\n계속하시겠습니까?')) {
+      event.target.value = '';
+      return;
+    }
+  }
+
   if (file.size > 5 * 1024 * 1024) {
     showToast('파일 크기는 5MB를 초과할 수 없습니다.');
     event.target.value = '';

@@ -107,3 +107,7 @@
 ## 2024-05-31 - [Keyboard Navigation Focus Management on Deletion]
 **Learning:** [When an element is removed from the DOM, focus naturally resets to the document body, breaking the keyboard navigation flow. It is critical to calculate the next logical focus target prior to deletion and programmatically restore focus post-render.]
 **Action:** [In future components involving item deletion within lists or tables, proactively incorporate index calculations before removing items to manage focus restoration correctly.]
+
+## $(date +%Y-%m-%d) - Add Confirmation Dialog for CSV Import
+**Learning:** File import actions that completely overwrite existing application state can lead to severe data loss if triggered accidentally. In a WBS planner where users invest significant time building task hierarchies, destructive imports need explicit user confirmation.
+**Action:** Always add a confirmation dialog (`window.confirm` or custom modal) for any import or sync action that wipes out the current in-memory or persisted state, especially when there's no undo mechanism.
