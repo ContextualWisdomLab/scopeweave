@@ -26,6 +26,11 @@ const readHierarchySnapshot = async (page) => page.locator('tbody tr[data-task-i
 })));
 
 const importCsv = async (page, csvText) => {
+  page.on('dialog', async dialog => {
+    if (dialog.message().includes('모든 작업 데이터가 지워집니다')) {
+      await dialog.accept();
+    }
+  });
   await page.locator('#csv-file-input').setInputFiles({
     name: 'wbs_export_20260420.csv',
     mimeType: 'text/csv',
