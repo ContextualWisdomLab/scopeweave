@@ -6,6 +6,7 @@
 
 const TOKEN_KEY = 'scopeweave:token';
 const PROJECT_KEY = 'scopeweave:project';
+const ROUTE_TOKEN_RE = /^[A-Za-z0-9_-]{16,128}$/;
 
 let host = null;   // { hydrateState, renderAll, getState } provided by app.js
 let version = 0;   // open project's doc version (optimistic concurrency)
@@ -20,6 +21,21 @@ const getProjectId = () => localStorage.getItem(PROJECT_KEY) || '';
 const setProjectId = (id) => (id ? localStorage.setItem(PROJECT_KEY, String(id)) : localStorage.removeItem(PROJECT_KEY));
 const isAuthed = () => Boolean(getToken());
 
+export function routeTokenPathSegment(value) {
+  const token = String(value || '').trim();
+  return ROUTE_TOKEN_RE.test(token) ? token : '';
+}
+
+function safeApiPath(path) {
+  if (typeof path !== 'string' || !path.startsWith('/api/')) throw new Error('invalid api path');
+  const origin = typeof location !== 'undefined' ? location.origin : 'http://localhost';
+  const url = new URL(path, origin);
+  if (url.origin !== origin || !(url.pathname === '/api' || url.pathname.startsWith('/api/'))) {
+    throw new Error('invalid api path');
+  }
+  return `${url.pathname}${url.search}`;
+}
+
 function toast(message) {
   const el = document.getElementById('toast');
   if (!el) return;
@@ -30,7 +46,7 @@ function toast(message) {
 }
 
 async function api(path, { method = 'GET', body } = {}) {
-  const res = await fetch(path, {
+  const res = await fetch(safeApiPath(path), {
     method,
     headers: {
       'content-type': 'application/json',
@@ -103,10 +119,10 @@ export const cloud = {
   // Returns the saved project state to hydrate, or null (→ local/seed path).
   async boot() {
     // public read-only share view (?share=TOKEN) — no account needed
-    const shareToken = new URLSearchParams(location.search).get('share');
+    const shareToken = routeTokenPathSegment(new URLSearchParams(location.search).get('share'));
     if (shareToken) {
       try {
-        const p = await api(`/api/shared/${encodeURIComponent(shareToken)}`);
+        const p = await api(`/api/shared/${shareToken}`);
         shareMode = true;
         renderAuthUI();
         toast('읽기 전용 공유 보기입니다 — 변경은 저장되지 않습니다.');
@@ -2127,7 +2143,7 @@ if (typeof window !== 'undefined' && location.hash.startsWith('#token=')) {
 // Auto-accept an invite token from the URL (?invite=...) once logged in.
 if (typeof window !== 'undefined') {
   const params = new URLSearchParams(location.search);
-  const inviteToken = params.get('invite');
+  const inviteToken = routeTokenPathSegment(params.get('invite'));
   if (inviteToken && getToken()) {
     api(`/api/invites/${inviteToken}/accept`, { method: 'POST' })
       .then((res) => { currentOrgId = res.orgId; refreshProjects().then(renderAuthUI); toast('초대를 수락했습니다.'); })
