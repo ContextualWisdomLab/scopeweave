@@ -621,35 +621,54 @@ function createTableCell(className, content) {
   return cell;
 }
 
+// ⚡ Bolt: Cache unattached DOM elements as templates to eliminate repetitive
+// document.createElement() JS-to-C++ allocation overhead during O(N) table rendering loops.
+// Using cloneNode() is measurably faster when creating thousands of rows.
+let taskRowTemplate = null;
+let actionCellTemplate = null;
+let actionStackTemplate = null;
+let toggleButtonTemplate = null;
+let toggleIconTemplate = null;
+let togglePlaceholderTemplate = null;
+
 function renderTaskRow(task, taskMetrics, index, hasChildren) {
-  const row = document.createElement('tr');
+  if (!taskRowTemplate) {
+    taskRowTemplate = document.createElement('tr');
+    taskRowTemplate.draggable = true;
+    actionCellTemplate = document.createElement('td');
+    actionStackTemplate = document.createElement('div');
+    actionStackTemplate.className = 'action-stack';
+    toggleButtonTemplate = document.createElement('button');
+    toggleButtonTemplate.type = 'button';
+    toggleButtonTemplate.className = 'toggle-button';
+    toggleButtonTemplate.dataset.action = 'toggle';
+    toggleIconTemplate = document.createElement('span');
+    toggleIconTemplate.setAttribute('aria-hidden', 'true');
+    togglePlaceholderTemplate = document.createElement('span');
+    togglePlaceholderTemplate.className = 'toggle-placeholder';
+  }
+
+  const row = taskRowTemplate.cloneNode(false);
   row.className = `task-row depth-${task.depth} ${index % 2 === 1 ? 'striped-even' : ''}`;
   row.dataset.taskId = task.id;
-  row.draggable = true;
 
-  const actionCell = document.createElement('td');
-  const actionStack = document.createElement('div');
-  actionStack.className = 'action-stack';
+  const actionCell = actionCellTemplate.cloneNode(false);
+  const actionStack = actionStackTemplate.cloneNode(false);
 
   const rowEntityName = task.task || task.activity || task.phase || '작업';
 
   if (hasChildren) {
-    const toggleButton = document.createElement('button');
+    const toggleButton = toggleButtonTemplate.cloneNode(false);
     const toggleLabel = task.expanded ? '접기' : '펼치기';
-    toggleButton.type = 'button';
-    toggleButton.className = 'toggle-button';
-    toggleButton.dataset.action = 'toggle';
     toggleButton.setAttribute('aria-label', `${toggleLabel} - ${rowEntityName}`);
     toggleButton.setAttribute('aria-expanded', String(task.expanded));
     toggleButton.title = `${toggleLabel} - ${rowEntityName}`;
-    const toggleIcon = document.createElement('span');
-    toggleIcon.setAttribute('aria-hidden', 'true');
+    const toggleIcon = toggleIconTemplate.cloneNode(false);
     toggleIcon.textContent = task.expanded ? '▼' : '▶';
     toggleButton.appendChild(toggleIcon);
     actionStack.appendChild(toggleButton);
   } else {
-    const placeholder = document.createElement('span');
-    placeholder.className = 'toggle-placeholder';
+    const placeholder = togglePlaceholderTemplate.cloneNode(false);
     actionStack.appendChild(placeholder);
   }
 
