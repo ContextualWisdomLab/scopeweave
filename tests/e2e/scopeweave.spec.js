@@ -73,7 +73,8 @@ test.describe('ScopeWeave Planner', () => {
   });
 
   test('renders seeded rows and summary metrics', async ({ page }) => {
-    await expect(page.locator('link[rel="preload"][href="styles.css"][as="style"]')).toHaveCount(1);
+    await expect(page.locator('link[rel="modulepreload"][href="cloud-sync.js"]')).toHaveCount(1);
+    await expect(page.locator('link[rel="modulepreload"][href="analytics.js"]')).toHaveCount(1);
     await expect(page.locator('link[rel="modulepreload"][href="app.js"]')).toHaveCount(1);
     await expect(page.getByRole('button', { name: '최상위 작업 추가' })).toBeVisible();
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
