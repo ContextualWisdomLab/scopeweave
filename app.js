@@ -2315,6 +2315,10 @@ function renderGantt() {
   elements.ganttContent.replaceChildren(shell);
 }
 
+let ganttRowTemplate = null;
+let ganttCellTemplate = null;
+let ganttTrackTemplate = null;
+
 function createGanttMetaTable() {
   const table = document.createElement('table');
   const thead = document.createElement('thead');
@@ -2340,8 +2344,12 @@ function createGanttMetaTable() {
   thead.appendChild(headerRow);
 
   const tbody = document.createElement('tbody');
+  if (!ganttRowTemplate) {
+    ganttRowTemplate = document.createElement('tr');
+  }
+
   state.tasks.forEach((task) => {
-    const row = document.createElement('tr');
+    const row = ganttRowTemplate.cloneNode(false);
     row.append(
       createTableCell('', createTreeCellContent(task.phase || task.activity || task.task || '-', task.depth)),
       createTableCell('', createTextCellContent(task.activity)),
@@ -2385,13 +2393,20 @@ function createGanttChartTable(weeks, weekdays, totalWidth) {
   thead.append(weekRow, dayRow);
 
   const tbody = document.createElement('tbody');
+
+  if (!ganttRowTemplate) ganttRowTemplate = document.createElement('tr');
+  if (!ganttCellTemplate) ganttCellTemplate = document.createElement('td');
+  if (!ganttTrackTemplate) {
+    ganttTrackTemplate = document.createElement('div');
+    ganttTrackTemplate.className = 'gantt-day-track';
+  }
+
   state.tasks.forEach((task) => {
-    const row = document.createElement('tr');
-    const cell = document.createElement('td');
+    const row = ganttRowTemplate.cloneNode(false);
+    const cell = ganttCellTemplate.cloneNode(false);
     cell.colSpan = weekdays.length;
 
-    const track = document.createElement('div');
-    track.className = 'gantt-day-track';
+    const track = ganttTrackTemplate.cloneNode(false);
     track.style.width = `${totalWidth}px`;
 
     const planBar = createGanttBarElement(task.plannedStartDate, task.plannedEndDate, weekdays, 'plan', task);
