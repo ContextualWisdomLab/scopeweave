@@ -2414,40 +2414,59 @@ function createGanttChartTable(weeks, weekdays, totalWidth) {
 
 function buildWeekdayTimeline(minDate, maxDate) {
   const days = [];
-  let cursor = getMonday(minDate);
-  const endBoundary = getFriday(maxDate);
-  // ⚡ Bolt: Use direct string comparison for cursor loop since both are generated valid dates.
-  while (cursor <= endBoundary) {
-    if (!isWeekend(cursor)) {
+  // ⚡ Bolt: Use integer milliseconds for iteration and date math to prevent GC pressure from string parsing and Date allocations.
+  let cursorMs = dateStringToUtcMs(getMonday(minDate));
+  const endMs = dateStringToUtcMs(getFriday(maxDate));
+
+  while (cursorMs <= endMs) {
+    const dateObj = new Date(cursorMs);
+    const dayOfWeek = dateObj.getUTCDay();
+
+    // Only process weekdays (Mon-Fri)
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      const cursorStr = formatDateInput(dateObj);
+
+      // Pre-calculate monday for this week to avoid duplicate calculations in groupTimelineByWeek
+      let mondayStr;
+      if (dayOfWeek === 1) {
+        mondayStr = cursorStr;
+      } else {
+        const mondayMs = cursorMs - (dayOfWeek - 1) * 86400000;
+        mondayStr = formatDateInput(new Date(mondayMs));
+      }
+
       days.push({
-        date: cursor,
-        dayLabel: cursor.slice(8, 10)
+        date: cursorStr,
+        dayLabel: cursorStr.slice(8, 10),
+        monday: mondayStr
       });
     }
-    cursor = addDays(cursor, 1);
+    cursorMs += 86400000; // +1 day
   }
   return days;
 }
 
 function groupTimelineByWeek(days) {
-  // ⚡ Bolt: Use an O(1) Map instead of O(N) Array.find to avoid O(N^2) bottleneck when grouping timeline days
+  // ⚡ Bolt: Avoid redundant O(N) Date math per timeline item by grouping using pre-calculated Monday properties directly.
   const groups = [];
   const groupMap = new Map();
-  days.forEach((day) => {
-    const monday = getMonday(day.date);
-    const existing = groupMap.get(monday);
-    if (existing) {
-      existing.days.push(day);
-    } else {
-      const newGroup = {
+
+  for (let i = 0; i < days.length; i++) {
+    const day = days[i];
+    const monday = day.monday;
+
+    let group = groupMap.get(monday);
+    if (!group) {
+      group = {
         monday,
         label: `${monday.slice(5, 7)}월 ${monday.slice(8, 10)}일 주간`,
-        days: [day]
+        days: []
       };
-      groups.push(newGroup);
-      groupMap.set(monday, newGroup);
+      groups.push(group);
+      groupMap.set(monday, group);
     }
-  });
+    group.days.push(day);
+  }
   return groups;
 }
 
