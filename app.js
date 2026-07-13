@@ -170,6 +170,7 @@ const DEFAULT_EDITOR_STATE = {
   depth: 1,
   insertAfterId: null,
   draft: null,
+  initialDraft: null,
   errors: []
 };
 
@@ -1167,16 +1168,19 @@ function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertA
       depth: task.depth,
       insertAfterId: targetId,
       draft: { ...task },
+      initialDraft: { ...task },
       errors: []
     };
   } else {
+    const newDraft = draft ? { ...draft } : createEmptyTaskDraft();
     state.editor = {
       mode,
       targetId: null,
       parentId,
       depth,
       insertAfterId,
-      draft: draft ? { ...draft } : createEmptyTaskDraft(),
+      draft: { ...newDraft },
+      initialDraft: { ...newDraft },
       errors: []
     };
   }
@@ -1191,7 +1195,16 @@ function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertA
   });
 }
 
-function closeEditor() {
+function closeEditor(force = false) {
+  if (!force && state.editor.draft && state.editor.initialDraft) {
+    const hasChanges = Object.keys(state.editor.initialDraft).some(
+      key => state.editor.draft[key] !== state.editor.initialDraft[key]
+    );
+    if (hasChanges && !window.confirm('저장하지 않은 변경 사항이 있습니다. 편집을 취소하시겠습니까?')) {
+      return;
+    }
+  }
+
   state.editor = { ...DEFAULT_EDITOR_STATE, errors: [] };
   renderAll();
 
@@ -1234,7 +1247,7 @@ function saveEditor() {
     insertTaskAfter(newTask, state.editor.insertAfterId);
   }
 
-  closeEditor();
+  closeEditor(true);
   persistState();
   renderAll();
   showToast('변경 내용을 저장했습니다.');
@@ -1968,7 +1981,7 @@ async function handleCsvImport(event) {
     const imported = parseCsv(text);
     state.tasks = validateImportedTasks(normalizeImportedTasks(imported));
     invalidateTaskIndexCache();
-    closeEditor();
+    closeEditor(true);
     persistState();
     renderAll();
     showToast('CSV를 가져왔습니다. 기존 데이터는 새 CSV로 대체되었습니다.');

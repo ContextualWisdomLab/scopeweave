@@ -945,6 +945,9 @@ test.describe('ScopeWeave Planner', () => {
     await expect(cancelBtn).toHaveAttribute('aria-keyshortcuts', 'Escape');
 
     await page.locator('[data-testid="editor-owner"]').fill('임시담당자');
+
+    // Handle the prompt that appears because we made a change
+    page.once('dialog', dialog => dialog.accept());
     await cancelBtn.click();
 
     await expect(page.locator('.editor-panel')).toBeHidden();
@@ -1239,6 +1242,52 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
 
     const projectNameInput = page.getByTestId('project-name-input');
     await expect(projectNameInput).toHaveAttribute('placeholder', '예: 신규 서비스 구축 프로젝트');
+  });
+
+  test('prompts for confirmation when closing editor with unsaved changes', async ({ page }) => {
+    await page.goto('./');
+
+    await page.getByRole('button', { name: '최상위 작업 추가' }).click();
+
+    // Attempting to close with no changes shouldn't prompt
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.editor-panel')).not.toBeVisible();
+
+    await page.getByRole('button', { name: '최상위 작업 추가' }).click();
+
+    // Type into an editor field
+    const phaseInput = page.getByTestId('editor-phase');
+    await phaseInput.fill('Phase X');
+
+    // Setup dialog handler to mock returning false (cancel close)
+    let dialogTriggered = false;
+    let dialogMessage = '';
+    const dismissHandler = async (dialog) => {
+      dialogTriggered = true;
+      dialogMessage = dialog.message();
+      await dialog.dismiss();
+    };
+    page.on('dialog', dismissHandler);
+
+    // Try closing via Cancel button
+    await page.getByRole('button', { name: '취소', exact: true }).click();
+
+    expect(dialogTriggered).toBe(true);
+    expect(dialogMessage).toBe('저장하지 않은 변경 사항이 있습니다. 편집을 취소하시겠습니까?');
+    // Editor should still be visible because we dismissed the prompt
+    await expect(page.locator('.editor-panel')).toBeVisible();
+
+    // Now accept the dialog to let it close
+    page.off('dialog', dismissHandler);
+    const acceptHandler = async (dialog) => {
+      await dialog.accept();
+    };
+    page.on('dialog', acceptHandler);
+
+    // Try closing via Escape key
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.editor-panel')).not.toBeVisible();
+    page.off('dialog', acceptHandler);
   });
 
   test('adds helpful tooltips and ARIA attributes for progress cards and gantt buttons', async ({ page }) => {
