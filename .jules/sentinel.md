@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+
+## 2026-07-13 - ReDoS vulnerability via string concatenation in regex
+**Learning:** Instantiating `new RegExp()` using dynamic template literals (`<${name}>...`) is highly prone to catastrophic backtracking or Regex Denial of Service (ReDoS) if the dynamic input is user-controllable.
+**Action:** Always prefer safe string searching methods (e.g., `indexOf`, `substring`) for basic tag parsing or when user input is involved, rather than generating dynamic regular expressions.

@@ -740,8 +740,18 @@ function openReportModal() {
 // hand-edited files ever matter.
 export function parseMsProjectXml(xml) {
   const tag = (block, name) => {
-    const m = block.match(new RegExp(`<${name}>([^<]*)</${name}>`));
-    return m ? m[1].trim() : '';
+    // 🛡️ Sentinel: Safe indexOf parsing instead of RegExp to prevent ReDoS on dynamic tag names
+    const openTag = `<${name}>`;
+    const closeTag = `</${name}>`;
+    const start = block.indexOf(openTag);
+    if (start === -1) return '';
+    const contentStart = start + openTag.length;
+    const end = block.indexOf(closeTag, contentStart);
+    if (end === -1) return '';
+    const content = block.substring(contentStart, end);
+    // Mimic the regex behavior of `([^<]*)` by taking up to the first `<`
+    const truncateIdx = content.indexOf('<');
+    return (truncateIdx === -1 ? content : content.substring(0, truncateIdx)).trim();
   };
   const unescape = (s) => s
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
