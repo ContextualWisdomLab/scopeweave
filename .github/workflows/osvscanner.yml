@@ -17,7 +17,7 @@ jobs:
     if: github.event_name == 'pull_request'
     # Companion SCA lane for manifest evidence. Central .github still owns the
     # required review/security/scheduler workflows.
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@3a7550f43ba5b58905a821ce3a0ed24c4858b3f4 # v2.3.8 + export-results gate
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@a82132c0bd6c7261ffcb78e754c46c70ab57ad9a # v2.3.8 + export-results gate
     permissions:
       actions: read
       contents: read
