@@ -118,3 +118,6 @@
 ## 2026-07-15 - Restore keyboard focus after destroying row-level controls
 **Learning:** When inline row actions (like edit or add-child) trigger a full table re-render that replaces the DOM, natively relying on `document.activeElement` to restore focus will fail because that node is detached from the document. This pushes screen reader and keyboard users back to the start of the page.
 **Action:** When a destructive render occurs, save contextual identifiers (like `taskId` and `triggerAction`) from the original event rather than a DOM reference. After the render cycle completes (using `requestAnimationFrame`), query the newly created DOM for the equivalent element and call `.focus()`.
+## 2026-07-15 - ReDoS in JS Regex
+**Learning:** ReDoS issues can get flagged by SAST tools (like Semgrep) when using dynamic RegExp strings combined with capturing logic.
+**Action:** Instead of dynamically constructing `new RegExp` objects out of inputs to parse strings, use standard String methods like `indexOf` and `substring` to safely extract values from structured text without triggering ReDoS checks.
