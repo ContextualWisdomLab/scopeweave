@@ -963,6 +963,8 @@ function createOwnerCellContent(owner) {
     persistentOwnerColorMap.set(owner, OWNER_COLORS[persistentOwnerColorMap.size % OWNER_COLORS.length]);
   }
 
+  // ⚡ Bolt: Cache DOM elements as templates and use .cloneNode(false)
+  // to avoid JS-to-C++ allocation overhead in O(N) render loops.
   if (!ownerBadgeTemplate) {
     ownerBadgeTemplate = document.createElement('span');
     ownerBadgeTemplate.className = 'owner-badge';
@@ -981,6 +983,8 @@ function createStatusCellContent(progressState) {
     return createEmptyCell();
   }
 
+  // ⚡ Bolt: Use cached template with .cloneNode(false) to minimize
+  // DOM element creation overhead.
   if (!statusBadgeTemplate) {
     statusBadgeTemplate = document.createElement('span');
   }
