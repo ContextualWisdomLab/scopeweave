@@ -42,11 +42,7 @@ function writeStaticCoverageSummary() {
       }
     }, null, 2)
   );
-  writeFileSync(
-    join('coverage', 'coverage-final.json'),
-    JSON.stringify({})
-  );
-  console.log('Wrote static app coverage gate evidence to coverage/coverage-summary.json and coverage/coverage-final.json.');
+  console.log('Wrote static app coverage gate evidence to coverage/coverage-summary.json.');
 }
 
 if (mode === 'docstrings') {
