@@ -115,3 +115,6 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+## 2026-07-15 - Restore keyboard focus after destroying row-level controls
+**Learning:** When inline row actions (like edit or add-child) trigger a full table re-render that replaces the DOM, natively relying on `document.activeElement` to restore focus will fail because that node is detached from the document. This pushes screen reader and keyboard users back to the start of the page.
+**Action:** When a destructive render occurs, save contextual identifiers (like `taskId` and `triggerAction`) from the original event rather than a DOM reference. After the render cycle completes (using `requestAnimationFrame`), query the newly created DOM for the equivalent element and call `.focus()`.

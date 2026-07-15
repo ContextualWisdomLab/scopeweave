@@ -381,7 +381,7 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
     }
 
     if (!event.target.closest('input, select, button, label, .drag-handle')) {
-      openEditor({ mode: 'edit', targetId: taskId });
+      openEditor({ mode: 'edit', targetId: taskId, triggerAction: 'row-click' });
     }
   });
 
@@ -1108,7 +1108,7 @@ function handleRowAction(action, taskId) {
   }
 
   if (action === 'edit') {
-    openEditor({ mode: 'edit', targetId: taskId });
+    openEditor({ mode: 'edit', targetId: taskId, triggerAction: 'edit' });
     return;
   }
 
@@ -1118,7 +1118,7 @@ function handleRowAction(action, taskId) {
       return;
     }
     task.expanded = true;
-    openEditor({ mode: 'create', parentId: taskId, depth: task.depth + 1, insertAfterId: getLastDescendantId(taskId), draft: createChildDraft(task) });
+    openEditor({ mode: 'create', parentId: taskId, depth: task.depth + 1, insertAfterId: getLastDescendantId(taskId), draft: createChildDraft(task), triggerAction: 'add-child' });
     return;
   }
 
@@ -1154,8 +1154,12 @@ function handleRowAction(action, taskId) {
   }
 }
 
-function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertAfterId = null, draft = null }) {
-  state.previousFocus = document.activeElement;
+function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertAfterId = null, draft = null, triggerAction = null }) {
+  state.previousFocus = {
+    taskId: targetId || parentId,
+    action: triggerAction,
+    element: document.activeElement
+  };
   if (mode === 'edit') {
     const task = findTask(targetId);
     if (!task) {
@@ -1209,7 +1213,19 @@ function closeEditor(force = false) {
   renderAll();
 
   if (state.previousFocus) {
-    state.previousFocus.focus();
+    const focusContext = state.previousFocus;
+    requestAnimationFrame(() => {
+      if (focusContext.taskId && focusContext.action && focusContext.action !== 'row-click') {
+        const button = document.querySelector(`tr[data-task-id="${focusContext.taskId}"] button[data-action="${focusContext.action}"]`);
+        if (button) {
+          button.focus();
+        } else if (focusContext.element && document.body.contains(focusContext.element)) {
+          focusContext.element.focus();
+        }
+      } else if (focusContext.element && document.body.contains(focusContext.element)) {
+        focusContext.element.focus();
+      }
+    });
     state.previousFocus = null;
   }
 }
@@ -2193,7 +2209,7 @@ function exportJsonArray() {
 }
 
 function openGanttModal() {
-  state.previousFocus = document.activeElement;
+  state.previousFocus = { element: document.activeElement };
   elements.ganttModal.classList.remove('hidden');
   renderGantt();
   // Focus the modal to handle Escape key properly
@@ -2203,7 +2219,9 @@ function openGanttModal() {
 function closeGanttModal() {
   elements.ganttModal.classList.add('hidden');
   if (state.previousFocus) {
-    state.previousFocus.focus();
+    if (state.previousFocus.element && document.body.contains(state.previousFocus.element)) {
+      state.previousFocus.element.focus();
+    }
     state.previousFocus = null;
   }
 }

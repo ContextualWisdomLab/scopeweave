@@ -1333,4 +1333,49 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
     await expect(backBtn).toHaveAttribute('title', '작업 목록으로 돌아가기 (Esc)');
     await expect(backBtn).toHaveAttribute('aria-keyshortcuts', 'Escape');
   });
+
+  test('restores keyboard focus to row action button after closing inline editor', async ({ page }) => {
+    // Seed test data with a single task row
+    await page.addInitScript(() => {
+      localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
+        projectName: 'Test Project',
+        baseDate: '2026-07-15',
+        tasks: [{
+          id: 'test-task-1',
+          parentId: null,
+          depth: 1,
+          expanded: true,
+          phase: 'Target Phase',
+          plannedStartDate: '2026-07-15',
+          plannedEndDate: '2026-07-20',
+          actualProgressStatus: '미착수(0%)'
+        }]
+      }));
+    });
+    await page.goto('./');
+
+    const taskRow = page.locator('tr[data-task-id="test-task-1"]');
+    const editBtn = taskRow.locator('button[data-action="edit"]');
+
+    // 1. Focus the edit button programmatically (simulate keyboard nav)
+    await editBtn.focus();
+    await expect(editBtn).toBeFocused();
+
+    // 2. Press Enter to open the editor
+    await editBtn.press('Enter');
+
+    // 3. Verify editor opens and focus moves into it
+    const editorPhaseInput = page.locator('input[data-editor-field="phase"]');
+    await expect(editorPhaseInput).toBeVisible();
+    await expect(editorPhaseInput).toBeFocused();
+
+    // 4. Dismiss editor using Escape
+    await editorPhaseInput.press('Escape');
+
+    // 5. Verify the editor closed
+    await expect(editorPhaseInput).not.toBeVisible();
+
+    // 6. Verify focus returned to the exact original edit button
+    await expect(editBtn).toBeFocused();
+  });
 });
