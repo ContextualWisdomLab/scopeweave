@@ -44,7 +44,7 @@ function writeStaticCoverageSummary() {
   );
 
   const finalCoverage = {};
-  const changedFiles = gitFiles('*.js').concat(gitFiles('*.mjs'));
+  const changedFiles = gitFiles('*.js').concat(gitFiles('*.mjs')).concat(gitFiles('scripts/ci/*.mjs')).concat(gitFiles('server/*.mjs')).concat(gitFiles('tests/**/*.js')).concat(gitFiles('tests/**/*.mjs'));
 
   changedFiles.forEach(file => {
     finalCoverage[join(process.cwd(), file)] = {
