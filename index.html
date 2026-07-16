@@ -21,7 +21,10 @@
         </div>
         <div class="meta-grid meta-grid-primary">
           <label class="meta-field" for="project-name">
-            <span>프로젝트 이름</span>
+            <div style="display: flex; justify-content: space-between;">
+              <span>프로젝트 이름</span>
+              <span id="project-name-counter" aria-live="polite">0/120</span>
+            </div>
             <input data-testid="project-name-input" id="project-name" type="text" maxlength="120" placeholder="예: 신규 서비스 구축 프로젝트" />
           </label>
           <label class="meta-field meta-field-compact" for="base-date">

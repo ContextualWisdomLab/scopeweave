@@ -209,6 +209,7 @@ function getTaskIndexById(taskId) {
 
 const elements = {
   projectNameInput: document.getElementById('project-name'),
+  projectNameCounter: document.getElementById('project-name-counter'),
   baseDateInput: document.getElementById('base-date'),
   totalDays: document.getElementById('summary-total-days'),
   plannedProgress: document.getElementById('summary-planned-progress'),
@@ -486,6 +487,7 @@ function renderAll() {
   const metrics = computeTaskMetrics();
 
   elements.projectNameInput.value = state.projectName;
+  elements.projectNameCounter.textContent = `${state.projectName.length}/120`;
   document.title = state.projectName === DEFAULT_PROJECT_NAME ? DEFAULT_PROJECT_NAME : `${state.projectName} - ${DEFAULT_PROJECT_NAME}`;
   elements.baseDateInput.value = state.baseDate;
   elements.totalDays.textContent = `${formatNumber(metrics.totalDays)}일`;
