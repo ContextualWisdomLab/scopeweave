@@ -2315,6 +2315,8 @@ function renderGantt() {
   elements.ganttContent.replaceChildren(shell);
 }
 
+let ganttMetaRowTemplate = null;
+
 function createGanttMetaTable() {
   const table = document.createElement('table');
   const thead = document.createElement('thead');
@@ -2340,28 +2342,42 @@ function createGanttMetaTable() {
   thead.appendChild(headerRow);
 
   const tbody = document.createElement('tbody');
-  state.tasks.forEach((task) => {
-    const row = document.createElement('tr');
-    row.append(
-      createTableCell('', createTreeCellContent(task.phase || task.activity || task.task || '-', task.depth)),
-      createTableCell('', createTextCellContent(task.activity)),
-      createTableCell('', createTextCellContent(task.task)),
-      createTableCell('', createTextCellContent(task.categoryLarge)),
-      createTableCell('', createTextCellContent(task.categoryMedium)),
-      createTableCell('', createTextCellContent(task.documentName)),
-      createTableCell('', createTextCellContent(task.owner)),
-      createTableCell('', createTextCellContent(task.supportTeam)),
-      createTableCell('', createTextCellContent(task.plannedStartDate)),
-      createTableCell('', createTextCellContent(task.plannedEndDate)),
-      createTableCell('', createTextCellContent(task.actualStartDate)),
-      createTableCell('', createTextCellContent(task.actualEndDate))
+
+  if (!ganttMetaRowTemplate) {
+    ganttMetaRowTemplate = document.createElement('tr');
+    ganttMetaRowTemplate.append(
+      createTableCell(''), createTableCell(''), createTableCell(''), createTableCell(''),
+      createTableCell(''), createTableCell(''), createTableCell(''), createTableCell(''),
+      createTableCell(''), createTableCell(''), createTableCell(''), createTableCell('')
     );
+  }
+
+  state.tasks.forEach((task) => {
+    const row = ganttMetaRowTemplate.cloneNode(true);
+    row.children[0].appendChild(createTreeCellContent(task.phase || task.activity || task.task || '-', task.depth));
+    row.children[1].appendChild(createTextCellContent(task.activity));
+    row.children[2].appendChild(createTextCellContent(task.task));
+    row.children[3].appendChild(createTextCellContent(task.categoryLarge));
+    row.children[4].appendChild(createTextCellContent(task.categoryMedium));
+    row.children[5].appendChild(createTextCellContent(task.documentName));
+    row.children[6].appendChild(createTextCellContent(task.owner));
+    row.children[7].appendChild(createTextCellContent(task.supportTeam));
+    row.children[8].appendChild(createTextCellContent(task.plannedStartDate));
+    row.children[9].appendChild(createTextCellContent(task.plannedEndDate));
+    row.children[10].appendChild(createTextCellContent(task.actualStartDate));
+    row.children[11].appendChild(createTextCellContent(task.actualEndDate));
+
     tbody.appendChild(row);
   });
 
   table.append(thead, tbody);
   return table;
 }
+
+let ganttRowTemplate = null;
+let ganttCellTemplate = null;
+let ganttTrackTemplate = null;
+let ganttBarTemplate = null;
 
 function createGanttChartTable(weeks, weekdays, totalWidth) {
   const table = document.createElement('table');
@@ -2385,13 +2401,20 @@ function createGanttChartTable(weeks, weekdays, totalWidth) {
   thead.append(weekRow, dayRow);
 
   const tbody = document.createElement('tbody');
+
+  if (!ganttRowTemplate) {
+    ganttRowTemplate = document.createElement('tr');
+    ganttCellTemplate = document.createElement('td');
+    ganttTrackTemplate = document.createElement('div');
+    ganttTrackTemplate.className = 'gantt-day-track';
+  }
+
   state.tasks.forEach((task) => {
-    const row = document.createElement('tr');
-    const cell = document.createElement('td');
+    const row = ganttRowTemplate.cloneNode(false);
+    const cell = ganttCellTemplate.cloneNode(false);
     cell.colSpan = weekdays.length;
 
-    const track = document.createElement('div');
-    track.className = 'gantt-day-track';
+    const track = ganttTrackTemplate.cloneNode(false);
     track.style.width = `${totalWidth}px`;
 
     const planBar = createGanttBarElement(task.plannedStartDate, task.plannedEndDate, weekdays, 'plan', task);
@@ -2500,7 +2523,14 @@ function createGanttBarElement(startDate, endDate, weekdays, type, task) {
   if (normalizedEndIndex < startIndex) {
     return null;
   }
-  const bar = document.createElement('div');
+
+  if (!ganttBarTemplate) {
+    ganttBarTemplate = document.createElement('div');
+    ganttBarTemplate.setAttribute('role', 'img');
+    ganttBarTemplate.tabIndex = 0;
+  }
+
+  const bar = ganttBarTemplate.cloneNode(false);
   bar.className = `gantt-bar ${type}`;
   bar.style.left = `${startIndex * 36}px`;
   bar.style.width = `${(normalizedEndIndex - startIndex + 1) * 36}px`;
@@ -2513,8 +2543,6 @@ function createGanttBarElement(startDate, endDate, weekdays, type, task) {
 
   bar.title = tooltipText;
   bar.setAttribute('aria-label', tooltipText);
-  bar.setAttribute('role', 'img');
-  bar.tabIndex = 0;
 
   return bar;
 }
