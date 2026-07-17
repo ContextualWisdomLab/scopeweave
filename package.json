@@ -8,7 +8,7 @@
     "check:python-docstrings": "node scripts/ci/static_coverage_evidence.mjs docstrings",
     "coverage": "node scripts/ci/static_coverage_evidence.mjs coverage && npm run test:fuzz",
     "server": "node server/server.mjs",
-    "test:api": "node tests/api/smoke.mjs && node tests/api/ratelimit.test.mjs",
+    "test:api": "node tests/api/auth-secret.test.mjs && node tests/api/smoke.mjs && node tests/api/ratelimit.test.mjs",
     "test:unit": "node tests/unit/analytics.test.mjs && node tests/unit/cpm.test.mjs && node tests/unit/baseline-compare.test.mjs && node tests/unit/workload.test.mjs && node tests/unit/cost-evm.test.mjs && node tests/unit/msproject.test.mjs && node tests/unit/dep-types.test.mjs && node tests/unit/weekly-report.test.mjs && node tests/unit/clearfolio.test.mjs && node tests/unit/sprint-stats.test.mjs && node tests/unit/burndown.test.mjs && node tests/unit/pm-analysis.test.mjs && node tests/unit/cloud-sync-security.test.mjs",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",

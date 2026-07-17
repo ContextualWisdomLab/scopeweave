@@ -40,7 +40,8 @@ python3 -m pytest tests/config       # workflow-ownership / governance checks
 node tests/unit/cpm.test.mjs
 npx playwright test tests/e2e/scopeweave.spec.js
 
-# Full stack via Docker (needs SCOPEWEAVE_JWT_SECRET in prod)
+# Full stack via Docker (needs SCOPEWEAVE_JWT_SECRET)
+export SCOPEWEAVE_JWT_SECRET=$(openssl rand -base64 32)
 docker compose up --build            # Dockerfile.server → :8787
 ```
 

@@ -740,8 +740,13 @@ function openReportModal() {
 // hand-edited files ever matter.
 export function parseMsProjectXml(xml) {
   const tag = (block, name) => {
-    const m = block.match(new RegExp(`<${name}>([^<]*)</${name}>`));
-    return m ? m[1].trim() : '';
+    const openingTag = `<${name}>`;
+    const closingTag = `</${name}>`;
+    const valueStart = block.indexOf(openingTag);
+    if (valueStart === -1) return '';
+    const contentStart = valueStart + openingTag.length;
+    const valueEnd = block.indexOf(closingTag, contentStart);
+    return valueEnd === -1 ? '' : block.slice(contentStart, valueEnd).trim();
   };
   const unescape = (s) => s
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
