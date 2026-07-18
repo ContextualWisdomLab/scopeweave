@@ -952,6 +952,12 @@ function createWarningBadge(warning) {
 
 const persistentOwnerColorMap = new Map();
 
+// ⚡ Bolt: Cache unattached template nodes and instantiate via cloneNode(false)
+// instead of document.createElement() to reduce JS-to-C++ DOM instantiation
+// overhead in O(N) table rendering loops.
+const ownerBadgeTemplate = document.createElement('span');
+ownerBadgeTemplate.className = 'owner-badge';
+
 function createOwnerCellContent(owner) {
   if (!owner) {
     return createEmptyCell();
@@ -961,18 +967,20 @@ function createOwnerCellContent(owner) {
     persistentOwnerColorMap.set(owner, OWNER_COLORS[persistentOwnerColorMap.size % OWNER_COLORS.length]);
   }
 
-  const badge = document.createElement('span');
-  badge.className = 'owner-badge';
+  const badge = ownerBadgeTemplate.cloneNode(false);
   badge.style.background = persistentOwnerColorMap.get(owner);
   badge.textContent = owner;
   return badge;
 }
 
+// ⚡ Bolt: Cache status badge template to reduce GC pressure and instantiation overhead
+const statusBadgeTemplate = document.createElement('span');
+
 function createStatusCellContent(progressState) {
   if (!progressState.label) {
     return createEmptyCell();
   }
-  const badge = document.createElement('span');
+  const badge = statusBadgeTemplate.cloneNode(false);
   badge.className = `status-badge ${progressState.className}`;
   badge.textContent = progressState.label;
   if (progressState.description) {
