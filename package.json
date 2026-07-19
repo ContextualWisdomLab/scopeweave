@@ -23,5 +23,6 @@
   "devDependencies": {
     "@playwright/test": "1.61.1",
     "fast-check": "4.9.0"
-  }
+  },
+  "packageManager": "pnpm@10.30.3"
 }
