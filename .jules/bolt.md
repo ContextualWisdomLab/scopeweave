@@ -4,3 +4,6 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+## 2026-07-20 - Topological sorting property of state.tasks
+**Learning:** The `state.tasks` array is maintained in a topologically sorted order (parents always precede children). I discovered that I can leverage this property to process hierarchical states (like visibility filtering or subtree deletion) in a single O(N) top-down pass, avoiding O(N*Depth) recursive traversals or maintaining intermediate BFS queues / maps.
+**Action:** When filtering or modifying hierarchical subtrees in `state.tasks`, rely on the pre-sorted topological order by accumulating states top-down in a Set or array rather than doing BFS/DFS.

@@ -1517,32 +1517,17 @@ function insertTaskAfter(task, afterId) {
 
 function deleteTaskAndDescendants(taskId) {
   // ⚡ Bolt: Replace O(N * Depth) cascading loop with O(N) map-based BFS to prevent UI freeze during deletion
-  const childrenMap = new Map();
-  state.tasks.forEach(task => {
-    if (task.parentId) {
-      const children = childrenMap.get(task.parentId) || [];
-      children.push(task.id);
-      childrenMap.set(task.parentId, children);
+  // ⚡ Bolt: Optimization: Replace BFS with a single-pass O(N) filter leveraging the topologically sorted state.tasks array
+  const idsToDelete = new Set([taskId]);
+
+  state.tasks = state.tasks.filter(task => {
+    if (idsToDelete.has(task.id) || (task.parentId && idsToDelete.has(task.parentId))) {
+      idsToDelete.add(task.id);
+      return false;
     }
+    return true;
   });
 
-  const idsToDelete = new Set([taskId]);
-  const queue = [taskId];
-  let queueIndex = 0;
-
-  while (queueIndex < queue.length) {
-    const currentId = queue[queueIndex++];
-    const children = childrenMap.get(currentId);
-    if (children) {
-      children.forEach(childId => {
-        if (!idsToDelete.has(childId)) {
-          idsToDelete.add(childId);
-          queue.push(childId);
-        }
-      });
-    }
-  }
-  state.tasks = state.tasks.filter((task) => !idsToDelete.has(task.id));
   invalidateTaskIndexCache();
 }
 
