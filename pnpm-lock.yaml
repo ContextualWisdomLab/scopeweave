@@ -10,10 +10,10 @@ importers:
     dependencies:
       '@hono/node-server':
         specifier: ^1.19.14
-        version: 1.19.14(hono@4.12.28)
+        version: 1.19.14(hono@4.12.31)
       hono:
-        specifier: ^4.12.27
-        version: 4.12.28
+        specifier: ^4.12.31
+        version: 4.12.31
     devDependencies:
       '@playwright/test':
         specifier: 1.61.1
@@ -44,8 +44,8 @@ packages:
     engines: {node: ^8.16.0 || ^10.6.0 || >=11.0.0}
     os: [darwin]
 
-  hono@4.12.28:
-    resolution: {integrity: sha512-YwUvVpSF7m1yOblFPrU3Hbo8XhPheBoiyfGuII6z19LnOr6JpDnyyp7LFNrfV56wS8tpvtBFGRISHN02pDdLOA==}
+  hono@4.12.31:
+    resolution: {integrity: sha512-zJIHFrl6bq3RDd2YusFNCDlM8qUprxKswyi/OPzPyzKDdyBXDqWx8bZlZ7R+saTdSTatUmb3O7K4SspGPaEOQg==}
     engines: {node: '>=16.9.0'}
 
   playwright-core@1.61.1:
@@ -63,9 +63,9 @@ packages:
 
 snapshots:
 
-  '@hono/node-server@1.19.14(hono@4.12.28)':
+  '@hono/node-server@1.19.14(hono@4.12.31)':
     dependencies:
-      hono: 4.12.28
+      hono: 4.12.31
 
   '@playwright/test@1.61.1':
     dependencies:
@@ -78,7 +78,7 @@ snapshots:
   fsevents@2.3.2:
     optional: true
 
-  hono@4.12.28: {}
+  hono@4.12.31: {}
 
   playwright-core@1.61.1: {}
 
