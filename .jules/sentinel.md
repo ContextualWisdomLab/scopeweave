@@ -128,11 +128,11 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
-## 2026-07-22 - Prevent CSV DDE injection via whitespace bypass
-**Vulnerability:** The backend CSV export for audit logs failed to neutralize payloads if they started with whitespace before the formula prefix (e.g., ` =cmd|...`), which spreadsheet software ignores.
-**Learning:** Spreadsheet formula defenses must always account for leading whitespace because spreadsheet parsers trim it prior to evaluation.
-**Prevention:** Update the sanitization regex in the backend export function to `/^\s*[=+\-@|]/` so that even whitespace-padded executable payloads are prefixed with a single quote.
 ## 2026-07-22 - Prevent ReDoS in parseMsProjectXml
 **Vulnerability:** `parseMsProjectXml` dynamically instantiated a `RegExp` inside a loop using user input (`name` variable), making it vulnerable to Regular Expression Denial of Service (ReDoS) if a maliciously constructed `name` string caused catastrophic backtracking.
 **Learning:** Never pass untrusted or potentially unbound variables into `new RegExp()` in a client-side or server-side parser. This is a common SAST finding.
 **Prevention:** Replace dynamically constructed regular expressions with native string methods like `indexOf` and `substring` when doing simple pattern extraction.
+## 2026-07-22 - Upgrade @hono/node-server to fix Trivy MEDIUM finding
+**Vulnerability:** The `package-lock.json` / `pnpm-lock.yaml` specified `@hono/node-server` at a version (1.19.14) that flagged a MEDIUM vulnerability (GHSA-frvp-7c67-39w9) by `trivy-fs` in CI.
+**Learning:** Outdated dependencies in lockfiles can fail pipeline security checks. It is required to periodically patch and resolve vulnerabilities triggered by SAST/SCA scanners.
+**Prevention:** Ran `pnpm update @hono/node-server@2.0.11` to bump the version and resolve the CVE.
