@@ -115,3 +115,6 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+## 2026-07-22 - 폼 유효성 검사 접근성 및 피드백 개선
+**Learning:** submit 버튼에 `disabled` 속성을 사용하면 키보드 초점을 받을 수 없어 스크린 리더 및 키보드 사용자가 오류 원인을 인지하기 어렵습니다.
+**Action:** 폼 검증 실패 시 버튼을 비활성화하는 대신 `aria-disabled="true"`를 사용하여 초점을 유지하고, 폼 제출 시도 시 안내 토스트와 함께 첫 번째 오류 입력란으로 초점을 이동시킵니다.

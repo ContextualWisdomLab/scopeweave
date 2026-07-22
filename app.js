@@ -1047,7 +1047,11 @@ function renderEditorValidation() {
 
   const saveButton = form.querySelector('button[type="submit"]');
   if (saveButton) {
-    saveButton.disabled = errors.length > 0;
+    if (errors.length > 0) {
+      saveButton.setAttribute('aria-disabled', 'true');
+    } else {
+      saveButton.removeAttribute('aria-disabled');
+    }
     saveButton.title = errors.length > 0 ? '입력값을 올바르게 수정해야 저장할 수 있습니다.' : '저장 (Enter)';
   }
 
@@ -1219,6 +1223,13 @@ function saveEditor() {
   if (errors.length > 0) {
     state.editor.errors = errors;
     renderEditorValidation();
+    showToast('입력값을 올바르게 수정해야 저장할 수 있습니다.');
+    requestAnimationFrame(() => {
+      const firstInvalid = document.querySelector('form[data-editor-form="true"] [aria-invalid="true"]');
+      if (firstInvalid) {
+        firstInvalid.focus();
+      }
+    });
     return;
   }
 
