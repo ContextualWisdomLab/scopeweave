@@ -132,3 +132,7 @@
 **Vulnerability:** The backend CSV export for audit logs failed to neutralize payloads if they started with whitespace before the formula prefix (e.g., ` =cmd|...`), which spreadsheet software ignores.
 **Learning:** Spreadsheet formula defenses must always account for leading whitespace because spreadsheet parsers trim it prior to evaluation.
 **Prevention:** Update the sanitization regex in the backend export function to `/^\s*[=+\-@|]/` so that even whitespace-padded executable payloads are prefixed with a single quote.
+## 2026-07-22 - Prevent ReDoS in parseMsProjectXml
+**Vulnerability:** `parseMsProjectXml` dynamically instantiated a `RegExp` inside a loop using user input (`name` variable), making it vulnerable to Regular Expression Denial of Service (ReDoS) if a maliciously constructed `name` string caused catastrophic backtracking.
+**Learning:** Never pass untrusted or potentially unbound variables into `new RegExp()` in a client-side or server-side parser. This is a common SAST finding.
+**Prevention:** Replace dynamically constructed regular expressions with native string methods like `indexOf` and `substring` when doing simple pattern extraction.
