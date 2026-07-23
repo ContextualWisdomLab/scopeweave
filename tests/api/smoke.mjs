@@ -497,7 +497,8 @@ assert.ok((r.headers.get('content-type') || '').startsWith('text/csv'), 'text/cs
 const auditCsv = await r.text();
 assert.ok(auditCsv.startsWith('id,createdAt,actorEmail,action'), 'csv header');
 assert.ok(auditCsv.includes('project.create'), 'contains audited actions');
-assert.ok(!/^[=+\-@]/m.test(auditCsv.split('\r\n')[1] || ''), 'formula-injection guarded');
+assert.ok(!/^\s*[=+\-@|]/m.test(auditCsv.split('\r\n')[1] || ''), 'formula-injection guarded');
+assert.ok(!/^\s*[=+\-@|]/m.test(auditCsv), 'all formula injection guarded');
 r = await req(`/api/orgs/${orgAId}/audit?format=csv`, { headers: oauth });
 assert.equal(r.status, 403, 'non-manager audit csv → 403');
 
