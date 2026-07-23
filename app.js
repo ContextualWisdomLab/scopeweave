@@ -1155,7 +1155,23 @@ function handleRowAction(action, taskId) {
 }
 
 function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertAfterId = null, draft = null }) {
-  state.previousFocus = document.activeElement;
+  const activeElement = document.activeElement;
+  if (activeElement) {
+    const row = activeElement.closest ? activeElement.closest('tr[data-task-id]') : null;
+    if (row && activeElement.dataset && activeElement.dataset.action) {
+      state.previousFocus = {
+        taskId: row.dataset.taskId,
+        action: activeElement.dataset.action
+      };
+    } else if (activeElement.id) {
+      state.previousFocus = { id: activeElement.id };
+    } else {
+      state.previousFocus = activeElement;
+    }
+  } else {
+    state.previousFocus = null;
+  }
+
   if (mode === 'edit') {
     const task = findTask(targetId);
     if (!task) {
@@ -1209,7 +1225,21 @@ function closeEditor(force = false) {
   renderAll();
 
   if (state.previousFocus) {
-    state.previousFocus.focus();
+    if (state.previousFocus.taskId && state.previousFocus.action) {
+      const { taskId, action } = state.previousFocus;
+      requestAnimationFrame(() => {
+        const btn = document.querySelector(`tr[data-task-id="${taskId}"] button[data-action="${action}"]`);
+        if (btn) btn.focus();
+      });
+    } else if (state.previousFocus.id) {
+      const id = state.previousFocus.id;
+      requestAnimationFrame(() => {
+        const el = document.getElementById(id);
+        if (el) el.focus();
+      });
+    } else if (typeof state.previousFocus.focus === 'function') {
+      state.previousFocus.focus();
+    }
     state.previousFocus = null;
   }
 }
