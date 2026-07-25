@@ -951,35 +951,51 @@ function createWarningBadge(warning) {
 }
 
 const persistentOwnerColorMap = new Map();
+// ⚡ Bolt: Cache fully constructed owner badge DOM nodes to avoid redundant property assignment overhead
+const ownerBadgeTemplateCache = new Map();
 
 function createOwnerCellContent(owner) {
   if (!owner) {
     return createEmptyCell();
   }
 
-  if (!persistentOwnerColorMap.has(owner)) {
-    persistentOwnerColorMap.set(owner, OWNER_COLORS[persistentOwnerColorMap.size % OWNER_COLORS.length]);
+  let badgeTemplate = ownerBadgeTemplateCache.get(owner);
+  if (!badgeTemplate) {
+    if (!persistentOwnerColorMap.has(owner)) {
+      persistentOwnerColorMap.set(owner, OWNER_COLORS[persistentOwnerColorMap.size % OWNER_COLORS.length]);
+    }
+    badgeTemplate = document.createElement('span');
+    badgeTemplate.className = 'owner-badge';
+    badgeTemplate.style.background = persistentOwnerColorMap.get(owner);
+    badgeTemplate.textContent = owner;
+    ownerBadgeTemplateCache.set(owner, badgeTemplate);
   }
 
-  const badge = document.createElement('span');
-  badge.className = 'owner-badge';
-  badge.style.background = persistentOwnerColorMap.get(owner);
-  badge.textContent = owner;
-  return badge;
+  return badgeTemplate.cloneNode(true);
 }
+
+// ⚡ Bolt: Cache fully constructed status badge DOM nodes to avoid redundant property assignment overhead
+const statusBadgeTemplateCache = new Map();
 
 function createStatusCellContent(progressState) {
   if (!progressState.label) {
     return createEmptyCell();
   }
-  const badge = document.createElement('span');
-  badge.className = `status-badge ${progressState.className}`;
-  badge.textContent = progressState.label;
-  if (progressState.description) {
-    badge.title = progressState.description;
-    badge.setAttribute('aria-label', `${progressState.label} - ${progressState.description}`);
+
+  const cacheKey = `${progressState.label}|${progressState.className}|${progressState.description || ''}`;
+  let badgeTemplate = statusBadgeTemplateCache.get(cacheKey);
+  if (!badgeTemplate) {
+    badgeTemplate = document.createElement('span');
+    badgeTemplate.className = `status-badge ${progressState.className}`;
+    badgeTemplate.textContent = progressState.label;
+    if (progressState.description) {
+      badgeTemplate.title = progressState.description;
+      badgeTemplate.setAttribute('aria-label', `${progressState.label} - ${progressState.description}`);
+    }
+    statusBadgeTemplateCache.set(cacheKey, badgeTemplate);
   }
-  return badge;
+
+  return badgeTemplate.cloneNode(true);
 }
 
 const metricTextTemplate = document.createElement('span');

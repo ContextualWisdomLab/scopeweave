@@ -4,3 +4,6 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+## 2026-07-25 - DOM element configuration caching
+**Learning:** Repeatedly creating and configuring small DOM elements with multiple attributes (class, style, title, textContent) during O(N) loops incurs noticeable JS-to-C++ allocation overhead.
+**Action:** Pre-configure common static elements in a Map by their identifying key and instantiate them using \`.cloneNode(true)\` to bypass property assignment overhead.
