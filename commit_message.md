@@ -3,6 +3,7 @@
 💡 무엇을
 - `createOwnerCellContent` 및 `createStatusCellContent` 함수에 DOM 템플릿 캐싱(Map) 적용
 - O(N) 테이블 렌더링 루프에서 반복적인 요소 생성(`document.createElement`) 및 속성 할당 대신 `.cloneNode(true)` 사용
+- 부수적으로 외부 인프라스트럭처 에러(Semgrep, Trivy)를 수정했습니다.
 
 🎯 왜
 - 수백/수천 개의 작업 행을 렌더링할 때 각 셀마다 작은 DOM 요소들의 속성(class, style, title, textContent)을 매번 JS-to-C++ 브릿지를 통해 할당하면 누적된 메모리 할당 및 실행 시간 지연(overhead)이 발생하기 때문입니다.
