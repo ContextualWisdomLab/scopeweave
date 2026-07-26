@@ -17,7 +17,7 @@
     "fuzz": "node --test tests/fuzz/*.mjs"
   },
   "dependencies": {
-    "@hono/node-server": "^1.19.15",
+    "@hono/node-server": "^2.0.11",
     "hono": "^4.12.27"
   },
   "devDependencies": {
