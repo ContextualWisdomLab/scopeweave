@@ -952,6 +952,8 @@ function createWarningBadge(warning) {
 
 const persistentOwnerColorMap = new Map();
 
+let ownerBadgeTemplate = null;
+
 function createOwnerCellContent(owner) {
   if (!owner) {
     return createEmptyCell();
@@ -961,18 +963,26 @@ function createOwnerCellContent(owner) {
     persistentOwnerColorMap.set(owner, OWNER_COLORS[persistentOwnerColorMap.size % OWNER_COLORS.length]);
   }
 
-  const badge = document.createElement('span');
-  badge.className = 'owner-badge';
+  if (!ownerBadgeTemplate) {
+    ownerBadgeTemplate = document.createElement('span');
+    ownerBadgeTemplate.className = 'owner-badge';
+  }
+  const badge = ownerBadgeTemplate.cloneNode(false);
   badge.style.background = persistentOwnerColorMap.get(owner);
   badge.textContent = owner;
   return badge;
 }
 
+let statusBadgeTemplate = null;
+
 function createStatusCellContent(progressState) {
   if (!progressState.label) {
     return createEmptyCell();
   }
-  const badge = document.createElement('span');
+  if (!statusBadgeTemplate) {
+    statusBadgeTemplate = document.createElement('span');
+  }
+  const badge = statusBadgeTemplate.cloneNode(false);
   badge.className = `status-badge ${progressState.className}`;
   badge.textContent = progressState.label;
   if (progressState.description) {
