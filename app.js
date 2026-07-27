@@ -1154,8 +1154,42 @@ function handleRowAction(action, taskId) {
   }
 }
 
+function saveFocus() {
+  const active = document.activeElement;
+  if (!active) return null;
+  return {
+    element: active,
+    taskId: active.closest?.('tr[data-task-id]')?.dataset.taskId,
+    action: active.dataset?.action,
+    id: active.id
+  };
+}
+
+function restoreFocus(focusContext) {
+  if (!focusContext) return;
+  requestAnimationFrame(() => {
+    let restored = false;
+    if (focusContext.taskId && focusContext.action) {
+      const btn = document.querySelector(`tr[data-task-id="${focusContext.taskId}"] [data-action="${focusContext.action}"]`);
+      if (btn) {
+        btn.focus();
+        restored = true;
+      }
+    } else if (focusContext.id) {
+      const el = document.getElementById(focusContext.id);
+      if (el) {
+        el.focus();
+        restored = true;
+      }
+    }
+    if (!restored && focusContext.element && focusContext.element.isConnected) {
+      focusContext.element.focus();
+    }
+  });
+}
+
 function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertAfterId = null, draft = null }) {
-  state.previousFocus = document.activeElement;
+  state.previousFocus = saveFocus();
   if (mode === 'edit') {
     const task = findTask(targetId);
     if (!task) {
@@ -1209,7 +1243,7 @@ function closeEditor(force = false) {
   renderAll();
 
   if (state.previousFocus) {
-    state.previousFocus.focus();
+    restoreFocus(state.previousFocus);
     state.previousFocus = null;
   }
 }
@@ -2193,7 +2227,7 @@ function exportJsonArray() {
 }
 
 function openGanttModal() {
-  state.previousFocus = document.activeElement;
+  state.previousFocus = saveFocus();
   elements.ganttModal.classList.remove('hidden');
   renderGantt();
   // Focus the modal to handle Escape key properly
@@ -2203,7 +2237,7 @@ function openGanttModal() {
 function closeGanttModal() {
   elements.ganttModal.classList.add('hidden');
   if (state.previousFocus) {
-    state.previousFocus.focus();
+    restoreFocus(state.previousFocus);
     state.previousFocus = null;
   }
 }
