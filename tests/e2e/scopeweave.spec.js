@@ -1333,4 +1333,53 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
     await expect(backBtn).toHaveAttribute('title', '작업 목록으로 돌아가기 (Esc)');
     await expect(backBtn).toHaveAttribute('aria-keyshortcuts', 'Escape');
   });
+  test('ScopeWeave Planner - Palette UX Enhancements - blocks form submission when save button is aria-disabled', async ({ page }) => {
+  // Inject seed data to edit
+  await page.evaluate(() => {
+    localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
+      projectName: 'ScopeWeave Planner',
+      baseDate: '2026-07-10',
+      tasks: [{
+        id: 'task-1',
+        phase: 'P1',
+        depth: 1,
+        expanded: true
+      }]
+    }));
+  });
+  await page.reload();
+
+  // Open editor for the task
+  await page.locator('tr[data-task-id="task-1"] [data-action="edit"]').click();
+
+  // Clear the required phase field to trigger validation errors
+  const phaseInput = page.locator('[data-testid="editor-phase"]');
+  await phaseInput.fill('');
+
+  // Wait for the save button to become aria-disabled
+  const saveBtn = page.locator('.editor-actions button[type="submit"]');
+  await expect(saveBtn).toHaveAttribute('aria-disabled', 'true');
+
+  // Ensure form is visible
+  const form = page.locator('form[data-editor-form="true"]');
+  await expect(form).toBeVisible();
+
+  // Click the submit button
+  await saveBtn.click();
+
+  // Check that toast shows the error message
+  const toast = page.locator('#toast');
+  await expect(toast).toContainText('입력값을 올바르게 수정해야 저장할 수 있습니다.');
+
+  // Form should still be visible because submission was prevented
+  await expect(form).toBeVisible();
+
+  // Fill it back and save to ensure normal submission works
+  await phaseInput.fill('Valid Phase');
+  await expect(saveBtn).not.toHaveAttribute('aria-disabled', 'true');
+  await saveBtn.click();
+
+  // Editor should close
+  await expect(form).not.toBeVisible();
+  });
 });
