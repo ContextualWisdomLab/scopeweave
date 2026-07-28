@@ -408,6 +408,12 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
       return;
     }
     event.preventDefault();
+
+    const saveButton = form.querySelector('button[type="submit"]');
+    if (saveButton && saveButton.getAttribute('aria-disabled') === 'true') {
+      return;
+    }
+
     renderDraftValidation.flush();
     saveEditor();
   });
@@ -978,6 +984,7 @@ function createStatusCellContent(progressState) {
   if (progressState.description) {
     badge.title = progressState.description;
     badge.setAttribute('aria-label', `${progressState.label} - ${progressState.description}`);
+    badge.tabIndex = 0;
   }
   return badge;
 }
@@ -1047,7 +1054,11 @@ function renderEditorValidation() {
 
   const saveButton = form.querySelector('button[type="submit"]');
   if (saveButton) {
-    saveButton.disabled = errors.length > 0;
+    if (errors.length > 0) {
+      saveButton.setAttribute('aria-disabled', 'true');
+    } else {
+      saveButton.removeAttribute('aria-disabled');
+    }
     saveButton.title = errors.length > 0 ? '입력값을 올바르게 수정해야 저장할 수 있습니다.' : '저장 (Enter)';
   }
 

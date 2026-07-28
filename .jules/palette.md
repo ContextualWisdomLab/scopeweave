@@ -115,3 +115,6 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+## 2024-07-28 - Focusable Tooltips and Aria-disabled buttons
+**Learning:** Users who navigate by keyboard cannot access `title` or `aria-label` tooltips on `div` or `span` elements unless they are focusable. Furthermore, a `disabled` button is removed from the tab order, hiding validation tooltips.
+**Action:** Use `tabindex="0"` on non-interactive tooltip containers, and use `aria-disabled="true"` instead of `disabled` for form submit buttons so they remain focusable.
