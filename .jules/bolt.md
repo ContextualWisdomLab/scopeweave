@@ -4,3 +4,7 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+
+## 2026-07-28 - Optimize table cell creation
+**Learning:** Reusing `document.createElement()` dynamically for simple cells introduces heavy overhead during render. Caching unattached DOM element templates and cloning them using `cloneNode(false)` saves GC pressure and avoids unnecessary calls into the JS-to-C++ bridge.
+**Action:** Always consider `cloneNode` caching for leaf DOM nodes (like badges, icons, inputs) inside O(N) loops.
