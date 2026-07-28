@@ -83,7 +83,7 @@ Cloud (Node ≥ 22):
 
 ```bash
 npm install
-npm run server                # serves the API + the static client on :8787
+pnpm run server                # serves the API + the static client on :8787
 ```
 
 Docker: `docker compose up` (see `Dockerfile.server` / `docs/deploy.md`).
@@ -103,9 +103,9 @@ Docker: `docker compose up` (see `Dockerfile.server` / `docs/deploy.md`).
 ## Verification
 
 ```bash
-npm run test:api    # API smoke (auth, tenancy, RBAC, billing, webhooks, …) + rate limit
-npm run test:unit   # EVM/S-curve, CPM, baseline-compare (pure math)
-npm run test:e2e    # Playwright UI suite
+pnpm run test:api    # API smoke (auth, tenancy, RBAC, billing, webhooks, …) + rate limit
+pnpm run test:unit   # EVM/S-curve, CPM, baseline-compare (pure math)
+pnpm run test:e2e    # Playwright UI suite
 python3 -m pytest tests/config
 ```
 

@@ -26,14 +26,14 @@ python3 -m http.server 4173          # open http://127.0.0.1:4173
 
 # Cloud server (Node >= 22 — uses node:sqlite)
 npm install
-npm run server                       # API + static client on :8787
+pnpm run server                       # API + static client on :8787
 
 # Tests
-npm run test:unit                    # pure-math: EVM/S-curve, CPM, baselines, workload, …
-npm run test:api                     # API smoke (auth·tenancy·RBAC·billing·webhooks) + rate limit
-npm run test:e2e                     # Playwright UI suite (auto-starts http.server on :4173)
-npm run test:e2e:cloud               # cloud UI spec only
-npm run fuzz                         # fast-check property fuzz (node --test tests/fuzz/*.mjs)
+pnpm run test:unit                    # pure-math: EVM/S-curve, CPM, baselines, workload, …
+pnpm run test:api                     # API smoke (auth·tenancy·RBAC·billing·webhooks) + rate limit
+pnpm run test:e2e                     # Playwright UI suite (auto-starts http.server on :4173)
+pnpm run test:e2e:cloud               # cloud UI spec only
+pnpm run fuzz                         # fast-check property fuzz (node --test tests/fuzz/*.mjs)
 python3 -m pytest tests/config       # workflow-ownership / governance checks
 
 # Single test: unit tests are plain Node scripts

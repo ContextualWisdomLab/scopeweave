@@ -15,7 +15,7 @@
 ## Verification
 
 - Serve locally with `python3 -m http.server 4173`.
-- Run end-to-end verification with `npm run test:e2e`.
+- Run end-to-end verification with `pnpm run test:e2e`.
 - Run workflow ownership checks with `python3 -m pytest tests/config`.
 
 ## CI / security workflow notes
