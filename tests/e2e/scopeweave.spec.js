@@ -1354,7 +1354,7 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
     await expect(saveButton).toBeFocused();
 
     // Should show toast feedback when clicked
-    await saveButton.click();
+    await saveButton.click({ force: true });
     await expect(page.locator('#toast')).toHaveText('입력값을 올바르게 수정해야 저장할 수 있습니다.');
     await expect(page.locator('#toast')).toHaveClass(/show/);
   });

@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+
+## 2026-07-29 - Prevent ReDoS in XML Parsing
+**Learning:** Using \`new RegExp\` with dynamically constructed strings (even if simple variables) can trigger SAST alerts for Regular Expression Denial-of-Service (ReDoS), especially when used on parsed file content.
+**Action:** Replace dynamic regex construction for simple tag parsing with native string methods like \`indexOf\` and \`substring\`. This resolves the Semgrep warning \`javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp\` and improves safety.
