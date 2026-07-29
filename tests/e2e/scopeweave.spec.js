@@ -1333,4 +1333,29 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
     await expect(backBtn).toHaveAttribute('title', '작업 목록으로 돌아가기 (Esc)');
     await expect(backBtn).toHaveAttribute('aria-keyshortcuts', 'Escape');
   });
+
+  test('preserves save button focusability by using aria-disabled and shows feedback on click', async ({ page }) => {
+    await page.goto('./');
+
+    // Open editor
+    await page.getByRole('button', { name: '최상위 작업 추가' }).click();
+
+    // Clear required phase field to trigger validation error
+    await page.locator('[data-testid="editor-phase"]').fill('');
+
+    const saveButton = page.locator('.editor-panel button[type="submit"]');
+
+    // Should use aria-disabled instead of native disabled
+    await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
+    await expect(saveButton).not.toHaveAttribute('disabled', '');
+
+    // Should still be focusable
+    await saveButton.focus();
+    await expect(saveButton).toBeFocused();
+
+    // Should show toast feedback when clicked
+    await saveButton.click();
+    await expect(page.locator('#toast')).toHaveText('입력값을 올바르게 수정해야 저장할 수 있습니다.');
+    await expect(page.locator('#toast')).toHaveClass(/show/);
+  });
 });
