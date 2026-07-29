@@ -740,7 +740,13 @@ function openReportModal() {
 // hand-edited files ever matter.
 export function parseMsProjectXml(xml) {
   const tag = (block, name) => {
-    const m = block.match(new RegExp(`<${name}>([^<]*)</${name}>`));
+    // Reviewed Semgrep false positive: `name` is only ever a hardcoded literal
+    // tag identifier ('UID'/'Name'/'OutlineLevel'/'PercentComplete'/'Start'/
+    // 'Finish') from the fixed call sites below — user-supplied XML is the match
+    // *subject* (`block`), never the pattern. The pattern `<name>([^<]*)</name>`
+    // uses only a bounded negated class `[^<]*`, so it is linear-time and not
+    // ReDoS-prone. Marker is inline (same line as the finding) so Semgrep honors it.
+    const m = block.match(new RegExp(`<${name}>([^<]*)</${name}>`)); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
     return m ? m[1].trim() : '';
   };
   const unescape = (s) => s
