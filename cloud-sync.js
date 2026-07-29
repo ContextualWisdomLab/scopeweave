@@ -740,6 +740,13 @@ function openReportModal() {
 // hand-edited files ever matter.
 export function parseMsProjectXml(xml) {
   const tag = (block, name) => {
+    // False positive for the non-literal RegExp SAST rule: `name` is only ever
+    // a hardcoded literal tag from this function ('UID', 'Name', 'OutlineLevel',
+    // 'PercentComplete', ...), never user input, so the constructed pattern is
+    // fixed. The `[^<]*` body is a single linear character-class star (no
+    // nested/overlapping quantifiers), so it cannot backtrack catastrophically
+    // even on adversarial `block` input — no ReDoS or regex-injection surface.
+    // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
     const m = block.match(new RegExp(`<${name}>([^<]*)</${name}>`));
     return m ? m[1].trim() : '';
   };
