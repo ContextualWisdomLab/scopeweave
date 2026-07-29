@@ -7,3 +7,6 @@
 ## 2026-07-29 - Redundant preload tags
 **Learning:** Placing a `<link rel="preload">` for a stylesheet immediately before its actual `<link rel="stylesheet">` tag is redundant and provides no benefit, as modern browser preload scanners will detect both simultaneously. Valid resource hinting optimizations include using `<link rel="modulepreload">` for scripts located at the bottom of the `<body>`.
 **Action:** Remove redundant preload tags and add `<link rel="modulepreload">` for module scripts loaded at the end of the body.
+## 2026-07-29 - Prevent ReDoS by avoiding dynamic RegExp
+**Learning:** Constructing `RegExp` objects dynamically from variables can introduce Regular Expression Denial of Service (ReDoS) vulnerabilities, which also triggers Semgrep SAST alerts (`javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp`).
+**Action:** Replace dynamically constructed `RegExp` instances with native String methods like `indexOf` and `substring` when parsing input, such as extracting blocks bounded by XML tags.
