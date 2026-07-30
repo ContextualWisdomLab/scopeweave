@@ -32,6 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documented Kubernetes/IaC as follow-up work rather than a current
   blocker for this static app.
 
+### Security
+
+- Upgraded the `@hono/node-server` runtime dependency from `^1.19.14` to
+  `^2.0.12` to clear GHSA-frvp-7c67-39w9 (moderate: `serve-static` path
+  traversal on Windows via an encoded backslash). ScopeWeave only calls the
+  stable `serve()` entry — it does not use `@hono/node-server`'s `serveStatic`
+  helper, so the vulnerable path was unreachable, but the dependency is bumped
+  to keep the lockfiles clean. Verified with `npm run test:unit` and
+  `npm run test:api` (server boots and passes the API + rate-limit smoke under
+  v2); both `package-lock.json` and `pnpm-lock.yaml` updated.
+
 ## [1.0.0] - 2026-04-20
 
 <!-- markdownlint-disable-next-line MD024 -->
