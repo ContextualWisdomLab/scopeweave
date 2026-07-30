@@ -128,3 +128,8 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+
+## 2026-07-29 - Prevent CSV DDE injection bypass via leading whitespace
+**Vulnerability:** The backend CSV export for audit logs neutralized `=, +, -, @, |` but failed to account for leading whitespace. Since spreadsheet software often ignores leading spaces, payloads like `" =cmd|'/C calc'!A0"` could bypass the filter and execute DDE commands.
+**Learning:** Spreadsheet formula sanitization must explicitly target leading whitespace preceding formula/DDE prefixes. A regex strictly anchored to the start of the string (`^`) without whitespace allowance (`\s*`) will leave the application vulnerable.
+**Prevention:** Update the sanitization regex across all boundaries (e.g. backend export) to `/^\s*[=+\-@|]/` to ensure payloads with leading spaces are safely neutralized.

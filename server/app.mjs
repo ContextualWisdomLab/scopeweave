@@ -653,7 +653,7 @@ app.get('/api/orgs/:id/audit', requireAuth, (c) => {
     // = + - @ | are prefixed with ' so spreadsheets treat them as text.
     const csvCell = (v) => {
       let s = v == null ? '' : String(v);
-      if (/^[=+\-@|]/.test(s)) s = `'${s}`;
+      if (/^\s*[=+\-@|]/.test(s)) s = `'${s}`;
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const header = ['id', 'createdAt', 'actorEmail', 'action', 'targetType', 'targetId', 'meta'];
