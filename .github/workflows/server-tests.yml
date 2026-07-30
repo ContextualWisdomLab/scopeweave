@@ -55,3 +55,10 @@ jobs:
         run: npx playwright install chromium --with-deps
       - name: Cloud UI e2e
         run: npm run test:e2e:cloud
+      - name: CSV formula injection fuzz e2e
+        # Runs tests/e2e/csv_formula_fuzz.spec.js as a required job. It used to be
+        # chained off `npm run coverage`, which only the central coverage-evidence
+        # sandbox invokes (and there Playwright is absent), so the CSV formula
+        # injection defense never actually ran in CI. Run it here where Playwright
+        # and the static webServer are available.
+        run: npm run test:fuzz
