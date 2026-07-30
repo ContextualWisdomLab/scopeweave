@@ -48,7 +48,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   helper, so the vulnerable path was unreachable, but the dependency is bumped
   to keep the lockfiles clean. Verified with `npm run test:unit` and
   `npm run test:api` (server boots and passes the API + rate-limit smoke under
-  v2); both `package-lock.json` and `pnpm-lock.yaml` updated.
+  v2); `package-lock.json` updated.
+
+### Removed
+
+- Removed the vestigial `pnpm-lock.yaml`. ScopeWeave is an npm project
+  (`package-lock.json` is canonical; `server-tests.yml`/`fuzz.yml` use
+  `cache: 'npm'` + `npm ci`; no workflow, Dockerfile, or compose file
+  references pnpm), so the committed pnpm lock was a second, unused lockfile.
+  The central OpenCode coverage-evidence runner selects pnpm whenever a
+  `pnpm-lock.yaml` is present and then refuses because `package.json` declares
+  no exact `packageManager: pnpm@X.Y.Z`, which blocked coverage evidence — and
+  therefore review approval — on every ScopeWeave PR. Deleting the vestigial
+  lock lets the runner use the canonical npm path.
 
 ## [1.0.0] - 2026-04-20
 
