@@ -55,4 +55,33 @@ assert.equal(t5.predecessors, 'msp-1');
 
 assert.deepEqual(parseMsProjectXml('<Project></Project>'), [], 'no tasks → empty');
 
+// --- tag() failure-branch regression tests (indexOf-slicing extractor) ---
+// These pin the three defensive branches of the `tag()` helper introduced when
+// the dynamic RegExp was removed, so a future parser change cannot silently
+// alter how malformed or nested markup is handled.
+
+// end === -1: <Name> opens but never closes → '' → task has no usable name → skipped.
+assert.deepEqual(
+  parseMsProjectXml('<Task><UID>10</UID><Name>broken</Task>'),
+  [],
+  'unterminated <Name> (end === -1) yields no name → task skipped',
+);
+
+// content.includes('<'): nested markup inside the value → '' → task skipped
+// (mirrors the original /<name>([^<]*)<\/name>/ "no inner <" semantics).
+assert.deepEqual(
+  parseMsProjectXml('<Task><UID>11</UID><Name>a<b>c</b></Name><OutlineLevel>1</OutlineLevel></Task>'),
+  [],
+  'nested markup inside <Name> (content contains "<") is rejected → task skipped',
+);
+
+// start === -1: absent optional tags → '' (dates blank, OutlineLevel defaults to 1).
+const sparseTasks = parseMsProjectXml('<Task><UID>12</UID><Name>NoDates</Name></Task>');
+assert.equal(sparseTasks.length, 1, 'valid UID + Name parses even with no dates/level');
+assert.equal(sparseTasks[0].id, 'msp-12');
+assert.equal(sparseTasks[0].depth, 1, 'missing <OutlineLevel> (start === -1) defaults depth to 1');
+assert.equal(sparseTasks[0].plannedStartDate, '', 'missing <Start> (start === -1) → empty date');
+assert.equal(sparseTasks[0].plannedEndDate, '', 'missing <Finish> (start === -1) → empty date');
+assert.equal(sparseTasks[0].actualProgress, 0, 'missing <PercentComplete> → 0');
+
 console.log('✓ MS Project import tests passed');
