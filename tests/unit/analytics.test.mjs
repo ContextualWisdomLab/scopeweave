@@ -74,4 +74,22 @@ assert.ok(midIdx > 0 && Math.abs(s.planned[midIdx] - 0.5) < 1e-6, 'midpoint ≈ 
 // empty / undated tasks → empty series, no throw
 assert.deepEqual(buildScurve({ tasks: [], calcPlannedRatio, calcDuration, buildTimeline }), { timeline: [], planned: [] });
 
+// dated tasks whose total duration is zero → empty series (no 0/0 NaN weight).
+// Distinct from the empty-input case above: these tasks DO pass the "has both
+// planned dates" filter, so they populate `dated`, but each contributes 0 days
+// (end<start via the injected calcDuration), leaving totalDays==0. Guards the
+// `dur/totalDays` weight division in the cumulative curve from producing NaN.
+const zeroDuration = [
+  { id: 'z1', plannedStartDate: '2026-01-11', plannedEndDate: '2026-01-01' }, // end<start → 0d
+  { id: 'z2', plannedStartDate: '2026-02-05', plannedEndDate: '2026-02-01' }, // end<start → 0d
+];
+assert.deepEqual(
+  buildScurve({ tasks: zeroDuration, calcPlannedRatio, calcDuration, buildTimeline }),
+  { timeline: [], planned: [] },
+  'zero total planned duration → empty series (no divide-by-zero)'
+);
+// and the returned curve carries no NaN (regression guard on the weight math)
+const zeroSeries = buildScurve({ tasks: zeroDuration, calcPlannedRatio, calcDuration, buildTimeline });
+assert.ok(zeroSeries.planned.every((v) => Number.isFinite(v)), 'no NaN in planned series');
+
 console.log('✓ analytics (EVM + S-curve) unit tests passed');
