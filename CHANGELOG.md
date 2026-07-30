@@ -34,6 +34,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Removed the dynamic `new RegExp(...)` in `parseMsProjectXml`'s `tag()` helper
+  (`cloud-sync.js`) that the SAST gate flagged for potential ReDoS
+  (`detect-non-literal-regexp`). Every caller passes a hardcoded tag name and
+  the pattern was linear, so it was not exploitable, but the extractor now uses
+  `indexOf` slicing with identical semantics — clearing the finding at base
+  rather than suppressing it. Verified unchanged by the MS Project import unit
+  tests.
 - Upgraded the `@hono/node-server` runtime dependency from `^1.19.14` to
   `^2.0.12` to clear GHSA-frvp-7c67-39w9 (moderate: `serve-static` path
   traversal on Windows via an encoded backslash). ScopeWeave only calls the

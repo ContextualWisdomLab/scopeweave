@@ -739,9 +739,20 @@ function openReportModal() {
 // no DOMParser needed → node-testable); swap for a real XML parser if
 // hand-edited files ever matter.
 export function parseMsProjectXml(xml) {
+  // Extract the text of a simple <name>…</name> element without building a
+  // dynamic RegExp from `name` (which trips SAST ReDoS/regex-injection rules,
+  // even though every caller passes a hardcoded tag). indexOf slicing mirrors
+  // the original /<name>([^<]*)<\/name>/ semantics: the run must contain no
+  // '<', so a nested tag yields '' rather than a false capture.
   const tag = (block, name) => {
-    const m = block.match(new RegExp(`<${name}>([^<]*)</${name}>`));
-    return m ? m[1].trim() : '';
+    const open = `<${name}>`;
+    const start = block.indexOf(open);
+    if (start === -1) return '';
+    const from = start + open.length;
+    const end = block.indexOf(`</${name}>`, from);
+    if (end === -1) return '';
+    const content = block.slice(from, end);
+    return content.includes('<') ? '' : content.trim();
   };
   const unescape = (s) => s
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
