@@ -2414,17 +2414,21 @@ function createGanttChartTable(weeks, weekdays, totalWidth) {
 
 function buildWeekdayTimeline(minDate, maxDate) {
   const days = [];
-  let cursor = getMonday(minDate);
-  const endBoundary = getFriday(maxDate);
-  // ⚡ Bolt: Use direct string comparison for cursor loop since both are generated valid dates.
-  while (cursor <= endBoundary) {
-    if (!isWeekend(cursor)) {
+  const startMs = dateStringToUtcMs(getMonday(minDate));
+  const endMs = dateStringToUtcMs(getFriday(maxDate));
+
+  // ⚡ Bolt: Mutate a single Date object to avoid expensive parsing/formatting in O(N) loop
+  const cursorDate = new Date(startMs);
+  while (cursorDate.getTime() <= endMs) {
+    const dayOfWeek = cursorDate.getUTCDay();
+    if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+      const dateStr = formatDateInput(cursorDate);
       days.push({
-        date: cursor,
-        dayLabel: cursor.slice(8, 10)
+        date: dateStr,
+        dayLabel: dateStr.slice(8, 10)
       });
     }
-    cursor = addDays(cursor, 1);
+    cursorDate.setUTCDate(cursorDate.getUTCDate() + 1);
   }
   return days;
 }
