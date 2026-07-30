@@ -740,7 +740,12 @@ function openReportModal() {
 // hand-edited files ever matter.
 export function parseMsProjectXml(xml) {
   const tag = (block, name) => {
-    const m = block.match(new RegExp(`<${name}>([^<]*)</${name}>`));
+    // `name` is always a hardcoded XML tag literal from the callers below
+    // (UID, Name, OutlineLevel, Start, Finish, ...), never user input, and the
+    // capture group `[^<]*` is a single linear character class with no nested
+    // or ambiguous quantifier, so this pattern cannot backtrack catastrophically
+    // regardless of `block` — there is no ReDoS surface.
+    const m = block.match(new RegExp(`<${name}>([^<]*)</${name}>`)); // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp.detect-non-literal-regexp
     return m ? m[1].trim() : '';
   };
   const unescape = (s) => s
