@@ -169,7 +169,12 @@ export function computeCpm(tasks, opts = {}) {
           else if (l.type === 'SF') c = slf - l.lag + d;
           else c = sls - l.lag; // FS
           return Math.min(m, c);
-        }, Infinity)
+          // Seed with projectDurationDays (not Infinity): standard CPM caps every
+          // activity's Late Finish at project completion, then tightens it with
+          // successor constraints. With Infinity, a node whose only successor links
+          // are SS/FF/SF could take an LF looser than the project end, giving a
+          // truly-critical activity false total float (and an empty critical path).
+        }, projectDurationDays)
       : projectDurationDays;
     lf.set(id, finish);
     ls.set(id, finish - d);

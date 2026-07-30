@@ -61,4 +61,22 @@ const T = (id, duration, predecessors = '') => ({ id, duration, predecessors });
   assert.equal(r.cycleDetected, true);
 }
 
+// backward pass caps Late Finish at the project duration. An SS long-pole with a
+// short terminal follow-on: A (10d) alone drives the schedule end; B (2d) starts
+// with A but finishes early. A must be critical with zero total float. Regression:
+// seeding the successor reduce with Infinity left A's LF uncapped at 18 (> project
+// duration 10), giving A a false slack of 8, marking it non-critical, and returning
+// an EMPTY critical path for a schedule that plainly has one.
+{
+  const r = computeCpm([T('A', 10), T('B', 2, 'ASS')]);
+  assert.equal(r.projectDurationDays, 10, 'A(0-10) is the long pole');
+  assert.equal(r.perTask.A.lf, 10, 'LF capped at project duration, not 18');
+  assert.equal(r.perTask.A.slack, 0, 'sole long-pole activity has zero total float');
+  assert.ok(r.perTask.A.critical, 'A is critical');
+  assert.deepEqual(r.criticalPath, ['A'], 'critical path is A, not empty');
+  // B keeps its real slack and stays non-critical.
+  assert.equal(r.perTask.B.slack, 8, 'B(0-2) has 8d float to the project end');
+  assert.equal(r.perTask.B.critical, false);
+}
+
 console.log('✓ dependency-type (SS/FF/SF+lag) tests passed');
