@@ -4,7 +4,6 @@
   "private": true,
   "type": "module",
   "description": "Production-grade pure HTML/CSS/JS WBS planner",
-  "packageManager": "pnpm@10.30.3",
   "scripts": {
     "check:python-docstrings": "node scripts/ci/static_coverage_evidence.mjs docstrings",
     "coverage": "node scripts/ci/static_coverage_evidence.mjs coverage && npm run test:fuzz",

@@ -115,11 +115,3 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
-
-## 2026-07-14 - Replace native disabled with aria-disabled for form submit buttons
-**Learning:** Native `disabled` attributes on submit buttons prevent keyboard navigation and click events, causing accessibility issues. Users tabbing through the page skip the element entirely, and the button cannot provide inline feedback when clicked.
-**Action:** Use `aria-disabled="true"` instead of `disabled` for interactive buttons when the UI should preserve focusability or show inline feedback. Keep CSS in mind to style `[aria-disabled="true"]` buttons correctly (e.g., lower opacity, not-allowed cursor). Ensure form logic respects the `aria-disabled` attribute and shows appropriate feedback instead of blindly saving invalid state.
-
-## 2026-07-14 - Fix CI coverage pnpm runner missing packageManager constraint
-**Learning:** For continuous integration pipelines verifying static analysis and evidence gates, `pnpm` will strictly enforce that a `packageManager` key (e.g. `"packageManager": "pnpm@10.30.3"`) is declared in `package.json` to avoid mutable toolchain dependencies.
-**Action:** When working in repositories using `pnpm` under strict coverage/CI environments, include `"packageManager": "pnpm@<version>"` in `package.json` to prevent pipeline failures related to package runner resolution.
