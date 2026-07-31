@@ -1,6 +1,9 @@
 # Local / single-node full-stack ScopeWeave SaaS.
 # Usage:
-#   export SCOPEWEAVE_JWT_SECRET=$(openssl rand -base64 32)
+#   # First-time only: generate a secret, then store it outside Git.
+#   # Restore the same value from a shell profile or secrets manager on every start.
+#   export SCOPEWEAVE_JWT_SECRET="$(openssl rand -base64 32)"
+#   : "${SCOPEWEAVE_JWT_SECRET:?Restore the persistent JWT secret before starting}"
 #   docker compose up --build
 # Then open http://localhost:8787
 services:
