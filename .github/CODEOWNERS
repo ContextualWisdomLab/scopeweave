@@ -1,8 +1,0 @@
-# Require owner review for repository automation and security-sensitive config.
-.github/** @seonghobae
-Dockerfile @seonghobae
-docker/** @seonghobae
-package.json @seonghobae
-package-lock.json @seonghobae
-pnpm-lock.yaml @seonghobae
-yarn.lock @seonghobae

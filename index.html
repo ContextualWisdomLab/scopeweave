@@ -3,16 +3,11 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'self';" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';" />
     <title>ScopeWeave Planner</title>
-    <link rel="preload" href="styles.css" as="style" />
-    <link rel="modulepreload" href="cloud-sync.js" />
-    <link rel="modulepreload" href="analytics.js" />
-    <link rel="modulepreload" href="app.js" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <a href="#main-content" class="skip-link sr-only">본문으로 건너뛰기</a>
     <div class="app-shell">
       <header class="top-panel">
         <div class="title-row">
@@ -22,37 +17,37 @@
           </div>
         </div>
         <div class="meta-grid meta-grid-primary">
-          <label class="meta-field" for="project-name">
+          <label class="meta-field">
             <span>프로젝트 이름</span>
-            <input data-testid="project-name-input" id="project-name" type="text" maxlength="120" placeholder="예: 신규 서비스 구축 프로젝트" />
+            <input data-testid="project-name-input" id="project-name" type="text" maxlength="120" />
           </label>
-          <label class="meta-field meta-field-compact" for="base-date">
+          <label class="meta-field meta-field-compact">
             <span>기준일</span>
             <input data-testid="base-date-input" id="base-date" type="date" />
           </label>
-          <div class="meta-value-card" title="프로젝트의 작업 기간(일수) 합계입니다.">
+          <div class="meta-value-card">
             <span class="meta-label">전체일수</span>
             <strong data-testid="summary-total-days" id="summary-total-days">0일</strong>
           </div>
         </div>
 
         <div class="meta-grid meta-grid-secondary">
-          <div class="meta-value-card accent-card plan-card" title="기간(일수) 가중치가 반영된 프로젝트 전체 계획 진척률입니다.">
+          <div class="meta-value-card accent-card plan-card">
             <span class="meta-label">계획진척률(누적)</span>
             <strong data-testid="summary-planned-progress" id="summary-planned-progress">0.00%</strong>
           </div>
-          <div class="meta-value-card accent-card actual-card" title="기간(일수) 가중치가 반영된 프로젝트 전체 실적 진척률입니다.">
+          <div class="meta-value-card accent-card actual-card">
             <span class="meta-label">실적진척률(누적)</span>
             <strong data-testid="summary-actual-progress" id="summary-actual-progress">0.00%</strong>
           </div>
           <div class="sync-panel">
-            <span id="sync-status" aria-live="polite" aria-atomic="true">브라우저 로컬 자동저장 사용 중</span>
+            <span id="sync-status">브라우저 로컬 자동저장 사용 중</span>
             <button id="connect-json-sync" type="button" class="secondary-button">wbs.json 자동저장 연결</button>
           </div>
         </div>
       </header>
 
-      <main id="main-content" tabindex="-1">
+      <main>
         <section class="table-section" aria-label="WBS 표">
           <div class="table-scroll">
             <table class="wbs-table">
@@ -91,7 +86,7 @@
         <button id="add-root-task" type="button" class="primary-button">최상위 작업 추가</button>
         <button id="export-csv" type="button" class="secondary-button">CSV 내보내기</button>
         <button id="import-csv" type="button" class="secondary-button">CSV 가져오기</button>
-        <button id="open-gantt" type="button" class="secondary-button" aria-haspopup="dialog" aria-controls="gantt-modal">간트차트보기</button>
+        <button id="open-gantt" type="button" class="secondary-button">간트차트보기</button>
       </footer>
     </div>
 
@@ -99,7 +94,7 @@
 
     <div id="toast" class="toast" aria-live="polite"></div>
 
-    <div id="gantt-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="gantt-title" tabindex="-1">
+    <div id="gantt-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="gantt-title">
       <div class="modal-backdrop" data-close-modal="true"></div>
       <div class="modal-panel gantt-panel">
         <div class="modal-header">
@@ -107,14 +102,12 @@
             <h2 id="gantt-title">간트 차트</h2>
             <p>계획은 진회색, 실적은 초록색으로 표시됩니다.</p>
           </div>
-          <button id="close-gantt" type="button" class="icon-button close-button" aria-label="간트 차트 닫기" title="닫기 (Esc)" aria-keyshortcuts="Escape"><span aria-hidden="true">✕</span></button>
+          <button id="close-gantt" type="button" class="icon-button close-button" aria-label="간트 차트 닫기" title="닫기">✕</button>
         </div>
         <div id="gantt-content" class="gantt-content"></div>
       </div>
     </div>
 
-    <script type="module" src="cloud-sync.js"></script>
-    <script type="module" src="analytics.js"></script>
     <script type="module" src="app.js"></script>
   </body>
 </html>

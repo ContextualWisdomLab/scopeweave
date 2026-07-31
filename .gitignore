@@ -1,6 +1,4 @@
 node_modules/
-.codegraph/
-coverage/
 playwright-report/
 test-results/
 .DS_Store
@@ -9,7 +7,3 @@ registered_agents.json
 task_agent_mapping.json
 __pycache__/
 *.py[cod]
-
-# SaaS dev database
-data.db
-data.db-*

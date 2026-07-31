@@ -1,0 +1,26 @@
+name: Strix Gate Self-Test
+
+# Lightweight, direct self-test of the Strix quick-gate script. Unlike the full
+# `strix` workflow (which materializes a trusted base workspace and runs the
+# gate's self-test from the BASE branch), this runs scripts/ci/test_strix_quick_gate.sh
+# against the PR head, so a gate/test change is validated before it merges.
+# It intentionally does NOT run the heavy OpenCode review pipeline.
+
+on:
+  push:
+    branches: [ develop, main ]
+  pull_request:
+    branches: [ develop, main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  strix-selftest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - name: Run Strix quick-gate self-test
+        run: bash scripts/ci/test_strix_quick_gate.sh

@@ -1,7 +1,5 @@
 const STORAGE_KEY = 'scopeweave:planner-state:v1';
 const DEFAULT_PROJECT_NAME = 'ScopeWeave Planner';
-const MAX_PROJECT_NAME_LENGTH = 120;
-const MAX_BASE_DATE_LENGTH = 10;
 const OWNER_COLORS = [
   '#3f51b5', '#8e24aa', '#d81b60', '#ef6c00', '#6d4c41',
   '#00897b', '#1e88e5', '#3949ab', '#7cb342', '#f4511e',
@@ -21,7 +19,6 @@ const ACTUAL_PROGRESS_OPTIONS = [
   'PL검토(90%)',
   'PM확인(100%)'
 ];
-let actualProgressSelectTemplate = null;
 
 const ACTUAL_PROGRESS_MAP = Object.assign(Object.create(null), {
   '미착수(0%)': 0,
@@ -46,15 +43,10 @@ const EDITABLE_FIELDS = [
   'owner',
   'supportTeam',
   'plannedStartDate',
-  'plannedEndDate',
+  'plannedEndDdate',
   'actualProgressStatus',
   'actualStartDate',
-  'actualEndDate',
-  'predecessors',
-  'budget',
-  'actualCost',
-  'sprint',
-  'storyPoints'
+  'actualEndDate'
 ];
 
 const CSV_HEADERS = [
@@ -80,132 +72,26 @@ const CSV_HEADERS = [
   '가중치실적진척률',
   '__id',
   '__parentId',
-  '__depth',
-  '선행작업',
-  '예산',
-  '실투입비',
-  '스프린트',
-  '스토리포인트'
+  '__depth'
 ];
-const CSV_FORMULA_PREFIX_PATTERN = /^\s*[=+\-@|]/;
-const UNSAFE_JSON_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
-
-const CSV_FIELD_LABELS = Object.freeze(Object.assign(Object.create(null), {
-  phase: '단계',
-  activity: 'Activity',
-  task: 'Task',
-  categoryLarge: '대분류',
-  categoryMedium: '중분류',
-  documentName: '산출물',
-  owner: '담당자',
-  supportTeam: '지원팀',
-  plannedStartDate: '계획시작일',
-  plannedEndDate: '계획종료일',
-  actualProgressStatus: '실적진척상태',
-  actualStartDate: '실적시작일',
-  actualEndDate: '실적종료일',
-  predecessors: '선행작업',
-  budget: '예산',
-  actualCost: '실투입비',
-  sprint: '스프린트',
-  storyPoints: '스토리포인트'
-}));
-
-const EDITOR_FIELD_TEST_IDS = Object.freeze(Object.assign(Object.create(null), {
-  phase: 'editor-phase',
-  activity: 'editor-activity',
-  task: 'editor-task',
-  categoryLarge: 'editor-category-large',
-  categoryMedium: 'editor-category-medium',
-  documentName: 'editor-document-name',
-  owner: 'editor-owner',
-  supportTeam: 'editor-support-team',
-  plannedStartDate: 'editor-planned-start',
-  plannedEndDate: 'editor-planned-end',
-  actualStartDate: 'editor-actual-start',
-  actualEndDate: 'editor-actual-end',
-  predecessors: 'editor-predecessors',
-  budget: 'editor-budget',
-  actualCost: 'editor-actual-cost',
-  sprint: 'editor-sprint',
-  storyPoints: 'editor-story-points'
-}));
-
-const LEGACY_PLANNED_END_FIELD = 'plannedEnd' + 'Ddate';
-const TASK_STORAGE_FIELDS = Object.freeze([
-  'id',
-  'parentId',
-  'depth',
-  'expanded',
-  'pendingDelete',
-  'isSynthetic',
-  'phase',
-  'activity',
-  'task',
-  'categoryLarge',
-  'categoryMedium',
-  'documentName',
-  'owner',
-  'supportTeam',
-  'plannedStartDate',
-  'plannedEndDate',
-  'plannedProgress',
-  'actualProgress',
-  'weight',
-  'actualProgressStatus',
-  'actualStartDate',
-  'actualEndDate',
-  'name',
-  'predecessors',
-  'budget',
-  'actualCost',
-  'sprint',
-  'storyPoints'
-]);
-
-const DEFAULT_EDITOR_STATE = {
-  mode: null,
-  targetId: null,
-  parentId: null,
-  depth: 1,
-  insertAfterId: null,
-  draft: null,
-  initialDraft: null,
-  errors: []
-};
 
 const state = {
   projectName: DEFAULT_PROJECT_NAME,
   baseDate: formatLocalDateInput(new Date()),
   tasks: [],
-  editor: { ...DEFAULT_EDITOR_STATE, errors: [] },
+  editor: {
+    mode: null,
+    targetId: null,
+    parentId: null,
+    depth: 1,
+    insertAfterId: null,
+    draft: null,
+    errors: []
+  },
   jsonSyncHandle: null,
   dragTaskId: null,
-  dragTaskCache: null,
-  dragElement: null,
-  dropTargetElement: null,
-  toastTimer: null,
-  previousFocus: null
+  toastTimer: null
 };
-
-
-// ⚡ Bolt: Cache task IDs to indices for O(1) lookups instead of O(N) array scans
-let taskIdToIndexCache = null;
-
-function invalidateTaskIndexCache() {
-  taskIdToIndexCache = null;
-}
-
-function getTaskIndexById(taskId) {
-  if (!taskIdToIndexCache) {
-    taskIdToIndexCache = new Map();
-    for (let i = 0; i < state.tasks.length; i++) {
-      taskIdToIndexCache.set(state.tasks[i].id, i);
-    }
-  }
-  const index = taskIdToIndexCache.get(taskId);
-  return index !== undefined ? index : -1;
-}
 
 const elements = {
   projectNameInput: document.getElementById('project-name'),
@@ -227,100 +113,40 @@ const elements = {
   toast: document.getElementById('toast')
 };
 
+bootstrap();
+
 async function bootstrap() {
   bindEvents();
 
-  if (!window.showSaveFilePicker) {
-    elements.connectJsonSyncButton.setAttribute('aria-disabled', 'true');
-    elements.connectJsonSyncButton.title = '이 브라우저는 wbs.json 직접 저장 연결을 지원하지 않습니다.';
-  }
-
-  // Optional cloud overlay (loaded as a separate module; undefined offline).
-  const cloudApi = typeof window !== 'undefined' ? window.ScopeWeaveCloud : null;
-  cloudApi?.init?.({
-    hydrateState,
-    renderAll,
-    getState: () => ({ projectName: state.projectName, baseDate: state.baseDate, tasks: state.tasks }),
-  });
-
-  const cloudState = cloudApi ? await cloudApi.boot() : null;
-  if (cloudState) {
-    hydrateState(cloudState);
-    persistState({ syncCloud: false });
+  const savedState = loadLocalState();
+  if (savedState) {
+    hydrateState(savedState);
   } else {
-    const savedState = loadLocalState();
-    if (savedState) {
-      hydrateState(savedState);
-      persistState();
-    } else {
-      const seedData = await loadSeedTasks();
-      state.tasks = normalizeImportedTasks(seedData);
-      invalidateTaskIndexCache();
-    }
+    const seedData = await loadSeedTasks();
+    state.tasks = normalizeImportedTasks(seedData);
   }
 
   renderAll();
 }
 
 function bindEvents() {
-  const persistAndRenderMetadata = debounce(() => {
+  elements.projectNameInput.addEventListener('input', (event) => {
+    state.projectName = event.target.value.trim() || DEFAULT_PROJECT_NAME;
     persistState();
     renderAll();
-  }, 150);
-  const renderDraftValidation = debounce(renderEditorValidation, 150);
-  const updateEditorDraftFromEvent = (event) => {
-    const field = event.target.dataset.editorField;
-    if (!field || !state.editor.draft) {
-      return false;
-    }
-    state.editor.draft[field] = event.target.value;
-    return true;
-  };
-
-  bindHeaderEvents(persistAndRenderMetadata);
-  bindModalEvents();
-  bindGlobalEvents();
-  bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent);
-}
-
-function bindHeaderEvents(persistAndRenderMetadata) {
-  elements.projectNameInput.addEventListener('input', (event) => {
-    const sanitized = String(event.target.value).slice(0, MAX_PROJECT_NAME_LENGTH);
-    if (event.target.value !== sanitized) {
-      const cursor = Math.min(event.target.selectionStart ?? sanitized.length, sanitized.length);
-      event.target.value = sanitized;
-      event.target.setSelectionRange(cursor, cursor);
-    }
-    state.projectName = sanitized.trim() || DEFAULT_PROJECT_NAME;
-    persistAndRenderMetadata();
   });
-  elements.projectNameInput.addEventListener('blur', persistAndRenderMetadata.flush);
 
   elements.baseDateInput.addEventListener('input', (event) => {
-    state.baseDate = String(event.target.value).trim().slice(0, MAX_BASE_DATE_LENGTH) || formatLocalDateInput(new Date());
-    persistAndRenderMetadata();
+    state.baseDate = event.target.value || formatLocalDateInput(new Date());
+    persistState();
+    renderAll();
   });
-  elements.baseDateInput.addEventListener('blur', persistAndRenderMetadata.flush);
 
   elements.addRootButton.addEventListener('click', () => openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() }));
-  elements.exportCsvButton.addEventListener('click', (e) => {
-    if (elements.exportCsvButton.getAttribute('aria-disabled') === 'true') {
-      e.preventDefault();
-      showToast('내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.');
-      return;
-    }
-    exportCsv();
-  });
+  elements.exportCsvButton.addEventListener('click', exportCsv);
   elements.importCsvButton.addEventListener('click', () => elements.csvFileInput.click());
   elements.csvFileInput.addEventListener('change', handleCsvImport);
-  elements.openGanttButton.addEventListener('click', (e) => {
-    if (elements.openGanttButton.getAttribute('aria-disabled') === 'true') {
-      e.preventDefault();
-      showToast('간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.');
-      return;
-    }
-    openGanttModal();
-  });
+  elements.openGanttButton.addEventListener('click', openGanttModal);
   elements.closeGanttButton.addEventListener('click', closeGanttModal);
   elements.ganttModal.addEventListener('click', (event) => {
     if (event.target.dataset.closeModal === 'true') {
@@ -328,26 +154,10 @@ function bindHeaderEvents(persistAndRenderMetadata) {
     }
   });
 
-  elements.connectJsonSyncButton.addEventListener('click', async (e) => {
-    if (elements.connectJsonSyncButton.getAttribute('aria-disabled') === 'true') {
-      e.preventDefault();
-      showToast('이 브라우저는 wbs.json 직접 저장 연결을 지원하지 않습니다.');
-      return;
-    }
+  elements.connectJsonSyncButton.addEventListener('click', async () => {
     await connectJsonSync();
   });
-}
 
-function bindModalEvents() {
-  elements.closeGanttButton.addEventListener('click', closeGanttModal);
-  elements.ganttModal.addEventListener('click', (event) => {
-    if (event.target.dataset.closeModal === 'true') {
-      closeGanttModal();
-    }
-  });
-}
-
-function bindGlobalEvents() {
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       if (!elements.ganttModal.classList.contains('hidden')) {
@@ -355,13 +165,9 @@ function bindGlobalEvents() {
       } else if (state.editor.mode) {
         closeEditor();
       }
-    } else if (event.key === 'Tab' && !elements.ganttModal.classList.contains('hidden')) {
-      trapGanttModalFocus(event);
     }
   });
-}
 
-function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
   elements.tableBody.addEventListener('click', (event) => {
     const row = event.target.closest('tr[data-task-id]');
     if (!row) {
@@ -371,24 +177,22 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
     const taskId = row.dataset.taskId;
     const actionButton = event.target.closest('[data-action]');
     if (actionButton) {
-      if (actionButton.getAttribute('aria-disabled') === 'true') {
-        event.preventDefault();
-        showToast(actionButton.title || '현재 사용할 수 없는 작업입니다.');
-        return;
-      }
       handleRowAction(actionButton.dataset.action, taskId);
       return;
     }
 
-    if (!event.target.closest('input, select, button, label, .drag-handle')) {
+    if (!event.target.closest('input, select, button, label')) {
       openEditor({ mode: 'edit', targetId: taskId });
     }
   });
 
   elements.tableBody.addEventListener('input', (event) => {
-    if (updateEditorDraftFromEvent(event)) {
-      renderDraftValidation();
+    const field = event.target.dataset.editorField;
+    if (!field || !state.editor.draft) {
+      return;
     }
+    state.editor.draft[field] = event.target.value;
+    renderEditorValidation();
   });
 
   elements.tableBody.addEventListener('change', (event) => {
@@ -396,10 +200,12 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
       handleInlineProgressChange(event);
       return;
     }
-    if (updateEditorDraftFromEvent(event)) {
-      renderDraftValidation.flush();
-      renderEditorValidation();
+    const field = event.target.dataset.editorField;
+    if (!field || !state.editor.draft) {
+      return;
     }
+    state.editor.draft[field] = event.target.value;
+    renderEditorValidation();
   });
 
   elements.tableBody.addEventListener('submit', (event) => {
@@ -408,7 +214,6 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
       return;
     }
     event.preventDefault();
-    renderDraftValidation.flush();
     saveEditor();
   });
 
@@ -418,10 +223,7 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
       return;
     }
 
-    // Cache task lookups for the drag-and-drop hot path.
-    state.dragTaskCache = new Map(state.tasks.map(t => [t.id, t]));
     state.dragTaskId = row.dataset.taskId;
-    state.dragElement = row;
     row.classList.add('dragging');
     event.dataTransfer.effectAllowed = 'move';
     event.dataTransfer.setData('text/plain', state.dragTaskId);
@@ -437,26 +239,24 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
       return;
     }
 
-    const draggedTask = (state.dragTaskCache ? state.dragTaskCache.get(state.dragTaskId) : null) || findTask(state.dragTaskId);
-    const targetTask = (state.dragTaskCache ? state.dragTaskCache.get(row.dataset.taskId) : null) || findTask(row.dataset.taskId);
+    const draggedTask = findTask(state.dragTaskId);
+    const targetTask = findTask(row.dataset.taskId);
     if (!draggedTask || !targetTask || !canReorderWithinLevel(draggedTask, targetTask)) {
       return;
     }
 
     event.preventDefault();
-    if (state.dropTargetElement !== row) {
-      clearDropTargets();
-      state.dropTargetElement = row;
-      row.classList.add('drop-target');
-    }
+    clearDropTargets();
+    row.classList.add('drop-target');
     const rect = row.getBoundingClientRect();
     row.dataset.dropPosition = event.clientY >= rect.top + rect.height / 2 ? 'after' : 'before';
   });
 
   elements.tableBody.addEventListener('dragleave', (event) => {
     const row = event.target.closest('tr[data-task-id]');
-    if (row && state.dropTargetElement === row) {
-      clearDropTargets();
+    if (row) {
+      row.classList.remove('drop-target');
+      delete row.dataset.dropPosition;
     }
   });
 
@@ -467,8 +267,8 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
     }
 
     event.preventDefault();
-    const targetTask = (state.dragTaskCache ? state.dragTaskCache.get(row.dataset.taskId) : null) || findTask(row.dataset.taskId);
-    const draggedTask = (state.dragTaskCache ? state.dragTaskCache.get(state.dragTaskId) : null) || findTask(state.dragTaskId);
+    const targetTask = findTask(row.dataset.taskId);
+    const draggedTask = findTask(state.dragTaskId);
     if (draggedTask && targetTask && canReorderWithinLevel(draggedTask, targetTask)) {
       const rect = row.getBoundingClientRect();
       const placeAfter = event.clientY >= rect.top + rect.height / 2;
@@ -481,54 +281,30 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
   });
 }
 
-const cachedHasChildrenSet = new Set();
 function renderAll() {
   const metrics = computeTaskMetrics();
 
   elements.projectNameInput.value = state.projectName;
-  document.title = state.projectName === DEFAULT_PROJECT_NAME ? DEFAULT_PROJECT_NAME : `${state.projectName} - ${DEFAULT_PROJECT_NAME}`;
   elements.baseDateInput.value = state.baseDate;
   elements.totalDays.textContent = `${formatNumber(metrics.totalDays)}일`;
   elements.plannedProgress.textContent = formatPercent(metrics.totalWeightedPlannedRatio * 100, 2);
   elements.actualProgress.textContent = formatPercent(metrics.totalWeightedActualRatio * 100, 2);
   elements.syncStatus.textContent = state.jsonSyncHandle ? '연결된 wbs.json 파일에 자동저장 중' : '브라우저 로컬 자동저장 사용 중';
 
-  if (typeof window !== 'undefined') {
-    window.ScopeWeaveAnalytics?.render?.({
-      pv: metrics.totalWeightedPlannedRatio,
-      ev: metrics.totalWeightedActualRatio,
-      tasks: state.tasks,
-      baseDate: state.baseDate,
-      calcPlannedRatio: calculatePlannedProgressRatio,
-      calcDuration: calculateDurationDays,
-      buildTimeline: buildWeekdayTimeline,
-    });
-  }
-
+  const ownerColorMap = createOwnerColorMap();
   const visibleTasks = getVisibleTasks();
   const rows = [];
 
-  const hasTasks = state.tasks.length > 0;
-  if (!hasTasks) {
-    elements.exportCsvButton.setAttribute('aria-disabled', 'true');
-    elements.openGanttButton.setAttribute('aria-disabled', 'true');
-  } else {
-    elements.exportCsvButton.removeAttribute('aria-disabled');
-    elements.openGanttButton.removeAttribute('aria-disabled');
-  }
-  elements.exportCsvButton.title = hasTasks ? '' : '내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.';
-  elements.openGanttButton.title = hasTasks ? '' : '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.';
-
   // ⚡ Bolt: Cache parent IDs to convert O(N^2) render loop to O(N)
-  cachedHasChildrenSet.clear();
+  const hasChildrenSet = new Set();
   state.tasks.forEach(task => {
-    if (task.parentId) cachedHasChildrenSet.add(task.parentId);
+    if (task.parentId) hasChildrenSet.add(task.parentId);
   });
 
   visibleTasks.forEach((task, index) => {
     const taskMetrics = metrics.byTask.get(task.id);
-    const hasChildren = cachedHasChildrenSet.has(task.id);
-    rows.push(renderTaskRow(task, taskMetrics, index, hasChildren));
+    const hasChildren = hasChildrenSet.has(task.id);
+    rows.push(renderTaskRow(task, taskMetrics, ownerColorMap, index, hasChildren));
     if (state.editor.mode && state.editor.mode === 'edit' && state.editor.targetId === task.id) {
       rows.push(renderEditorRow(task.id));
     }
@@ -542,494 +318,173 @@ function renderAll() {
   }
 
   if (rows.length === 0) {
-    rows.push(createEmptyStateRow());
+    rows.push(`
+      <tr>
+        <td colspan="21">
+          <div class="gantt-empty">
+            <div class="empty-icon" aria-hidden="true">📋</div>
+            <h3 class="empty-title">등록된 작업이 없습니다</h3>
+            <p class="empty-desc">하단의 '최상위 작업 추가' 버튼을 눌러 프로젝트를 시작하거나,<br>'CSV 가져오기'를 통해 기존 데이터를 불러오세요.</p>
+          </div>
+        </td>
+      </tr>
+    `);
   }
 
-  setTableBodyRows(rows);
+  elements.tableBody.innerHTML = rows.join('');
   renderEditorValidation();
 }
 
-function setTableBodyRows(rows) {
-  elements.tableBody.replaceChildren(...rows);
-}
-
-function createEmptyStateRow() {
-  const row = document.createElement('tr');
-  const cell = document.createElement('td');
-  cell.className = 'empty-state-cell';
-  cell.colSpan = 21;
-
-  const emptyState = document.createElement('div');
-  emptyState.className = 'table-empty';
-
-  const icon = document.createElement('div');
-  icon.className = 'empty-icon';
-  icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = '📋';
-
-  const title = document.createElement('h3');
-  title.className = 'empty-title';
-  title.textContent = '등록된 작업이 없습니다';
-
-  const description = document.createElement('p');
-  description.className = 'empty-desc';
-  description.append(
-    "하단의 '최상위 작업 추가' 버튼을 눌러 프로젝트를 시작하거나,",
-    document.createElement('br'),
-    "'CSV 가져오기'를 통해 기존 데이터를 불러오세요."
-  );
-
-  const actions = document.createElement('div');
-  actions.className = 'empty-actions editor-actions';
-
-  const addRootBtn = document.createElement('button');
-  addRootBtn.type = 'button';
-  addRootBtn.className = 'primary-button';
-  addRootBtn.textContent = '최상위 작업 추가';
-  addRootBtn.addEventListener('click', () => {
-    openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() });
-  });
-
-  const importCsvBtn = document.createElement('button');
-  importCsvBtn.type = 'button';
-  importCsvBtn.className = 'secondary-button';
-  importCsvBtn.textContent = 'CSV 가져오기';
-  importCsvBtn.addEventListener('click', () => {
-    document.getElementById('csv-file-input').click();
-  });
-
-  actions.append(addRootBtn, importCsvBtn);
-
-  emptyState.append(icon, title, description, actions);
-  cell.appendChild(emptyState);
-  row.appendChild(cell);
-  return row;
-}
-
-// Cache an unattached td shell so hot render loops clone instead of allocate.
-let tableCellTemplate = null;
-function createTableCell(className, content) {
-  if (!tableCellTemplate) {
-    tableCellTemplate = document.createElement('td');
-  }
-  const cell = tableCellTemplate.cloneNode(false);
-  if (className) {
-    cell.className = className;
-  }
-  if (content) {
-    cell.appendChild(content);
-  }
-  return cell;
-}
-
-// ⚡ Bolt: Cache unattached DOM elements as templates to eliminate repetitive
-// document.createElement() JS-to-C++ allocation overhead during O(N) table rendering loops.
-// Using cloneNode() is measurably faster when creating thousands of rows.
-let taskRowTemplate = null;
-let actionCellTemplate = null;
-let actionStackTemplate = null;
-let toggleButtonTemplate = null;
-let toggleIconTemplate = null;
-let togglePlaceholderTemplate = null;
-
-function renderTaskRow(task, taskMetrics, index, hasChildren) {
-  if (!taskRowTemplate) {
-    taskRowTemplate = document.createElement('tr');
-    taskRowTemplate.draggable = true;
-    actionCellTemplate = document.createElement('td');
-    actionStackTemplate = document.createElement('div');
-    actionStackTemplate.className = 'action-stack';
-    toggleButtonTemplate = document.createElement('button');
-    toggleButtonTemplate.type = 'button';
-    toggleButtonTemplate.className = 'toggle-button';
-    toggleButtonTemplate.dataset.action = 'toggle';
-    toggleIconTemplate = document.createElement('span');
-    toggleIconTemplate.setAttribute('aria-hidden', 'true');
-    togglePlaceholderTemplate = document.createElement('span');
-    togglePlaceholderTemplate.className = 'toggle-placeholder';
-  }
-
-  const row = taskRowTemplate.cloneNode(false);
-  row.className = `task-row depth-${task.depth} ${index % 2 === 1 ? 'striped-even' : ''}`;
-  row.dataset.taskId = task.id;
-
-  const actionCell = actionCellTemplate.cloneNode(false);
-  const actionStack = actionStackTemplate.cloneNode(false);
-
-  const rowEntityName = task.task || task.activity || task.phase || '작업';
-
-  if (hasChildren) {
-    const toggleButton = toggleButtonTemplate.cloneNode(false);
-    const toggleLabel = task.expanded ? '접기' : '펼치기';
-    toggleButton.setAttribute('aria-label', `${toggleLabel} - ${rowEntityName}`);
-    toggleButton.setAttribute('aria-expanded', String(task.expanded));
-    toggleButton.title = `${toggleLabel} - ${rowEntityName}`;
-    const toggleIcon = toggleIconTemplate.cloneNode(false);
-    toggleIcon.textContent = task.expanded ? '▼' : '▶';
-    toggleButton.appendChild(toggleIcon);
-    actionStack.appendChild(toggleButton);
-  } else {
-    const placeholder = togglePlaceholderTemplate.cloneNode(false);
-    actionStack.appendChild(placeholder);
-  }
-
-  const dragHandle = getDragHandleTemplate();
-
+function renderTaskRow(task, taskMetrics, ownerColorMap, index, hasChildren) {
+  const toggleButton = hasChildren
+    ? `<button type="button" class="toggle-button" data-action="toggle" aria-label="${task.expanded ? '접기' : '펼치기'}" title="${task.expanded ? '접기' : '펼치기'}">${task.expanded ? '▼' : '▶'}</button>`
+    : '<span class="toggle-placeholder"></span>';
   const isLeaf = task.depth >= 3;
-  const addChildButton = createActionButton(`하위 추가 - ${rowEntityName}`, '＋', 'add-child', isLeaf ? '최대 3단계까지만 추가할 수 있습니다.' : `하위 추가 - ${rowEntityName}`);
 
-  if (isLeaf) {
-    addChildButton.setAttribute('aria-disabled', 'true');
-  } else {
-    addChildButton.removeAttribute('aria-disabled');
-  }
-
-  const editButton = createActionButton(`편집 - ${rowEntityName}`, '✎', 'edit', `편집 - ${rowEntityName}`);
-  editButton.setAttribute('aria-haspopup', 'dialog');
-
-  const deleteButton = createActionButton(`삭제 - ${rowEntityName}`, '🗑', 'delete', `삭제 - ${rowEntityName}`);
-
-  actionStack.append(
-    dragHandle,
-    addChildButton,
-    editButton,
-    deleteButton
-  );
-  actionCell.appendChild(actionStack);
-  row.appendChild(actionCell);
-
-  row.append(
-    createTableCell('', createTreeCellContent(task.phase, task.depth)),
-    createTableCell('', createTextCellContent(task.activity)),
-    createTableCell('', createTextCellContent(task.task)),
-    createTableCell('priority-mobile', createTextCellContent(task.categoryLarge)),
-    createTableCell('priority-mobile', createTextCellContent(task.categoryMedium)),
-    createTableCell('priority-desktop', createTextCellContent(task.documentName)),
-    createTableCell('priority-mobile', createOwnerCellContent(task.owner)),
-    createTableCell('priority-desktop', createTextCellContent(task.supportTeam)),
-    createTableCell('priority-mobile', createStatusCellContent(taskMetrics.progressState)),
-    createTableCell('priority-mobile', createTextCellContent(task.plannedStartDate)),
-    createTableCell('priority-mobile', createTextCellContent(task.plannedEndDate)),
-    createTableCell('priority-desktop', createMetricText(formatNumber(taskMetrics.durationDays), 'task-duration-days')),
-    createTableCell('priority-desktop', createMetricText(formatPercent(taskMetrics.plannedProgressRatio * 100, 2))),
-    createTableCell('priority-desktop', createMetricText(formatDecimal(taskMetrics.weightRatio, 3), 'task-weight-ratio')),
-    createTableCell('priority-desktop', createMetricText(formatPercent(taskMetrics.weightedPlannedRatio * 100, 2))),
-    createTableCell('priority-mobile', createActualProgressCellContent(task, taskMetrics)),
-    createTableCell('priority-desktop', createMetricText(formatPercent(taskMetrics.actualProgressRatio * 100, 2))),
-    createTableCell('priority-mobile', createTextCellContent(task.actualStartDate, taskMetrics.actualDateWarning)),
-    createTableCell('priority-mobile', createTextCellContent(task.actualEndDate, taskMetrics.actualDateWarning)),
-    createTableCell('priority-desktop', createMetricText(formatPercent(taskMetrics.weightedActualRatio * 100, 2)))
-  );
-
-  return row;
-}
-
-// ⚡ Bolt: Cache static DOM structures to avoid JS-to-C++ instantiation overhead in hot rendering paths.
-let dragHandleTemplate = null;
-function getDragHandleTemplate() {
-  if (!dragHandleTemplate) {
-    dragHandleTemplate = document.createElement('div');
-    dragHandleTemplate.className = 'drag-handle';
-    dragHandleTemplate.setAttribute('aria-hidden', 'true');
-    dragHandleTemplate.title = '드래그하여 순서 변경';
-    dragHandleTemplate.textContent = '⋮⋮';
-  }
-  return dragHandleTemplate.cloneNode(true);
-}
-
-let actionButtonTemplate = null;
-function createActionButton(label, text, action, title) {
-  if (!actionButtonTemplate) {
-    actionButtonTemplate = document.createElement('button');
-    actionButtonTemplate.type = 'button';
-    actionButtonTemplate.className = 'icon-button';
-    const iconSpan = document.createElement('span');
-    iconSpan.setAttribute('aria-hidden', 'true');
-    actionButtonTemplate.appendChild(iconSpan);
-  }
-  const button = actionButtonTemplate.cloneNode(true);
-  button.dataset.action = action;
-  button.setAttribute('aria-label', label);
-  button.title = title;
-  button.firstChild.textContent = text;
-  return button;
+  return `
+    <tr class="task-row depth-${task.depth} ${index % 2 === 1 ? 'striped-even' : ''}" data-task-id="${escapeHtml(task.id)}" draggable="true">
+      <td>
+        <div class="action-stack">
+          ${toggleButton}
+          <button type="button" class="icon-button" data-action="add-child" aria-label="하위 추가" title="${isLeaf ? '최대 3단계까지만 추가할 수 있습니다.' : '하위 추가'}" ${isLeaf ? 'disabled' : ''}>＋</button>
+          <button type="button" class="icon-button" data-action="edit" aria-label="편집" title="편집">✎</button>
+          <button type="button" class="icon-button" data-action="delete" aria-label="삭제" title="삭제">🗑</button>
+        </div>
+      </td>
+      <td>${renderTreeCell(task.phase, task.depth)}</td>
+      <td>${renderTextCell(task.activity)}</td>
+      <td>${renderTextCell(task.task)}</td>
+      <td class="priority-mobile">${renderTextCell(task.categoryLarge)}</td>
+      <td class="priority-mobile">${renderTextCell(task.categoryMedium)}</td>
+      <td class="priority-desktop">${renderTextCell(task.documentName)}</td>
+      <td class="priority-mobile">${renderOwnerCell(task.owner, ownerColorMap)}</td>
+      <td class="priority-desktop">${renderTextCell(task.supportTeam)}</td>
+      <td class="priority-mobile">${renderStatusCell(taskMetrics.progressState)}</td>
+      <td class="priority-mobile">${renderTextCell(task.plannedStartDate)}</td>
+      <td class="priority-mobile">${renderTextCell(task.plannedEndDdate)}</td>
+      <td class="priority-desktop"><span class="metric-text" data-testid="task-duration-days">${formatNumber(taskMetrics.durationDays)}</span></td>
+      <td class="priority-desktop"><span class="metric-text">${formatPercent(taskMetrics.plannedProgressRatio * 100, 2)}</span></td>
+      <td class="priority-desktop"><span class="metric-text" data-testid="task-weight-ratio">${formatDecimal(taskMetrics.weightRatio, 3)}</span></td>
+      <td class="priority-desktop"><span class="metric-text">${formatPercent(taskMetrics.weightedPlannedRatio * 100, 2)}</span></td>
+      <td class="priority-mobile">${renderActualProgressCell(task, taskMetrics)}</td>
+      <td class="priority-desktop"><span class="metric-text">${formatPercent(taskMetrics.actualProgressRatio * 100, 2)}</span></td>
+      <td class="priority-mobile">${renderTextCell(task.actualStartDate, taskMetrics.actualDateWarning)}</td>
+      <td class="priority-mobile">${renderTextCell(task.actualEndDate, taskMetrics.actualDateWarning)}</td>
+      <td class="priority-desktop"><span class="metric-text">${formatPercent(taskMetrics.weightedActualRatio * 100, 2)}</span></td>
+    </tr>
+  `;
 }
 
 function renderEditorRow(anchorId) {
   const draft = state.editor.draft || createEmptyTaskDraft();
   const depth = state.editor.depth;
-
-  const row = document.createElement('tr');
-  row.className = 'editor-row';
-  row.dataset.editorAnchor = anchorId;
-
-  const cell = document.createElement('td');
-  cell.colSpan = 21;
-  const panel = document.createElement('div');
-  panel.className = 'editor-panel';
-  const form = document.createElement('form');
-  form.dataset.editorForm = 'true';
-  const editorGrid = document.createElement('div');
-  editorGrid.className = 'editor-grid';
-
-  [
-    renderEditorField('단계', 'phase', draft.phase, 'text', depth === 1, '예: P1000.분석단계'),
-    renderEditorField('Activity', 'activity', draft.activity, 'text', depth === 2, '예: 요구사항 분석'),
-    renderEditorField('Task', 'task', draft.task, 'text', depth === 3, '예: 인터뷰 진행'),
-    renderEditorField('대분류', 'categoryLarge', draft.categoryLarge, 'text', false, '예: 공통'),
-    renderEditorField('중분류', 'categoryMedium', draft.categoryMedium, 'text', false, '예: 기획'),
-    renderEditorField('산출물', 'documentName', draft.documentName, 'text', false, '예: 요구사항정의서'),
-    renderEditorField('담당자', 'owner', draft.owner, 'text', false, '예: 홍길동'),
-    renderEditorField('지원팀', 'supportTeam', draft.supportTeam, 'text', false, '예: 인프라팀'),
-    renderEditorField('계획시작일', 'plannedStartDate', draft.plannedStartDate, 'date'),
-    renderEditorField('계획종료일', 'plannedEndDate', draft.plannedEndDate, 'date'),
-    renderEditorSelectField('실적진척상태', 'actualProgressStatus', draft.actualProgressStatus, ACTUAL_PROGRESS_OPTIONS),
-    renderEditorField('실적시작일', 'actualStartDate', draft.actualStartDate, 'date'),
-    renderEditorField('실적종료일', 'actualEndDate', draft.actualEndDate, 'date'),
-    renderEditorField('선행작업', 'predecessors', draft.predecessors, 'text', false, '예: P1000,P2000 (선행 작업 ID/코드, 쉼표 구분)'),
-    renderEditorField('예산', 'budget', draft.budget, 'text', false, '예: 1000000 (원, 비용 EVM용)'),
-    renderEditorField('실투입비', 'actualCost', draft.actualCost, 'text', false, '예: 850000 (원)'),
-    renderEditorField('스프린트', 'sprint', draft.sprint, 'text', false, '예: Sprint 3 (Agile/Hybrid)'),
-    renderEditorField('스토리포인트', 'storyPoints', draft.storyPoints, 'text', false, '예: 5')
-  ].forEach((field) => editorGrid.appendChild(field));
-
-  const editorActions = document.createElement('div');
-  editorActions.className = 'editor-actions';
-  const saveButton = document.createElement('button');
-  saveButton.type = 'submit';
-  saveButton.className = 'primary-button';
-  saveButton.textContent = '저장';
-  saveButton.title = '저장 (Enter)';
-  saveButton.setAttribute('aria-keyshortcuts', 'Enter');
-  const cancelButton = document.createElement('button');
-  cancelButton.type = 'button';
-  cancelButton.className = 'secondary-button';
-  cancelButton.dataset.action = 'cancel-editor';
-  cancelButton.textContent = '취소';
-  cancelButton.title = '취소 (Esc)';
-  cancelButton.setAttribute('aria-keyshortcuts', 'Escape');
-  // ⚡ Bolt: Attach listener once during creation to prevent O(N) accumulation in renderEditorValidation
-  cancelButton.addEventListener('click', () => closeEditor());
-  const errors = document.createElement('div');
-  errors.id = 'editor-errors';
-  errors.className = 'validation-message';
-  errors.setAttribute('aria-live', 'polite');
-  errors.setAttribute('aria-atomic', 'true');
-  editorActions.append(saveButton, cancelButton, errors);
-
-  form.append(editorGrid, editorActions);
-  panel.appendChild(form);
-  cell.appendChild(panel);
-  row.appendChild(cell);
-  return row;
+  return `
+    <tr class="editor-row" data-editor-anchor="${escapeHtml(anchorId)}">
+      <td colspan="21">
+        <div class="editor-panel">
+          <form data-editor-form="true">
+            <div class="editor-grid">
+              ${renderEditorField('단계', 'phase', draft.phase, 'text', depth === 1, '예: P1000.분석단계')}
+              ${renderEditorField('Activity', 'activity', draft.activity, 'text', depth === 2, '예: 요구사항 분석')}
+              ${renderEditorField('Task', 'task', draft.task, 'text', depth === 3, '예: 인터뷰 진행')}
+              ${renderEditorField('대분류', 'categoryLarge', draft.categoryLarge)}
+              ${renderEditorField('중분류', 'categoryMedium', draft.categoryMedium)}
+              ${renderEditorField('산출물', 'documentName', draft.documentName)}
+              ${renderEditorField('담당자', 'owner', draft.owner)}
+              ${renderEditorField('지원팀', 'supportTeam', draft.supportTeam)}
+              ${renderEditorField('계획시작일', 'plannedStartDate', draft.plannedStartDate, 'date')}
+              ${renderEditorField('계획종료일', 'plannedEndDdate', draft.plannedEndDdate, 'date')}
+              ${renderEditorSelectField('실적진척상태', 'actualProgressStatus', draft.actualProgressStatus, ACTUAL_PROGRESS_OPTIONS)}
+              ${renderEditorField('실적시작일', 'actualStartDate', draft.actualStartDate, 'date')}
+              ${renderEditorField('실적종료일', 'actualEndDate', draft.actualEndDate, 'date')}
+            </div>
+            <div class="editor-actions">
+              <button type="submit" class="primary-button">저장</button>
+              <button type="button" class="secondary-button" data-action="cancel-editor">취소</button>
+              <div id="editor-errors" class="validation-message"></div>
+            </div>
+          </form>
+        </div>
+      </td>
+    </tr>
+  `;
 }
 
 function renderEditorField(label, field, value, type = 'text', required = false, placeholder = '') {
-  const labelElement = document.createElement('label');
-  labelElement.className = 'editor-field';
-  const fieldId = `editor-input-${field}-${Date.now()}`;
-  labelElement.htmlFor = fieldId;
-  const labelText = document.createElement('span');
-  labelText.textContent = label;
-  if (required) {
-    const marker = document.createElement('span');
-    marker.className = 'required-indicator';
-    marker.setAttribute('aria-hidden', 'true');
-    marker.textContent = '*';
-    const srOnly = document.createElement('span');
-    srOnly.className = 'sr-only';
-    srOnly.textContent = '(필수)';
-    labelText.append(' ', marker, srOnly);
-  }
-  const input = document.createElement('input');
-  input.id = fieldId;
-  input.setAttribute('data-testid', EDITOR_FIELD_TEST_IDS[field] || `editor-${toKebab(field)}`);
-  input.dataset.editorField = field;
-  input.type = type;
-  if (type === 'text') {
-    input.maxLength = 1000;
-  }
-  input.value = value || '';
-  if (required) {
-    input.required = true;
-    input.setAttribute('aria-required', 'true');
-  }
-  if (placeholder) {
-    input.placeholder = placeholder;
-  }
-  labelElement.append(labelText, input);
-  return labelElement;
+  const testIdMap = {
+    phase: 'editor-phase',
+    activity: 'editor-activity',
+    task: 'editor-task',
+    categoryLarge: 'editor-category-large',
+    categoryMedium: 'editor-category-medium',
+    documentName: 'editor-document-name',
+    owner: 'editor-owner',
+    supportTeam: 'editor-support-team',
+    plannedStartDate: 'editor-planned-start',
+    plannedEndDdate: 'editor-planned-end',
+    actualStartDate: 'editor-actual-start',
+    actualEndDate: 'editor-actual-end'
+  };
+  const requiredHtml = required ? ' <span class="text-red-500" style="color:var(--danger)">*</span><span class="sr-only">(필수)</span>' : '';
+  const requiredAttr = required ? ' required aria-required="true"' : '';
+  const placeholderAttr = placeholder ? ` placeholder="${escapeHtml(placeholder)}"` : '';
+  return `
+    <label class="editor-field">
+      <span>${label}${requiredHtml}</span>
+      <input data-testid="${testIdMap[field] || `editor-${toKebab(field)}`}" data-editor-field="${field}" type="${type}" value="${escapeHtml(value || '')}"${requiredAttr}${placeholderAttr} />
+    </label>
+  `;
 }
 
 function renderEditorSelectField(label, field, value, options) {
-  const labelElement = document.createElement('label');
-  labelElement.className = 'editor-field';
-  const fieldId = `editor-select-${field}-${Date.now()}`;
-  labelElement.htmlFor = fieldId;
-  const labelText = document.createElement('span');
-  labelText.textContent = label;
-  const select = document.createElement('select');
-  select.id = fieldId;
-  select.dataset.editorField = field;
-  options.forEach((optionValue) => {
-    const option = document.createElement('option');
-    option.value = optionValue;
-    option.textContent = optionValue;
-    option.selected = optionValue === value;
-    select.appendChild(option);
-  });
-  labelElement.append(labelText, select);
-  return labelElement;
+  return `
+    <label class="editor-field">
+      <span>${label}</span>
+      <select data-editor-field="${field}">
+        ${options.map((option) => `<option value="${escapeHtml(option)}" ${option === value ? 'selected' : ''}>${escapeHtml(option)}</option>`).join('')}
+      </select>
+    </label>
+  `;
 }
 
-let treeValueTemplate = null;
-
-function createTreeCellContent(value, depth) {
-  if (!treeValueTemplate) {
-    treeValueTemplate = document.createElement('div');
-  }
-  const treeValue = treeValueTemplate.cloneNode(false);
-  treeValue.className = `tree-value indent-${depth}`;
-  if (value) {
-    treeValue.textContent = value;
-  } else {
-    treeValue.appendChild(createEmptyCell());
-  }
-  return treeValue;
+function renderTreeCell(value, depth) {
+  return `<div class="tree-value indent-${depth}">${value ? escapeHtml(value) : '<span class="empty-cell">-</span>'}</div>`;
 }
 
-function createTextCellContent(value, warning = '') {
+function renderTextCell(value, warning = '') {
   if (!value) {
-    return warning ? createWarningBadge(warning) : createEmptyCell();
+    return warning ? `<span class="warning-badge">${escapeHtml(warning)}</span>` : '<span class="empty-cell">-</span>';
   }
-  if (!warning) {
-    return document.createTextNode(value);
-  }
-  const wrapper = document.createElement('div');
-  wrapper.appendChild(document.createTextNode(value));
-  const validation = document.createElement('div');
-  validation.className = 'validation-message';
-  validation.textContent = warning;
-  wrapper.appendChild(validation);
-  return wrapper;
+  return warning ? `<div>${escapeHtml(value)}<div class="validation-message">${escapeHtml(warning)}</div></div>` : escapeHtml(value);
 }
 
-// ⚡ Bolt: Cache empty cell DOM structure as a template and use cloneNode(true).
-// Repeatedly constructing DOM trees node-by-node in hot render paths causes significant
-// JS-to-C++ bridge overhead and GC pressure. Cloning an existing node structure is
-// substantially faster (often 2-3x in large grids).
-let emptyCellTemplate = null;
-
-function createEmptyCell() {
-  if (!emptyCellTemplate) {
-    emptyCellTemplate = document.createElement('span');
-    emptyCellTemplate.className = 'empty-cell';
-
-    const visibleDash = document.createElement('span');
-    visibleDash.setAttribute('aria-hidden', 'true');
-    visibleDash.textContent = '-';
-
-    const srOnly = document.createElement('span');
-    srOnly.className = 'sr-only';
-    srOnly.textContent = '값 없음';
-
-    emptyCellTemplate.append(visibleDash, srOnly);
-  }
-  return emptyCellTemplate.cloneNode(true);
-}
-
-let warningBadgeTemplate = null;
-
-function createWarningBadge(warning) {
-  if (!warningBadgeTemplate) {
-    warningBadgeTemplate = document.createElement('span');
-    warningBadgeTemplate.className = 'warning-badge';
-  }
-  const badge = warningBadgeTemplate.cloneNode(false);
-  badge.textContent = warning;
-  return badge;
-}
-
-const persistentOwnerColorMap = new Map();
-
-function createOwnerCellContent(owner) {
+function renderOwnerCell(owner, ownerColorMap) {
   if (!owner) {
-    return createEmptyCell();
+    return '<span class="empty-cell">-</span>';
   }
-
-  if (!persistentOwnerColorMap.has(owner)) {
-    persistentOwnerColorMap.set(owner, OWNER_COLORS[persistentOwnerColorMap.size % OWNER_COLORS.length]);
-  }
-
-  const badge = document.createElement('span');
-  badge.className = 'owner-badge';
-  badge.style.background = persistentOwnerColorMap.get(owner);
-  badge.textContent = owner;
-  return badge;
+  return `<span class="owner-badge" style="background:${ownerColorMap.get(owner)}">${escapeHtml(owner)}</span>`;
 }
 
-function createStatusCellContent(progressState) {
+function renderStatusCell(progressState) {
   if (!progressState.label) {
-    return createEmptyCell();
+    return '<span class="empty-cell">-</span>';
   }
-  const badge = document.createElement('span');
-  badge.className = `status-badge ${progressState.className}`;
-  badge.textContent = progressState.label;
-  if (progressState.description) {
-    badge.title = progressState.description;
-    badge.setAttribute('aria-label', `${progressState.label} - ${progressState.description}`);
-  }
-  return badge;
+  return `<span class="status-badge ${progressState.className}">${escapeHtml(progressState.label)}</span>`;
 }
 
-const metricTextTemplate = document.createElement('span');
-metricTextTemplate.className = 'metric-text';
-function createMetricText(value, testId = '') {
-  const metric = metricTextTemplate.cloneNode(false);
-  if (testId) {
-    metric.setAttribute('data-testid', testId);
-  }
-  metric.textContent = value;
-  return metric;
-}
-
-function createActualProgressCellContent(task, taskMetrics) {
-  const label = document.createElement('label');
-  const fieldId = `actual-progress-${task.id}`;
-  label.htmlFor = fieldId;
-  const srOnly = document.createElement('span');
-  srOnly.className = 'sr-only';
-  const rowEntityName = task.task || task.activity || task.phase || '작업';
-  srOnly.textContent = `실적진척상태 - ${rowEntityName}`;
-  if (!actualProgressSelectTemplate) {
-    actualProgressSelectTemplate = document.createElement('select');
-    ACTUAL_PROGRESS_OPTIONS.forEach((optionValue) => {
-      const option = document.createElement('option');
-      option.value = optionValue;
-      option.textContent = optionValue;
-      actualProgressSelectTemplate.appendChild(option);
-    });
-  }
-  const select = actualProgressSelectTemplate.cloneNode(true);
-  select.id = fieldId;
-  select.dataset.inlineProgress = task.id;
-  select.value = task.actualProgressStatus;
-  if (select.value !== task.actualProgressStatus) {
-    select.value = '미착수(0%)';
-  }
-  label.append(srOnly, select);
-
-  const warning = taskMetrics.plannedDateWarning || taskMetrics.actualDateWarning;
-  if (warning) {
-    const validation = document.createElement('div');
-    validation.id = `actual-progress-error-${task.id}`;
-    validation.className = 'validation-message';
-    validation.textContent = warning;
-    label.appendChild(validation);
-    select.setAttribute('aria-invalid', 'true');
-    select.setAttribute('aria-describedby', validation.id);
-  }
-  return label;
+function renderActualProgressCell(task, taskMetrics) {
+  const options = ACTUAL_PROGRESS_OPTIONS.map((option) => `
+    <option value="${escapeHtml(option)}" ${task.actualProgressStatus === option ? 'selected' : ''}>${escapeHtml(option)}</option>
+  `).join('');
+  return `
+    <label>
+      <span class="sr-only">실적진척상태</span>
+      <select data-inline-progress="${escapeHtml(task.id)}">
+        ${options}
+      </select>
+      ${taskMetrics.plannedDateWarning || taskMetrics.actualDateWarning ? `<div class="validation-message">${escapeHtml(taskMetrics.plannedDateWarning || taskMetrics.actualDateWarning)}</div>` : ''}
+    </label>
+  `;
 }
 
 function renderEditorValidation() {
@@ -1040,28 +495,10 @@ function renderEditorValidation() {
     errorElement.textContent = errors.join(' ');
   }
 
-  const form = document.querySelector('form[data-editor-form="true"]');
-  if (!form) {
-    return;
+  const cancelButton = elements.tableBody.querySelector('[data-action="cancel-editor"]');
+  if (cancelButton) {
+    cancelButton.addEventListener('click', () => closeEditor(), { once: true });
   }
-
-  const saveButton = form.querySelector('button[type="submit"]');
-  if (saveButton) {
-    saveButton.disabled = errors.length > 0;
-    saveButton.title = errors.length > 0 ? '입력값을 올바르게 수정해야 저장할 수 있습니다.' : '저장 (Enter)';
-  }
-
-  form.querySelectorAll('input[data-editor-field]').forEach((input) => {
-    const label = CSV_FIELD_LABELS[input.dataset.editorField] || input.dataset.editorField;
-    const hasError = errors.some((error) => label && error.includes(label));
-    if (hasError) {
-      input.setAttribute('aria-invalid', 'true');
-      input.setAttribute('aria-describedby', 'editor-errors');
-    } else {
-      input.removeAttribute('aria-invalid');
-      input.removeAttribute('aria-describedby');
-    }
-  });
 }
 
 function handleInlineProgressChange(event) {
@@ -1070,20 +507,9 @@ function handleInlineProgressChange(event) {
   if (!task) {
     return;
   }
-
-  const rawValue = event.target.value;
-  task.actualProgressStatus = ACTUAL_PROGRESS_OPTIONS.includes(rawValue) ? rawValue : '미착수(0%)';
-
+  task.actualProgressStatus = event.target.value;
   persistState();
   renderAll();
-
-  // 🎨 Palette: Restore focus to the dropdown after full DOM re-render
-  requestAnimationFrame(() => {
-    const dropdown = document.querySelector(`[data-inline-progress="${taskId}"]`);
-    if (dropdown) {
-      dropdown.focus();
-    }
-  });
 }
 
 function handleRowAction(action, taskId) {
@@ -1096,14 +522,6 @@ function handleRowAction(action, taskId) {
     task.expanded = !task.expanded;
     persistState();
     renderAll();
-
-    // 🎨 Palette: Restore focus to the toggle button after full DOM re-render
-    requestAnimationFrame(() => {
-      const toggleBtn = document.querySelector(`tr[data-task-id="${taskId}"] button[data-action="toggle"]`);
-      if (toggleBtn) {
-        toggleBtn.focus();
-      }
-    });
     return;
   }
 
@@ -1124,38 +542,16 @@ function handleRowAction(action, taskId) {
 
   if (action === 'delete') {
     if (window.confirm(`'${task.task || task.activity || task.phase || '선택한 작업'}' 항목과 모든 하위 작업을 삭제하시겠습니까?`)) {
-      const visibleTasksBefore = getVisibleTasks();
-      const currentIndex = visibleTasksBefore.findIndex(t => t.id === taskId);
-
       deleteTaskAndDescendants(taskId);
       persistState();
       renderAll();
       showToast('작업을 삭제했습니다.');
-
-      // 🎨 Palette: Restore focus after deletion to keep keyboard flow
-      requestAnimationFrame(() => {
-        const visibleTasksAfter = getVisibleTasks();
-        if (visibleTasksAfter.length > 0) {
-          const nextTargetIndex = Math.min(currentIndex, visibleTasksAfter.length - 1);
-          const nextTargetId = visibleTasksAfter[nextTargetIndex].id;
-          const nextTargetBtn = document.querySelector(`tr[data-task-id="${nextTargetId}"] button[data-action="delete"]`);
-          if (nextTargetBtn) {
-            nextTargetBtn.focus();
-          }
-        } else {
-          const addRootBtn = document.getElementById('add-root-task');
-          if (addRootBtn) {
-            addRootBtn.focus();
-          }
-        }
-      });
     }
     return;
   }
 }
 
 function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertAfterId = null, draft = null }) {
-  state.previousFocus = document.activeElement;
   if (mode === 'edit') {
     const task = findTask(targetId);
     if (!task) {
@@ -1168,50 +564,33 @@ function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertA
       depth: task.depth,
       insertAfterId: targetId,
       draft: { ...task },
-      initialDraft: { ...task },
       errors: []
     };
   } else {
-    const newDraft = draft ? { ...draft } : createEmptyTaskDraft();
     state.editor = {
       mode,
       targetId: null,
       parentId,
       depth,
       insertAfterId,
-      draft: { ...newDraft },
-      initialDraft: { ...newDraft },
+      draft: draft ? { ...draft } : createEmptyTaskDraft(),
       errors: []
     };
   }
   renderAll();
-
-  // Focus the first input/select in the editor to keep keyboard users in flow
-  requestAnimationFrame(() => {
-    const firstInput = document.querySelector('.editor-row input:not([type="hidden"]), .editor-row select');
-    if (firstInput) {
-      firstInput.focus();
-    }
-  });
 }
 
-function closeEditor(force = false) {
-  if (!force && state.editor.draft && state.editor.initialDraft) {
-    const hasChanges = Object.keys(state.editor.initialDraft).some(
-      key => state.editor.draft[key] !== state.editor.initialDraft[key]
-    );
-    if (hasChanges && !window.confirm('저장하지 않은 변경 사항이 있습니다. 편집을 취소하시겠습니까?')) {
-      return;
-    }
-  }
-
-  state.editor = { ...DEFAULT_EDITOR_STATE, errors: [] };
+function closeEditor() {
+  state.editor = {
+    mode: null,
+    targetId: null,
+    parentId: null,
+    depth: 1,
+    insertAfterId: null,
+    draft: null,
+    errors: []
+  };
   renderAll();
-
-  if (state.previousFocus) {
-    state.previousFocus.focus();
-    state.previousFocus = null;
-  }
 }
 
 function saveEditor() {
@@ -1223,7 +602,7 @@ function saveEditor() {
   }
 
   if (state.editor.mode === 'edit' && state.editor.targetId) {
-    const index = getTaskIndexById(state.editor.targetId);
+    const index = state.tasks.findIndex((task) => task.id === state.editor.targetId);
     if (index >= 0) {
       state.tasks[index] = {
         ...state.tasks[index],
@@ -1247,7 +626,7 @@ function saveEditor() {
     insertTaskAfter(newTask, state.editor.insertAfterId);
   }
 
-  closeEditor(true);
+  closeEditor();
   persistState();
   renderAll();
   showToast('변경 내용을 저장했습니다.');
@@ -1264,15 +643,10 @@ function createEmptyTaskDraft() {
     owner: '',
     supportTeam: '',
     plannedStartDate: '',
-    plannedEndDate: '',
+    plannedEndDdate: '',
     actualProgressStatus: '미착수(0%)',
     actualStartDate: '',
     actualEndDate: '',
-    predecessors: '',
-    budget: '',
-    actualCost: '',
-    sprint: '',
-    storyPoints: '',
     isSynthetic: false
   };
 }
@@ -1292,7 +666,7 @@ function sanitizeDraft(draft) {
   const sanitized = {};
   EDITABLE_FIELDS.forEach((field) => {
     // 🛡️ Sentinel: Enforce string coercion before trim() to prevent DoS via type confusion
-    sanitized[field] = String(draft?.[field] || '').trim().slice(0, 1000);
+    sanitized[field] = String(draft?.[field] || '').trim();
   });
   // 🛡️ Sentinel: Strictly validate against allowed options to prevent injection
   if (!sanitized.actualProgressStatus || !ACTUAL_PROGRESS_OPTIONS.includes(sanitized.actualProgressStatus)) {
@@ -1307,14 +681,6 @@ function validateDraft(draft, depth) {
     return errors;
   }
   const sanitized = sanitizeDraft(draft);
-
-  EDITABLE_FIELDS.forEach((field) => {
-    if (/[<>]/.test(sanitized[field])) {
-      const label = CSV_FIELD_LABELS[field] || field;
-      errors.push(`${label} 항목에는 HTML 태그 문자를 사용할 수 없습니다.`);
-    }
-  });
-
   if (!sanitized.phase && depth === 1) {
     errors.push('최상위 작업은 단계 값을 입력해야 합니다.');
   }
@@ -1326,12 +692,16 @@ function validateDraft(draft, depth) {
   }
 
   validateDateField('계획시작일', sanitized.plannedStartDate, errors);
-  validateDateField('계획종료일', sanitized.plannedEndDate, errors);
+  validateDateField('계획종료일', sanitized.plannedEndDdate, errors);
   validateDateField('실적시작일', sanitized.actualStartDate, errors);
   validateDateField('실적종료일', sanitized.actualEndDate, errors);
 
-  validateDateRange('계획시작일', sanitized.plannedStartDate, '계획종료일', sanitized.plannedEndDate, errors);
-  validateDateRange('실적시작일', sanitized.actualStartDate, '실적종료일', sanitized.actualEndDate, errors);
+  if (sanitized.plannedStartDate && sanitized.plannedEndDdate && compareDateStrings(sanitized.plannedStartDate, sanitized.plannedEndDdate) > 0) {
+    errors.push('계획종료일은 계획시작일보다 빠를 수 없습니다.');
+  }
+  if (sanitized.actualStartDate && sanitized.actualEndDate && compareDateStrings(sanitized.actualStartDate, sanitized.actualEndDate) > 0) {
+    errors.push('실적종료일은 실적시작일보다 빠를 수 없습니다.');
+  }
 
   return Array.from(new Set(errors));
 }
@@ -1340,23 +710,14 @@ function validateDateField(label, value, errors) {
   if (!value) {
     return;
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !isValidDateString(value)) {
-    errors.push(`${label}은 YYYY-MM-DD 형식의 실제 달력 날짜여야 합니다.`);
-  }
-}
-
-function validateDateRange(startLabel, startValue, endLabel, endValue, errors) {
-  if (startValue && endValue && compareDateStrings(startValue, endValue) > 0) {
-    errors.push(`${endLabel}은 ${startLabel}보다 빠를 수 없습니다.`);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    errors.push(`${label}은 YYYY-MM-DD 형식이어야 합니다.`);
   }
 }
 
 function computeTaskMetrics() {
-  // ⚡ Bolt: Cache durationDays during total calculation to avoid recalculating for every task
-  const durationCache = new Map();
   const totalDays = state.tasks.reduce((sum, task) => {
-    const duration = calculateDurationDays(task.plannedStartDate, task.plannedEndDate);
-    durationCache.set(task.id, duration);
+    const duration = calculateDurationDays(task.plannedStartDate, task.plannedEndDdate);
     return sum + duration;
   }, 0);
 
@@ -1366,13 +727,13 @@ function computeTaskMetrics() {
   let totalWeightedActualRatio = 0;
 
   state.tasks.forEach((task) => {
-    const durationDays = durationCache.get(task.id);
+    const durationDays = calculateDurationDays(task.plannedStartDate, task.plannedEndDdate);
     const weightRatio = totalDays > 0 ? durationDays / totalDays : 0;
-    const plannedProgressRatio = calculatePlannedProgressRatio(baseDate, task.plannedStartDate, task.plannedEndDate, durationDays);
+    const plannedProgressRatio = calculatePlannedProgressRatio(baseDate, task.plannedStartDate, task.plannedEndDdate);
     const actualProgressRatio = (ACTUAL_PROGRESS_MAP[task.actualProgressStatus] || 0) / 100;
     const weightedPlannedRatio = weightRatio * plannedProgressRatio;
     const weightedActualRatio = weightRatio * actualProgressRatio;
-    const plannedDateWarning = getDateRangeWarning(task.plannedStartDate, task.plannedEndDate, '계획종료일이 시작일보다 빠릅니다.');
+    const plannedDateWarning = getDateRangeWarning(task.plannedStartDate, task.plannedEndDdate, '계획종료일이 시작일보다 빠릅니다.');
     const actualDateWarning = getDateRangeWarning(task.actualStartDate, task.actualEndDate, '실적종료일이 시작일보다 빠릅니다.');
     const progressState = deriveProgressState(task, baseDate);
 
@@ -1400,46 +761,27 @@ function computeTaskMetrics() {
   };
 }
 
-const PROGRESS_STATE_EMPTY = Object.freeze({ label: '', className: '', description: '' });
-const PROGRESS_STATE_DONE = Object.freeze({
-  label: '완료',
-  className: 'done',
-  description: '실적이 모두 입력되어 완료된 작업입니다.',
-});
-const PROGRESS_STATE_DELAY = Object.freeze({
-  label: '지연',
-  className: 'delay',
-  description: '계획 종료일이 지났으나 아직 완료되지 않은 작업입니다.',
-});
-const PROGRESS_STATE_ACTIVE = Object.freeze({
-  label: '진행',
-  className: 'active',
-  description: '실적이 입력되어 진행 중인 작업입니다.',
-});
-const PROGRESS_STATE_BEFORE = Object.freeze({
-  label: '진행전',
-  className: 'before',
-  description: '아직 계획 시작일이 도래하지 않은 작업입니다.',
-});
-
 function deriveProgressState(task, baseDate) {
-  if (!task.plannedStartDate || !task.plannedEndDate) {
-    return PROGRESS_STATE_EMPTY;
+  if (!task.plannedStartDate || !task.plannedEndDdate) {
+    return { label: '', className: '' };
   }
 
   if (task.actualStartDate && task.actualEndDate) {
-    return PROGRESS_STATE_DONE;
+    return { label: '완료', className: 'done' };
   }
-  if (compareDateStrings(baseDate, task.plannedEndDate) >= 0 && (!task.actualStartDate || !task.actualEndDate)) {
-    return PROGRESS_STATE_DELAY;
+  if (compareDateStrings(baseDate, task.plannedEndDdate) >= 0 && (!task.actualStartDate || !task.actualEndDate)) {
+    return { label: '지연', className: 'delay' };
   }
   if (task.actualStartDate && !task.actualEndDate) {
-    return PROGRESS_STATE_ACTIVE;
+    return { label: '진행', className: 'active' };
   }
-  return PROGRESS_STATE_BEFORE;
+  if (compareDateStrings(baseDate, task.plannedStartDate) < 0) {
+    return { label: '진행전', className: 'before' };
+  }
+  return { label: '진행전', className: 'before' };
 }
 
-function calculatePlannedProgressRatio(baseDate, startDate, endDate, durationDays) {
+function calculatePlannedProgressRatio(baseDate, startDate, endDate) {
   if (!baseDate || !startDate || !endDate) {
     return 0;
   }
@@ -1449,8 +791,7 @@ function calculatePlannedProgressRatio(baseDate, startDate, endDate, durationDay
   if (compareDateStrings(baseDate, endDate) >= 0) {
     return 1;
   }
-  // Bolt: Reuse passed durationDays if available to avoid redundant Date parsing and calculations.
-  const total = durationDays !== undefined ? durationDays : calculateDurationDays(startDate, endDate);
+  const total = calculateDurationDays(startDate, endDate);
   if (total <= 0) {
     return 1;
   }
@@ -1477,73 +818,70 @@ function getDateRangeWarning(startDate, endDate, message) {
   return '';
 }
 
-const cachedHiddenParentIds = new Set();
-
 function getVisibleTasks() {
   const visible = [];
-  cachedHiddenParentIds.clear();
+  const hiddenParentIds = new Set();
 
-  // ⚡ Bolt Optimization: Single-pass O(N) visible task filtering to avoid redundant O(N * Depth) tree traversals
+  // ⚡ Bolt Optimization: Pre-compute task lookup map to avoid O(N²) array scans
+  const taskById = new Map();
+  state.tasks.forEach((task) => taskById.set(task.id, task));
+
   state.tasks.forEach((task) => {
-    if (cachedHiddenParentIds.has(task.parentId)) {
-      cachedHiddenParentIds.add(task.id);
+    if (hiddenParentIds.has(task.parentId)) {
+      hiddenParentIds.add(task.id);
       return;
     }
 
     visible.push(task);
     if (!task.expanded) {
-      cachedHiddenParentIds.add(task.id);
+      hiddenParentIds.add(task.id);
     }
   });
 
-  return visible;
+  return visible.filter((task) => {
+    let parentId = task.parentId;
+    const visited = new Set([task.id]);
+    while (parentId) {
+      if (visited.has(parentId)) {
+        break;
+      }
+      visited.add(parentId);
+      const parent = taskById.get(parentId);
+      if (parent && !parent.expanded) {
+        return false;
+      }
+      parentId = parent?.parentId;
+    }
+    return true;
+  });
 }
 
 function insertTaskAfter(task, afterId) {
   if (!afterId) {
     state.tasks.unshift(task);
-    invalidateTaskIndexCache();
     return;
   }
-  const index = getTaskIndexById(afterId);
+  const index = state.tasks.findIndex((candidate) => candidate.id === afterId);
   if (index === -1) {
     state.tasks.push(task);
-    invalidateTaskIndexCache();
     return;
   }
   state.tasks.splice(index + 1, 0, task);
-  invalidateTaskIndexCache();
 }
 
 function deleteTaskAndDescendants(taskId) {
-  // ⚡ Bolt: Replace O(N * Depth) cascading loop with O(N) map-based BFS to prevent UI freeze during deletion
-  const childrenMap = new Map();
-  state.tasks.forEach(task => {
-    if (task.parentId) {
-      const children = childrenMap.get(task.parentId) || [];
-      children.push(task.id);
-      childrenMap.set(task.parentId, children);
-    }
-  });
-
   const idsToDelete = new Set([taskId]);
-  const queue = [taskId];
-  let queueIndex = 0;
-
-  while (queueIndex < queue.length) {
-    const currentId = queue[queueIndex++];
-    const children = childrenMap.get(currentId);
-    if (children) {
-      children.forEach(childId => {
-        if (!idsToDelete.has(childId)) {
-          idsToDelete.add(childId);
-          queue.push(childId);
-        }
-      });
-    }
+  let changed = true;
+  while (changed) {
+    changed = false;
+    state.tasks.forEach((task) => {
+      if (idsToDelete.has(task.parentId) && !idsToDelete.has(task.id)) {
+        idsToDelete.add(task.id);
+        changed = true;
+      }
+    });
   }
   state.tasks = state.tasks.filter((task) => !idsToDelete.has(task.id));
-  invalidateTaskIndexCache();
 }
 
 function reorderTaskWithinLevel(draggedId, targetId, placeAfter = true) {
@@ -1554,34 +892,35 @@ function reorderTaskWithinLevel(draggedId, targetId, placeAfter = true) {
   }
   const draggedBlock = state.tasks.slice(draggedRange.startIndex, draggedRange.endIndex + 1);
   state.tasks.splice(draggedRange.startIndex, draggedBlock.length);
-  invalidateTaskIndexCache();
 
   const refreshedTargetRange = getTaskSubtreeRange(targetId);
   const insertionIndex = refreshedTargetRange
     ? (placeAfter ? refreshedTargetRange.endIndex + 1 : refreshedTargetRange.startIndex)
     : state.tasks.length;
   state.tasks.splice(insertionIndex, 0, ...draggedBlock);
-  invalidateTaskIndexCache();
 }
 
 function canReorderWithinLevel(draggedTask, targetTask) {
   return draggedTask.depth === targetTask.depth && draggedTask.parentId === targetTask.parentId;
 }
 
-function getLastRootTaskId() {
-  // Walk backward to avoid allocating an intermediate roots array.
-  let lastRoot = null;
-  for (let i = state.tasks.length - 1; i >= 0; i -= 1) {
-    if (!state.tasks[i].parentId) {
-      lastRoot = state.tasks[i];
-      break;
+function createOwnerColorMap() {
+  const ownerColorMap = new Map();
+  state.tasks.forEach((task) => {
+    if (task.owner && !ownerColorMap.has(task.owner)) {
+      ownerColorMap.set(task.owner, OWNER_COLORS[ownerColorMap.size % OWNER_COLORS.length]);
     }
-  }
-  return lastRoot ? getLastDescendantId(lastRoot.id) : null;
+  });
+  return ownerColorMap;
+}
+
+function getLastRootTaskId() {
+  const roots = state.tasks.filter((task) => !task.parentId);
+  return roots.length > 0 ? getLastDescendantId(roots[roots.length - 1].id) : null;
 }
 
 function getLastDescendantId(taskId) {
-  const startIndex = getTaskIndexById(taskId);
+  const startIndex = state.tasks.findIndex((task) => task.id === taskId);
   if (startIndex === -1) {
     return taskId;
   }
@@ -1597,7 +936,7 @@ function getLastDescendantId(taskId) {
 }
 
 function getTaskSubtreeRange(taskId) {
-  const startIndex = getTaskIndexById(taskId);
+  const startIndex = state.tasks.findIndex((task) => task.id === taskId);
   if (startIndex === -1) {
     return null;
   }
@@ -1615,147 +954,87 @@ function getTaskSubtreeRange(taskId) {
 }
 
 function findTask(taskId) {
-  const index = getTaskIndexById(taskId);
-  return index !== -1 ? state.tasks[index] : null;
+  return state.tasks.find((task) => task.id === taskId) || null;
 }
 
-function persistState({ syncCloud = true } = {}) {
+function persistState() {
   const payload = {
     projectName: state.projectName,
     baseDate: state.baseDate,
-    tasks: state.tasks.map(createPersistableTask)
+    tasks: state.tasks.map((task) => ({ ...task }))
   };
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  } catch (error) {
-    console.error('State persistence failed:', error);
-    showToast('로컬 스토리지 용량이 초과되어 저장하지 못했습니다.');
-  }
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
 
   if (state.jsonSyncHandle) {
     writeJsonSyncFile().catch(() => {
       showToast('연결된 wbs.json 파일 저장에 실패했습니다.');
     });
   }
-
-  if (syncCloud && typeof window !== 'undefined') {
-    window.ScopeWeaveCloud?.push?.(payload);
-  }
 }
 
 function loadLocalState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? parseSafeJson(raw) : null;
+    return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }
 }
 
 function hydrateState(savedState) {
-  state.projectName = String(savedState.projectName || DEFAULT_PROJECT_NAME).trim().slice(0, MAX_PROJECT_NAME_LENGTH) || DEFAULT_PROJECT_NAME;
-  state.baseDate = String(savedState.baseDate || '').trim().slice(0, MAX_BASE_DATE_LENGTH) || formatLocalDateInput(new Date());
-  state.tasks = Array.isArray(savedState.tasks)
-    ? savedState.tasks.filter(isTaskRecord).map(normalizeStoredTask)
-    : [];
-  invalidateTaskIndexCache();
-}
-
-function normalizeStoredTask(task) {
-  const safeTask = isTaskRecord(task) ? task : {};
-  return createPersistableTask({
-    ...safeTask,
-    plannedEndDate: getPlannedEndDateValue(safeTask),
-    expanded: safeTask.expanded !== false
-  });
-}
-
-function createPersistableTask(task) {
-  const safeTask = isTaskRecord(task) ? task : {};
-  const persistableTask = Object.create(null);
-  for (const field of TASK_STORAGE_FIELDS) {
-    if (safeTask[field] !== undefined) {
-      persistableTask[field] = safeTask[field];
-    }
-  }
-  persistableTask.plannedEndDate = getPlannedEndDateValue(safeTask);
-  persistableTask.expanded = safeTask.expanded !== false;
-  persistableTask.pendingDelete = Boolean(safeTask.pendingDelete);
-  persistableTask.isSynthetic = Boolean(safeTask.isSynthetic);
-  return persistableTask;
+  state.projectName = savedState.projectName || DEFAULT_PROJECT_NAME;
+  state.baseDate = savedState.baseDate || formatLocalDateInput(new Date());
+  state.tasks = Array.isArray(savedState.tasks) ? savedState.tasks.map((task) => ({ ...task, expanded: task.expanded !== false })) : [];
 }
 
 async function loadSeedTasks() {
-  const controller = new AbortController();
-  const timeoutId = window.setTimeout(() => controller.abort(), 5000);
   try {
-    const response = await fetch('./wbs.json', { cache: 'no-store', signal: controller.signal });
+    const response = await fetch('./wbs.json', { cache: 'no-store' });
     if (!response.ok) {
       throw new Error('seed-load-failed');
     }
-    return parseSafeJson(await response.text());
+    return await response.json();
   } catch {
     return [];
-  } finally {
-    window.clearTimeout(timeoutId);
   }
-}
-
-function parseSafeJson(text) {
-  return JSON.parse(text, (key, value) => (UNSAFE_JSON_KEYS.has(key) ? undefined : value));
-}
-
-function getPlannedEndDateValue(task) {
-  if (!isTaskRecord(task)) {
-    return '';
-  }
-  return task.plannedEndDate || task[LEGACY_PLANNED_END_FIELD] || '';
-}
-
-function isTaskRecord(task) {
-  return task !== null && typeof task === 'object' && !Array.isArray(task);
 }
 
 function normalizeImportedTasks(sourceTasks) {
   if (!Array.isArray(sourceTasks)) {
     return [];
   }
-  // Defensive: a hand-edited or tampered wbs.json / localStorage payload can
-  // contain non-object entries (null, numbers, arrays). Drop them so a junk
-  // seed row degrades gracefully instead of throwing an uncaught TypeError
-  // during bootstrap() (which does not wrap this call in try/catch).
-  const records = sourceTasks.filter(isTaskRecord);
-  records.forEach((task, index) => validateImportedTask(task, index));
-  const hasExplicitDepth = records.some((task) => task.__depth || task.__id || task.__parentId);
+  sourceTasks.forEach((task, index) => validateImportedTask(task, index));
+  const hasExplicitDepth = sourceTasks.some((task) => task.__depth || task.__id || task.__parentId);
   if (!hasExplicitDepth) {
-    return buildHierarchicalTasksFromFlatSource(records);
+    return buildHierarchicalTasksFromFlatSource(sourceTasks);
   }
-  return records.map((task, index) => ({
-    ...createNormalizedExternalRecord(task),
+  return sourceTasks.map((task, index) => ({
     id: task.__id || createId(index + 1),
     parentId: task.__parentId || null,
-    depth: clampImportedDepth(task),
+    depth: Number(task.__depth) || inferDepth(task),
     expanded: true,
+    phase: task.phase || '',
+    activity: task.activity || '',
+    task: task.task || '',
+    categoryLarge: task.categoryLarge || '',
+    categoryMedium: task.categoryMedium || '',
+    documentName: task.documentName || '',
+    owner: task.owner || '',
+    supportTeam: task.supportTeam || '',
+    plannedStartDate: task.plannedStartDate || '',
+    plannedEndDdate: task.plannedEndDdate || task.plannedEndDate || '',
+    actualProgressStatus: ACTUAL_PROGRESS_MAP[task.actualProgressStatus] !== undefined ? task.actualProgressStatus : '미착수(0%)',
+    actualStartDate: task.actualStartDate || '',
+    actualEndDate: task.actualEndDate || '',
     pendingDelete: false,
     isSynthetic: Boolean(task.isSynthetic)
   }));
 }
 
-function clampImportedDepth(task) {
-  // The CSV path enforces __depth in {1,2,3} (validateCsvDepth). Apply the same
-  // contract to the JSON seed path so a tampered wbs.json can't inject an
-  // out-of-range depth (e.g. "4") that the 3-level renderer never expects.
-  const parsedDepth = Number(task.__depth);
-  if (Number.isInteger(parsedDepth) && parsedDepth >= 1 && parsedDepth <= 3) {
-    return parsedDepth;
-  }
-  return inferDepth(task);
-}
-
 function validateImportedTask(task, index) {
   const rowLabel = `${index + 2}행`;
   const plannedStartDate = task.plannedStartDate || '';
-  const plannedEndDate = getPlannedEndDateValue(task);
+  const plannedEndDate = task.plannedEndDdate || task.plannedEndDate || '';
   const actualStartDate = task.actualStartDate || '';
   const actualEndDate = task.actualEndDate || '';
 
@@ -1770,64 +1049,53 @@ function validateImportedTask(task, index) {
     }
   });
 
-  const dateRangeErrors = [];
-  validateDateRange('계획시작일', plannedStartDate, '계획종료일', plannedEndDate, dateRangeErrors);
-  validateDateRange('실적시작일', actualStartDate, '실적종료일', actualEndDate, dateRangeErrors);
-  if (dateRangeErrors.length > 0) {
-    throw new Error(`${rowLabel}: ${dateRangeErrors[0]}`);
+  if (plannedStartDate && plannedEndDate && compareDateStrings(plannedStartDate, plannedEndDate) > 0) {
+    throw new Error(`${rowLabel}: 계획종료일은 계획시작일보다 빠를 수 없습니다.`);
   }
-}
-
-const createNormalizedExternalRecord = (task, defaults = {}) => ({
-  ...createEmptyTaskDraft(),
-  ...defaults,
-  phase: task.phase || defaults.phase || '',
-  activity: task.activity || defaults.activity || '',
-  task: task.task || defaults.task || '',
-  categoryLarge: task.categoryLarge || '',
-  categoryMedium: task.categoryMedium || '',
-  documentName: task.documentName || '',
-  owner: task.owner || '',
-  supportTeam: task.supportTeam || '',
-  plannedStartDate: task.plannedStartDate || '',
-  plannedEndDate: getPlannedEndDateValue(task),
-  actualProgressStatus: ACTUAL_PROGRESS_MAP[task.actualProgressStatus] !== undefined ? task.actualProgressStatus : '미착수(0%)',
-  actualStartDate: task.actualStartDate || '',
-  actualEndDate: task.actualEndDate || '',
-  predecessors: task.predecessors || defaults.predecessors || '',
-  budget: task.budget || defaults.budget || '',
-  actualCost: task.actualCost || defaults.actualCost || '',
-  sprint: task.sprint || defaults.sprint || '',
-  storyPoints: task.storyPoints || defaults.storyPoints || ''
-});
-
-function getPhaseKey(task, index) {
-  return task.phase || `__phase-${index}`;
-}
-
-function getActivityKey(task, index) {
-  return `${getPhaseKey(task, index)}::${task.activity || `__activity-${index}`}`;
-}
-
-function ensureSyntheticNode(map, key, idPrefix, index, pushCallback) {
-  if (!map.has(key)) {
-    const id = createId(`${idPrefix}-${index}`);
-    pushCallback(id);
-    map.set(key, id);
+  if (actualStartDate && actualEndDate && compareDateStrings(actualStartDate, actualEndDate) > 0) {
+    throw new Error(`${rowLabel}: 실적종료일은 실적시작일보다 빠를 수 없습니다.`);
   }
-  return map.get(key);
 }
 
 function buildHierarchicalTasksFromFlatSource(sourceTasks) {
   const normalized = [];
   const phaseMap = new Map();
   const activityMap = new Map();
+  const getPhaseKey = (task, index) => task.phase || `__phase-${index}`;
+  const getActivityKey = (task, index) => `${getPhaseKey(task, index)}::${task.activity || `__activity-${index}`}`;
+
+  const normalizeExternalRecord = (task, defaults = {}) => ({
+    ...createEmptyTaskDraft(),
+    ...defaults,
+    phase: task.phase || defaults.phase || '',
+    activity: task.activity || defaults.activity || '',
+    task: task.task || defaults.task || '',
+    categoryLarge: task.categoryLarge || '',
+    categoryMedium: task.categoryMedium || '',
+    documentName: task.documentName || '',
+    owner: task.owner || '',
+    supportTeam: task.supportTeam || '',
+    plannedStartDate: task.plannedStartDate || '',
+    plannedEndDdate: task.plannedEndDdate || task.plannedEndDate || '',
+    actualProgressStatus: ACTUAL_PROGRESS_MAP[task.actualProgressStatus] !== undefined ? task.actualProgressStatus : '미착수(0%)',
+    actualStartDate: task.actualStartDate || '',
+    actualEndDate: task.actualEndDate || ''
+  });
+
+  const registerPhase = (phaseKey, phaseId) => {
+    phaseMap.set(phaseKey, phaseId);
+  };
+
+  const registerActivity = (activityKey, activityId) => {
+    activityMap.set(activityKey, activityId);
+  };
 
   const ensureSyntheticPhase = (task, index) => {
     const phaseKey = getPhaseKey(task, index);
-    return ensureSyntheticNode(phaseMap, phaseKey, 'phase', index, (phaseId) => {
+    if (!phaseMap.has(phaseKey)) {
+      const phaseId = createId(`phase-${index}`);
       normalized.push({
-        ...createNormalizedExternalRecord({ phase: task.phase }),
+        ...normalizeExternalRecord({ phase: task.phase }),
         id: phaseId,
         parentId: null,
         depth: 1,
@@ -1835,14 +1103,17 @@ function buildHierarchicalTasksFromFlatSource(sourceTasks) {
         pendingDelete: false,
         isSynthetic: true
       });
-    });
+      registerPhase(phaseKey, phaseId);
+    }
+    return phaseMap.get(phaseKey);
   };
 
   const ensureSyntheticActivity = (task, index, parentPhaseId) => {
     const key = getActivityKey(task, index);
-    return ensureSyntheticNode(activityMap, key, 'activity', index, (activityId) => {
+    if (!activityMap.has(key)) {
+      const activityId = createId(`activity-${index}`);
       normalized.push({
-        ...createNormalizedExternalRecord({ phase: task.phase, activity: task.activity }),
+        ...normalizeExternalRecord({ phase: task.phase, activity: task.activity }),
         id: activityId,
         parentId: parentPhaseId,
         depth: 2,
@@ -1850,7 +1121,9 @@ function buildHierarchicalTasksFromFlatSource(sourceTasks) {
         pendingDelete: false,
         isSynthetic: true
       });
-    });
+      registerActivity(key, activityId);
+    }
+    return activityMap.get(key);
   };
 
   sourceTasks.forEach((task, index) => {
@@ -1861,7 +1134,7 @@ function buildHierarchicalTasksFromFlatSource(sourceTasks) {
     if (hasPhase && !hasActivity && !hasTask) {
       const phaseId = createId(`phase-${index}`);
       normalized.push({
-        ...createNormalizedExternalRecord(task),
+        ...normalizeExternalRecord(task),
         id: phaseId,
         parentId: null,
         depth: 1,
@@ -1869,7 +1142,7 @@ function buildHierarchicalTasksFromFlatSource(sourceTasks) {
         pendingDelete: false,
         isSynthetic: false
       });
-      phaseMap.set(getPhaseKey(task, index), phaseId);
+      registerPhase(getPhaseKey(task, index), phaseId);
       return;
     }
 
@@ -1878,7 +1151,7 @@ function buildHierarchicalTasksFromFlatSource(sourceTasks) {
     if (hasActivity && !hasTask) {
       const activityId = createId(`activity-${index}`);
       normalized.push({
-        ...createNormalizedExternalRecord(task),
+        ...normalizeExternalRecord(task),
         id: activityId,
         parentId: parentPhaseId,
         depth: 2,
@@ -1886,13 +1159,13 @@ function buildHierarchicalTasksFromFlatSource(sourceTasks) {
         pendingDelete: false,
         isSynthetic: false
       });
-      activityMap.set(getActivityKey(task, index), activityId);
+      registerActivity(getActivityKey(task, index), activityId);
       return;
     }
 
     const parentActivityId = hasTask ? ensureSyntheticActivity(task, index, parentPhaseId) : parentPhaseId;
     normalized.push({
-      ...createNormalizedExternalRecord(task),
+      ...normalizeExternalRecord(task),
       id: createId(`leaf-${index}`),
       parentId: hasTask ? parentActivityId : parentPhaseId,
       depth: hasTask ? 3 : hasActivity ? 2 : 1,
@@ -1930,7 +1203,7 @@ function exportCsv() {
       task.supportTeam,
       taskMetrics.progressState.label,
       task.plannedStartDate,
-      task.plannedEndDate,
+      task.plannedEndDdate,
       formatNumber(taskMetrics.durationDays),
       formatPercent(taskMetrics.plannedProgressRatio * 100, 2),
       formatDecimal(taskMetrics.weightRatio, 3),
@@ -1942,17 +1215,12 @@ function exportCsv() {
       formatPercent(taskMetrics.weightedActualRatio * 100, 2),
       task.id,
       task.parentId || '',
-      task.depth,
-      task.predecessors || '',
-      task.budget || '',
-      task.actualCost || '',
-      task.sprint || '',
-      task.storyPoints || ''
+      task.depth
     ];
   });
 
   const csvText = [CSV_HEADERS, ...rows]
-    .map((row) => row.map((cell) => csvEscape(cell)).join(','))
+    .map((row) => row.map(csvEscape).join(','))
     .join('\r\n');
   downloadFile(csvText, `wbs_export_${formatCompactDate(new Date())}.csv`, 'text/csv;charset=utf-8');
 }
@@ -1963,25 +1231,11 @@ async function handleCsvImport(event) {
     return;
   }
 
-  if (state.tasks.length > 0) {
-    if (!window.confirm('새 CSV 파일을 가져오면 현재 등록된 모든 작업 데이터가 지워집니다.\n계속하시겠습니까?')) {
-      event.target.value = '';
-      return;
-    }
-  }
-
-  if (file.size > 5 * 1024 * 1024) {
-    showToast('파일 크기는 5MB를 초과할 수 없습니다.');
-    event.target.value = '';
-    return;
-  }
-
   try {
     const text = await file.text();
     const imported = parseCsv(text);
     state.tasks = validateImportedTasks(normalizeImportedTasks(imported));
-    invalidateTaskIndexCache();
-    closeEditor(true);
+    closeEditor();
     persistState();
     renderAll();
     showToast('CSV를 가져왔습니다. 기존 데이터는 새 CSV로 대체되었습니다.');
@@ -1991,10 +1245,6 @@ async function handleCsvImport(event) {
     event.target.value = '';
   }
 }
-
-window.__scopeweaveTestApi = Object.assign(window.__scopeweaveTestApi || {}, {
-  validateImportedTasks
-});
 
 function validateImportedTasks(tasks) {
   const seenIds = new Set();
@@ -2029,30 +1279,11 @@ function validateImportedTasks(tasks) {
 
 function validateCsvCell(value, fieldName) {
   if (!value) return value;
-  const normalized = String(value);
-  const label = CSV_FIELD_LABELS[fieldName] || fieldName;
-  if (normalized.length > 1000) {
-    throw new Error(`${label} 컬럼은 1000자 이하로 입력해야 합니다.`);
-  }
-  if (/[<>]/.test(normalized)) {
-    throw new Error(`${label} 컬럼에는 HTML 태그 문자를 사용할 수 없습니다.`);
-  }
-  return sanitizeCsvFormulaValue(normalized);
+  return value.substring(0, 1000); // basic length restriction
 }
-
-function validateCsvInternalValue(value, fieldName) {
-  return validateCsvCell(value, fieldName);
-}
-
-function validateCsvId(value) { return validateCsvInternalValue(value, '__id'); }
-function validateCsvParentId(value) { return validateCsvInternalValue(value, '__parentId'); }
-function validateCsvDepth(value) {
-  const normalized = validateCsvInternalValue(value, '__depth');
-  if (normalized && !/^[1-3]$/.test(normalized)) {
-    throw new Error('__depth 컬럼은 1, 2, 3 중 하나여야 합니다.');
-  }
-  return normalized;
-}
+function validateCsvId(value) { return value; }
+function validateCsvParentId(value) { return value; }
+function validateCsvDepth(value) { return value; }
 
 function parseCsv(text) {
   const rows = [];
@@ -2113,7 +1344,7 @@ function parseCsv(text) {
     }
   });
 
-  return rows.slice(1).filter((cells) => cells.some((cell) => String(cell ?? '').trim() !== '')).map((cells) => ({
+  return rows.slice(1).filter((cells) => cells.some((cell) => cell.trim() !== '')).map((cells) => ({
     phase: validateCsvCell(readCsvCell(cells, headerMap, '단계'), 'phase'),
     activity: validateCsvCell(readCsvCell(cells, headerMap, 'Activity'), 'activity'),
     task: validateCsvCell(readCsvCell(cells, headerMap, 'Task'), 'task'),
@@ -2123,15 +1354,10 @@ function parseCsv(text) {
     owner: validateCsvCell(readCsvCell(cells, headerMap, '담당자'), 'owner'),
     supportTeam: validateCsvCell(readCsvCell(cells, headerMap, '지원팀'), 'supportTeam'),
     plannedStartDate: validateCsvCell(readCsvCell(cells, headerMap, '계획시작일'), 'plannedStartDate'),
-    plannedEndDate: validateCsvCell(readCsvCell(cells, headerMap, '계획종료일'), 'plannedEndDate'),
+    plannedEndDdate: validateCsvCell(readCsvCell(cells, headerMap, '계획종료일'), 'plannedEndDdate'),
     actualProgressStatus: validateCsvCell(readCsvCell(cells, headerMap, '실적진척상태') || '미착수(0%)', 'actualProgressStatus'),
     actualStartDate: validateCsvCell(readCsvCell(cells, headerMap, '실적시작일'), 'actualStartDate'),
     actualEndDate: validateCsvCell(readCsvCell(cells, headerMap, '실적종료일'), 'actualEndDate'),
-    predecessors: validateCsvCell(readCsvCell(cells, headerMap, '선행작업'), 'predecessors'),
-    budget: validateCsvCell(readCsvCell(cells, headerMap, '예산'), 'budget'),
-    actualCost: validateCsvCell(readCsvCell(cells, headerMap, '실투입비'), 'actualCost'),
-    sprint: validateCsvCell(readCsvCell(cells, headerMap, '스프린트'), 'sprint'),
-    storyPoints: validateCsvCell(readCsvCell(cells, headerMap, '스토리포인트'), 'storyPoints'),
     __id: validateCsvId(readCsvCell(cells, headerMap, '__id')),
     __parentId: validateCsvParentId(readCsvCell(cells, headerMap, '__parentId')),
     __depth: validateCsvDepth(readCsvCell(cells, headerMap, '__depth'))
@@ -2140,7 +1366,7 @@ function parseCsv(text) {
 
 function readCsvCell(cells, headerMap, name) {
   const index = headerMap.get(name);
-  return index === undefined ? '' : String(cells[index] ?? '').trim();
+  return index === undefined ? '' : (cells[index] || '').trim();
 }
 
 async function connectJsonSync() {
@@ -2184,8 +1410,7 @@ function exportJsonArray() {
     owner: task.owner,
     supportTeam: task.supportTeam,
     plannedStartDate: task.plannedStartDate,
-    plannedEndDate: task.plannedEndDate,
-    [LEGACY_PLANNED_END_FIELD]: task.plannedEndDate,
+    plannedEndDdate: task.plannedEndDdate,
     actualProgressStatus: task.actualProgressStatus,
     actualStartDate: task.actualStartDate,
     actualEndDate: task.actualEndDate
@@ -2193,231 +1418,108 @@ function exportJsonArray() {
 }
 
 function openGanttModal() {
-  state.previousFocus = document.activeElement;
   elements.ganttModal.classList.remove('hidden');
   renderGantt();
-  // Focus the modal to handle Escape key properly
-  elements.ganttModal.focus();
 }
 
 function closeGanttModal() {
   elements.ganttModal.classList.add('hidden');
-  if (state.previousFocus) {
-    state.previousFocus.focus();
-    state.previousFocus = null;
-  }
-}
-
-function getGanttModalFocusableElements() {
-  return Array.from(elements.ganttModal.querySelectorAll([
-    'a[href]',
-    'button:not(:disabled):not([aria-disabled="true"])',
-    'input:not(:disabled)',
-    'select:not(:disabled)',
-    'textarea:not(:disabled)',
-    '[tabindex]:not([tabindex="-1"])'
-  ].join(','))).filter((element) => (
-    !element.closest('.hidden') && element.offsetParent !== null
-  ));
-}
-
-function trapGanttModalFocus(event) {
-  const focusableElements = getGanttModalFocusableElements();
-  if (focusableElements.length === 0) {
-    elements.ganttModal.focus();
-    event.preventDefault();
-    return;
-  }
-
-  const firstElement = focusableElements[0];
-  const lastElement = focusableElements[focusableElements.length - 1];
-  const activeElement = document.activeElement;
-
-  if (event.shiftKey && (activeElement === firstElement || activeElement === elements.ganttModal)) {
-    lastElement.focus();
-    event.preventDefault();
-  } else if (!event.shiftKey && activeElement === lastElement) {
-    firstElement.focus();
-    event.preventDefault();
-  }
 }
 
 function renderGantt() {
-  const plannedTasks = state.tasks.filter((task) => isValidDateString(task.plannedStartDate) && isValidDateString(task.plannedEndDate));
+  const plannedTasks = state.tasks.filter((task) => isValidDateString(task.plannedStartDate) && isValidDateString(task.plannedEndDdate));
   if (plannedTasks.length === 0) {
     const emptyDiv = document.createElement('div');
-    emptyDiv.className = 'gantt-empty table-empty';
-
-    const icon = document.createElement('div');
-    icon.className = 'empty-icon';
-    icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = '📊';
-
-    const title = document.createElement('h3');
-    title.className = 'empty-title';
-    title.textContent = '표시할 간트 차트가 없습니다';
-
-    const description = document.createElement('p');
-    description.className = 'empty-desc';
-
-    const strongStart = document.createElement('strong');
-    strongStart.textContent = '계획시작일';
-
-    const strongEnd = document.createElement('strong');
-    strongEnd.textContent = '계획종료일';
-
-    description.append(
-      '작업 목록에서 ',
-      strongStart,
-      '과 ',
-      strongEnd,
-      '을 입력하면 차트가 나타납니다.'
-    );
-
-    const actions = document.createElement('div');
-    actions.className = 'empty-actions editor-actions';
-
-    const backBtn = document.createElement('button');
-    backBtn.type = 'button';
-    backBtn.className = 'primary-button';
-    backBtn.textContent = '작업 목록으로 돌아가기';
-    backBtn.title = '작업 목록으로 돌아가기 (Esc)';
-    backBtn.setAttribute('aria-keyshortcuts', 'Escape');
-    backBtn.addEventListener('click', closeGanttModal);
-
-    actions.appendChild(backBtn);
-
-    emptyDiv.append(icon, title, description, actions);
-    elements.ganttContent.replaceChildren(emptyDiv);
+    emptyDiv.className = 'gantt-empty';
+    emptyDiv.textContent = '계획 일정이 있는 작업이 없습니다.';
+    elements.ganttContent.innerHTML = '';
+    elements.ganttContent.appendChild(emptyDiv);
     return;
   }
 
-  // ⚡ Bolt: Use direct string comparison for minDate/maxDate calculation since plannedTasks already filter for valid dates.
-  const minDate = plannedTasks.reduce((min, task) => (task.plannedStartDate < min ? task.plannedStartDate : min), plannedTasks[0].plannedStartDate);
-  const maxDate = plannedTasks.reduce((max, task) => (task.plannedEndDate > max ? task.plannedEndDate : max), plannedTasks[0].plannedEndDate);
+  const minDate = plannedTasks.reduce((min, task) => (compareDateStrings(task.plannedStartDate, min) < 0 ? task.plannedStartDate : min), plannedTasks[0].plannedStartDate);
+  const maxDate = plannedTasks.reduce((max, task) => (compareDateStrings(task.plannedEndDdate, max) > 0 ? task.plannedEndDdate : max), plannedTasks[0].plannedEndDdate);
   const weekdays = buildWeekdayTimeline(minDate, maxDate);
   const weeks = groupTimelineByWeek(weekdays);
 
+  const metaRows = state.tasks.map((task) => `
+    <tr>
+      <td>${renderTreeCell(task.phase || task.activity || task.task || '-', task.depth)}</td>
+      <td>${renderTextCell(task.activity)}</td>
+      <td>${renderTextCell(task.task)}</td>
+      <td>${renderTextCell(task.categoryLarge)}</td>
+      <td>${renderTextCell(task.categoryMedium)}</td>
+      <td>${renderTextCell(task.documentName)}</td>
+      <td>${renderTextCell(task.owner)}</td>
+      <td>${renderTextCell(task.supportTeam)}</td>
+      <td>${renderTextCell(task.plannedStartDate)}</td>
+      <td>${renderTextCell(task.plannedEndDdate)}</td>
+      <td>${renderTextCell(task.actualStartDate)}</td>
+      <td>${renderTextCell(task.actualEndDate)}</td>
+    </tr>
+  `).join('');
+
   const totalWidth = weekdays.length * 36;
+  const chartRows = state.tasks.map((task) => {
+    const planBar = createGanttBar(task.plannedStartDate, task.plannedEndDdate, weekdays, 'plan');
+    const actualBar = createGanttBar(task.actualStartDate, task.actualEndDate, weekdays, 'actual');
+    return `
+      <tr>
+        <td colspan="${weekdays.length}">
+          <div class="gantt-day-track" style="width:${totalWidth}px">
+            ${planBar}
+            ${actualBar}
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
 
-  const shell = document.createElement('div');
-  shell.className = 'gantt-shell';
-
-  const meta = document.createElement('div');
-  meta.className = 'gantt-meta';
-  meta.appendChild(createGanttMetaTable());
-
-  const chart = document.createElement('div');
-  chart.className = 'gantt-chart';
-  chart.appendChild(createGanttChartTable(weeks, weekdays, totalWidth));
-
-  shell.append(meta, chart);
-  elements.ganttContent.replaceChildren(shell);
-}
-
-function createGanttMetaTable() {
-  const table = document.createElement('table');
-  const thead = document.createElement('thead');
-  const headerRow = document.createElement('tr');
-  [
-    '단계',
-    'Activity',
-    'Task',
-    '대분류',
-    '중분류',
-    '산출물',
-    '담당자',
-    '지원팀',
-    '계획시작일',
-    '계획종료일',
-    '실적시작일',
-    '실적종료일'
-  ].forEach((label) => {
-    const th = document.createElement('th');
-    th.textContent = label;
-    headerRow.appendChild(th);
-  });
-  thead.appendChild(headerRow);
-
-  const tbody = document.createElement('tbody');
-  state.tasks.forEach((task) => {
-    const row = document.createElement('tr');
-    row.append(
-      createTableCell('', createTreeCellContent(task.phase || task.activity || task.task || '-', task.depth)),
-      createTableCell('', createTextCellContent(task.activity)),
-      createTableCell('', createTextCellContent(task.task)),
-      createTableCell('', createTextCellContent(task.categoryLarge)),
-      createTableCell('', createTextCellContent(task.categoryMedium)),
-      createTableCell('', createTextCellContent(task.documentName)),
-      createTableCell('', createTextCellContent(task.owner)),
-      createTableCell('', createTextCellContent(task.supportTeam)),
-      createTableCell('', createTextCellContent(task.plannedStartDate)),
-      createTableCell('', createTextCellContent(task.plannedEndDate)),
-      createTableCell('', createTextCellContent(task.actualStartDate)),
-      createTableCell('', createTextCellContent(task.actualEndDate))
-    );
-    tbody.appendChild(row);
-  });
-
-  table.append(thead, tbody);
-  return table;
-}
-
-function createGanttChartTable(weeks, weekdays, totalWidth) {
-  const table = document.createElement('table');
-  const thead = document.createElement('thead');
-  const weekRow = document.createElement('tr');
-  weeks.forEach((week) => {
-    const th = document.createElement('th');
-    th.className = 'gantt-week-header';
-    th.colSpan = week.days.length;
-    th.textContent = week.label;
-    weekRow.appendChild(th);
-  });
-
-  const dayRow = document.createElement('tr');
-  weekdays.forEach((day) => {
-    const th = document.createElement('th');
-    th.className = 'gantt-day-cell';
-    th.textContent = day.dayLabel;
-    dayRow.appendChild(th);
-  });
-  thead.append(weekRow, dayRow);
-
-  const tbody = document.createElement('tbody');
-  state.tasks.forEach((task) => {
-    const row = document.createElement('tr');
-    const cell = document.createElement('td');
-    cell.colSpan = weekdays.length;
-
-    const track = document.createElement('div');
-    track.className = 'gantt-day-track';
-    track.style.width = `${totalWidth}px`;
-
-    const planBar = createGanttBarElement(task.plannedStartDate, task.plannedEndDate, weekdays, 'plan', task);
-    const actualBar = createGanttBarElement(task.actualStartDate, task.actualEndDate, weekdays, 'actual', task);
-    if (planBar) {
-      track.appendChild(planBar);
-    }
-    if (actualBar) {
-      track.appendChild(actualBar);
-    }
-
-    cell.appendChild(track);
-    row.appendChild(cell);
-    tbody.appendChild(row);
-  });
-
-  table.append(thead, tbody);
-  return table;
+  elements.ganttContent.innerHTML = `
+    <div class="gantt-shell">
+      <div class="gantt-meta">
+        <table>
+          <thead>
+            <tr>
+              <th>단계</th>
+              <th>Activity</th>
+              <th>Task</th>
+              <th>대분류</th>
+              <th>중분류</th>
+              <th>산출물</th>
+              <th>담당자</th>
+              <th>지원팀</th>
+              <th>계획시작일</th>
+              <th>계획종료일</th>
+              <th>실적시작일</th>
+              <th>실적종료일</th>
+            </tr>
+          </thead>
+          <tbody>${metaRows}</tbody>
+        </table>
+      </div>
+      <div class="gantt-chart">
+        <table>
+          <thead>
+            <tr>
+              ${weeks.map((week) => `<th class="gantt-week-header" colspan="${week.days.length}">${escapeHtml(week.label)}</th>`).join('')}
+            </tr>
+            <tr>
+              ${weekdays.map((day) => `<th class="gantt-day-cell">${escapeHtml(day.dayLabel)}</th>`).join('')}
+            </tr>
+          </thead>
+          <tbody>${chartRows}</tbody>
+        </table>
+      </div>
+    </div>
+  `;
 }
 
 function buildWeekdayTimeline(minDate, maxDate) {
   const days = [];
   let cursor = getMonday(minDate);
   const endBoundary = getFriday(maxDate);
-  // ⚡ Bolt: Use direct string comparison for cursor loop since both are generated valid dates.
-  while (cursor <= endBoundary) {
+  while (compareDateStrings(cursor, endBoundary) <= 0) {
     if (!isWeekend(cursor)) {
       days.push({
         date: cursor,
@@ -2430,93 +1532,44 @@ function buildWeekdayTimeline(minDate, maxDate) {
 }
 
 function groupTimelineByWeek(days) {
-  // ⚡ Bolt: Use an O(1) Map instead of O(N) Array.find to avoid O(N^2) bottleneck when grouping timeline days
   const groups = [];
-  const groupMap = new Map();
   days.forEach((day) => {
     const monday = getMonday(day.date);
-    const existing = groupMap.get(monday);
+    const existing = groups.find((group) => group.monday === monday);
     if (existing) {
       existing.days.push(day);
     } else {
-      const newGroup = {
+      groups.push({
         monday,
         label: `${monday.slice(5, 7)}월 ${monday.slice(8, 10)}일 주간`,
         days: [day]
-      };
-      groups.push(newGroup);
-      groupMap.set(monday, newGroup);
+      });
     }
   });
   return groups;
 }
 
-function findFirstWeekdayIndexOnOrAfter(weekdays, targetDate) {
-  let result = -1;
-  let low = 0;
-  let high = weekdays.length - 1;
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    if (weekdays[mid].date >= targetDate) {
-      result = mid;
-      high = mid - 1;
-    } else {
-      low = mid + 1;
-    }
-  }
-
-  return result;
-}
-
-function findLastWeekdayIndexOnOrBefore(weekdays, targetDate) {
-  let result = -1;
-  let low = 0;
-  let high = weekdays.length - 1;
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    if (weekdays[mid].date <= targetDate) {
-      result = mid;
-      low = mid + 1;
-    } else {
-      high = mid - 1;
-    }
-  }
-
-  return result;
-}
-
-function createGanttBarElement(startDate, endDate, weekdays, type, task) {
+function createGanttBar(startDate, endDate, weekdays, type) {
   if (!isValidDateString(startDate) || !isValidDateString(endDate)) {
-    return null;
+    return '';
   }
-  const startIndex = findFirstWeekdayIndexOnOrAfter(weekdays, startDate);
-  const normalizedEndIndex = findLastWeekdayIndexOnOrBefore(weekdays, endDate);
+  const startIndex = weekdays.findIndex((day) => compareDateStrings(day.date, startDate) >= 0);
+  // ⚡ Bolt: Replace O(N) array clone+reverse with reverse loop to avoid O(T*D) memory allocations in Gantt render
+  let normalizedEndIndex = -1;
+  for (let i = weekdays.length - 1; i >= 0; i -= 1) {
+    if (compareDateStrings(weekdays[i].date, endDate) <= 0) {
+      normalizedEndIndex = i;
+      break;
+    }
+  }
 
   if (startIndex === -1 || normalizedEndIndex === -1) {
-    return null;
+    return '';
   }
   if (normalizedEndIndex < startIndex) {
-    return null;
+    return '';
   }
-  const bar = document.createElement('div');
-  bar.className = `gantt-bar ${type}`;
-  bar.style.left = `${startIndex * 36}px`;
-  bar.style.width = `${(normalizedEndIndex - startIndex + 1) * 36}px`;
-
-  const taskName = task.task || task.activity || task.phase || '작업';
-  const typeLabel = type === 'plan' ? '계획' : '실적';
-  const visibleStartDate = weekdays[startIndex].date;
-  const visibleEndDate = weekdays[normalizedEndIndex].date;
-  const tooltipText = `${taskName} ${typeLabel} (${visibleStartDate} ~ ${visibleEndDate})`;
-
-  bar.title = tooltipText;
-  bar.setAttribute('aria-label', tooltipText);
-  bar.setAttribute('role', 'img');
-  bar.tabIndex = 0;
-
-  return bar;
+  return `<div class="gantt-bar ${type}" style="left:${startIndex * 36}px;width:${(normalizedEndIndex - startIndex + 1) * 36}px"></div>`;
 }
 
 function showToast(message) {
@@ -2530,20 +1583,15 @@ function showToast(message) {
 
 function clearDragState() {
   state.dragTaskId = null;
-  state.dragTaskCache = null;
-  if (state.dragElement) {
-    state.dragElement.classList.remove('dragging');
-    state.dragElement = null;
-  }
+  elements.tableBody.querySelectorAll('.dragging').forEach((row) => row.classList.remove('dragging'));
   clearDropTargets();
 }
 
 function clearDropTargets() {
-  if (state.dropTargetElement) {
-    state.dropTargetElement.classList.remove('drop-target');
-    delete state.dropTargetElement.dataset.dropPosition;
-    state.dropTargetElement = null;
-  }
+  elements.tableBody.querySelectorAll('.drop-target').forEach((row) => {
+    row.classList.remove('drop-target');
+    delete row.dataset.dropPosition;
+  });
 }
 
 function downloadFile(content, fileName, mimeType) {
@@ -2552,77 +1600,38 @@ function downloadFile(content, fileName, mimeType) {
   const link = document.createElement('a');
   link.href = url;
   link.download = fileName;
-  // Keep generated download links isolated from any browsing context changes.
-  link.rel = 'noopener noreferrer';
   document.body.appendChild(link);
   link.click();
-  Element.prototype.remove.call(link);
+  link.remove();
   URL.revokeObjectURL(url);
 }
 
 function csvEscape(value) {
-  const normalized = sanitizeCsvFormulaValue(value);
+  let normalized = String(value ?? '');
+  if (/^\s*[=+\-@]/.test(normalized)) {
+    normalized = `\t${normalized}`;
+  }
   return `"${normalized.replace(/"/g, '""')}"`;
-}
-
-function sanitizeCsvFormulaValue(value) {
-  const normalized = String(value ?? '');
-  return CSV_FORMULA_PREFIX_PATTERN.test(normalized) ? `'${normalized}` : normalized;
 }
 
 function createId(seed = Date.now()) {
   // Security enhancement: Prefer crypto.randomUUID for stronger randomness
-  if (typeof crypto !== 'undefined') {
-    if (crypto.randomUUID) {
-      return `task-${crypto.randomUUID()}`;
-    }
-    // Fallback: use crypto.getRandomValues if randomUUID is unavailable
-    if (crypto.getRandomValues) {
-      const arr = new Uint32Array(2);
-      crypto.getRandomValues(arr);
-      return `task-${arr[0].toString(16)}-${arr[1].toString(16)}`;
-    }
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return `task-${crypto.randomUUID()}`;
   }
-  throw new Error('Secure random number generation is not supported in this environment');
+  return `task-${seed}-${Math.random().toString(16).slice(2, 8)}`;
 }
 
-// ⚡ Bolt: Memoize date parsing and validation to reduce GC pressure and expensive Date allocations in tight render loops
-
 function isValidDateString(value) {
-  if (!isValidDateString.cache) isValidDateString.cache = new Map();
-  const validDateCache = isValidDateString.cache;
-
-  if (validDateCache.has(value)) {
-    return validDateCache.get(value);
-  }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return false;
   }
-  const isValid = formatDateInput(new Date(dateStringToUtcMs(value))) === value;
-  // Bolt: Increase cache limits to prevent cache thrashing in large loops.
-  if (validDateCache.size < 10000) {
-    validDateCache.set(value, isValid);
-  }
-  return isValid;
+  return formatDateInput(new Date(dateStringToUtcMs(value))) === value;
 }
 
 function dateStringToUtcMs(value) {
-  if (!dateStringToUtcMs.cache) dateStringToUtcMs.cache = new Map();
-  const dateToUtcMsCache = dateStringToUtcMs.cache;
-
-  if (dateToUtcMsCache.has(value)) {
-    return dateToUtcMsCache.get(value);
-  }
-  // Bolt: Avoid split().map() array allocations in tight rendering loops.
-  const year = Number(value.substring(0, 4));
-  const month = Number(value.substring(5, 7));
-  const day = Number(value.substring(8, 10));
-  const ms = Date.UTC(year, month - 1, day);
-  // Bolt: Increase cache limits to prevent cache thrashing in large loops.
-  if (dateToUtcMsCache.size < 10000) {
-    dateToUtcMsCache.set(value, ms);
-  }
-  return ms;
+  const [year, month, day] = value.split('-').map(Number);
+  return Date.UTC(year, month - 1, day);
 }
 
 function compareDateStrings(left, right) {
@@ -2697,22 +1706,16 @@ function formatDecimal(value, digits) {
 }
 
 function formatNumber(value) {
-  if (!formatNumber.formatter) {
-    formatNumber.formatter = new Intl.NumberFormat('ko-KR');
-  }
-  return formatNumber.formatter.format(Number(value || 0));
+  return Number(value || 0).toLocaleString('ko-KR');
 }
 
-const HTML_ESCAPE_ENTITIES = Object.assign(Object.create(null), {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;'
-});
-
 function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (character) => HTML_ESCAPE_ENTITIES[character]);
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
 function toKebab(value) {
@@ -2721,33 +1724,3 @@ function toKebab(value) {
     .replace(/_/g, '-')
     .toLowerCase();
 }
-
-function debounce(callback, wait) {
-  let timeoutId = null;
-  const debounced = (...args) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => {
-      timeoutId = null;
-      callback(...args);
-    }, wait);
-  };
-  debounced.flush = () => {
-    if (timeoutId === null) {
-      return;
-    }
-    clearTimeout(timeoutId);
-    timeoutId = null;
-    callback();
-  };
-  return debounced;
-}
-
-// Export for testing
-if (typeof window !== 'undefined') {
-  window.validateDraft = validateDraft;
-  window.sanitizeCsvFormulaValue = sanitizeCsvFormulaValue;
-  window.csvEscape = csvEscape;
-  window.createTextCellContent = createTextCellContent;
-}
-
-bootstrap();
