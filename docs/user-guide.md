@@ -2,7 +2,15 @@
 
 ## 개요
 
-ScopeWeave Planner는 프로젝트용 WBS를 순수 HTML/CSS/JavaScript만으로 관리하는 정적 웹 애플리케이션입니다.
+ScopeWeave Planner는 프로젝트용 WBS·공정관리 도구입니다. 두 가지 모드로 동일
+클라이언트(`index.html` / `app.js`)를 사용합니다.
+
+| 모드 | 언제 쓰나 | 데이터 위치 |
+| --- | --- | --- |
+| **Standalone (정적)** | GitHub Pages 등 정적 호스트, 로컬 파일 열기 | 브라우저 `localStorage` / 선택적 `wbs.json` |
+| **Cloud (SaaS)** | `npm run server` 또는 Docker로 API 기동 시 | 서버 SQLite 프로젝트 + 실시간 협업 |
+
+아래 흐름은 두 모드 공통입니다. Cloud 전용 기능은 **Cloud(SaaS) 사용** 절을 보세요.
 
 ## 주요 사용 흐름
 
@@ -11,6 +19,7 @@ ScopeWeave Planner는 프로젝트용 WBS를 순수 HTML/CSS/JavaScript만으로
 3. 행 클릭 또는 **✎** 버튼으로 인라인 편집 모드를 엽니다.
 4. 계획/실적 날짜와 실적진척상태를 입력하면 요약 수치와 가중치가 자동 재계산됩니다.
 5. **CSV 내보내기** / **CSV 가져오기** / **간트차트보기**로 산출물을 활용합니다.
+6. 상단 요약·분석 패널에서 EVM(SPI·SV)·S-curve·CPM 임계경로·PM 준비도 신호를 확인합니다.
 
 ## 계층 규칙
 
@@ -59,8 +68,33 @@ ScopeWeave Planner는 프로젝트용 WBS를 순수 HTML/CSS/JavaScript만으로
 - 의존성 위험은 존재하지 않는 선행작업이나 순환 의존성이 있으면 높게 표시됩니다.
 - 이 패널은 추정 근거의 완성도를 보여주는 준비도 신호이며, 외부 견적이나 LLM 판단을 호출하지 않습니다.
 
+## Cloud(SaaS) 사용
+
+서버가 떠 있으면 상단에 로그인·프로젝트 전환 UI가 활성화됩니다
+(`cloud-sync.js`). 로그아웃 상태에서는 standalone과 동일하게 로컬 저장만 사용합니다.
+
+1. **계정**: 이메일/비밀번호 가입·로그인, 또는 설정된 경우 SSO(OIDC).
+2. **온보딩**: 프로젝트가 없으면 **샘플로 시작** 또는 **새 프로젝트**로 첫
+   워크스페이스 데이터를 만듭니다.
+3. **협업**: 같은 프로젝트에 여러 사용자가 접속하면 SSE로 실시간 반영됩니다.
+   저장 충돌 시(다른 사용자가 먼저 저장) 409가 나며 최신 버전을 다시 불러온 뒤
+   편집합니다.
+4. **팀·권한**: 워크스페이스 owner/admin/member/viewer 역할, 이메일 초대·철회,
+   소유권 이전, 탈퇴·이름 변경.
+5. **이력·안전**: 베이스라인 고정/비교, 리비전 히스토리·복원, 작업 코멘트,
+   감사 로그, 워크스페이스 JSON export.
+6. **요금제**: Free(프로젝트·멤버 상한) vs Pro — 상한 초과 시 서버가 402로
+   거부합니다. Stripe가 설정되지 않은 환경에서는 mock 결제 경로를 씁니다.
+7. **API**: Personal Access Token(`swk_…`)으로 공개 API 호출 — 상세는
+   `docs/api.md`. 배포·환경 변수는 `docs/deploy.md`.
+
+> 프로덕션에서는 `SCOPEWEAVE_JWT_SECRET`을 충분히 긴 임의 값으로 반드시
+> 설정하세요 (`openssl rand -base64 32`). 배포 절차는 `docs/deploy.md`를
+> 따릅니다.
+
 ## 정적 호스팅 주의사항
 
 - GitHub Pages 같은 정적 호스트에서는 서버 파일을 직접 덮어쓸 수 없습니다.
 - 따라서 기본 보장은 `localStorage` autosave이며, 파일 자동저장은
   브라우저가 File System Access API를 지원할 때만 가능합니다.
+- SaaS 기능(로그인·팀·빌링·SSE)은 API 서버가 있을 때만 동작합니다.

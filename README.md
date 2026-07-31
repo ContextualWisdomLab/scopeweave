@@ -11,8 +11,10 @@ two modes:
   webhooks, and a public API. The static client is the frontend; cloud features
   layer on without breaking standalone mode.
 
-> The SaaS pivot lands as a stacked PR train (see **Merge order** below). On
-> `develop` as of this branch, only standalone mode exists.
+Both modes ship on `develop` today: open `index.html` (or any static host) for
+standalone, or run `npm run server` / `docker compose up` for the full SaaS
+stack. The historical stacked PR train that landed the cloud features is
+summarized under **SaaS delivery history** below.
 
 ## Standalone features
 
@@ -112,51 +114,14 @@ python3 -m pytest tests/config
 `app.js` must stay eval-safe (no top-level `import`/`export`) — the e2e harness
 evaluates it with `new Function`. Optional modules bridge via `window.*` globals.
 
-## Merge order (SaaS PR stack)
+## SaaS delivery history
 
-`#233` first — it fixes pre-existing infra misconfigs that fail the required
-`trivy-fs` gate on **every** PR. Then the stack in order (each PR is based on
-the previous; merging in order auto-retargets the next):
-
-| Order | PR | Slice |
-| --- | --- | --- |
-| 0 | #233 | fix(ci): trivy-fs misconfigs (Dockerfile HEALTHCHECK, k8s uid/gid + namespace) |
-| 1 | #212 | multi-tenant backend foundation (auth·projects·SSE·isolation) |
-| 2 | #214 | client wiring (login UI, cloud save, live sync) |
-| 3 | #215 | EVM (SPI·SV) + S-curve |
-| 4 | #216 | teams + RBAC |
-| 5 | #217 | billing + plan gating |
-| 6 | #218, #219 | CPM engine + UI |
-| 7 | #220 | public API + PAT |
-| 8 | #221 | predecessors (editor + CSV) |
-| 9 | #222 | Dockerfile + compose |
-| 10 | #223 | landing page |
-| 11 | #224 | audit log |
-| 12 | #225 | workspace export |
-| 13 | #226 | onboarding (샘플로 시작) |
-| 14 | #227 | observability (metrics + logs) |
-| 15 | #228 | signed webhooks |
-| 16 | #230 | English landing (i18n) |
-| 17 | #231 | SSO (OIDC) |
-| 18 | #232 | webhook retry + delivery log |
-| 19 | #234 | lifecycle (delete project / change pw / delete account) |
-| 20 | #236 | baselines |
-| 21 | #237 | rate limiting |
-| 22 | #238 | create workspaces |
-| 23 | #239 | baseline-vs-actual comparison UI |
-| 24 | #240 | project duplicate |
-| 25 | #241 | Prometheus metrics |
-| 26 | #242 | webhook secret rotation |
-| 27 | #243 | invite revocation |
-| 28 | #244 | leave + rename workspace |
-| 29 | #245 | complete API docs |
-| 30 | #246 | ownership transfer |
-| 31 | #247 | cross-project search |
-| 32 | #248 | logout everywhere |
-| 33 | #249 | revision history + restore |
-| 34 | #250 | task comments |
-| 35 | #251 | SEO (OG cards, hreflang, robots, sitemap) |
-| 36 | (this PR) | README: architecture + merge map |
+The cloud/SaaS surface above landed as a stacked PR train on `develop`
+(`#212`–`#251` foundation slices, plus follow-on security and product polish).
+That train is **complete** — do not reopen or retarget those historical PRs.
+New work should branch from current `develop` as short-lived single-purpose PRs
+(security, product, docs). See `ARCHITECTURE.md`, `docs/api.md`, and
+`docs/deploy.md` for the shipped design.
 
 ## Repository contract
 
