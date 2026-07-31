@@ -6,7 +6,8 @@ one origin (so the browser's `default-src 'self'` CSP allows the API calls).
 ## Quick start (Docker Compose)
 
 ```bash
-export SCOPEWEAVE_JWT_SECRET=$(openssl rand -base64 32)   # required
+# Persist across restarts (re-minting invalidates existing session JWTs).
+export SCOPEWEAVE_JWT_SECRET="${SCOPEWEAVE_JWT_SECRET:-$(openssl rand -base64 32)}"
 docker compose up --build
 # open http://localhost:8787
 ```

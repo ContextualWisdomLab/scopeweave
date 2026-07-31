@@ -21,6 +21,9 @@ for (const secret of [
   ' '.repeat(32),
   `${'x'.repeat(31)} `,
   '${SCOPEWEAVE_JWT_SECRET:-}',
+  // Unexpanded Compose placeholder that is already ≥32 non-whitespace chars —
+  // length alone must not admit placeholders (includes '${SCOPEWEAVE_JWT_SECRET').
+  `\${SCOPEWEAVE_JWT_SECRET:-${'x'.repeat(32)}}`,
 ]) {
   const result = importAuth(secret);
   assert.notEqual(result.status, 0, 'missing or weak JWT secrets must fail startup');
@@ -34,7 +37,8 @@ assert.equal(
 );
 
 const compose = readFileSync('docker-compose.yml', 'utf8');
-assert.match(compose, /SCOPEWEAVE_JWT_SECRET:\s*\$\{SCOPEWEAVE_JWT_SECRET:-\}/);
-assert.doesNotMatch(compose, /insecure-dev-secret|dev-insecure-secret/);
+const jwtEnvLine = compose.match(/^[ \t]+SCOPEWEAVE_JWT_SECRET:[ \t]*([^\r\n]*)$/m);
+assert.ok(jwtEnvLine, 'active JWT environment mapping');
+assert.equal(jwtEnvLine[1].trim(), '${SCOPEWEAVE_JWT_SECRET:-}');
 
 console.log('✓ JWT secret startup contract tests passed');

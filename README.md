@@ -83,11 +83,13 @@ Cloud (Node ≥ 22):
 
 ```bash
 npm install
-export SCOPEWEAVE_JWT_SECRET=$(openssl rand -base64 32)   # required (≥32 non-whitespace chars)
+# Persist this across restarts (do not re-mint every boot — that invalidates JWTs).
+export SCOPEWEAVE_JWT_SECRET="${SCOPEWEAVE_JWT_SECRET:-$(openssl rand -base64 32)}"
 npm run server                # serves the API + the static client on :8787
 ```
 
-Docker: set `SCOPEWEAVE_JWT_SECRET` first, then run `docker compose up` (see `Dockerfile.server` / `docs/deploy.md`).
+Docker: set a **persistent** `SCOPEWEAVE_JWT_SECRET` first, then run `docker compose up`
+(see `Dockerfile.server` / `docs/deploy.md`).
 
 ### Environment
 
