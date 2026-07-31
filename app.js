@@ -1205,13 +1205,32 @@ function closeEditor(force = false) {
     }
   }
 
+  // 🎨 Palette: Track element data to restore focus correctly even after DOM elements are recreated during renderAll
+  let selectorToRestore = null;
+  const prevFocus = state.previousFocus;
+  if (prevFocus) {
+    if (prevFocus.id) {
+      selectorToRestore = `#${prevFocus.id}`;
+    } else if (prevFocus.dataset && prevFocus.dataset.action) {
+      const row = prevFocus.closest('tr[data-task-id]');
+      if (row && row.dataset.taskId) {
+        selectorToRestore = `tr[data-task-id="${row.dataset.taskId}"] [data-action="${prevFocus.dataset.action}"]`;
+      }
+    }
+  }
+
   state.editor = { ...DEFAULT_EDITOR_STATE, errors: [] };
   renderAll();
 
-  if (state.previousFocus) {
-    state.previousFocus.focus();
-    state.previousFocus = null;
+  if (selectorToRestore) {
+    requestAnimationFrame(() => {
+      const el = document.querySelector(selectorToRestore);
+      if (el) el.focus();
+    });
+  } else if (prevFocus && document.contains(prevFocus)) {
+    prevFocus.focus();
   }
+  state.previousFocus = null;
 }
 
 function saveEditor() {

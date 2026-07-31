@@ -115,3 +115,6 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+## 2026-07-31 - [Focus Management after DOM Re-render]
+**Learning:** When a UI action triggers a full DOM re-render that destroys the currently focused element (e.g. closing an editor or a modal), keyboard focus is lost, resetting navigation flow. We can dynamically query and restore focus by saving unique identifying data attributes (like `taskId` and `action`) before the re-render.
+**Action:** Use `requestAnimationFrame` with a reconstructed CSS selector to predictably restore focus to newly created equivalent elements in the DOM.
