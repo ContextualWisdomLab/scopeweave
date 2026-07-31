@@ -30,7 +30,7 @@ jobs:
         with:
           node-version: 22
       - name: Install
-        run: pnpm install
+        run: npm install -g pnpm && pnpm install
       - name: Unit tests (EVM · CPM · baseline · workload)
         run: pnpm run test:unit
       - name: API tests (auth · tenancy · RBAC · billing · webhooks · rate limit)
@@ -50,7 +50,7 @@ jobs:
         with:
           node-version: 22
       - name: Install
-        run: pnpm install
+        run: npm install -g pnpm && pnpm install
       - name: Install Playwright (chromium)
         run: npx playwright install chromium --with-deps
       - name: Cloud UI e2e
