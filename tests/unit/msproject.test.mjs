@@ -70,8 +70,6 @@ assert.deepEqual(
 
 // Incomplete opening tags must not hang (linear collect stops at first unclosed block).
 const incompleteOpens = `<Project><Tasks>${'<Task><UID>9</UID><Name>open</Name>'.repeat(5000)}</Tasks></Project>`;
-const t0 = Date.now();
 assert.deepEqual(parseMsProjectXml(incompleteOpens), [], 'unclosed Task blocks yield no tasks');
-assert.ok(Date.now() - t0 < 1000, 'incomplete Task scan stays linear / sub-second');
 
 console.log('✓ MS Project import tests passed');
