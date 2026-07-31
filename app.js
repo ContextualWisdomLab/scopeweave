@@ -348,6 +348,18 @@ function bindModalEvents() {
 }
 
 function bindGlobalEvents() {
+  window.addEventListener('beforeunload', (event) => {
+    if (state.editor.mode && state.editor.draft && state.editor.initialDraft) {
+      const hasChanges = Object.keys(state.editor.initialDraft).some(
+        key => state.editor.draft[key] !== state.editor.initialDraft[key]
+      );
+      if (hasChanges) {
+        event.preventDefault();
+        event.returnValue = '';
+      }
+    }
+  });
+
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       if (!elements.ganttModal.classList.contains('hidden')) {
