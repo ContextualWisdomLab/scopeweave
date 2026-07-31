@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## $(date +%Y-%m-%d) - High Fix ReDoS in XML Parsing
+**Vulnerability:** A `RegExp` object was dynamically created with user-controlled input (`new RegExp("<" + name + ">([^<]*)</" + name + ">")`) while parsing MS Project XML files, which could allow an attacker to cause a Regular Expression Denial-of-Service (ReDoS) if a deeply nested or malformed XML file is provided.
+**Learning:** Using `new RegExp()` with interpolated strings that might match long or repeating patterns without bound checks can cause the regular expression engine to take exponential time to evaluate, blocking the single main thread in JavaScript applications.
+**Prevention:** Avoid dynamic regular expressions for simple string extraction tasks. Instead, use safe string methods like `indexOf` and `substring` when the exact delimiter boundaries are known, which run in linear O(N) time and are immune to catastrophic backtracking.
