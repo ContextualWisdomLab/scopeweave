@@ -13,9 +13,16 @@ export function hashApiToken(full) {
   return createHash('sha256').update(String(full)).digest('hex');
 }
 
-const SECRET = process.env.SCOPEWEAVE_JWT_SECRET || 'dev-insecure-secret-change-me';
-if (SECRET === 'dev-insecure-secret-change-me') {
-  console.warn('[auth] INSECURE dev JWT secret in use — set SCOPEWEAVE_JWT_SECRET in production');
+// Fail closed: never mint or verify tokens with a missing/weak/placeholder secret.
+// Require ≥32 non-whitespace characters so compose-unexpanded literals and short
+// defaults cannot silently ship.
+const SECRET = process.env.SCOPEWEAVE_JWT_SECRET;
+if (
+  typeof SECRET !== 'string'
+  || SECRET.replace(/\s/g, '').length < 32
+  || SECRET.includes('${SCOPEWEAVE_JWT_SECRET')
+) {
+  throw new Error('SCOPEWEAVE_JWT_SECRET must be set to at least 32 non-whitespace characters');
 }
 
 export function hashPassword(pw) {
