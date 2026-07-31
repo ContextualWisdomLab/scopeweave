@@ -79,7 +79,7 @@ Standalone:
 python3 -m http.server 4173   # open http://127.0.0.1:4173
 ```
 
-Cloud (Node 20.19+, 22.12+, or 23+):
+Cloud (Node 22.13+ or 23.4+):
 
 ```bash
 npm install
