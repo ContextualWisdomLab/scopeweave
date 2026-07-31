@@ -491,13 +491,33 @@ assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, b
 assert.equal((await req('/api/auth/login', { method: 'POST', body: body({ email: 'gone@x.com', password: 'password123' }) })).status, 401, 'deleted account cannot login');
 
 // ---- Audit CSV export ----
+// Plant a formula-injection payload with leading whitespace (the historic bypass
+// of /^[=+\-@|]/). action is free text in the audit log; the CSV cell guard
+// must neutralize it.
+{
+  const { db } = await import('../../server/db.mjs');
+  db.prepare(
+    `INSERT INTO audit_log(org_id,user_id,action,target_type,target_id,meta)
+     VALUES(?,?,?,?,?,?)`
+  ).run(orgAId, null, '  =cmd|"/c calc"', 'probe', 'csv-inject', null);
+}
 r = await req(`/api/orgs/${orgAId}/audit?format=csv`, { headers: auth });
 assert.equal(r.status, 200, 'audit csv 200');
 assert.ok((r.headers.get('content-type') || '').startsWith('text/csv'), 'text/csv');
 const auditCsv = await r.text();
 assert.ok(auditCsv.startsWith('id,createdAt,actorEmail,action'), 'csv header');
 assert.ok(auditCsv.includes('project.create'), 'contains audited actions');
-assert.ok(!/^[=+\-@]/m.test(auditCsv.split('\r\n')[1] || ''), 'formula-injection guarded');
+assert.ok(!/^[=+\-@|]/.test(auditCsv.split('\r\n')[1] || ''), 'formula-injection guarded');
+// Leading-whitespace formula payloads must be quote-prefixed so Excel/LibreOffice
+// treat the cell as text (not a DDE/formula).
+assert.ok(
+  auditCsv.split('\r\n').some((line) => line.includes(`'=cmd|"/c calc"`) || line.includes(`'  =cmd|`)),
+  'whitespace-prefixed formula neutralized with leading single-quote'
+);
+assert.ok(
+  !auditCsv.split('\r\n').some((line) => /(^|,)\s*=cmd\|/.test(line)),
+  'raw whitespace formula must not appear unquoted in CSV'
+);
 r = await req(`/api/orgs/${orgAId}/audit?format=csv`, { headers: oauth });
 assert.equal(r.status, 403, 'non-manager audit csv → 403');
 

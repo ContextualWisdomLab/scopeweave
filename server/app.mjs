@@ -649,11 +649,13 @@ app.get('/api/orgs/:id/audit', requireAuth, (c) => {
   ).all(orgId, limit);
   const events = rows.map((r) => ({ ...r, meta: r.meta ? JSON.parse(r.meta) : null }));
   if (c.req.query('format') === 'csv') {
-    // Compliance deliverable. Formula-injection-safe: values starting with
-    // = + - @ | are prefixed with ' so spreadsheets treat them as text.
+    // Compliance deliverable. Formula-injection-safe: values that (after optional
+    // leading whitespace) start with = + - @ | are prefixed with ' so
+    // spreadsheets treat them as text. Leading whitespace alone used to bypass
+    // /^[=+\-@|]/ — match the client-side CSV_FORMULA_PREFIX_PATTERN.
     const csvCell = (v) => {
       let s = v == null ? '' : String(v);
-      if (/^[=+\-@|]/.test(s)) s = `'${s}`;
+      if (/^\s*[=+\-@|]/.test(s)) s = `'${s}`;
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const header = ['id', 'createdAt', 'actorEmail', 'action', 'targetType', 'targetId', 'meta'];
