@@ -293,6 +293,7 @@ function bindHeaderEvents(persistAndRenderMetadata) {
       event.target.setSelectionRange(cursor, cursor);
     }
     state.projectName = sanitized.trim() || DEFAULT_PROJECT_NAME;
+    elements.projectNameCounter.textContent = `${sanitized.length}/120`;
     persistAndRenderMetadata();
   });
   elements.projectNameInput.addEventListener('blur', persistAndRenderMetadata.flush);
@@ -487,7 +488,8 @@ function renderAll() {
   const metrics = computeTaskMetrics();
 
   elements.projectNameInput.value = state.projectName;
-  elements.projectNameCounter.textContent = `${state.projectName.length}/120`;
+  const projectNameLength = state.projectName === DEFAULT_PROJECT_NAME ? 0 : state.projectName.length;
+  elements.projectNameCounter.textContent = `${projectNameLength}/120`;
   document.title = state.projectName === DEFAULT_PROJECT_NAME ? DEFAULT_PROJECT_NAME : `${state.projectName} - ${DEFAULT_PROJECT_NAME}`;
   elements.baseDateInput.value = state.baseDate;
   elements.totalDays.textContent = `${formatNumber(metrics.totalDays)}일`;
