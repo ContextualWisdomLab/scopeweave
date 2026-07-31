@@ -59,6 +59,14 @@ const literalRegexText = parseMsProjectXml(
   '<Project><Tasks><Task><UID>6</UID><Name>Regex [.*+?] text</Name><OutlineLevel>1</OutlineLevel></Task></Tasks></Project>',
 );
 assert.equal(literalRegexText[0].phase, 'Regex [.*+?] text', 'tag extraction treats task content as literal text');
+assert.deepEqual(parseMsProjectXml(null), [], 'null XML input is treated as empty');
+assert.deepEqual(
+  parseMsProjectXml(
+    '<Project><Tasks><Task><UID>7</UID><Name>unclosed<OutlineLevel>1</OutlineLevel></Task></Tasks></Project>',
+  ),
+  [],
+  'a Task containing an unclosed value tag is ignored',
+);
 
 // Incomplete opening tags must not hang (linear collect stops at first unclosed block).
 const incompleteOpens = `<Project><Tasks>${'<Task><UID>9</UID><Name>open</Name>'.repeat(5000)}</Tasks></Project>`;
