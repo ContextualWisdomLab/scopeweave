@@ -11,9 +11,9 @@ services:
     ports:
       - "8787:8787"
     environment:
-      # Default keeps `docker compose config/build` runnable (CI evidence gate);
-      # the server logs a loud warning if this insecure default reaches runtime.
-      SCOPEWEAVE_JWT_SECRET: ${SCOPEWEAVE_JWT_SECRET:-insecure-dev-secret-CHANGE-ME}
+      # Required at runtime (≥32 non-whitespace chars). No insecure default —
+      # server/auth.mjs fails closed when unset or weak.
+      SCOPEWEAVE_JWT_SECRET: ${SCOPEWEAVE_JWT_SECRET:-}
     volumes:
       - scopeweave-data:/data
     restart: unless-stopped

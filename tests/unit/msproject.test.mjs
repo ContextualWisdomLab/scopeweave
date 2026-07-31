@@ -55,4 +55,9 @@ assert.equal(t5.predecessors, 'msp-1');
 
 assert.deepEqual(parseMsProjectXml('<Project></Project>'), [], 'no tasks → empty');
 
+const literalRegexText = parseMsProjectXml(
+  '<Project><Tasks><Task><UID>6</UID><Name>Regex [.*+?] text</Name><OutlineLevel>1</OutlineLevel></Task></Tasks></Project>',
+);
+assert.equal(literalRegexText[0].phase, 'Regex [.*+?] text', 'tag extraction treats task content as literal text');
+
 console.log('✓ MS Project import tests passed');

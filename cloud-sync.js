@@ -739,9 +739,15 @@ function openReportModal() {
 // no DOMParser needed → node-testable); swap for a real XML parser if
 // hand-edited files ever matter.
 export function parseMsProjectXml(xml) {
+  // Linear tag extract (indexOf/slice) — avoid new RegExp(name) ReDoS surface.
   const tag = (block, name) => {
-    const m = block.match(new RegExp(`<${name}>([^<]*)</${name}>`));
-    return m ? m[1].trim() : '';
+    const openingTag = `<${name}>`;
+    const closingTag = `</${name}>`;
+    const valueStart = block.indexOf(openingTag);
+    if (valueStart === -1) return '';
+    const contentStart = valueStart + openingTag.length;
+    const valueEnd = block.indexOf(closingTag, contentStart);
+    return valueEnd === -1 ? '' : block.slice(contentStart, valueEnd).trim();
   };
   const unescape = (s) => s
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')

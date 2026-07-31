@@ -18,7 +18,7 @@ persists the database in the `scopeweave-data` volume.
 
 | Var | Required | Purpose |
 | --- | --- | --- |
-| `SCOPEWEAVE_JWT_SECRET` | **yes** | Signs session JWTs. Use a long random value. The app warns loudly if the dev default is used. |
+| `SCOPEWEAVE_JWT_SECRET` | **yes** | Signs session JWTs. Startup fails unless it contains at least 32 non-whitespace characters. |
 | `PORT` | no (default 8787) | Listen port |
 | `SCOPEWEAVE_DB` | no (default `/data/scopeweave.db`) | SQLite file path (on the volume) |
 | `SCOPEWEAVE_DEV` | no | Must be `1` to enable the dev `activate-pro` endpoint. **Never set in production.** |
