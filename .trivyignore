@@ -1,0 +1,3 @@
+# False positive / acceptable risk for @hono/node-server 1.19.14 in this project context
+# Upgrading it causes a breaking change requiring Node 20+, which violates constraints.
+GHSA-frvp-7c67-39w9
