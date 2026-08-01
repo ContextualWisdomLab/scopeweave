@@ -136,3 +136,7 @@
 **Vulnerability:** Regular Expression Denial-of-Service (ReDoS) in `cloud-sync.js`. The `parseMsProjectXml` function was dynamically creating a regular expression `new RegExp("<" + name + ">([^<]*)</" + name + ">")` without escaping or validating the `name` argument, which could block the main thread if abused or if it matches malicious input. Semgrep identified this as a security issue.
 **Learning:** Using `new RegExp()` with user-controlled or dynamically generated input without proper escaping poses a ReDoS risk. In pure JS environments parsing structured strings (like simple XML tags), native string methods (`indexOf`, `slice`) are faster and immune to ReDoS.
 **Prevention:** Avoid dynamic RegExp instantiation unless absolutely necessary. When simple substring extraction is required, rely on safe string searching methods.
+## 2024-03-24 - [Update @hono/node-server version]
+**Vulnerability:** Known vulnerability in `@hono/node-server` v1 reported by Trivy.
+**Learning:** Legacy versions of framework adapters can introduce vulnerabilities over time.
+**Prevention:** Keep dependencies updated using secure versions.
