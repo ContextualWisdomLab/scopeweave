@@ -132,3 +132,8 @@
 **Vulnerability:** The MS Project XML parser used a dynamically constructed `RegExp` where the `name` argument was injected directly into the regular expression pattern. This could be exploited to cause a Regular Expression Denial-of-Service (ReDoS).
 **Learning:** Using `new RegExp()` with dynamic or user-controlled input can freeze the main thread if an attacker provides a crafted input that causes catastrophic backtracking.
 **Prevention:** For simple string parsing like extracting XML values by tag name, use native string methods like `indexOf` and `substring` instead of regular expressions. If regex is absolutely necessary, ensure the input is sanitized or use a safe regex engine/library.
+
+## 2026-08-01 - Update @hono/node-server to prevent GHSA-frvp-7c67-39w9
+**Vulnerability:** The application used `@hono/node-server` version `<1.19.17`, which had a vulnerability (GHSA-frvp-7c67-39w9) flagged by Trivy as a MEDIUM severity misconfiguration.
+**Learning:** Outdated runtime server dependencies can introduce security vulnerabilities, even in a local-only dev server.
+**Prevention:** Update `@hono/node-server` to version `2.0.12` or higher (the latest safe version) via `pnpm update @hono/node-server@latest` to eliminate the vulnerability.
