@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2024-03-24 - [Fix TypeError vulnerability in scryptSync]
+**Vulnerability:** Denial of Service (DoS) via Type Confusion in `server/auth.mjs`. The `hashPassword` and `verifyPassword` functions were passing the user-provided `pw` parameter directly into `scryptSync(pw, salt, 64)` without type validation. If a non-string type (like an Object) was passed, `scryptSync` would throw an unhandled `TypeError`, potentially crashing the server.
+**Learning:** Node.js native crypto functions like `scryptSync` strictly check argument types. Not validating or casting incoming request payload types can expose the application to DoS attacks.
+**Prevention:** Ensure all external inputs are explicitly validated or cast to their expected primitive types (e.g., using `String(pw || '')`) before being passed into strict native or third-party APIs.

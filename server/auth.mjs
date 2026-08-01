@@ -20,14 +20,14 @@ if (SECRET === 'dev-insecure-secret-change-me') {
 
 export function hashPassword(pw) {
   const salt = randomBytes(16).toString('hex');
-  const hash = scryptSync(pw, salt, 64).toString('hex');
+  const hash = scryptSync(String(pw || ''), salt, 64).toString('hex');
   return `${salt}:${hash}`;
 }
 
 export function verifyPassword(pw, stored) {
   const [salt, hash] = String(stored || '').split(':');
   if (!salt || !hash) return false;
-  const test = scryptSync(pw, salt, 64);
+  const test = scryptSync(String(pw || ''), salt, 64);
   const known = Buffer.from(hash, 'hex');
   return test.length === known.length && timingSafeEqual(test, known);
 }
