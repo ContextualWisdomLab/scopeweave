@@ -140,3 +140,7 @@
 **Vulnerability:** Known vulnerability in `@hono/node-server` v1 reported by Trivy.
 **Learning:** Legacy versions of framework adapters can introduce vulnerabilities over time.
 **Prevention:** Keep dependencies updated using secure versions.
+## 2024-03-24 - [Fix failing npm ci from modified package-lock]
+**Vulnerability:** Dependency mismatch where manual or pnpm updates to package.json left npm's package-lock.json out of sync, causing `npm ci` failures.
+**Learning:** CI uses strictly isolated package managers. If `npm` is configured to run, its lockfile must perfectly mirror the package requirements.
+**Prevention:** If dependencies change in an environment configured for multiple package managers (e.g. testing with `npm` in GitHub Actions but developing locally with `pnpm`), update and commit the lockfiles for all used package managers.
