@@ -626,7 +626,6 @@ function createTableCell(className, content) {
 // document.createElement() JS-to-C++ allocation overhead during O(N) table rendering loops.
 // Using cloneNode() is measurably faster when creating thousands of rows.
 let taskRowTemplate = null;
-let actionCellTemplate = null;
 let actionStackTemplate = null;
 let toggleButtonTemplate = null;
 let toggleIconTemplate = null;
@@ -636,7 +635,24 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
   if (!taskRowTemplate) {
     taskRowTemplate = document.createElement('tr');
     taskRowTemplate.draggable = true;
-    actionCellTemplate = document.createElement('td');
+
+    // Pre-allocate the action cell
+    taskRowTemplate.appendChild(document.createElement('td'));
+
+    // Pre-allocate all 20 data cells with their static classes
+    const classes = [
+      '', '', '', 'priority-mobile', 'priority-mobile', 'priority-desktop',
+      'priority-mobile', 'priority-desktop', 'priority-mobile', 'priority-mobile',
+      'priority-mobile', 'priority-desktop', 'priority-desktop', 'priority-desktop',
+      'priority-desktop', 'priority-mobile', 'priority-desktop', 'priority-mobile',
+      'priority-mobile', 'priority-desktop'
+    ];
+    for (const cls of classes) {
+      const cell = document.createElement('td');
+      if (cls) cell.className = cls;
+      taskRowTemplate.appendChild(cell);
+    }
+
     actionStackTemplate = document.createElement('div');
     actionStackTemplate.className = 'action-stack';
     toggleButtonTemplate = document.createElement('button');
@@ -649,11 +665,12 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
     togglePlaceholderTemplate.className = 'toggle-placeholder';
   }
 
-  const row = taskRowTemplate.cloneNode(false);
+  const row = taskRowTemplate.cloneNode(true);
   row.className = `task-row depth-${task.depth} ${index % 2 === 1 ? 'striped-even' : ''}`;
   row.dataset.taskId = task.id;
 
-  const actionCell = actionCellTemplate.cloneNode(false);
+  const cells = row.childNodes;
+  const actionCell = cells[0];
   const actionStack = actionStackTemplate.cloneNode(false);
 
   const rowEntityName = task.task || task.activity || task.phase || '작업';
@@ -696,30 +713,27 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
     deleteButton
   );
   actionCell.appendChild(actionStack);
-  row.appendChild(actionCell);
 
-  row.append(
-    createTableCell('', createTreeCellContent(task.phase, task.depth)),
-    createTableCell('', createTextCellContent(task.activity)),
-    createTableCell('', createTextCellContent(task.task)),
-    createTableCell('priority-mobile', createTextCellContent(task.categoryLarge)),
-    createTableCell('priority-mobile', createTextCellContent(task.categoryMedium)),
-    createTableCell('priority-desktop', createTextCellContent(task.documentName)),
-    createTableCell('priority-mobile', createOwnerCellContent(task.owner)),
-    createTableCell('priority-desktop', createTextCellContent(task.supportTeam)),
-    createTableCell('priority-mobile', createStatusCellContent(taskMetrics.progressState)),
-    createTableCell('priority-mobile', createTextCellContent(task.plannedStartDate)),
-    createTableCell('priority-mobile', createTextCellContent(task.plannedEndDate)),
-    createTableCell('priority-desktop', createMetricText(formatNumber(taskMetrics.durationDays), 'task-duration-days')),
-    createTableCell('priority-desktop', createMetricText(formatPercent(taskMetrics.plannedProgressRatio * 100, 2))),
-    createTableCell('priority-desktop', createMetricText(formatDecimal(taskMetrics.weightRatio, 3), 'task-weight-ratio')),
-    createTableCell('priority-desktop', createMetricText(formatPercent(taskMetrics.weightedPlannedRatio * 100, 2))),
-    createTableCell('priority-mobile', createActualProgressCellContent(task, taskMetrics)),
-    createTableCell('priority-desktop', createMetricText(formatPercent(taskMetrics.actualProgressRatio * 100, 2))),
-    createTableCell('priority-mobile', createTextCellContent(task.actualStartDate, taskMetrics.actualDateWarning)),
-    createTableCell('priority-mobile', createTextCellContent(task.actualEndDate, taskMetrics.actualDateWarning)),
-    createTableCell('priority-desktop', createMetricText(formatPercent(taskMetrics.weightedActualRatio * 100, 2)))
-  );
+  cells[1].appendChild(createTreeCellContent(task.phase, task.depth));
+  cells[2].appendChild(createTextCellContent(task.activity));
+  cells[3].appendChild(createTextCellContent(task.task));
+  cells[4].appendChild(createTextCellContent(task.categoryLarge));
+  cells[5].appendChild(createTextCellContent(task.categoryMedium));
+  cells[6].appendChild(createTextCellContent(task.documentName));
+  cells[7].appendChild(createOwnerCellContent(task.owner));
+  cells[8].appendChild(createTextCellContent(task.supportTeam));
+  cells[9].appendChild(createStatusCellContent(taskMetrics.progressState));
+  cells[10].appendChild(createTextCellContent(task.plannedStartDate));
+  cells[11].appendChild(createTextCellContent(task.plannedEndDate));
+  cells[12].appendChild(createMetricText(formatNumber(taskMetrics.durationDays), 'task-duration-days'));
+  cells[13].appendChild(createMetricText(formatPercent(taskMetrics.plannedProgressRatio * 100, 2)));
+  cells[14].appendChild(createMetricText(formatDecimal(taskMetrics.weightRatio, 3), 'task-weight-ratio'));
+  cells[15].appendChild(createMetricText(formatPercent(taskMetrics.weightedPlannedRatio * 100, 2)));
+  cells[16].appendChild(createActualProgressCellContent(task, taskMetrics));
+  cells[17].appendChild(createMetricText(formatPercent(taskMetrics.actualProgressRatio * 100, 2)));
+  cells[18].appendChild(createTextCellContent(task.actualStartDate, taskMetrics.actualDateWarning));
+  cells[19].appendChild(createTextCellContent(task.actualEndDate, taskMetrics.actualDateWarning));
+  cells[20].appendChild(createMetricText(formatPercent(taskMetrics.weightedActualRatio * 100, 2)));
 
   return row;
 }
