@@ -4,6 +4,6 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
-## 2024-05-18 - String.padStart() allocation overhead in hot loops
-**Learning:** Using methods like `String.padStart()` in frequently called date formatters creates unnecessary string allocations and incurs JS-to-C++ boundary crossing overhead.
-**Action:** Use inline ternary string concatenation (`m < 10 ? '0' + m : m`) instead for numbers, which avoids these extra allocations and is significantly faster in hot loops like date formatting algorithms.
+## 2026-08-01 - Avoid non-literal RegExp objects
+**Learning:** Using `new RegExp()` with dynamic inputs creates a ReDoS (Regular Expression Denial-of-Service) vulnerability, causing security tools like Semgrep to flag it. Additionally, regex compilation in hot loops poses a performance bottleneck.
+**Action:** Replace dynamically constructed `RegExp` objects with standard `String.prototype.indexOf` and `String.prototype.substring` lookups when parsing strings like XML tags.
