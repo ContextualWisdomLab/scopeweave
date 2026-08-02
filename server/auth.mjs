@@ -25,25 +25,22 @@ if (
   throw new Error('SCOPEWEAVE_JWT_SECRET must be set to at least 32 non-whitespace characters');
 }
 
-// scryptSync requires string|ArrayBufferView — untyped JSON bodies ({}, [], null)
-// must not throw TypeError (request-level DoS). Non-strings become empty string
-// so callers get a safe hash/verify miss instead of a process exception.
-function asPassword(pw) {
-  return typeof pw === 'string' ? pw : '';
-}
-
+// scryptSync requires string|ArrayBufferView — untyped JSON bodies must not
+// throw TypeError (request-level DoS). hashPassword coerces non-strings to ''
+// for a stable hash path; verifyPassword rejects non-strings with false so a
+// malicious `{}` body never authenticates even if an empty-password hash exists.
 export function hashPassword(pw) {
-  const password = asPassword(pw);
+  const password = typeof pw === 'string' ? pw : '';
   const salt = randomBytes(16).toString('hex');
   const hash = scryptSync(password, salt, 64).toString('hex');
   return `${salt}:${hash}`;
 }
 
 export function verifyPassword(pw, stored) {
-  const password = asPassword(pw);
+  if (typeof pw !== 'string') return false;
   const [salt, hash] = String(stored || '').split(':');
   if (!salt || !hash) return false;
-  const test = scryptSync(password, salt, 64);
+  const test = scryptSync(pw, salt, 64);
   const known = Buffer.from(hash, 'hex');
   return test.length === known.length && timingSafeEqual(test, known);
 }

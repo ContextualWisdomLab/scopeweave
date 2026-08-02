@@ -24,7 +24,7 @@ CPM critical path, and a weekly Gantt overlay. Two modes:
 # Standalone client (no install needed)
 python3 -m http.server 4173          # open http://127.0.0.1:4173
 
-# Cloud server (Node >= 22 — uses node:sqlite)
+# Cloud server (Node ^22.13.0 || >=23.4.0 — uses node:sqlite; matches package.json engines)
 npm install
 npm run server                       # API + static client on :8787
 

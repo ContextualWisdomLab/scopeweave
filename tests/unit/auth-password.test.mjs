@@ -15,17 +15,17 @@ assert.equal(verifyPassword('correct-horse', stored), true);
 assert.equal(verifyPassword('wrong', stored), false);
 
 // Non-string bodies (object/array/null/number) must not throw TypeError from scryptSync.
-// They coerce to '' so they only match an empty-string password, never a real one.
+// verifyPassword rejects them outright (false) — never treat as empty-string password.
 for (const bad of [{}, [], null, undefined, 12, true]) {
   assert.doesNotThrow(() => hashPassword(bad), String(bad));
   assert.equal(verifyPassword(bad, stored), false, 'non-string never verifies a real password');
 }
 
-// Empty string after coercion is a distinct hash path, still safe.
+// Empty string is a distinct string path; non-strings must not verify against it.
 const empty = hashPassword('');
 assert.equal(verifyPassword('', empty), true);
-// Non-strings coerce to '' — same as empty password, not a crash.
-assert.equal(verifyPassword({}, empty), true);
+assert.equal(verifyPassword({}, empty), false, 'object body must not match empty-password hash');
+assert.equal(verifyPassword(null, empty), false);
 assert.equal(verifyPassword({ evil: true }, stored), false);
 
 console.log('✓ auth password type-safety tests passed');
