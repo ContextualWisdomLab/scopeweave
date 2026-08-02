@@ -154,7 +154,7 @@ if (RL_MAX > 0) {
 
 app.post('/api/auth/signup', async (c) => {
   const { email, password, name } = await c.req.json().catch(() => ({}));
-  if (!email || !password || String(password).length < 8) {
+  if (!email || typeof password !== 'string' || password.length < 8) {
     return c.json({ error: 'email and password (min 8 chars) required' }, 400);
   }
   if (db.prepare('SELECT id FROM users WHERE email = ?').get(email)) {
@@ -1310,7 +1310,7 @@ app.post('/api/auth/logout-all', requireAuth, (c) => {
 app.post('/api/auth/change-password', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const { oldPassword, newPassword } = await c.req.json().catch(() => ({}));
-  if (!newPassword || String(newPassword).length < 8) return c.json({ error: 'new password (min 8) required' }, 400);
+  if (typeof newPassword !== 'string' || newPassword.length < 8) return c.json({ error: 'new password (min 8) required' }, 400);
   const u = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(uid);
   if (!u || !verifyPassword(oldPassword || '', u.password_hash)) return c.json({ error: 'current password incorrect' }, 403);
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(newPassword), uid);
