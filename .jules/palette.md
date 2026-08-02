@@ -115,6 +115,3 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
-## 2024-05-24 - Make informative non-interactive elements keyboard accessible
-**Learning:** Some purely structural elements (`<div>`, `<span>`) contain important contextual information in `title` attributes (e.g., metric definitions in header cards). Keyboard and screen reader users completely miss this information because these elements cannot receive focus by default.
-**Action:** Whenever a structural element has an informative `title` or tooltip, add `tabindex="0"` to make it focusable, and ensure it shares the application's standard `:focus-visible` ring so the focus state is visually apparent without relying on mouse hover.
