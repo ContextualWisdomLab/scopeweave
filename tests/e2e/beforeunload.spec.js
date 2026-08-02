@@ -26,25 +26,21 @@ test.describe('Inline editor unsaved-change guards', () => {
     await page.getByRole('button', { name: '최상위 작업 추가' }).click();
     await page.locator('[data-testid="editor-phase"]').fill('Phase leave');
 
-    let sawBeforeUnload = false;
-    page.on('dialog', async (dialog) => {
-      if (dialog.type() === 'beforeunload') {
-        sawBeforeUnload = true;
-        await dialog.dismiss();
-        return;
-      }
-      await dialog.dismiss();
+    // Wait on the dialog event before navigating — fixed sleeps flake under CI load.
+    const dialogPromise = page.waitForEvent('dialog', {
+      predicate: (dialog) => dialog.type() === 'beforeunload',
+      timeout: 5000,
     });
 
-    // Navigate away; browsers emit beforeunload for dirty handlers.
-    await page.evaluate(() => {
+    const nav = page.evaluate(() => {
       window.location.href = 'about:blank';
     }).catch(() => {
-      // Navigation may be aborted when beforeunload is cancelled.
+      // Navigation is aborted when beforeunload is cancelled.
     });
 
-    // Give the dialog a moment to surface in headed/CI chromium.
-    await page.waitForTimeout(300);
-    expect(sawBeforeUnload).toBe(true);
+    const dialog = await dialogPromise;
+    expect(dialog.type()).toBe('beforeunload');
+    await dialog.dismiss();
+    await nav;
   });
 });
