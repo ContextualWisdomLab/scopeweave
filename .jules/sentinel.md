@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2026-08-02 - Fix session revocation bypass in calendar and stream endpoints
+**Vulnerability:** The /api/projects/:id/calendar.ics and /api/projects/:id/stream endpoints verified the JWT signature but failed to check the token_version against the database, allowing revoked sessions to continue accessing data.
+**Learning:** Auth middleware abstractions must be uniformly applied, or endpoints that accept tokens via query parameters (for non-browser clients) may inadvertently skip session state checks.
+**Prevention:** Always extract reusable token validation logic (including DB revocation checks) into a shared utility function used by both header and query token authentication paths.

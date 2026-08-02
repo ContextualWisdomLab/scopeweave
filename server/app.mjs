@@ -368,7 +368,12 @@ app.get('/api/projects/:id/calendar.ics', (c) => {
     if (!row) return c.json({ error: 'unauthorized' }, 401);
     uid = row.user_id;
   } else {
-    try { uid = verifyToken(raw).sub; } catch { return c.json({ error: 'unauthorized' }, 401); }
+    try {
+      const payload = verifyToken(raw);
+      const u = db.prepare('SELECT token_version FROM users WHERE id = ?').get(payload.sub);
+      if (!u || (payload.tv || 0) !== u.token_version) return c.json({ error: 'unauthorized' }, 401);
+      uid = payload.sub;
+    } catch { return c.json({ error: 'unauthorized' }, 401); }
   }
   const p = projectAccess(uid, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
@@ -403,7 +408,11 @@ app.get('/api/projects/:id/stream', (c) => {
   const header = c.req.header('authorization') || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : (c.req.query('token') || '');
   let user;
-  try { user = verifyToken(token); } catch { return c.json({ error: 'unauthorized' }, 401); }
+  try {
+    user = verifyToken(token);
+    const u = db.prepare('SELECT token_version FROM users WHERE id = ?').get(user.sub);
+    if (!u || (user.tv || 0) !== u.token_version) return c.json({ error: 'unauthorized' }, 401);
+  } catch { return c.json({ error: 'unauthorized' }, 401); }
   const id = c.req.param('id');
   if (!projectAccess(user.sub, id)) return c.json({ error: 'not found' }, 404);
   const key = String(id);
