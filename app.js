@@ -347,7 +347,24 @@ function bindModalEvents() {
   });
 }
 
+function editorHasUnsavedChanges() {
+  if (!state.editor.mode || !state.editor.draft || !state.editor.initialDraft) {
+    return false;
+  }
+  return Object.keys(state.editor.initialDraft).some(
+    (key) => state.editor.draft[key] !== state.editor.initialDraft[key]
+  );
+}
+
 function bindGlobalEvents() {
+  // Warn on tab close/refresh when the inline editor has a dirty draft.
+  // Browsers only show a generic leave-site dialog; returnValue is required.
+  window.addEventListener('beforeunload', (event) => {
+    if (!editorHasUnsavedChanges()) return;
+    event.preventDefault();
+    event.returnValue = '';
+  });
+
   document.addEventListener('keydown', (event) => {
     if (event.key === 'Escape') {
       if (!elements.ganttModal.classList.contains('hidden')) {
@@ -1196,11 +1213,8 @@ function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertA
 }
 
 function closeEditor(force = false) {
-  if (!force && state.editor.draft && state.editor.initialDraft) {
-    const hasChanges = Object.keys(state.editor.initialDraft).some(
-      key => state.editor.draft[key] !== state.editor.initialDraft[key]
-    );
-    if (hasChanges && !window.confirm('저장하지 않은 변경 사항이 있습니다. 편집을 취소하시겠습니까?')) {
+  if (!force && editorHasUnsavedChanges()) {
+    if (!window.confirm('저장하지 않은 변경 사항이 있습니다. 편집을 취소하시겠습니까?')) {
       return;
     }
   }
