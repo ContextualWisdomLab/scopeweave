@@ -25,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Centralized session JWT verification and database-backed `token_version`
   revocation across bearer middleware, calendar feeds, server-sent events, and
   attachment-view URL transports.
+- Added cross-device regression coverage proving that `logout-all` rejects stale
+  tokens before calendar, SSE, or attachment lookup while the replacement token
+  continues through the same authentication boundary.
 
 ### Changed
 
