@@ -79,20 +79,23 @@ Standalone:
 python3 -m http.server 4173   # open http://127.0.0.1:4173
 ```
 
-Cloud (Node ≥ 22):
+Cloud (Node 22.13+ or 23.4+):
 
 ```bash
 npm install
+# Persist this across restarts (do not re-mint every boot — that invalidates JWTs).
+export SCOPEWEAVE_JWT_SECRET="${SCOPEWEAVE_JWT_SECRET:-$(openssl rand -base64 32)}"
 npm run server                # serves the API + the static client on :8787
 ```
 
-Docker: `docker compose up` (see `Dockerfile.server` / `docs/deploy.md`).
+Docker: set a **persistent** `SCOPEWEAVE_JWT_SECRET` first, then run `docker compose up`
+(see `Dockerfile.server` / `docs/deploy.md`).
 
 ### Environment
 
 | Var | Purpose |
 | --- | --- |
-| `SCOPEWEAVE_JWT_SECRET` | **Required in prod** — JWT signing secret |
+| `SCOPEWEAVE_JWT_SECRET` | **Required** — JWT signing secret (at least 32 non-whitespace characters; startup fails closed otherwise) |
 | `SCOPEWEAVE_DB` | SQLite path (default `data.db`; `:memory:` for tests) |
 | `PORT` | API port (default 8787) |
 | `OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI` | Real SSO IdP (mock when unset) |

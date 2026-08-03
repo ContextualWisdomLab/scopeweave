@@ -5,11 +5,24 @@ one origin (so the browser's `default-src 'self'` CSP allows the API calls).
 
 ## Quick start (Docker Compose)
 
+Create the signing key once in a user-only file outside the repository, then
+reload that same key for every restart. Replacing it invalidates all existing
+session JWTs.
+
 ```bash
-export SCOPEWEAVE_JWT_SECRET=$(openssl rand -base64 32)   # required
+install -d -m 700 "$HOME/.config/scopeweave"
+if [ ! -s "$HOME/.config/scopeweave/jwt-secret" ]; then
+  umask 077
+  openssl rand -base64 32 > "$HOME/.config/scopeweave/jwt-secret"
+fi
+export SCOPEWEAVE_JWT_SECRET="$(cat "$HOME/.config/scopeweave/jwt-secret")"
 docker compose up --build
 # open http://localhost:8787
 ```
+
+For managed deployments, store the same value in the platform's secrets
+manager instead of a local file. Rotate it only as an intentional global
+session-revocation operation.
 
 That builds `Dockerfile.server`, runs the Node backend as a non-root user, and
 persists the database in the `scopeweave-data` volume.
@@ -18,7 +31,7 @@ persists the database in the `scopeweave-data` volume.
 
 | Var | Required | Purpose |
 | --- | --- | --- |
-| `SCOPEWEAVE_JWT_SECRET` | **yes** | Signs session JWTs. Use a long random value. The app warns loudly if the dev default is used. |
+| `SCOPEWEAVE_JWT_SECRET` | **yes** | Signs session JWTs. Startup fails unless it contains at least 32 non-whitespace characters. |
 | `PORT` | no (default 8787) | Listen port |
 | `SCOPEWEAVE_DB` | no (default `/data/scopeweave.db`) | SQLite file path (on the volume) |
 | `SCOPEWEAVE_DEV` | no | Must be `1` to enable the dev `activate-pro` endpoint. **Never set in production.** |
