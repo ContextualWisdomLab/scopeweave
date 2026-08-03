@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "packageManager": "npm@10.9.2",
   "description": "Production-grade pure HTML/CSS/JS WBS planner",
   "engines": {
     "node": "^22.13.0 || >=23.4.0"
