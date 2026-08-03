@@ -30,4 +30,4 @@ Before merging security-sensitive changes, the current head must pass:
 - property fuzzing;
 - dependency and OSV review;
 - Semgrep and repository security scans;
-- required independent review gates.
+- required independent review gates, including coverage evidence.

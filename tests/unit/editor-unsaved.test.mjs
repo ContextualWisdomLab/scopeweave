@@ -155,6 +155,14 @@ state.editor = {
 };
 assert.equal(editorHasUnsavedChanges(), true, 'mutated field → dirty');
 
+state.editor = {
+  mode: 'edit',
+  draft: { name: 'Task', owner: 'A', description: 'new' },
+  initialDraft: { name: 'Task', owner: 'A' },
+  errors: [],
+};
+assert.equal(editorHasUnsavedChanges(), true, 'draft-only field → dirty');
+
 // --- beforeunload ---
 bindGlobalEvents();
 const handlers = windowListeners.beforeunload || [];

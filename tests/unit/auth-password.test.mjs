@@ -13,6 +13,7 @@ const stored = hashPassword('correct-horse');
 assert.match(stored, /^[0-9a-f]+:[0-9a-f]+$/);
 assert.equal(verifyPassword('correct-horse', stored), true);
 assert.equal(verifyPassword('wrong', stored), false);
+assert.equal(verifyPassword(['correct-horse'], stored), false, 'array must not coerce to a real password');
 
 // Non-string bodies (object/array/null/number) must not throw TypeError from scryptSync.
 // verifyPassword rejects them outright (false) — never treat as empty-string password.
@@ -25,6 +26,7 @@ for (const bad of [{}, [], null, undefined, 12, true]) {
 const empty = hashPassword('');
 assert.equal(verifyPassword('', empty), true);
 assert.equal(verifyPassword({}, empty), false, 'object body must not match empty-password hash');
+assert.equal(verifyPassword([], empty), false, 'empty array must not coerce to an empty password');
 assert.equal(verifyPassword(null, empty), false);
 assert.equal(verifyPassword({ evil: true }, stored), false);
 

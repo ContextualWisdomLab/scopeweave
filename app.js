@@ -351,7 +351,11 @@ function editorHasUnsavedChanges() {
   if (!state.editor.mode || !state.editor.draft || !state.editor.initialDraft) {
     return false;
   }
-  return Object.keys(state.editor.initialDraft).some(
+  const draftKeys = new Set([
+    ...Object.keys(state.editor.initialDraft),
+    ...Object.keys(state.editor.draft),
+  ]);
+  return Array.from(draftKeys).some(
     (key) => state.editor.draft[key] !== state.editor.initialDraft[key]
   );
 }
