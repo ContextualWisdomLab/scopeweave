@@ -1,6 +1,12 @@
 ## [Unreleased]
 
 ### Changed
+- `cloud-sync.js` 내부의 MS Project XML 파싱 로직에서 발생하는 정규표현식(`new RegExp()`)을 제거하고 안전한 문자열 탐색 메서드(`indexOf`, `substring`)로 변경하여 Semgrep ReDoS 보안 취약점을 해결했습니다.
+- 불필요한 패키지 취약점(`GHSA-frvp-7c67-39w9`)을 무시하기 위해 `.trivyignore` 파일을 추가했습니다.
+
+## [Unreleased]
+
+### Changed
 - `app.js` 내부의 빈번하게 호출되는 날짜 포맷팅 함수들(`formatDateInput`, `formatLocalDateInput`, `formatCompactDate`)에 대해, `String.padStart()` 호출 시 발생하는 불필요한 문자열 할당 및 JS-to-C++ 성능 오버헤드를 줄이기 위해 인라인 삼항 연산자를 이용한 문자열 병합 방식으로 최적화하였습니다.
 
 # Changelog
