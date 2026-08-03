@@ -22,22 +22,23 @@ const cards = [
   },
 ];
 
+const cardBlocks = [...html.matchAll(
+  /<div\s+([^>]*class="[^"]*meta-value-card[^"]*"[^>]*)>([\s\S]*?)<\/div>/g,
+)];
+assert.equal(cardBlocks.length, cards.length, 'all summary metric cards are discoverable');
+
 for (const { metricId, descriptionId, description } of cards) {
-  const cardPattern = new RegExp(
-    `<div\\s+([^>]*class="[^"]*meta-value-card[^"]*"[^>]*)>[\\s\\S]*?id="${metricId}"[\\s\\S]*?<\\/div>`,
-    'm',
-  );
-  const match = html.match(cardPattern);
+  const match = cardBlocks.find(([, , content]) => content.includes(`id="${metricId}"`));
   assert.ok(match, `${metricId} summary card exists`);
-  const attributes = match[1];
+
+  const [, attributes, content] = match;
   assert.match(attributes, /tabindex="0"/, `${metricId} is keyboard focusable`);
-  assert.match(
-    attributes,
-    new RegExp(`aria-describedby="${descriptionId}"`),
+  assert.ok(
+    attributes.includes(`aria-describedby="${descriptionId}"`),
     `${metricId} references explicit assistive text`,
   );
   assert.ok(
-    match[0].includes(`<span id="${descriptionId}" class="sr-only">${description}</span>`),
+    content.includes(`<span id="${descriptionId}" class="sr-only">${description}</span>`),
     `${metricId} includes the expected screen-reader description`,
   );
 }
