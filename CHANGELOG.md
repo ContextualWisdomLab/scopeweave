@@ -1,3 +1,8 @@
+## [Unreleased]
+
+### Changed
+- `app.js` 내부의 빈번하게 호출되는 날짜 포맷팅 함수들(`formatDateInput`, `formatLocalDateInput`, `formatCompactDate`)에 대해, `String.padStart()` 호출 시 발생하는 불필요한 문자열 할당 및 JS-to-C++ 성능 오버헤드를 줄이기 위해 인라인 삼항 연산자를 이용한 문자열 병합 방식으로 최적화하였습니다.
+
 # Changelog
 
 All notable changes to this project will be documented in this file.

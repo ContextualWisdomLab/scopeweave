@@ -2664,22 +2664,33 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+// Optimized using inline ternary string concatenation instead of String.padStart()
+// to avoid unnecessary string allocations and JS-to-C++ overhead in hot loops.
 function formatDateInput(date) {
   const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
+  const m = date.getUTCMonth() + 1;
+  const d = date.getUTCDate();
+  const month = m < 10 ? '0' + m : m;
+  const day = d < 10 ? '0' + d : d;
   return `${year}-${month}-${day}`;
 }
 
+// Optimized using inline ternary string concatenation to avoid JS-to-C++ overhead.
 function formatLocalDateInput(date) {
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
+  const month = m < 10 ? '0' + m : m;
+  const day = d < 10 ? '0' + d : d;
   return `${year}-${month}-${day}`;
 }
 
+// Optimized using inline ternary string concatenation for hot loop performance.
 function formatCompactDate(date) {
-  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
+  return `${y}${m < 10 ? '0' + m : m}${d < 10 ? '0' + d : d}`;
 }
 
 function formatPercent(value, digits) {
