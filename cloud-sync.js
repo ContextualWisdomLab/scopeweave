@@ -739,39 +739,14 @@ function openReportModal() {
 // no DOMParser needed → node-testable); swap for a real XML parser if
 // hand-edited files ever matter.
 export function parseMsProjectXml(xml) {
-  // Fully linear extract (indexOf/slice) — no dynamic RegExp and no lazy
-  // [\s\S]*? block collectors (those can quadratic-backtrack on truncated input).
   const tag = (block, name) => {
-    const openingTag = `<${name}>`;
-    const closingTag = `</${name}>`;
-    const valueStart = block.indexOf(openingTag);
-    if (valueStart === -1) return '';
-    const contentStart = valueStart + openingTag.length;
-    const valueEnd = block.indexOf(closingTag, contentStart);
-    return valueEnd === -1 ? '' : block.slice(contentStart, valueEnd).trim();
-  };
-  const collectBlocks = (source, openTag, closeTag) => {
-    const out = [];
-    let from = 0;
-    for (;;) {
-      const start = source.indexOf(openTag, from);
-      if (start === -1) break;
-      const contentStart = start + openTag.length;
-      const end = source.indexOf(closeTag, contentStart);
-      // Incomplete open tag: stop linearly (do not rescan the remainder).
-      if (end === -1) break;
-      out.push(source.slice(start, end + closeTag.length));
-      from = end + closeTag.length;
-    }
-    return out;
-  };
-  const predecessorIds = (block) => {
-    const ids = [];
-    for (const link of collectBlocks(block, '<PredecessorLink>', '</PredecessorLink>')) {
-      const uid = tag(link, 'PredecessorUID');
-      if (/^\d+$/.test(uid)) ids.push(`msp-${uid}`);
-    }
-    return ids;
+    const startTag = `<${name}>`;
+    const endTag = `</${name}>`;
+    const startIdx = block.indexOf(startTag);
+    if (startIdx === -1) return '';
+    const endIdx = block.indexOf(endTag, startIdx + startTag.length);
+    if (endIdx === -1) return '';
+    return block.slice(startIdx + startTag.length, endIdx).trim();
   };
   const unescape = (s) => s
     .replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"')
@@ -779,14 +754,15 @@ export function parseMsProjectXml(xml) {
   const day = (s) => (/^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : '');
   const tasks = [];
   const parents = {}; // depth -> last task id at that depth
-  const blocks = collectBlocks(String(xml || ''), '<Task>', '</Task>');
+  const blocks = xml.match(/<Task>[\s\S]*?<\/Task>/g) || [];
   for (const block of blocks) {
     const uid = tag(block, 'UID');
     const name = unescape(tag(block, 'Name'));
     if (!uid || uid === '0' || !name) continue; // project-summary row / blanks
     const level = Math.max(1, Number(tag(block, 'OutlineLevel')) || 1);
     const depth = Math.min(level, 3); // deeper levels flatten to task level
-    const preds = predecessorIds(block);
+    const preds = [...block.matchAll(/<PredecessorLink>[\s\S]*?<PredecessorUID>(\d+)<\/PredecessorUID>[\s\S]*?<\/PredecessorLink>/g)]
+      .map((m) => `msp-${m[1]}`);
     const pct = Number(tag(block, 'PercentComplete')) || 0;
     const t = {
       id: `msp-${uid}`,

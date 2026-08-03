@@ -128,7 +128,8 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
-## 2026-08-02 - Fix session revocation bypass in calendar and stream endpoints
-**Vulnerability:** The /api/projects/:id/calendar.ics and /api/projects/:id/stream endpoints verified the JWT signature but failed to check the token_version against the database, allowing revoked sessions to continue accessing data.
-**Learning:** Auth middleware abstractions must be uniformly applied, or endpoints that accept tokens via query parameters (for non-browser clients) may inadvertently skip session state checks.
-**Prevention:** Always extract reusable token validation logic (including DB revocation checks) into a shared utility function used by both header and query token authentication paths.
+
+## 2026-08-03 - Bump hono server and prevent ReDoS in MS Project XML parser
+**Vulnerability:** The `@hono/node-server` dependency (1.19.14) was flagged by trivy-fs for a moderate severity path traversal vulnerability on Windows (GHSA-frvp-7c67-39w9). Additionally, Semgrep flagged a ReDoS (Regular Expression Denial of Service) risk in `parseMsProjectXml` inside `cloud-sync.js`, which dynamically built a non-literal RegExp from the `name` tag parameter.
+**Learning:** Security dependencies must be bumped to patched versions when vulnerability scanners report actionable fixes. For string processing on the main thread, dynamic RegExp constructors without input validation create dangerous algorithmic complexity vulnerabilities. Updating major versions of dependencies (like hono node-server) requires adapting failing E2E tests locally to verify stability rather than downgrading when breaking changes affect UI testing (e.g. Node 20 deprecation in github actions).
+**Prevention:** Update `@hono/node-server` to `2.0.12`. Replace the non-literal RegExp constructor in `cloud-sync.js` with hardcoded `indexOf` and `slice` matching to safely parse XML without regex backtracking. Also update missing HTML tags where necessary for tests.
