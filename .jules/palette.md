@@ -115,3 +115,6 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+## $(date +%Y-%m-%d) - Replace native disabled with aria-disabled for form submit buttons
+**Learning:** Using the native `disabled` attribute on a submit button causes the button to lose keyboard focusability, violating accessibility guidelines for action buttons. Furthermore, clicking it doesn't fire click events, preventing useful inline feedback from being shown.
+**Action:** Use `aria-disabled="true"` instead of `disabled` for form submit buttons when validation errors are present. Control visual presentation via CSS and explicitly guard the form's `submit` event handler (calling `event.preventDefault()`) when the submit button is `aria-disabled`, providing a descriptive error toast in the process.

@@ -1334,3 +1334,25 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
     await expect(backBtn).toHaveAttribute('aria-keyshortcuts', 'Escape');
   });
 });
+
+  test('ScopeWeave Planner - Palette UX Enhancements › replaces native disabled with aria-disabled on save button and shows toast', async ({ page }) => {
+    await page.goto('./');
+    await page.getByRole('button', { name: '최상위 작업 추가' }).click();
+
+    const form = page.locator('form[data-editor-form="true"]');
+    await expect(form).toBeVisible();
+
+    const saveButton = form.getByRole('button', { name: '저장' });
+
+    // Check initial state (should be aria-disabled since draft is empty)
+    await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
+    await expect(saveButton).not.toHaveAttribute('disabled', '');
+
+    // Attempt to submit while invalid
+    await saveButton.click();
+
+    // Confirm toast appears
+    const toast = page.locator('#toast.show');
+    await expect(toast).toBeVisible();
+    await expect(toast).toContainText('입력값을 올바르게 수정해야 저장할 수 있습니다.');
+  });
