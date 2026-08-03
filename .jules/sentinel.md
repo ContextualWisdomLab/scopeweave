@@ -128,3 +128,9 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2026-08-03 - Fix ReDoS vulnerability in MSP XML parser
+**Learning:** Avoid using dynamically constructed  objects with user-provided parameters (like tag names from XML/HTML) to parse strings. This is a SAST finding and a ReDoS risk.
+**Action:** Replaced `new RegExp` with native string methods like `indexOf` and `substring` for extracting tag contents safely in `parseMsProjectXml`.
+## 2026-08-03 - Fix ReDoS vulnerability in MSP XML parser
+**Learning:** Avoid using dynamically constructed RegExp objects with user-provided parameters (like tag names from XML/HTML) to parse strings. This is a SAST finding and a ReDoS risk.
+**Action:** Replaced new RegExp with native string methods like indexOf and substring for extracting tag contents safely in parseMsProjectXml.
