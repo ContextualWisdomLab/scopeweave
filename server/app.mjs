@@ -126,7 +126,7 @@ app.use('*', async (c, next) => {
     if (s >= 500) metrics.s5xx++; else if (s >= 400) metrics.s4xx++; else if (s >= 200) metrics.s2xx++;
     if (!quietLogs) {
       // structured; never logs bodies, tokens, or secrets
-      console.log(JSON.stringify({ ts: new Date().toISOString(), method: c.req.method, path: c.req.path, status: s, ms: Date.now() - t }));
+      console.info(JSON.stringify({ ts: new Date().toISOString(), method: c.req.method, path: c.req.path, status: s, ms: Date.now() - t }));
     }
   } catch { /* metrics/logging must never break a request */ }
 });
