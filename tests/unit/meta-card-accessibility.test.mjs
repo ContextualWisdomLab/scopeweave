@@ -36,11 +36,8 @@ for (const { metricId, descriptionId, description } of cards) {
     new RegExp(`aria-describedby="${descriptionId}"`),
     `${metricId} references explicit assistive text`,
   );
-  assert.match(
-    match[0],
-    new RegExp(
-      `<span\\s+id="${descriptionId}"\\s+class="sr-only">${description.replace(/[.*+?^${}()|[\\]\\]/g, '\\$&')}<\\/span>`,
-    ),
+  assert.ok(
+    match[0].includes(`<span id="${descriptionId}" class="sr-only">${description}</span>`),
     `${metricId} includes the expected screen-reader description`,
   );
 }
