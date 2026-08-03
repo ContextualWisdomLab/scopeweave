@@ -20,6 +20,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   workflows stay inherited from `ContextualWisdomLab/.github`, not copied
   into this repository.
 
+### Security
+
+- Made `SCOPEWEAVE_JWT_SECRET` mandatory at startup and rejected weak or
+  unexpanded placeholder values so production deployments fail closed.
+- Neutralized audit-log CSV formulas even when executable prefixes are hidden
+  behind leading whitespace.
+- Replaced dynamic and lazy-regex MS Project XML block extraction with bounded
+  linear scans to prevent pathological backtracking on malformed imports.
+- Rejected non-string password candidates at the authentication boundary.
+- Updated Hono runtime dependencies to patched supported releases.
+
 ### Changed
 
 - 프로젝트 이름 입력 필드에 입력 예시(placeholder)를 추가하여 사용자 편의성을 개선했습니다.
