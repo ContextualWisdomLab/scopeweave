@@ -13,9 +13,9 @@ export function hashApiToken(full) {
   return createHash('sha256').update(String(full)).digest('hex');
 }
 
-const SECRET = process.env.SCOPEWEAVE_JWT_SECRET || 'dev-insecure-secret-change-me';
-if (SECRET === 'dev-insecure-secret-change-me') {
-  console.warn('[auth] INSECURE dev JWT secret in use — set SCOPEWEAVE_JWT_SECRET in production');
+const SECRET = process.env.SCOPEWEAVE_JWT_SECRET || randomBytes(32).toString('base64url');
+if (!process.env.SCOPEWEAVE_JWT_SECRET) {
+  console.warn('[auth] INSECURE dynamically generated dev JWT secret in use — set SCOPEWEAVE_JWT_SECRET in production');
 }
 
 export function hashPassword(pw) {
