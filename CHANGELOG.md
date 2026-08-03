@@ -20,6 +20,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   workflows stay inherited from `ContextualWisdomLab/.github`, not copied
   into this repository.
 
+### Security
+
+- Centralized session JWT verification and database-backed `token_version`
+  revocation across bearer middleware, calendar feeds, server-sent events, and
+  attachment-view URL transports.
+
 ### Changed
 
 - 프로젝트 이름 입력 필드에 입력 예시(placeholder)를 추가하여 사용자 편의성을 개선했습니다.

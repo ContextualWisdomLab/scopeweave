@@ -27,6 +27,15 @@ const orgRole = (userId, orgId) =>
 const canManage = (role) => role === 'owner' || role === 'admin';
 const canWrite = (role) => role === 'owner' || role === 'admin' || role === 'member';
 
+// Verify a session JWT and enforce database-backed logout-all revocation.
+// Throws on malformed, expired, missing-user, or stale-session credentials.
+function verifySessionJwt(token) {
+  const payload = verifyToken(token);
+  const user = db.prepare('SELECT token_version FROM users WHERE id = ?').get(payload.sub);
+  if (!user || (payload.tv || 0) !== user.token_version) throw new Error('revoked session');
+  return payload;
+}
+
 export const app = new Hono();
 
 async function requireAuth(c, next) {
@@ -41,11 +50,7 @@ async function requireAuth(c, next) {
     return next();
   }
   try {
-    const payload = verifyToken(token);
-    // Session revocation: a bumped token_version invalidates all older JWTs.
-    const u = db.prepare('SELECT token_version FROM users WHERE id = ?').get(payload.sub);
-    if (!u || (payload.tv || 0) !== u.token_version) return c.json({ error: 'unauthorized' }, 401);
-    c.set('user', payload);
+    c.set('user', verifySessionJwt(token));
   } catch {
     return c.json({ error: 'unauthorized' }, 401);
   }
@@ -368,12 +373,8 @@ app.get('/api/projects/:id/calendar.ics', (c) => {
     if (!row) return c.json({ error: 'unauthorized' }, 401);
     uid = row.user_id;
   } else {
-    try {
-      const payload = verifyToken(raw);
-      const u = db.prepare('SELECT token_version FROM users WHERE id = ?').get(payload.sub);
-      if (!u || (payload.tv || 0) !== u.token_version) return c.json({ error: 'unauthorized' }, 401);
-      uid = payload.sub;
-    } catch { return c.json({ error: 'unauthorized' }, 401); }
+    try { uid = verifySessionJwt(raw).sub; }
+    catch { return c.json({ error: 'unauthorized' }, 401); }
   }
   const p = projectAccess(uid, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
@@ -408,11 +409,8 @@ app.get('/api/projects/:id/stream', (c) => {
   const header = c.req.header('authorization') || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : (c.req.query('token') || '');
   let user;
-  try {
-    user = verifyToken(token);
-    const u = db.prepare('SELECT token_version FROM users WHERE id = ?').get(user.sub);
-    if (!u || (user.tv || 0) !== u.token_version) return c.json({ error: 'unauthorized' }, 401);
-  } catch { return c.json({ error: 'unauthorized' }, 401); }
+  try { user = verifySessionJwt(token); }
+  catch { return c.json({ error: 'unauthorized' }, 401); }
   const id = c.req.param('id');
   if (!projectAccess(user.sub, id)) return c.json({ error: 'not found' }, 404);
   const key = String(id);
@@ -1061,12 +1059,8 @@ app.get('/api/projects/:id/attachments/:aid/view', (c) => {
     if (!row) return c.json({ error: 'unauthorized' }, 401);
     uid = row.user_id;
   } else {
-    try {
-      const payload = verifyToken(raw);
-      const u = db.prepare('SELECT token_version FROM users WHERE id = ?').get(payload.sub);
-      if (!u || (payload.tv || 0) !== u.token_version) return c.json({ error: 'unauthorized' }, 401);
-      uid = payload.sub;
-    } catch { return c.json({ error: 'unauthorized' }, 401); }
+    try { uid = verifySessionJwt(raw).sub; }
+    catch { return c.json({ error: 'unauthorized' }, 401); }
   }
   const p = projectAccess(uid, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);

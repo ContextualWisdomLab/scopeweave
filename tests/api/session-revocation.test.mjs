@@ -32,7 +32,14 @@ async function expectCalendarStatus(projectId, token, status, message) {
   assert.equal(response.status, status, message);
 }
 
-test('logout-all revokes calendar and SSE query JWTs across devices', async () => {
+async function expectAttachmentViewStatus(projectId, token, status, message) {
+  const response = await req(
+    `/api/projects/${projectId}/attachments/missing/view?token=${encodeURIComponent(token)}`
+  );
+  assert.equal(response.status, status, message);
+}
+
+test('logout-all revokes every URL-transport session JWT across devices', async () => {
   let response = await req('/api/auth/signup', {
     method: 'POST',
     body: body({
@@ -67,6 +74,8 @@ test('logout-all revokes calendar and SSE query JWTs across devices', async () =
   await expectCalendarStatus(projectId, tokenB, 200, 'calendar accepts token B before revocation');
   await expectStreamStatus(projectId, tokenA, 200, 'SSE accepts token A before revocation');
   await expectStreamStatus(projectId, tokenB, 200, 'SSE accepts token B before revocation');
+  await expectAttachmentViewStatus(projectId, tokenA, 404, 'attachment view authenticates token A before lookup');
+  await expectAttachmentViewStatus(projectId, tokenB, 404, 'attachment view authenticates token B before lookup');
 
   response = await req('/api/auth/logout-all', {
     method: 'POST',
@@ -88,8 +97,15 @@ test('logout-all revokes calendar and SSE query JWTs across devices', async () =
       401,
       `SSE rejects stale token ${label}`
     );
+    await expectAttachmentViewStatus(
+      projectId,
+      staleToken,
+      401,
+      `attachment view rejects stale token ${label}`
+    );
   }
 
   await expectCalendarStatus(projectId, freshToken, 200, 'calendar accepts replacement token');
   await expectStreamStatus(projectId, freshToken, 200, 'SSE accepts replacement token');
+  await expectAttachmentViewStatus(projectId, freshToken, 404, 'attachment view accepts replacement token before lookup');
 });
