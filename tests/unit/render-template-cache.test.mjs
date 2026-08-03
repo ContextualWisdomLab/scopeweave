@@ -82,7 +82,7 @@ documentStub.querySelector = () => null;
 documentStub.querySelectorAll = () => [];
 documentStub.body = dummyElement;
 
-a function loadRenderHelpers() {
+function loadRenderHelpers() {
   let source = fs.readFileSync('app.js', 'utf8');
   source = source.replace(/^\s*bootstrap\(\);\s*$/m, ';');
   source += `\n;globalThis.__renderHelpers = {\n    createOwnerCellContent,\n    createStatusCellContent,\n    createActualProgressCellContent,\n  };\n`;
