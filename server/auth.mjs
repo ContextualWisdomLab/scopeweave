@@ -13,9 +13,13 @@ export function hashApiToken(full) {
   return createHash('sha256').update(String(full)).digest('hex');
 }
 
-const SECRET = process.env.SCOPEWEAVE_JWT_SECRET || 'dev-insecure-secret-change-me';
-if (SECRET === 'dev-insecure-secret-change-me') {
-  console.warn('[auth] INSECURE dev JWT secret in use — set SCOPEWEAVE_JWT_SECRET in production');
+let SECRET = process.env.SCOPEWEAVE_JWT_SECRET;
+if (!SECRET || SECRET === 'dev-insecure-secret-change-me') {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('FATAL: SCOPEWEAVE_JWT_SECRET must be set in production');
+  }
+  console.warn('[auth] WARNING: SCOPEWEAVE_JWT_SECRET is not set or insecure. Using an ephemeral random secret. Sessions will invalidate on restart.');
+  SECRET = randomBytes(32).toString('base64url');
 }
 
 export function hashPassword(pw) {

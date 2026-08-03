@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2026-08-03 - Fix hardcoded JWT secret in server authentication module
+**Vulnerability:** The application used a hardcoded fallback value (`'dev-insecure-secret-change-me'`) for the JWT signing secret if the `SCOPEWEAVE_JWT_SECRET` environment variable was not set, allowing forged session tokens.
+**Learning:** Hardcoded cryptographic secrets provide zero security, especially in open-source projects where the default value is known to everyone. Missing configuration in production should fail fast rather than silently falling back to insecure defaults or behavior that breaks expectations (like invalidating sessions on restart).
+**Prevention:** If a persistent secret is not provided in the environment, dynamically generate an ephemeral secure random secret for local development, but explicitly throw an error and crash if running in production (`NODE_ENV === 'production'`).
