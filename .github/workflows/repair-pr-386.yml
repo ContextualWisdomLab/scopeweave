@@ -1,0 +1,105 @@
+name: Repair PR 386 review findings
+
+on:
+  push:
+    branches:
+      - fix/security-hono-csv-hardening
+    paths:
+      - .github/workflows/repair-pr-386.yml
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out PR branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: fix/security-hono-csv-hardening
+          persist-credentials: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Apply bounded review fixes
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_exact(path_name: str, old: str, new: str) -> None:
+              path = Path(path_name)
+              text = path.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"expected text not found in {path_name}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_exact(
+              "app.js",
+              """  return Object.keys(state.editor.initialDraft).some(\n    (key) => state.editor.draft[key] !== state.editor.initialDraft[key]\n  );""",
+              """  const draftKeys = new Set([\n    ...Object.keys(state.editor.initialDraft),\n    ...Object.keys(state.editor.draft),\n  ]);\n  return Array.from(draftKeys).some(\n    (key) => state.editor.draft[key] !== state.editor.initialDraft[key]\n  );""",
+          )
+
+          replace_exact(
+              "tests/unit/auth-password.test.mjs",
+              """assert.equal(verifyPassword('wrong', stored), false);\n\n// Non-string bodies""",
+              """assert.equal(verifyPassword('wrong', stored), false);\nassert.equal(verifyPassword(['correct-horse'], stored), false, 'array must not coerce to a real password');\n\n// Non-string bodies""",
+          )
+          replace_exact(
+              "tests/unit/auth-password.test.mjs",
+              """assert.equal(verifyPassword({}, empty), false, 'object body must not match empty-password hash');\nassert.equal(verifyPassword(null, empty), false);""",
+              """assert.equal(verifyPassword({}, empty), false, 'object body must not match empty-password hash');\nassert.equal(verifyPassword([], empty), false, 'empty array must not coerce to an empty password');\nassert.equal(verifyPassword(null, empty), false);""",
+          )
+
+          replace_exact(
+              "tests/api/smoke.mjs",
+              """r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'a@b.com', password: null }) });\nassert.equal(r.status, 401, 'null password login → 401');""",
+              """r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'a@b.com', password: null }) });\nassert.equal(r.status, 401, 'null password login → 401');\nr = await req('/api/auth/login', { method: 'POST', body: body({ email: 'a@b.com', password: ['password123'] }) });\nassert.equal(r.status, 401, 'array password login → 401');""",
+          )
+          replace_exact(
+              "tests/api/smoke.mjs",
+              """r = await req('/api/auth/change-password', { method: 'POST', headers: pwAuth, body: body({ oldPassword: { p: 1 }, newPassword: 'newpass123' }) });\nassert.equal(r.status, 403, 'object oldPassword → 403');""",
+              """r = await req('/api/auth/change-password', { method: 'POST', headers: pwAuth, body: body({ oldPassword: { p: 1 }, newPassword: 'newpass123' }) });\nassert.equal(r.status, 403, 'object oldPassword → 403');\nr = await req('/api/auth/change-password', { method: 'POST', headers: pwAuth, body: body({ oldPassword: ['password123'], newPassword: 'newpass123' }) });\nassert.equal(r.status, 403, 'array oldPassword → 403');""",
+          )
+          replace_exact(
+              "tests/api/smoke.mjs",
+              """assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, body: body({ password: { x: 1 } }) })).status, 403, 'object password delete → 403');""",
+              """assert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, body: body({ password: { x: 1 } }) })).status, 403, 'object password delete → 403');\nassert.equal((await req('/api/account', { method: 'DELETE', headers: goneAuth, body: body({ password: ['password123'] }) })).status, 403, 'array password delete → 403');""",
+          )
+
+          replace_exact(
+              "tests/unit/editor-unsaved.test.mjs",
+              """assert.equal(editorHasUnsavedChanges(), true, 'mutated field → dirty');\n\n// --- beforeunload ---""",
+              """assert.equal(editorHasUnsavedChanges(), true, 'mutated field → dirty');\n\nstate.editor = {\n  mode: 'edit',\n  draft: { name: 'Task', owner: 'A', description: 'new' },\n  initialDraft: { name: 'Task', owner: 'A' },\n  errors: [],\n};\nassert.equal(editorHasUnsavedChanges(), true, 'draft-only field → dirty');\n\n// --- beforeunload ---""",
+          )
+
+          replace_exact(
+              "docs/security.md",
+              "- required independent review gates.",
+              "- required independent review gates, including coverage evidence.",
+          )
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate review fixes
+        run: |
+          npm run test:unit
+          npm run test:api
+          npm run coverage
+
+      - name: Commit validated fixes and remove repair workflow
+        run: |
+          rm .github/workflows/repair-pr-386.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.js tests/unit/auth-password.test.mjs tests/api/smoke.mjs tests/unit/editor-unsaved.test.mjs docs/security.md .github/workflows/repair-pr-386.yml
+          git commit -m "fix(review): harden auth and unsaved draft regressions"
+          git push origin HEAD:fix/security-hono-csv-hardening
