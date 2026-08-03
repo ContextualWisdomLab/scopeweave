@@ -1,0 +1,214 @@
+name: Repair PR 397 session authorization boundary
+
+on:
+  push:
+    branches:
+      - sentinel-fix-calendar-stream-revocation-11666540507854451077
+    paths:
+      - .github/workflows/repair-pr-397-session-auth.yml
+
+permissions:
+  contents: read
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Check out PR branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: sentinel-fix-calendar-stream-revocation-11666540507854451077
+          persist-credentials: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Centralize session JWT verification and extend regressions
+        shell: python
+        run: |
+          from pathlib import Path
+
+          def replace_exact(path_name: str, old: str, new: str) -> None:
+              path = Path(path_name)
+              text = path.read_text(encoding="utf-8")
+              if old not in text:
+                  raise SystemExit(f"expected text not found in {path_name}: {old[:80]!r}")
+              path.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+          replace_exact(
+              "server/app.mjs",
+              """const canManage = (role) => role === 'owner' || role === 'admin';
+const canWrite = (role) => role === 'owner' || role === 'admin' || role === 'member';
+
+export const app = new Hono();""",
+              """const canManage = (role) => role === 'owner' || role === 'admin';
+const canWrite = (role) => role === 'owner' || role === 'admin' || role === 'member';
+
+// Verify a session JWT and enforce database-backed logout-all revocation.
+// Throws on malformed, expired, missing-user, or stale-session credentials.
+function verifySessionJwt(token) {
+  const payload = verifyToken(token);
+  const user = db.prepare('SELECT token_version FROM users WHERE id = ?').get(payload.sub);
+  if (!user || (payload.tv || 0) !== user.token_version) throw new Error('revoked session');
+  return payload;
+}
+
+export const app = new Hono();""",
+          )
+
+          replace_exact(
+              "server/app.mjs",
+              """  try {
+    const payload = verifyToken(token);
+    // Session revocation: a bumped token_version invalidates all older JWTs.
+    const u = db.prepare('SELECT token_version FROM users WHERE id = ?').get(payload.sub);
+    if (!u || (payload.tv || 0) !== u.token_version) return c.json({ error: 'unauthorized' }, 401);
+    c.set('user', payload);
+  } catch {
+    return c.json({ error: 'unauthorized' }, 401);
+  }""",
+              """  try {
+    c.set('user', verifySessionJwt(token));
+  } catch {
+    return c.json({ error: 'unauthorized' }, 401);
+  }""",
+          )
+
+          jwt_branch = """  } else {
+    try {
+      const payload = verifyToken(raw);
+      const u = db.prepare('SELECT token_version FROM users WHERE id = ?').get(payload.sub);
+      if (!u || (payload.tv || 0) !== u.token_version) return c.json({ error: 'unauthorized' }, 401);
+      uid = payload.sub;
+    } catch { return c.json({ error: 'unauthorized' }, 401); }
+  }"""
+          jwt_replacement = """  } else {
+    try { uid = verifySessionJwt(raw).sub; }
+    catch { return c.json({ error: 'unauthorized' }, 401); }
+  }"""
+          app_path = Path("server/app.mjs")
+          app_text = app_path.read_text(encoding="utf-8")
+          if app_text.count(jwt_branch) != 2:
+              raise SystemExit(f"expected two PAT-preserving JWT branches, found {app_text.count(jwt_branch)}")
+          app_path.write_text(app_text.replace(jwt_branch, jwt_replacement), encoding="utf-8")
+
+          replace_exact(
+              "server/app.mjs",
+              """  let user;
+  try {
+    user = verifyToken(token);
+    const u = db.prepare('SELECT token_version FROM users WHERE id = ?').get(user.sub);
+    if (!u || (user.tv || 0) !== u.token_version) return c.json({ error: 'unauthorized' }, 401);
+  } catch { return c.json({ error: 'unauthorized' }, 401); }""",
+              """  let user;
+  try { user = verifySessionJwt(token); }
+  catch { return c.json({ error: 'unauthorized' }, 401); }""",
+          )
+
+          replace_exact(
+              "tests/api/session-revocation.test.mjs",
+              """async function expectCalendarStatus(projectId, token, status, message) {
+  const response = await req(
+    `/api/projects/${projectId}/calendar.ics?token=${encodeURIComponent(token)}`
+  );
+  assert.equal(response.status, status, message);
+}
+
+test('logout-all revokes calendar and SSE query JWTs across devices', async () => {""",
+              """async function expectCalendarStatus(projectId, token, status, message) {
+  const response = await req(
+    `/api/projects/${projectId}/calendar.ics?token=${encodeURIComponent(token)}`
+  );
+  assert.equal(response.status, status, message);
+}
+
+async function expectAttachmentViewStatus(projectId, token, status, message) {
+  const response = await req(
+    `/api/projects/${projectId}/attachments/missing/view?token=${encodeURIComponent(token)}`
+  );
+  assert.equal(response.status, status, message);
+}
+
+test('logout-all revokes every URL-transport session JWT across devices', async () => {""",
+          )
+
+          replace_exact(
+              "tests/api/session-revocation.test.mjs",
+              """  await expectStreamStatus(projectId, tokenA, 200, 'SSE accepts token A before revocation');
+  await expectStreamStatus(projectId, tokenB, 200, 'SSE accepts token B before revocation');""",
+              """  await expectStreamStatus(projectId, tokenA, 200, 'SSE accepts token A before revocation');
+  await expectStreamStatus(projectId, tokenB, 200, 'SSE accepts token B before revocation');
+  await expectAttachmentViewStatus(projectId, tokenA, 404, 'attachment view authenticates token A before lookup');
+  await expectAttachmentViewStatus(projectId, tokenB, 404, 'attachment view authenticates token B before lookup');""",
+          )
+
+          replace_exact(
+              "tests/api/session-revocation.test.mjs",
+              """    await expectStreamStatus(
+      projectId,
+      staleToken,
+      401,
+      `SSE rejects stale token ${label}`
+    );
+  }
+
+  await expectCalendarStatus(projectId, freshToken, 200, 'calendar accepts replacement token');
+  await expectStreamStatus(projectId, freshToken, 200, 'SSE accepts replacement token');""",
+              """    await expectStreamStatus(
+      projectId,
+      staleToken,
+      401,
+      `SSE rejects stale token ${label}`
+    );
+    await expectAttachmentViewStatus(
+      projectId,
+      staleToken,
+      401,
+      `attachment view rejects stale token ${label}`
+    );
+  }
+
+  await expectCalendarStatus(projectId, freshToken, 200, 'calendar accepts replacement token');
+  await expectStreamStatus(projectId, freshToken, 200, 'SSE accepts replacement token');
+  await expectAttachmentViewStatus(projectId, freshToken, 404, 'attachment view accepts replacement token before lookup');""",
+          )
+
+          replace_exact(
+              "CHANGELOG.md",
+              """### Changed
+
+- 프로젝트 이름 입력 필드에 입력 예시(placeholder)를 추가하여 사용자 편의성을 개선했습니다.""",
+              """### Security
+
+- Centralized session JWT verification and database-backed `token_version`
+  revocation across bearer middleware, calendar feeds, server-sent events, and
+  attachment-view URL transports.
+
+### Changed
+
+- 프로젝트 이름 입력 필드에 입력 예시(placeholder)를 추가하여 사용자 편의성을 개선했습니다.""",
+          )
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate security boundary
+        run: |
+          npm run test:unit
+          npm run test:api
+          npm run coverage
+
+      - name: Commit validated repair and remove workflow
+        run: |
+          rm .github/workflows/repair-pr-397-session-auth.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add server/app.mjs tests/api/session-revocation.test.mjs CHANGELOG.md .github/workflows/repair-pr-397-session-auth.yml
+          git commit -m "fix(security): centralize revoked session validation"
+          git push origin HEAD:sentinel-fix-calendar-stream-revocation-11666540507854451077
