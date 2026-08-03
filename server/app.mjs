@@ -1020,25 +1020,34 @@ app.get('/api/projects/:id/attachments', requireAuth, async (c) => {
   if (!p) return c.json({ error: 'not found' }, 404);
   const taskId = c.req.query('taskId');
   const rows = (taskId
-    ? db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.status, a.created_at AS createdAt, u.email AS uploadedBy
+    ? db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.status, a.job_id, a.created_at AS createdAt, u.email AS uploadedBy
         FROM attachments a LEFT JOIN users u ON u.id = a.created_by
         WHERE a.project_id = ? AND a.task_id = ? ORDER BY a.id DESC`).all(p.id, taskId)
-    : db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.status, a.created_at AS createdAt, u.email AS uploadedBy
+    : db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.status, a.job_id, a.created_at AS createdAt, u.email AS uploadedBy
         FROM attachments a LEFT JOIN users u ON u.id = a.created_by
         WHERE a.project_id = ? ORDER BY a.id DESC`).all(p.id));
   // PENDING 잡 상태 갱신(최선 노력)
-  for (const r of rows) {
-    if (r.status === 'PENDING' || r.status === 'RUNNING') {
+  const pendingRows = rows.filter(r => r.status === 'PENDING' || r.status === 'RUNNING');
+  if (pendingRows.length > 0) {
+    const promises = pendingRows.map(async r => {
       try {
-        const jid = db.prepare('SELECT job_id FROM attachments WHERE id = ?').get(r.id).job_id;
-        const st = await jobStatus(p.org_id, uid, jid);
-        if (st !== r.status) {
-          db.prepare('UPDATE attachments SET status = ? WHERE id = ?').run(st, r.id);
-          r.status = st;
-        }
-      } catch { /* keep stale status */ }
+        const st = await jobStatus(p.org_id, uid, r.job_id);
+        return { r, st };
+      } catch {
+        return null;
+      }
+    });
+    const results = await Promise.all(promises);
+    const updates = results.filter(res => res && res.st !== res.r.status);
+    if (updates.length > 0) {
+      const updateStmt = db.prepare('UPDATE attachments SET status = ? WHERE id = ?');
+      for (const { r, st } of updates) {
+        updateStmt.run(st, r.id);
+        r.status = st;
+      }
     }
   }
+  for (const r of rows) delete r.job_id;
   return c.json({ attachments: rows });
 });
 
