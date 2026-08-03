@@ -5,12 +5,24 @@ one origin (so the browser's `default-src 'self'` CSP allows the API calls).
 
 ## Quick start (Docker Compose)
 
+Create the signing key once in a user-only file outside the repository, then
+reload that same key for every restart. Replacing it invalidates all existing
+session JWTs.
+
 ```bash
-# Persist across restarts (re-minting invalidates existing session JWTs).
-export SCOPEWEAVE_JWT_SECRET="${SCOPEWEAVE_JWT_SECRET:-$(openssl rand -base64 32)}"
+install -d -m 700 "$HOME/.config/scopeweave"
+if [ ! -s "$HOME/.config/scopeweave/jwt-secret" ]; then
+  umask 077
+  openssl rand -base64 32 > "$HOME/.config/scopeweave/jwt-secret"
+fi
+export SCOPEWEAVE_JWT_SECRET="$(cat "$HOME/.config/scopeweave/jwt-secret")"
 docker compose up --build
 # open http://localhost:8787
 ```
+
+For managed deployments, store the same value in the platform's secrets
+manager instead of a local file. Rotate it only as an intentional global
+session-revocation operation.
 
 That builds `Dockerfile.server`, runs the Node backend as a non-root user, and
 persists the database in the `scopeweave-data` volume.
