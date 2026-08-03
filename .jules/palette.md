@@ -118,3 +118,6 @@
 ## $(date +%Y-%m-%d) - Surface editor validation state before submit with aria-disabled
 **Learning:** Native `disabled` on submit buttons completely blocks the form's `submit` event, preventing us from showing helpful toast messages when a user hits Enter or clicks the button while the form is invalid.
 **Action:** Use `aria-disabled="true"` on the submit button instead of `disabled`. Check validation state inside the form's `submit` event listener and show a toast if invalid, rather than completely blocking the submission attempt.
+## 2026-08-03 - Prevent DOM XSS false positives by using explicit tag parsing instead of RegExp
+**Learning:** Using `new RegExp` with dynamic input (like XML content) can trigger ReDoS warnings in SAST tools like Semgrep, even when the input is assumed safe. Hardcoded regexes or standard string manipulation functions are preferred.
+**Action:** Replace `new RegExp` with `indexOf` and `slice` for safe substring extraction when parsing text if a proper parser cannot be used.
