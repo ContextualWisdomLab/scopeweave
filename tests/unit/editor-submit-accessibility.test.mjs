@@ -16,8 +16,8 @@ assert.match(
 );
 assert.match(
   app,
-  /saveButton\s*&&\s*saveButton\.getAttribute\(['"]aria-disabled['"]\)\s*===\s*['"]true['"]\)\s*\{\s*return;/s,
-  'the submit handler blocks activation while the focusable save button is aria-disabled',
+  /renderDraftValidation\.flush\(\);[\s\S]*?const saveButton = form\.querySelector\(['"]button\[type=[\\]?['"]submit[\\]?['"]\]['"]\);[\s\S]*?saveButton\s*&&\s*saveButton\.getAttribute\(['"]aria-disabled['"]\)\s*===\s*['"]true['"]\)\s*\{\s*return;/s,
+  'submit flushes current draft validation before consulting aria-disabled',
 );
 assert.doesNotMatch(
   app,
