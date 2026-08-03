@@ -10,6 +10,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: repair-pr-397-session-auth
+  cancel-in-progress: true
+
 jobs:
   repair:
     if: github.actor != 'github-actions[bot]'
@@ -29,16 +33,19 @@ jobs:
           node-version: 22.13.0
           cache: npm
 
-      - name: Centralize session JWT verification and extend regressions
-        shell: python
+      - name: Apply bounded session-auth repair
+        id: apply
+        shell: bash
         run: |
+          set +e
+          python - <<'PY' > /tmp/apply.log 2>&1
           from pathlib import Path
 
           def replace_exact(path_name: str, old: str, new: str) -> None:
               path = Path(path_name)
               text = path.read_text(encoding="utf-8")
               if old not in text:
-                  raise SystemExit(f"expected text not found in {path_name}: {old[:80]!r}")
+                  raise SystemExit(f"expected text not found in {path_name}: {old[:100]!r}")
               path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
           replace_exact(
@@ -94,8 +101,9 @@ export const app = new Hono();""",
   }"""
           app_path = Path("server/app.mjs")
           app_text = app_path.read_text(encoding="utf-8")
-          if app_text.count(jwt_branch) != 2:
-              raise SystemExit(f"expected two PAT-preserving JWT branches, found {app_text.count(jwt_branch)}")
+          count = app_text.count(jwt_branch)
+          if count != 2:
+              raise SystemExit(f"expected two PAT-preserving JWT branches, found {count}")
           app_path.write_text(app_text.replace(jwt_branch, jwt_replacement), encoding="utf-8")
 
           replace_exact(
@@ -194,21 +202,55 @@ test('logout-all revokes every URL-transport session JWT across devices', async 
 
 - 프로젝트 이름 입력 필드에 입력 예시(placeholder)를 추가하여 사용자 편의성을 개선했습니다.""",
           )
+          PY
+          code=$?
+          cat /tmp/apply.log
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Validate security boundary
+      - name: Validate repaired security boundary
+        id: validate
+        if: steps.apply.outputs.code == '0'
+        shell: bash
         run: |
-          npm run test:unit
-          npm run test:api
-          npm run coverage
+          set +e
+          {
+            npm ci &&
+            npm run test:unit &&
+            npm run test:api &&
+            npm run coverage
+          } > /tmp/validate.log 2>&1
+          code=$?
+          cat /tmp/validate.log
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          exit 0
 
       - name: Commit validated repair and remove workflow
+        if: steps.apply.outputs.code == '0' && steps.validate.outputs.code == '0'
         run: |
           rm .github/workflows/repair-pr-397-session-auth.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add server/app.mjs tests/api/session-revocation.test.mjs CHANGELOG.md .github/workflows/repair-pr-397-session-auth.yml
           git commit -m "fix(security): centralize revoked session validation"
+          git push origin HEAD:sentinel-fix-calendar-stream-revocation-11666540507854451077
+
+      - name: Commit bounded diagnostic on failure
+        if: steps.apply.outputs.code != '0' || steps.validate.outputs.code != '0'
+        run: |
+          git reset --hard HEAD
+          {
+            echo "apply_code=${{ steps.apply.outputs.code }}"
+            echo "validate_code=${{ steps.validate.outputs.code }}"
+            echo
+            echo "--- apply.log ---"
+            cat /tmp/apply.log 2>/dev/null || true
+            echo
+            echo "--- validate.log tail ---"
+            tail -n 200 /tmp/validate.log 2>/dev/null || true
+          } > .github/repair-pr-397-diagnostic.txt
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add .github/repair-pr-397-diagnostic.txt
+          git commit -m "chore(ci): record PR 397 repair diagnostic"
           git push origin HEAD:sentinel-fix-calendar-stream-revocation-11666540507854451077
