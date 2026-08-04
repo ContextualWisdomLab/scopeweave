@@ -71,6 +71,36 @@ or the request-wide budget. Raise limits conservatively because every worker
 consumes a downstream Clearfolio connection; horizontal ScopeWeave replicas
 multiply the aggregate concurrency.
 
+### Rollout and alerting
+
+Roll this behavior out behind a canary replica before raising limits across the
+fleet. Start with concurrency `2`, the default per-item timeout, and a budget no
+longer than the attachment-list latency objective. Compare the canary with the
+previous version using the same tenant and Clearfolio environment.
+
+Derive rates from counter deltas over the same observation window:
+
+```text
+failure_ratio  = failed_delta / max(attempted_delta, 1)
+deferred_ratio = deferred_delta / max(attempted_delta + deferred_delta, 1)
+change_ratio   = changed_delta / max(attempted_delta, 1)
+```
+
+A high `failure_ratio` indicates downstream, timeout, malformed-response, or
+persistence errors and should block rollout. A high `deferred_ratio` indicates
+that the request-wide budget is protecting latency at the cost of freshness;
+first inspect Clearfolio latency and attachment-list size before increasing
+worker count or budget. Track attachment-list p50, p95, and p99 latency beside
+these ratios. Thresholds must be derived from observed production baselines and
+an agreed service-level objective rather than copied from development data.
+
+Rollback is configuration-first: reduce concurrency and budget without changing
+the persisted attachment statuses. If the application version must be rolled
+back, the previous implementation can read the unchanged schema; no migration
+is required by this feature. Never place Clearfolio job IDs, HMAC material,
+request URLs containing credentials, or downstream response bodies in metrics,
+logs, traces, or alert annotations.
+
 ## Data & scale path
 
 - **Dev / single node**: `node:sqlite` on a persistent volume (this setup). Simple, no external DB.
