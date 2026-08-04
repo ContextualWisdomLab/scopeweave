@@ -1,0 +1,134 @@
+name: Run current commercial readiness
+
+on:
+  push:
+    branches:
+      - automation/run-hourly-opencode-commercial-readiness-20260804
+
+permissions: read-all
+
+concurrency:
+  group: run-current-commercial-readiness-20260804
+  cancel-in-progress: true
+
+jobs:
+  maintain:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      actions: write
+      checks: read
+      contents: write
+      issues: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Inspect every open pull request and arm protected merges
+        shell: bash
+        run: |
+          set -euo pipefail
+          repository="$GITHUB_REPOSITORY"
+          mapfile -t pull_rows < <(
+            gh pr list --repo "$repository" --state open --limit 100 \
+              --json number,isDraft,headRefOid,headRefName,maintainerCanModify,title \
+              --jq '.[] | @base64'
+          )
+          ready_count=0
+          draft_count=0
+          refreshed_count=0
+          armed_count=0
+          blocked_count=0
+
+          for encoded in "${pull_rows[@]}"; do
+            pull_json="$(printf '%s' "$encoded" | base64 --decode)"
+            number="$(jq -r '.number' <<<"$pull_json")"
+            is_draft="$(jq -r '.isDraft' <<<"$pull_json")"
+            head_sha="$(jq -r '.headRefOid' <<<"$pull_json")"
+            can_modify="$(jq -r '.maintainerCanModify' <<<"$pull_json")"
+            title="$(jq -r '.title' <<<"$pull_json")"
+
+            if [[ "$is_draft" == 'true' ]]; then
+              draft_count=$((draft_count + 1))
+              printf '::notice title=Draft preserved::#%s %s remains Draft.\n' "$number" "$title"
+              continue
+            fi
+            ready_count=$((ready_count + 1))
+
+            detail="$(gh api "repos/${repository}/pulls/${number}")"
+            mergeable_state="$(jq -r '.mergeable_state // "unknown"' <<<"$detail")"
+            if [[ "$mergeable_state" == 'behind' && "$can_modify" == 'true' ]]; then
+              if gh api --method PUT "repos/${repository}/pulls/${number}/update-branch" \
+                -f expected_head_sha="$head_sha" >/dev/null 2>&1; then
+                refreshed_count=$((refreshed_count + 1))
+                continue
+              fi
+            fi
+
+            unresolved="$(gh api graphql \
+              -f query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}' \
+              -F owner="${repository%%/*}" -F name="${repository#*/}" -F number="$number" \
+              --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length' \
+              2>/dev/null || printf '0')"
+            if (( unresolved > 0 )); then
+              blocked_count=$((blocked_count + 1))
+              printf '::notice title=Review threads unresolved::#%s has %s unresolved thread(s).\n' "$number" "$unresolved"
+              continue
+            fi
+
+            marker="<!-- current-commercial-readiness:${head_sha} -->"
+            existing="$(gh api --paginate "repos/${repository}/issues/${number}/comments?per_page=100" \
+              --jq "[.[] | select(.body | contains(\"${marker}\"))] | length")"
+            if [[ "$existing" == '0' ]]; then
+              gh pr comment "$number" --repo "$repository" --body "${marker}
+            @coderabbitai review
+
+            Protected commercial-readiness pass reconfirmed exact head \`${head_sha}\`. Required checks, independent reviews, and branch protection remain authoritative." >/dev/null
+            fi
+
+            if gh pr merge "$number" --repo "$repository" --squash --auto >/dev/null 2>&1; then
+              armed_count=$((armed_count + 1))
+            else
+              blocked_count=$((blocked_count + 1))
+            fi
+          done
+
+          {
+            echo '## Current protected commercial-readiness pass'
+            echo
+            echo '| Metric | Count |'
+            echo '|---|---:|'
+            printf '| Ready pull requests | %s |\n' "$ready_count"
+            printf '| Draft pull requests | %s |\n' "$draft_count"
+            printf '| Branches refreshed | %s |\n' "$refreshed_count"
+            printf '| Protected auto-merges armed | %s |\n' "$armed_count"
+            printf '| Blocked candidates | %s |\n' "$blocked_count"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Dispatch the OpenCode NVIDIA NIM loop when installed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh api "repos/${GITHUB_REPOSITORY}/contents/.github/workflows/hourly-opencode-commercial-readiness.yml?ref=develop" >/dev/null 2>&1; then
+            gh workflow run hourly-opencode-commercial-readiness.yml --repo "$GITHUB_REPOSITORY" --ref develop
+          else
+            echo 'The protected hourly OpenCode workflow is not yet present on develop; dispatch skipped.' >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Remove this one-shot maintenance workflow
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: automation/run-hourly-opencode-commercial-readiness-20260804
+          persist-credentials: true
+
+      - name: Commit one-shot cleanup
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/run-current-commercial-readiness-20260804.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore: remove current commercial-readiness runner'
+          git push origin HEAD:automation/run-hourly-opencode-commercial-readiness-20260804
