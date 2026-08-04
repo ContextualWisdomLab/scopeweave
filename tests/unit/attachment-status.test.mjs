@@ -105,6 +105,7 @@ test('empty and settled rows perform no downstream work', async () => {
     attempted: 0,
     changed: 0,
     failed: 0,
+    skipped: 0,
     deferred: 0,
   });
 
@@ -114,12 +115,13 @@ test('empty and settled rows perform no downstream work', async () => {
       [null, { id: 1, status: 'SUCCEEDED', jobId: 'job-1' }],
       { ...dependencies, metrics },
     ),
-    { attempted: 0, changed: 0, failed: 0, deferred: 0 },
+    { attempted: 0, changed: 0, failed: 0, skipped: 0, deferred: 0 },
   );
   assert.deepEqual(metrics, {
     attachmentStatusRefreshAttempted: 0,
     attachmentStatusRefreshChanged: 0,
     attachmentStatusRefreshFailed: 0,
+    attachmentStatusRefreshSkipped: 0,
     attachmentStatusRefreshDeferred: 0,
   });
 });
@@ -142,6 +144,7 @@ test('100 pending rows reach but never exceed configured concurrency', async () 
     attachmentStatusRefreshAttempted: 10,
     attachmentStatusRefreshChanged: 20,
     attachmentStatusRefreshFailed: 30,
+    attachmentStatusRefreshSkipped: 35,
     attachmentStatusRefreshDeferred: 40,
   };
 
@@ -171,12 +174,19 @@ test('100 pending rows reach but never exceed configured concurrency', async () 
   });
 
   assert.equal(peak, 8, `peak concurrency ${peak} did not match configured limit`);
-  assert.deepEqual(counts, { attempted: 100, changed: 50, failed: 0, deferred: 0 });
+  assert.deepEqual(counts, {
+    attempted: 100,
+    changed: 50,
+    failed: 0,
+    skipped: 0,
+    deferred: 0,
+  });
   assert.equal(updates.length, 50);
   assert.deepEqual(metrics, {
     attachmentStatusRefreshAttempted: 110,
     attachmentStatusRefreshChanged: 70,
     attachmentStatusRefreshFailed: 30,
+    attachmentStatusRefreshSkipped: 35,
     attachmentStatusRefreshDeferred: 40,
   });
 });
@@ -197,7 +207,13 @@ test('request-wide deadline defers work that has not started', async () => {
     updateStatus: () => { throw new Error('unchanged status must not be written'); },
   });
 
-  assert.deepEqual(counts, { attempted: 1, changed: 0, failed: 0, deferred: 2 });
+  assert.deepEqual(counts, {
+    attempted: 1,
+    changed: 0,
+    failed: 0,
+    skipped: 0,
+    deferred: 2,
+  });
   assert.deepEqual(rows.map((row) => row.status), ['PENDING', 'PENDING', 'PENDING']);
 });
 
@@ -232,7 +248,13 @@ test('invalid identifiers and categorized failures preserve stale state', async 
   });
 
   assert.equal(aborted, true);
-  assert.deepEqual(counts, { attempted: 4, changed: 0, failed: 4, deferred: 3 });
+  assert.deepEqual(counts, {
+    attempted: 4,
+    changed: 0,
+    failed: 4,
+    skipped: 3,
+    deferred: 0,
+  });
   assert.deepEqual(
     categories.sort(),
     ['downstream_lookup', 'invalid_status', 'status_persistence', 'timeout'].sort(),
@@ -255,6 +277,7 @@ test('diagnostic sink failures and omitted diagnostics stay isolated', async () 
     attempted: 1,
     changed: 0,
     failed: 1,
+    skipped: 0,
     deferred: 0,
   });
   assert.deepEqual(
@@ -262,6 +285,6 @@ test('diagnostic sink failures and omitted diagnostics stay isolated', async () 
       ...dependencies,
       onError: () => { throw new Error('logger unavailable'); },
     }),
-    { attempted: 1, changed: 0, failed: 1, deferred: 0 },
+    { attempted: 1, changed: 0, failed: 1, skipped: 0, deferred: 0 },
   );
 });
