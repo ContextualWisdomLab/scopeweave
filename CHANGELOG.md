@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a fail-closed hourly commercial-readiness loop that runs a pinned,
+  checksum-verified OpenCode agent against NVIDIA hosted NIM models only when
+  the pull-request queue is empty. The agent receives `NVIDIA_NIM_API_KEY` but
+  no GitHub mutation credential; a later trusted step performs deterministic
+  unit, API, coverage, docstring, cloud E2E, and diff verification before
+  opening exactly one pull request for central review and merge governance.
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS
   estimation coverage, dependency risk, and procurement package section checks.
 - Preserved PM-analysis research papers, NASA WBS handbook, BCP 14, and JSON
@@ -32,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added regression coverage that prevents array-valued passwords from being
   coerced into valid credentials.
 - Updated Hono runtime dependencies to patched supported releases.
+- Prevented the product-development agent from modifying reviewer-owned
+  workflows or scanner-suppression files, inheriting GitHub mutation and OIDC
+  credentials, committing or publishing directly, or installing an unverified
+  OpenCode binary.
 
 ### Changed
 
