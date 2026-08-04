@@ -4,6 +4,9 @@
 import { scryptSync, randomBytes, timingSafeEqual, createHmac, createHash } from 'node:crypto';
 import { db } from './db.mjs';
 
+/** Maximum lifetime for a general ScopeWeave session token, in seconds. */
+const MAX_SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
+
 /**
  * Generate a one-time-visible ScopeWeave personal access token.
  *
@@ -96,16 +99,18 @@ function isClaimsObject(value) {
  * Sign a ScopeWeave session JWT with pinned HS256 semantics.
  *
  * Session tokens are minted only for a positive safe-integer user subject and a
- * non-negative safe-integer token version. A positive safe-integer lifetime is
- * required so an internal caller cannot accidentally create an immortal,
- * already-expired, or non-numeric token.
+ * non-negative safe-integer token version. The lifetime must be a positive safe
+ * integer no greater than seven days, so an internal caller cannot create an
+ * immortal, already-expired, excessively long-lived, or numerically imprecise
+ * general session token. Narrower credentials use the separate access-grant
+ * design tracked in issue #413 rather than extending this lifetime.
  *
  * @param {Record<string, unknown>} payload - Session claims to include.
- * @param {number} [ttlSec=604800] - Token lifetime in seconds.
+ * @param {number} [ttlSec=604800] - Token lifetime in seconds, at most seven days.
  * @returns {string} Signed compact JWT.
  * @throws {TypeError|RangeError} If the payload, subject, token version, or lifetime is invalid.
  */
-export function signToken(payload, ttlSec = 60 * 60 * 24 * 7) {
+export function signToken(payload, ttlSec = MAX_SESSION_TTL_SECONDS) {
   if (!isClaimsObject(payload)) throw new TypeError('session claims must be an object');
   if (!Number.isSafeInteger(payload.sub) || payload.sub < 1) {
     throw new TypeError('session subject must be a positive safe integer');
@@ -115,6 +120,9 @@ export function signToken(payload, ttlSec = 60 * 60 * 24 * 7) {
   }
   if (!Number.isSafeInteger(ttlSec) || ttlSec < 1) {
     throw new RangeError('session lifetime must be a positive safe integer');
+  }
+  if (ttlSec > MAX_SESSION_TTL_SECONDS) {
+    throw new RangeError(`session maximum lifetime is ${MAX_SESSION_TTL_SECONDS} seconds`);
   }
 
   const now = Math.floor(Date.now() / 1000);
