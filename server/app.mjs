@@ -1031,7 +1031,7 @@ app.get('/api/projects/:id/attachments', requireAuth, async (c) => {
         FROM attachments a LEFT JOIN users u ON u.id = a.created_by
         WHERE a.project_id = ? ORDER BY a.id DESC`).all(p.id));
   // PENDING 잡 상태 갱신(최선 노력)
-  for (const r of rows) {
+  await Promise.all(rows.map(async (r) => {
     if (r.status === 'PENDING' || r.status === 'RUNNING') {
       try {
         const jid = db.prepare('SELECT job_id FROM attachments WHERE id = ?').get(r.id).job_id;
@@ -1042,7 +1042,7 @@ app.get('/api/projects/:id/attachments', requireAuth, async (c) => {
         }
       } catch { /* keep stale status */ }
     }
-  }
+  }));
   return c.json({ attachments: rows });
 });
 
