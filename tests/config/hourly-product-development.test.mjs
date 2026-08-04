@@ -27,6 +27,16 @@ assert.match(
 );
 assert.match(
   workflow,
+  /X-GitHub-Api-Version:\s*2022-11-28/g,
+  'Agent Tasks calls use the API version shown by the current official endpoint documentation',
+);
+assert.doesNotMatch(
+  workflow,
+  /X-GitHub-Api-Version:\s*2026-03-10/,
+  'the preview Agent Tasks integration does not silently opt into an undocumented endpoint-version contract',
+);
+assert.match(
+  workflow,
   /\/pulls\?state=open&per_page=1/,
   'the workflow refuses development while any pull request owns the queue',
 );
