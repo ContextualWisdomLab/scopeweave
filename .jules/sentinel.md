@@ -132,3 +132,7 @@
 **Vulnerability:** Dynamically generated download anchors for features like ICS exports or workspace data exports were calling `.remove()` directly instead of safely using `Element.prototype.remove.call()`.
 **Learning:** Even in newly added modules or cloud features, short-lived DOM nodes should follow the same defensive DOM invocation conventions as the main application to prevent DOM clobbering attacks if attributes could be spoofed.
 **Prevention:** Consistently set `rel="noopener noreferrer"` on all generated anchors and strictly use `Element.prototype.remove.call(anchor)` for cleanup.
+## 2026-08-04 - Upgrade hono dependency to fix CVE-2026-69207 ReDoS
+**Vulnerability:** The `hono` package versions prior to `4.12.34` contain a ReDoS (Regular Expression Denial of Service) vulnerability in the CORS middleware via `Access-Control-Request-Headers` processing.
+**Learning:** Outdated dependencies with known vulnerabilities (CVEs) can expose the application to attacks even if the application code itself is secure. CI security scanners like Trivy flag these issues.
+**Prevention:** Regularly audit and update third-party dependencies using tools like `npm audit fix` to ensure known vulnerabilities are patched.
