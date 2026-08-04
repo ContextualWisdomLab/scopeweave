@@ -1,0 +1,78 @@
+name: Repair PR 419 on ready
+
+on:
+  pull_request:
+    branches: [develop]
+    types: [ready_for_review]
+
+permissions: read-all
+
+concurrency:
+  group: repair-pr-419-ready
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    if: github.event.pull_request.number == 419 && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout PR branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: dependabot/npm_and_yarn/npm_and_yarn-a27be0ffa6
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Apply exact review repair
+        run: python3 scripts/ci/repair_pr_419.py
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify exact repaired tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm run test:unit
+          npm run test:api
+          npm run coverage
+          test -s coverage/coverage-final.json
+          node scripts/ci/static_coverage_evidence.mjs docstrings
+          npm run test:e2e:cloud
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const report = JSON.parse(fs.readFileSync('coverage/coverage-final.json', 'utf8'));
+          const target = Object.entries(report).find(([name]) =>
+            name.replaceAll('\\\\', '/').endsWith('/server/attachment_status.mjs'));
+          if (!target) throw new Error('attachment_status.mjs is missing from coverage-final.json');
+          const coverage = target[1];
+          const misses = [
+            ...Object.values(coverage.s),
+            ...Object.values(coverage.f),
+            ...Object.values(coverage.b).flat(),
+          ].filter((hits) => hits === 0);
+          if (misses.length) throw new Error(`attachment_status.mjs has ${misses.length} uncovered entries`);
+          NODE
+          git diff --check
+
+      - name: Commit verified tree and remove temporary repair files
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/repair-pr-419-ready.yml
+          rm .github/workflows/repair-pr-419-coverage.yml
+          rm scripts/ci/repair_pr_419.py
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'fix(ci): make coverage evidence deterministic'
+          git push origin HEAD:dependabot/npm_and_yarn/npm_and_yarn-a27be0ffa6
