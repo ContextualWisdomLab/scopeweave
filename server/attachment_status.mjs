@@ -10,8 +10,17 @@ export const ATTACHMENT_STATUS_DEFAULT_TIMEOUT_MS = 3_000;
 /** Hard ceiling for a downstream status lookup timeout in milliseconds. */
 export const ATTACHMENT_STATUS_MAX_TIMEOUT_MS = 30_000;
 
+/** Default wall-clock budget for one attachment-list refresh pass. */
+export const ATTACHMENT_STATUS_DEFAULT_BUDGET_MS = 5_000;
+
+/** Hard ceiling for one attachment-list refresh pass. */
+export const ATTACHMENT_STATUS_MAX_BUDGET_MS = 60_000;
+
 /** Status values accepted from the Clearfolio conversion contract. */
 const ATTACHMENT_STATUS_VALUES = new Set(['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED']);
+
+/** Timeout error name used only for sanitized failure categorization. */
+const ATTACHMENT_STATUS_TIMEOUT_ERROR = 'AttachmentStatusTimeoutError';
 
 /**
  * Normalize a positive integer while applying a conservative upper bound.
@@ -56,6 +65,33 @@ export function normalizeAttachmentStatusTimeoutMs(value) {
 }
 
 /**
+ * Normalize the request-wide attachment refresh budget.
+ *
+ * @param {unknown} value - Environment or caller supplied value.
+ * @returns {number} A positive budget no greater than 60 seconds.
+ */
+export function normalizeAttachmentStatusBudgetMs(value) {
+  return normalizeBoundedInteger(
+    value,
+    ATTACHMENT_STATUS_DEFAULT_BUDGET_MS,
+    ATTACHMENT_STATUS_MAX_BUDGET_MS,
+  );
+}
+
+/**
+ * Read a clock dependency and reject unusable values before deadline math.
+ *
+ * @param {() => number} clock - Clock returning epoch-like milliseconds.
+ * @returns {number} A finite millisecond value.
+ * @throws {TypeError} If the clock returns a non-finite value.
+ */
+function readClock(clock) {
+  const value = clock();
+  if (!Number.isFinite(value)) throw new TypeError('clock must return a finite number');
+  return value;
+}
+
+/**
  * Add one refresh result to process-level operational counters.
  *
  * @param {object|undefined} metrics - Mutable process metric registry.
@@ -76,6 +112,26 @@ function addRefreshMetrics(metrics, counts) {
 }
 
 /**
+ * Publish a sanitized refresh-failure category without risking the request.
+ *
+ * The callback never receives a Clearfolio job identifier, URL, response body,
+ * or raw downstream error. A failing diagnostic sink is isolated because
+ * observability must not break attachment listing.
+ *
+ * @param {((event:{category:string}) => unknown)|undefined} onError - Optional diagnostic sink.
+ * @param {string} category - Fixed safe failure category.
+ * @returns {void}
+ */
+function reportRefreshFailure(onError, category) {
+  if (!onError) return;
+  try {
+    onError({ category });
+  } catch {
+    // Diagnostics are best effort and must never fail the list response.
+  }
+}
+
+/**
  * Await one downstream lookup with an AbortSignal and a hard caller-side timeout.
  *
  * The explicit race means a non-compliant downstream adapter cannot hold a list
@@ -91,7 +147,9 @@ async function withTimeout(lookup, controller, timeoutMs) {
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => {
       controller.abort();
-      reject(new Error('attachment status lookup timed out'));
+      const error = new Error('attachment status lookup timed out');
+      error.name = ATTACHMENT_STATUS_TIMEOUT_ERROR;
+      reject(error);
     }, timeoutMs);
   });
   try {
@@ -105,8 +163,11 @@ async function withTimeout(lookup, controller, timeoutMs) {
  * Refresh pending attachment statuses through a bounded worker pool.
  *
  * Rows are updated in place so the caller can serialize the refreshed public
- * representation. Missing job identifiers and downstream or persistence
- * failures preserve stale status and never fail the attachment-list response.
+ * representation. A shared wall-clock deadline bounds the whole refresh pass;
+ * workers clamp each lookup timeout to the remaining request budget and mark
+ * unstarted rows as deferred after the deadline. Missing job identifiers and
+ * downstream, validation, or persistence failures preserve stale status and
+ * never fail the attachment-list response.
  *
  * @param {Array<object>} rows - Attachment rows containing `id`, `status`, and `jobId`.
  * @param {object} options - Downstream functions, tenant identifiers, limits, and metrics.
@@ -116,18 +177,30 @@ async function withTimeout(lookup, controller, timeoutMs) {
  * @param {(status: string, attachmentId: unknown) => unknown|Promise<unknown>} options.updateStatus - Changed-only persistence callback.
  * @param {unknown} [options.concurrency] - Maximum concurrent lookups.
  * @param {unknown} [options.timeoutMs] - Per-lookup timeout in milliseconds.
+ * @param {unknown} [options.budgetMs] - Request-wide refresh budget in milliseconds.
  * @param {object} [options.metrics] - Mutable process metrics object.
+ * @param {(event:{category:string}) => unknown} [options.onError] - Sanitized diagnostic callback.
+ * @param {() => number} [options.now] - Injectable finite millisecond clock for deterministic tests.
  * @returns {Promise<{attempted:number,changed:number,failed:number,deferred:number}>} Structured counters.
  */
 export async function refreshAttachmentStatuses(rows, options) {
   if (!Array.isArray(rows)) throw new TypeError('rows must be an array');
   if (typeof options?.jobStatus !== 'function') throw new TypeError('jobStatus must be a function');
   if (typeof options?.updateStatus !== 'function') throw new TypeError('updateStatus must be a function');
+  if (options.onError !== undefined && typeof options.onError !== 'function') {
+    throw new TypeError('onError must be a function');
+  }
+  if (options.now !== undefined && typeof options.now !== 'function') {
+    throw new TypeError('now must be a function');
+  }
 
   const counts = { attempted: 0, changed: 0, failed: 0, deferred: 0 };
   const pending = rows.filter((row) => row?.status === 'PENDING' || row?.status === 'RUNNING');
   const concurrency = normalizeAttachmentStatusConcurrency(options.concurrency);
   const timeoutMs = normalizeAttachmentStatusTimeoutMs(options.timeoutMs);
+  const budgetMs = normalizeAttachmentStatusBudgetMs(options.budgetMs);
+  const clock = options.now || Date.now;
+  const deadline = readClock(clock) + budgetMs;
   let cursor = 0;
 
   /**
@@ -145,6 +218,12 @@ export async function refreshAttachmentStatuses(rows, options) {
       cursor += 1;
       if (index >= pending.length) return;
       const row = pending[index];
+      const remainingBudgetMs = deadline - readClock(clock);
+      if (remainingBudgetMs <= 0) {
+        counts.deferred += 1;
+        continue;
+      }
+
       const jobId = typeof row.jobId === 'string' ? row.jobId.trim() : '';
       if (!jobId) {
         counts.deferred += 1;
@@ -153,7 +232,12 @@ export async function refreshAttachmentStatuses(rows, options) {
 
       counts.attempted += 1;
       const controller = new AbortController();
+      let failureCategory = 'downstream_lookup';
       try {
+        const effectiveTimeoutMs = Math.max(
+          1,
+          Math.min(timeoutMs, Math.ceil(remainingBudgetMs)),
+        );
         const nextStatus = await withTimeout(
           () => options.jobStatus(
             options.orgId,
@@ -162,18 +246,24 @@ export async function refreshAttachmentStatuses(rows, options) {
             { signal: controller.signal },
           ),
           controller,
-          timeoutMs,
+          effectiveTimeoutMs,
         );
+        failureCategory = 'invalid_status';
         if (!ATTACHMENT_STATUS_VALUES.has(nextStatus)) {
           throw new Error('invalid downstream status');
         }
         if (nextStatus !== row.status) {
+          failureCategory = 'status_persistence';
           await options.updateStatus(nextStatus, row.id);
           row.status = nextStatus;
           counts.changed += 1;
         }
-      } catch {
+      } catch (error) {
         counts.failed += 1;
+        const category = error?.name === ATTACHMENT_STATUS_TIMEOUT_ERROR
+          ? 'timeout'
+          : failureCategory;
+        reportRefreshFailure(options.onError, category);
       }
     }
   }
