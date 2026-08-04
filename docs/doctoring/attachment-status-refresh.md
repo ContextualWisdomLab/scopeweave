@@ -29,12 +29,15 @@ The implementation:
 9. strips internal conversion identifiers before serialization;
 10. publishes attempted, changed, failed, skipped, and deferred counters without
     sensitive downstream payloads or identifiers;
-11. replaces raw network and downstream response messages with fixed
+11. publishes fixed timeout, downstream-lookup, invalid-status, and persistence
+    failure counters so operators can distinguish failure modes without labels or
+    raw diagnostic data;
+12. replaces raw network and downstream response messages with fixed
     operation-level submission, status, and artifact-link errors;
-12. validates successful submission and artifact-link JSON before property use;
-13. accepts artifact links only when they resolve to HTTP(S), and prevents an
+13. validates successful submission and artifact-link JSON before property use;
+14. accepts artifact links only when they resolve to HTTP(S), and prevents an
     HTTPS Clearfolio deployment from returning an HTTP downgrade link; and
-14. keeps the in-memory development adapter and HMAC tenant-claim contract under
+15. keeps the in-memory development adapter and HMAC tenant-claim contract under
     focused tests so MSA extraction cannot silently change interoperability.
 
 ## Standards and threat rationale
@@ -56,9 +59,10 @@ closed without changing persisted attachment state.
 The browser-facing API may serialize adapter errors, so the adapter never copies
 DNS names, socket errors, downstream response text, private URLs, or parser
 messages into thrown errors. Operation name and HTTP status are the maximum
-external diagnostic detail. Detailed downstream diagnostics belong in a
-separately redacted operator channel, not a client response, metric label, audit
-payload, or trace attribute.
+external diagnostic detail. The refresh engine records only four fixed failure
+categories. Detailed downstream diagnostics belong in a separately redacted
+operator channel, not a client response, metric label, audit payload, or trace
+attribute.
 
 The worker and validation contract is placed in framework- and database-neutral
 modules so a future MSA extraction can reuse the same behavior with another HTTP
@@ -78,6 +82,8 @@ Regression tests must prove:
 - pending rows with missing conversion identifiers are counted as skipped;
 - valid unstarted work beyond the request budget is counted as deferred;
 - skipped and deferred metrics remain distinct in JSON and Prometheus output;
+- the four failure-category counters sum to the aggregate failure count and
+  never contain raw errors, identifiers, URLs, or downstream response text;
 - downstream response text, network details, and internal conversion identifiers
   never appear in client JSON;
 - the caller `AbortSignal` reaches Clearfolio;
@@ -97,12 +103,14 @@ Regression tests must prove:
 
 Rollout begins with a canary and conservative concurrency. Operators compare
 attachment-list p50, p95, and p99 latency with refresh failure, skipped, and
-deferral ratios. A high failure ratio blocks rollout. A non-zero skipped ratio
-indicates a persistence or migration defect and is investigated independently of
-latency. A high deferred ratio indicates the latency budget is containing work
-at the cost of freshness and requires Clearfolio latency and list-size diagnosis
-before increasing resource limits. Rollback is configuration-first and requires
-no schema migration.
+deferral ratios. A high failure ratio blocks rollout and the fixed category
+counters identify whether the dominant cause is timeout, downstream lookup,
+invalid state, or persistence. A non-zero skipped ratio indicates a persistence
+or migration defect and is investigated independently of latency. A high
+deferred ratio indicates the latency budget is containing work at the cost of
+freshness and requires Clearfolio latency and list-size diagnosis before
+increasing resource limits. Rollback is configuration-first and requires no
+schema migration.
 
 The rollout review also samples client error payloads, structured logs, traces,
 audit exports, and alert annotations to prove that Clearfolio response bodies,
