@@ -43,7 +43,10 @@ test('Clearfolio jobStatus enforces endpoint, signal, and HTTP status contracts'
       status: 200,
       json: async () => ({}),
     };
-    assert.equal(await jobStatus(1, 2, 'job-1'), 'FAILED');
+    await assert.rejects(
+      () => jobStatus(1, 2, 'job-1'),
+      /clearfolio status response invalid/,
+    );
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.CLEARFOLIO_URL;
