@@ -8,6 +8,7 @@ import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
+import { normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
@@ -73,7 +74,20 @@ function projectAccess(userId, projectId) {
 }
 
 // --- observability: in-process counters + structured request log.
-const metrics = { startedAt: new Date().toISOString(), requests: 0, s2xx: 0, s4xx: 0, s5xx: 0, signups: 0, projectsCreated: 0, webhookDeliveries: 0 };
+const metrics = {
+  startedAt: new Date().toISOString(),
+  requests: 0,
+  s2xx: 0,
+  s4xx: 0,
+  s5xx: 0,
+  signups: 0,
+  projectsCreated: 0,
+  webhookDeliveries: 0,
+  attachmentStatusRefreshAttempted: 0,
+  attachmentStatusRefreshChanged: 0,
+  attachmentStatusRefreshFailed: 0,
+  attachmentStatusRefreshDeferred: 0,
+};
 
 // Outbound webhooks: POST signed JSON to each active hook subscribed to `event`.
 // Fire-and-forget with a timeout, one retry on failure, and a recorded outcome
@@ -993,6 +1007,16 @@ app.post('/api/projects/:id/ai/brief', requireAuth, async (c) => {
 // 갱신), 서명 아티팩트 열람(302), 삭제. 테넌트 = 조직, 브라우저에는 Clearfolio
 // 자격이 절대 노출되지 않음.
 const ATTACH_MAX_BYTES = 10 * 1024 * 1024;
+
+const ATTACH_STATUS_CONCURRENCY = normalizeAttachmentStatusConcurrency(
+  process.env.SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY,
+);
+const ATTACH_STATUS_TIMEOUT_MS = normalizeAttachmentStatusTimeoutMs(
+  process.env.SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS,
+);
+const updateAttachmentStatusStatement = db.prepare(
+  'UPDATE attachments SET status = ? WHERE id = ?',
+);
 app.post('/api/projects/:id/attachments', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
@@ -1022,31 +1046,27 @@ app.get('/api/projects/:id/attachments', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
-  const taskId = c.req.query('taskId');
-  const rows = (taskId
-    ? db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.status, a.created_at AS createdAt, u.email AS uploadedBy
-        FROM attachments a LEFT JOIN users u ON u.id = a.created_by
-        WHERE a.project_id = ? AND a.task_id = ? ORDER BY a.id DESC`).all(p.id, taskId)
-    : db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.status, a.created_at AS createdAt, u.email AS uploadedBy
-        FROM attachments a LEFT JOIN users u ON u.id = a.created_by
-        WHERE a.project_id = ? ORDER BY a.id DESC`).all(p.id));
-  // PENDING 잡 상태 갱신(최선 노력). Concurrent, but bounded so a large
-  // attachment list cannot open unbounded simultaneous Clearfolio calls.
-  // ponytail: fixed chunk size 5; make it configurable only if rate limits bite.
-  const pending = rows.filter((r) => r.status === 'PENDING' || r.status === 'RUNNING');
-  for (let i = 0; i < pending.length; i += 5) {
-    await Promise.all(pending.slice(i, i + 5).map(async (r) => {
-      try {
-        const jid = db.prepare('SELECT job_id FROM attachments WHERE id = ?').get(r.id).job_id;
-        const st = await jobStatus(p.org_id, uid, jid);
-        if (st !== r.status) {
-          db.prepare('UPDATE attachments SET status = ? WHERE id = ?').run(st, r.id);
-          r.status = st;
-        }
-      } catch { /* keep stale status */ }
-    }));
-  }
-  return c.json({ attachments: rows });
+
+const taskId = c.req.query('taskId');
+const rows = (taskId
+  ? db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.job_id AS jobId, a.status, a.created_at AS createdAt, u.email AS uploadedBy
+      FROM attachments a LEFT JOIN users u ON u.id = a.created_by
+      WHERE a.project_id = ? AND a.task_id = ? ORDER BY a.id DESC`).all(p.id, taskId)
+  : db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.job_id AS jobId, a.status, a.created_at AS createdAt, u.email AS uploadedBy
+      FROM attachments a LEFT JOIN users u ON u.id = a.created_by
+      WHERE a.project_id = ? ORDER BY a.id DESC`).all(p.id));
+await refreshAttachmentStatuses(rows, {
+  orgId: p.org_id,
+  userId: uid,
+  jobStatus,
+  updateStatus: (status, attachmentId) =>
+    updateAttachmentStatusStatement.run(status, attachmentId),
+  concurrency: ATTACH_STATUS_CONCURRENCY,
+  timeoutMs: ATTACH_STATUS_TIMEOUT_MS,
+  metrics,
+});
+const attachments = rows.map(({ jobId: _internalJobId, ...publicRow }) => publicRow);
+return c.json({ attachments });
 });
 
 // 열람: 서명 아티팩트 URL로 302. 새 탭 열기용으로 ?token=도 허용(ics/stream 패턴).

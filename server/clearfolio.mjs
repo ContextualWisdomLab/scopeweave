@@ -56,10 +56,21 @@ export async function submitJob(orgId, userId, { name, mime, bytes }) {
   return { jobId: data.jobId, status: data.status || 'PENDING' };
 }
 
-export async function jobStatus(orgId, userId, jobId) {
+
+/**
+ * Read a Clearfolio conversion status with optional caller cancellation.
+ *
+ * @param {string|number} orgId - ScopeWeave organization identifier.
+ * @param {string|number} userId - Requesting user identifier.
+ * @param {string} jobId - Clearfolio conversion job identifier.
+ * @param {{signal?:AbortSignal}} [options] - Optional request cancellation signal.
+ * @returns {Promise<string>} Downstream conversion status.
+ */
+export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
   if (clearfolioMock) return mockDocs.has(jobId) ? 'SUCCEEDED' : 'FAILED';
   const res = await fetch(`${CF_URL}/api/v1/convert/jobs/${encodeURIComponent(jobId)}`, {
     headers: tenantHeaders(orgId, userId),
+    signal,
   });
   const data = await res.json().catch(() => ({}));
   return data.status || 'FAILED';
