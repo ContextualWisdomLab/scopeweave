@@ -4,7 +4,7 @@ import assert from 'node:assert';
 
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '3';
-process.env.SCOPEWEAVE_JWT_SECRET = 'test-secret';
+process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 const { app } = await import('../../server/app.mjs');
 
 const req = (path, opts = {}) =>

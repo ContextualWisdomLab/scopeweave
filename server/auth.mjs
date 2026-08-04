@@ -13,18 +13,31 @@ export function hashApiToken(full) {
   return createHash('sha256').update(String(full)).digest('hex');
 }
 
-const SECRET = process.env.SCOPEWEAVE_JWT_SECRET || 'dev-insecure-secret-change-me';
-if (SECRET === 'dev-insecure-secret-change-me') {
-  console.warn('[auth] INSECURE dev JWT secret in use — set SCOPEWEAVE_JWT_SECRET in production');
+// Fail closed: never mint or verify tokens with a missing/weak/placeholder secret.
+// Require ≥32 non-whitespace characters so compose-unexpanded literals and short
+// defaults cannot silently ship.
+const SECRET = process.env.SCOPEWEAVE_JWT_SECRET;
+if (
+  typeof SECRET !== 'string'
+  || SECRET.replace(/\s/g, '').length < 32
+  || SECRET.includes('${SCOPEWEAVE_JWT_SECRET')
+) {
+  throw new Error('SCOPEWEAVE_JWT_SECRET must be set to at least 32 non-whitespace characters');
 }
 
+// scryptSync requires string|ArrayBufferView — untyped JSON bodies must not
+// throw TypeError (request-level DoS). hashPassword coerces non-strings to ''
+// for a stable hash path; verifyPassword rejects non-strings with false so a
+// malicious `{}` body never authenticates even if an empty-password hash exists.
 export function hashPassword(pw) {
+  const password = typeof pw === 'string' ? pw : '';
   const salt = randomBytes(16).toString('hex');
-  const hash = scryptSync(pw, salt, 64).toString('hex');
+  const hash = scryptSync(password, salt, 64).toString('hex');
   return `${salt}:${hash}`;
 }
 
 export function verifyPassword(pw, stored) {
+  if (typeof pw !== 'string') return false;
   const [salt, hash] = String(stored || '').split(':');
   if (!salt || !hash) return false;
   const test = scryptSync(pw, salt, 64);
