@@ -14,7 +14,7 @@ const addTopLevelTask = async (page, values) => {
 
 const expectSaveBlockedWith = async (page, message) => {
   const saveButton = page.getByRole('button', { name: '저장', exact: true });
-  await expect(saveButton).toBeDisabled();
+  await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
   await expect(page.locator('#editor-errors')).toContainText(message);
   await expect(page.locator('.editor-panel')).toBeVisible();
 };
@@ -703,7 +703,7 @@ test.describe('ScopeWeave Planner', () => {
     await page.locator('[data-testid="editor-planned-end"]').fill('2026-05-19');
 
     const saveButton = page.getByRole('button', { name: '저장', exact: true });
-    await expect(saveButton).toBeDisabled();
+    await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
     await expect(page.locator('[data-testid="editor-planned-end"]')).toHaveAttribute('aria-invalid', 'true');
     await expect(page.locator('#editor-errors')).toContainText('계획종료일은 계획시작일보다 빠를 수 없습니다');
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
@@ -720,7 +720,7 @@ test.describe('ScopeWeave Planner', () => {
     await page.locator('[data-testid="editor-planned-start"]').fill('2026-02-31');
 
     const saveButton = page.getByRole('button', { name: '저장', exact: true });
-    await expect(saveButton).toBeDisabled();
+    await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
     await expect(page.locator('[data-testid="editor-planned-start"]')).toHaveAttribute('aria-invalid', 'true');
     await expect(page.locator('#editor-errors')).toContainText('계획시작일은 YYYY-MM-DD 형식의 실제 달력 날짜여야 합니다');
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
@@ -733,7 +733,7 @@ test.describe('ScopeWeave Planner', () => {
     await page.locator('[data-testid="editor-task"]').fill('<script>alert(1)</script>');
 
     const saveButton = page.locator('.editor-panel').getByRole('button', { name: '저장' });
-    await expect(saveButton).toBeDisabled();
+    await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
     await expect(page.locator('[data-testid="editor-task"]')).toHaveAttribute('aria-invalid', 'true');
     await expect(page.locator('#editor-errors')).toContainText('HTML 태그 문자를 사용할 수 없습니다');
     await expect(page.locator('.editor-panel')).toBeVisible();
