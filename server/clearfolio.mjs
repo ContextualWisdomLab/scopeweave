@@ -6,6 +6,7 @@ import { createHmac } from 'node:crypto';
 const CF_URL = (process.env.CLEARFOLIO_URL || '').replace(/\/$/, '');
 const CF_SECRET = process.env.CLEARFOLIO_HMAC_SECRET || '';
 const PERMISSIONS = 'job:create,job:read,viewer:read,artifact-link:create';
+const CLEARFOLIO_JOB_STATUSES = new Set(['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED']);
 
 /** Whether the process uses the in-memory Clearfolio development adapter. */
 export const clearfolioMock = !CF_URL;
@@ -70,6 +71,19 @@ function isJsonRecord(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/**
+ * Test whether an untrusted value is an exact Clearfolio conversion state.
+ *
+ * Whitespace-padded and unknown strings are rejected rather than normalized so
+ * the database cannot persist a state outside the documented workflow contract.
+ *
+ * @param {unknown} value - Parsed downstream status value.
+ * @returns {value is string} Whether the value is an exact accepted state.
+ */
+function isClearfolioJobStatus(value) {
+  return typeof value === 'string' && CLEARFOLIO_JOB_STATUSES.has(value);
+}
+
 // ---- mock store (dev/test 전용; 재시작 시 소실) ----
 const mockDocs = new Map(); // jobId -> { name, mime, bytes }
 let mockSeq = 0;
@@ -114,48 +128,49 @@ export async function submitJob(orgId, userId, { name, mime, bytes }) {
   }
   if (!res.ok) throw new Error(`clearfolio submit failed (${res.status})`);
   const data = await res.json().catch(() => null);
+  const status = isJsonRecord(data) && data.status === undefined
+    ? 'PENDING'
+    : data?.status;
   if (
     !isJsonRecord(data)
     || typeof data.jobId !== 'string'
     || data.jobId.trim().length === 0
-    || (
-      data.status !== undefined
-      && (typeof data.status !== 'string' || data.status.length === 0)
-    )
+    || !isClearfolioJobStatus(status)
   ) {
     throw new Error('clearfolio submit response invalid');
   }
-  return { jobId: data.jobId.trim(), status: data.status || 'PENDING' };
+  return { jobId: data.jobId.trim(), status };
 }
 
 /**
  * Read a Clearfolio conversion status with optional caller cancellation.
  *
- * Non-success HTTP responses and successful responses without a non-empty
- * string status both throw. This allows the bounded refresh engine to preserve
- * the previously persisted status when Clearfolio is unavailable, rejects a
- * request, or returns a malformed payload.
+ * Transport failures, non-success HTTP responses, and successful responses
+ * without an exact documented conversion state all throw fixed operation-level
+ * errors. The bounded refresh engine can therefore preserve the previously
+ * persisted state without logging or returning private downstream details.
  *
  * @param {string|number} orgId - ScopeWeave organization identifier.
  * @param {string|number} userId - Requesting user identifier.
  * @param {string} jobId - Clearfolio conversion job identifier.
  * @param {{signal?:AbortSignal}} [options] - Optional request cancellation signal.
- * @returns {Promise<string>} Downstream conversion status for central validation.
- * @throws {Error} If Clearfolio returns a non-success status or malformed payload.
+ * @returns {Promise<string>} Validated downstream conversion status.
+ * @throws {Error} If Clearfolio is unavailable, rejects the request, or returns a malformed status.
  */
 export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
   if (clearfolioMock) return mockDocs.has(jobId) ? 'SUCCEEDED' : 'FAILED';
-  const res = await fetch(`${CF_URL}/api/v1/convert/jobs/${encodeURIComponent(jobId)}`, {
-    headers: tenantHeaders(orgId, userId),
-    signal,
-  });
+  let res;
+  try {
+    res = await fetch(`${CF_URL}/api/v1/convert/jobs/${encodeURIComponent(jobId)}`, {
+      headers: tenantHeaders(orgId, userId),
+      signal,
+    });
+  } catch {
+    throw new Error('clearfolio status unavailable');
+  }
   if (!res.ok) throw new Error(`clearfolio status failed (${res.status})`);
   const data = await res.json().catch(() => null);
-  if (
-    !isJsonRecord(data)
-    || typeof data.status !== 'string'
-    || data.status.length === 0
-  ) {
+  if (!isJsonRecord(data) || !isClearfolioJobStatus(data.status)) {
     throw new Error('clearfolio status response invalid');
   }
   return data.status;
