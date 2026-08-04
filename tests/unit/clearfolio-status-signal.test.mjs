@@ -42,13 +42,20 @@ test.after(() => {
   delete process.env.CLEARFOLIO_URL;
 });
 
-test('jobStatus enforces endpoint, signal, HTTP, and payload contracts', async () => {
+test('jobStatus enforces endpoint, signal, transport, HTTP, and status contracts', async () => {
   setResponse({ json: async () => ({ status: 'RUNNING' }) });
   const controller = new AbortController();
   const status = await jobStatus(1, 2, 'job-1', { signal: controller.signal });
   assert.equal(status, 'RUNNING');
   assert.equal(observedUrl, 'https://clearfolio.example/api/v1/convert/jobs/job-1');
   assert.equal(observedOptions.signal, controller.signal);
+
+  setNetworkError(new Error('connect ECONNREFUSED https://private-clearfolio.internal'));
+  await expectSanitizedFailure(
+    () => jobStatus(1, 2, 'job-1'),
+    'clearfolio status unavailable',
+    /private-clearfolio|ECONNREFUSED/,
+  );
 
   setResponse({
     ok: false,
@@ -72,6 +79,9 @@ test('jobStatus enforces endpoint, signal, HTTP, and payload contracts', async (
     { label: 'missing status', json: async () => ({}) },
     { label: 'non-string status', json: async () => ({ status: 200 }) },
     { label: 'empty status', json: async () => ({ status: '' }) },
+    { label: 'whitespace status', json: async () => ({ status: '   ' }) },
+    { label: 'padded status', json: async () => ({ status: ' RUNNING ' }) },
+    { label: 'unknown status', json: async () => ({ status: 'QUEUED' }) },
   ];
 
   for (const malformed of malformedPayloads) {
@@ -125,6 +135,9 @@ test('submitJob rejects transport details and malformed successful responses', a
     { label: 'blank jobId', json: async () => ({ jobId: '   ' }) },
     { label: 'non-string status', json: async () => ({ jobId: 'job-1', status: 7 }) },
     { label: 'empty status', json: async () => ({ jobId: 'job-1', status: '' }) },
+    { label: 'whitespace status', json: async () => ({ jobId: 'job-1', status: '   ' }) },
+    { label: 'padded status', json: async () => ({ jobId: 'job-1', status: ' RUNNING ' }) },
+    { label: 'unknown status', json: async () => ({ jobId: 'job-1', status: 'QUEUED' }) },
   ];
 
   for (const malformed of malformedPayloads) {
