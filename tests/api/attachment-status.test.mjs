@@ -109,6 +109,10 @@ test('attachment listing refreshes without internal identifier leakage', async (
   assert.equal(metrics.attachmentStatusRefreshFailed, 0);
   assert.equal(metrics.attachmentStatusRefreshSkipped, 1);
   assert.equal(metrics.attachmentStatusRefreshDeferred, 0);
+  assert.equal(metrics.attachmentStatusRefreshTimeoutFailures, 0);
+  assert.equal(metrics.attachmentStatusRefreshDownstreamLookupFailures, 0);
+  assert.equal(metrics.attachmentStatusRefreshInvalidStatusFailures, 0);
+  assert.equal(metrics.attachmentStatusRefreshPersistenceFailures, 0);
 
   response = await jsonRequest('/api/metrics?format=prometheus');
   const prometheus = await response.text();
@@ -117,4 +121,8 @@ test('attachment listing refreshes without internal identifier leakage', async (
   assert.match(prometheus, /scopeweave_attachment_status_refresh_failed 0/);
   assert.match(prometheus, /scopeweave_attachment_status_refresh_skipped 1/);
   assert.match(prometheus, /scopeweave_attachment_status_refresh_deferred 0/);
+  assert.match(prometheus, /scopeweave_attachment_status_refresh_timeout_failures 0/);
+  assert.match(prometheus, /scopeweave_attachment_status_refresh_downstream_lookup_failures 0/);
+  assert.match(prometheus, /scopeweave_attachment_status_refresh_invalid_status_failures 0/);
+  assert.match(prometheus, /scopeweave_attachment_status_refresh_persistence_failures 0/);
 });
