@@ -1,11 +1,13 @@
-# Attachment status refresh: evidence and design record
+# Attachment status refresh and Clearfolio boundary: evidence and design record
 
 ## Decision
 
 Attachment listing is a buyer-visible read path and must remain responsive when
 Clearfolio is slow, unavailable, or returns malformed data. ScopeWeave therefore
 refreshes only stale conversion states through a reusable bounded worker module
-that is independent of Hono and SQLite.
+that is independent of Hono and SQLite. The Clearfolio HTTP adapter separately
+owns downstream transport, tenant headers, response-shape validation, and
+artifact-link validation.
 
 The implementation:
 
@@ -16,14 +18,22 @@ The implementation:
    same `AbortSignal` to `fetch`;
 4. applies a wall-clock budget to the complete best-effort refresh pass and
    defers work that cannot start within that budget;
-5. validates successful downstream payloads as objects with a nonempty string
-   status and validates the status against the local state contract;
-6. preserves the previously stored status after timeout, downstream, malformed
-   response, invalid state, or persistence failure;
+5. validates conversion states against the exact `PENDING`, `RUNNING`,
+   `SUCCEEDED`, and `FAILED` contract rather than trimming or accepting unknown
+   strings;
+6. preserves the previously stored status after timeout, transport, HTTP,
+   malformed-response, invalid-state, diagnostic, or persistence failure;
 7. persists only changed states;
-8. strips internal conversion identifiers before serialization; and
+8. strips internal conversion identifiers before serialization;
 9. publishes attempted, changed, failed, and deferred counters without sensitive
-   downstream payloads or identifiers.
+   downstream payloads or identifiers;
+10. replaces raw network and downstream response messages with fixed
+    operation-level submission, status, and artifact-link errors;
+11. validates successful submission and artifact-link JSON before property use;
+12. accepts artifact links only when they resolve to HTTP(S), and prevents an
+    HTTPS Clearfolio deployment from returning an HTTP downgrade link; and
+13. keeps the in-memory development adapter and HMAC tenant-claim contract under
+    focused tests so MSA extraction cannot silently change interoperability.
 
 ## Standards and threat rationale
 
@@ -36,14 +46,23 @@ operation, the complete refresh pass, and repeated client traffic respectively.
 OWASP API10:2023 identifies unsafe consumption of third-party APIs when an
 integrating service fails to validate returned data, limit processing resources,
 or implement timeouts. ScopeWeave therefore treats Clearfolio responses as
-untrusted input even after an HTTP success: rejected JSON, null, primitives,
-arrays, missing or non-string statuses, empty statuses, and states outside the
-allowlist do not update the database.
+untrusted input even after HTTP success. Rejected JSON, null, primitives,
+arrays, missing or non-string fields, empty or whitespace-padded states, unknown
+states, malformed links, unsupported URI schemes, and HTTPS downgrade links fail
+closed without changing persisted attachment state.
 
-The worker and validation contract is placed in a framework- and database-neutral
-module so a future MSA extraction can reuse the same behavior with another HTTP
+The browser-facing API may serialize adapter errors, so the adapter never copies
+DNS names, socket errors, downstream response text, private URLs, or parser
+messages into thrown errors. Operation name and HTTP status are the maximum
+external diagnostic detail. Detailed downstream diagnostics belong in a
+separately redacted operator channel, not a client response, metric label, audit
+payload, or trace attribute.
+
+The worker and validation contract is placed in framework- and database-neutral
+modules so a future MSA extraction can reuse the same behavior with another HTTP
 adapter or persistence implementation. The monolith remains fully operable on
-its own.
+its own. Adapters must pass the same contract suite before they are considered
+substitutable.
 
 ## Verification contract
 
@@ -55,12 +74,20 @@ Regression tests must prove:
 - downstream, timeout, malformed-response, invalid-state, diagnostic, and write
   failures are isolated to the affected row;
 - unstarted work beyond the request budget is counted as deferred;
-- downstream response text and internal conversion identifiers never appear in
-  client JSON;
+- downstream response text, network details, and internal conversion identifiers
+  never appear in client JSON;
 - the caller `AbortSignal` reaches Clearfolio;
-- all malformed successful payload branches fail closed; and
-- the bounded refresh production module retains 100% statement, branch, and
-  function coverage with complete production docstrings.
+- submission, status, and artifact-link non-success responses expose only fixed
+  operation-level errors;
+- rejected JSON and every malformed successful payload branch fail closed;
+- relative and absolute HTTPS links, artifact-token viewer links, and explicitly
+  configured local HTTP links remain supported;
+- HTTPS-to-HTTP downgrade and non-HTTP(S) links are rejected;
+- the mock adapter preserves uploaded bytes and status semantics;
+- HMAC tenant claims use the documented newline-delimited canonical payload;
+- the bounded refresh production module retains 100% statement, branch,
+  function, and line coverage; and
+- every new shipped symbol has complete beginner-readable JSDoc.
 
 ## Operational acceptance
 
@@ -70,6 +97,12 @@ ratios. A high failure ratio blocks rollout. A high deferred ratio indicates the
 latency budget is containing work at the cost of freshness and requires
 Clearfolio latency and list-size diagnosis before increasing resource limits.
 Rollback is configuration-first and requires no schema migration.
+
+The rollout review also samples client error payloads, structured logs, traces,
+audit exports, and alert annotations to prove that Clearfolio response bodies,
+internal DNS names, signed links, HMAC material, and conversion identifiers are
+absent. Horizontal replica count is multiplied by configured per-request
+concurrency when assessing the downstream connection budget.
 
 ## References
 
