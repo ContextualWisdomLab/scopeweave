@@ -62,14 +62,22 @@ monitoring:
 - `attachmentStatusRefreshAttempted`
 - `attachmentStatusRefreshChanged`
 - `attachmentStatusRefreshFailed`
+- `attachmentStatusRefreshSkipped`
 - `attachmentStatusRefreshDeferred`
+
+`skipped` counts pending rows that cannot be refreshed because their persisted
+Clearfolio job identifier is absent or blank. `deferred` counts valid work that
+was not started before the request-wide latency budget expired. Keeping these
+causes separate prevents malformed stored data from being mistaken for
+insufficient concurrency or downstream latency.
 
 The Prometheus representation uses the corresponding
 `scopeweave_attachment_status_refresh_*` names. Alert on a sustained increase in
-`failed`, and compare `deferred` with list traffic before increasing concurrency
-or the request-wide budget. Raise limits conservatively because every worker
-consumes a downstream Clearfolio connection; horizontal ScopeWeave replicas
-multiply the aggregate concurrency.
+`failed`, investigate `skipped` as a data-quality or migration defect, and
+compare `deferred` with list traffic before increasing concurrency or the
+request-wide budget. Raise limits conservatively because every worker consumes a
+downstream Clearfolio connection; horizontal ScopeWeave replicas multiply the
+aggregate concurrency.
 
 ### Rollout and alerting
 
@@ -82,17 +90,20 @@ Derive rates from counter deltas over the same observation window:
 
 ```text
 failure_ratio  = failed_delta / max(attempted_delta, 1)
+skipped_ratio  = skipped_delta / max(attempted_delta + skipped_delta, 1)
 deferred_ratio = deferred_delta / max(attempted_delta + deferred_delta, 1)
 change_ratio   = changed_delta / max(attempted_delta, 1)
 ```
 
 A high `failure_ratio` indicates downstream, timeout, malformed-response, or
-persistence errors and should block rollout. A high `deferred_ratio` indicates
-that the request-wide budget is protecting latency at the cost of freshness;
-first inspect Clearfolio latency and attachment-list size before increasing
-worker count or budget. Track attachment-list p50, p95, and p99 latency beside
-these ratios. Thresholds must be derived from observed production baselines and
-an agreed service-level objective rather than copied from development data.
+persistence errors and should block rollout. A non-zero `skipped_ratio` indicates
+an attachment persistence or migration defect and should be investigated before
+changing worker limits. A high `deferred_ratio` indicates that the request-wide
+budget is protecting latency at the cost of freshness; first inspect Clearfolio
+latency and attachment-list size before increasing worker count or budget. Track
+attachment-list p50, p95, and p99 latency beside these ratios. Thresholds must be
+derived from observed production baselines and an agreed service-level objective
+rather than copied from development data.
 
 Rollback is configuration-first: reduce concurrency and budget without changing
 the persisted attachment statuses. If the application version must be rolled
