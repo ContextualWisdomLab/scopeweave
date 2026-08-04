@@ -16,8 +16,13 @@ assert.equal(
 );
 assert.match(
   scripts['test:coverage'],
-  /\bc8\b.*--reporter=json.*npm run test:coverage:cases/,
+  /\bc8\b.*--reporter=json(?![-\w]).*npm run test:coverage:cases/,
   'test:coverage creates Istanbul JSON before executing coverage cases',
+);
+assert.match(
+  scripts['test:coverage'],
+  /--reporter=json-summary\b/,
+  'test:coverage also creates the Istanbul JSON summary',
 );
 assert.match(
   scripts['test:coverage'],
