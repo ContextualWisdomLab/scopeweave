@@ -1,0 +1,240 @@
+name: Hourly ScopeWeave Product Development
+
+on:
+  schedule:
+    - cron: "41 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: scopeweave-hourly-product-development
+  cancel-in-progress: false
+
+jobs:
+  create-one-bounded-product-task:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      TARGET_REPOSITORY: ContextualWisdomLab/scopeweave
+      BASE_BRANCH: develop
+      AGENT_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+    steps:
+      - name: Determine whether product development may start
+        id: gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${AGENT_TOKEN:-}" ]; then
+            echo "::warning::COPILOT_GITHUB_TOKEN is not configured; product development remains fail-closed."
+            echo "eligible=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          open_pr_count="$(
+            gh api "/repos/${TARGET_REPOSITORY}/pulls?state=open&per_page=1" \
+              --jq 'length'
+          )"
+          if [ "$open_pr_count" -ne 0 ]; then
+            echo "An open pull request already owns the development queue."
+            echo "eligible=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! tasks_json="$(
+            GH_TOKEN="$AGENT_TOKEN" gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              --paginate \
+              --slurp \
+              "/agents/repos/${TARGET_REPOSITORY}/tasks?per_page=100"
+          )"; then
+            echo "::warning::Unable to list Copilot agent tasks; refusing to create another."
+            echo "eligible=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! active_task_count="$(
+            TASKS_JSON="$tasks_json" python3 - <<'PY'
+          import json
+          import os
+          import sys
+
+          payload = json.loads(os.environ["TASKS_JSON"])
+
+          def extract_tasks(value):
+              """Return a flat task list or None for an unknown response shape."""
+              if isinstance(value, list):
+                  if all(isinstance(item, dict) and "state" in item for item in value):
+                      return value
+                  extracted = []
+                  for page in value:
+                      page_tasks = extract_tasks(page)
+                      if page_tasks is None:
+                          return None
+                      extracted.extend(page_tasks)
+                  return extracted
+              if isinstance(value, dict):
+                  tasks_value = value.get("tasks", value.get("items"))
+                  if isinstance(tasks_value, list):
+                      return extract_tasks(tasks_value)
+              return None
+
+          tasks = extract_tasks(payload)
+          if tasks is None:
+              print("Unsupported agent-task response shape", file=sys.stderr)
+              raise SystemExit(1)
+
+          active_states = {"queued", "in_progress", "idle", "waiting_for_user"}
+          terminal_states = {"completed", "failed", "timed_out", "cancelled"}
+          active_count = 0
+          for task in tasks:
+              if not isinstance(task, dict):
+                  active_count += 1
+                  continue
+              state = task.get("state")
+              if state in active_states or state not in terminal_states:
+                  active_count += 1
+          print(active_count)
+          PY
+          )"; then
+            echo "::warning::Unable to interpret Copilot agent tasks; refusing to create another."
+            echo "eligible=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$active_task_count" -ne 0 ]; then
+            echo "A Copilot agent task already owns the development queue."
+            echo "eligible=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "eligible=true" >>"$GITHUB_OUTPUT"
+
+      - name: Revalidate the single-flight gate and create one product task
+        if: steps.gate.outputs.eligible == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          open_pr_count="$(
+            GH_TOKEN="${{ github.token }}" gh api \
+              "/repos/${TARGET_REPOSITORY}/pulls?state=open&per_page=1" \
+              --jq 'length'
+          )"
+          if [ "$open_pr_count" -ne 0 ]; then
+            echo "A pull request appeared after the first gate; refusing duplicate development."
+            exit 0
+          fi
+
+          tasks_json="$(
+            gh api \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2026-03-10" \
+              --paginate \
+              --slurp \
+              "/agents/repos/${TARGET_REPOSITORY}/tasks?per_page=100"
+          )"
+          TASKS_JSON="$tasks_json" python3 - <<'PY'
+          import json
+          import os
+
+          payload = json.loads(os.environ["TASKS_JSON"])
+
+          def extract_tasks(value):
+              """Return a flat task list and fail for any unknown shape."""
+              if isinstance(value, list):
+                  if all(isinstance(item, dict) and "state" in item for item in value):
+                      return value
+                  tasks = []
+                  for page in value:
+                      tasks.extend(extract_tasks(page))
+                  return tasks
+              if isinstance(value, dict):
+                  value = value.get("tasks", value.get("items"))
+                  if isinstance(value, list):
+                      return extract_tasks(value)
+              raise SystemExit("Unsupported agent-task response shape")
+
+          active_states = {"queued", "in_progress", "idle", "waiting_for_user"}
+          terminal_states = {"completed", "failed", "timed_out", "cancelled"}
+          for task in extract_tasks(payload):
+              state = task.get("state") if isinstance(task, dict) else None
+              if state in active_states or state not in terminal_states:
+                  raise SystemExit("An active or unknown agent task already owns the queue")
+          PY
+
+          prompt="$(cat <<'PROMPT'
+          Continue commercializing ContextualWisdomLab/scopeweave on the develop branch.
+
+          The organization-owned PR maintenance schedulers already review, repair,
+          revalidate, and merge open pull requests more frequently than this hourly
+          gate. This task is created only after both pull requests and active agent
+          tasks are confirmed to be zero. Select exactly one highest-impact
+          buyer-visible product gap that fits one bounded pull request.
+
+          First inspect AGENTS.md, README.md, CHANGELOG.md, docs/doctoring,
+          operations documentation, open issues, recent commits, package and service
+          boundaries, database schema, tests, security posture, accessibility,
+          interoperability with ContextualWisdomLab/.github, naruon, Clearfolio, and
+          contextual-orchestrator, and the end-to-end project-management user journey.
+          Preserve standalone operation while keeping seams suitable for modular MSA
+          extraction and provider-neutral adapters.
+
+          Work test-first: write a failing realistic test before production code and
+          verify that it fails for the intended reason. Implement the smallest coherent
+          vertical slice, then run focused and full validation. Require 100% production
+          statement, branch, function, and line coverage for every new or changed
+          production module and complete beginner-readable JSDoc/docstrings. Preserve
+          fail-closed input contracts, tenant isolation, bounded resource use,
+          deterministic behavior where applicable, immutable audit evidence, and
+          two-or-more-word snake_case database object names. Do not silently create or
+          retain single-word database objects.
+
+          Use the latest authoritative international standard, official primary
+          specification, or peer-reviewed paper for every material technical or
+          methodological decision. Record the decision, limitations, and APA 7th
+          references under docs/doctoring/. Do not claim compliance or certification
+          beyond executable evidence.
+
+          Tests must represent realistic ScopeWeave behavior: multi-tenant projects,
+          concurrent edits or requests, partial downstream failure, restart and
+          migration behavior, large WBS inputs, accessibility, rollback, and customer-
+          visible output as appropriate to the selected slice. If an LLM-dependent test
+          is genuinely necessary, use the NVIDIA_NIM_API_KEY repository secret and the
+          contextual-orchestrator boundary rather than embedding a provider-specific
+          client. Keep deterministic non-LLM tests as the required merge gate.
+
+          Use Figma or Product Design only when the selected slice has an actual buyer-facing UI;
+          capture loading, empty, error, keyboard, screen-reader, touch, narrow viewport,
+          and permission states before implementation. Do not add cosmetic UI to a
+          backend-only or library-only slice.
+
+          Update CHANGELOG.md, operator and architecture documentation, migrations,
+          rollback evidence, package smoke tests, and version metadata when the slice is
+          genuinely release-ready. Open exactly one focused pull request explaining
+          buyer impact, standards evidence, compatibility, risks, and executable
+          verification. Do not merge your own pull request, publish a release, weaken
+          branch protection, or bypass required checks and independent review.
+          PROMPT
+          )"
+
+          payload="$(
+            jq -n \
+              --arg prompt "$prompt" \
+              --arg base_ref "$BASE_BRANCH" \
+              '{prompt: $prompt, base_ref: $base_ref, create_pull_request: true}'
+          )"
+          gh api \
+            --method POST \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2026-03-10" \
+            "/agents/repos/${TARGET_REPOSITORY}/tasks" \
+            --input - <<<"$payload"
