@@ -64,6 +64,10 @@ monitoring:
 - `attachmentStatusRefreshFailed`
 - `attachmentStatusRefreshSkipped`
 - `attachmentStatusRefreshDeferred`
+- `attachmentStatusRefreshTimeoutFailures`
+- `attachmentStatusRefreshDownstreamLookupFailures`
+- `attachmentStatusRefreshInvalidStatusFailures`
+- `attachmentStatusRefreshPersistenceFailures`
 
 `skipped` counts pending rows that cannot be refreshed because their persisted
 Clearfolio job identifier is absent or blank. `deferred` counts valid work that
@@ -71,13 +75,16 @@ was not started before the request-wide latency budget expired. Keeping these
 causes separate prevents malformed stored data from being mistaken for
 insufficient concurrency or downstream latency.
 
-The Prometheus representation uses the corresponding
-`scopeweave_attachment_status_refresh_*` names. Alert on a sustained increase in
-`failed`, investigate `skipped` as a data-quality or migration defect, and
-compare `deferred` with list traffic before increasing concurrency or the
-request-wide budget. Raise limits conservatively because every worker consumes a
-downstream Clearfolio connection; horizontal ScopeWeave replicas multiply the
-aggregate concurrency.
+The four failure-category counters are fixed, low-cardinality diagnostics whose
+sum equals the aggregate `failed` delta for a refresh pass. They contain no job
+identifier, URL, downstream response text, or raw exception. The Prometheus
+representation uses corresponding `scopeweave_attachment_status_refresh_*`
+names. Alert on a sustained increase in `failed`, use the category counters for
+triage, investigate `skipped` as a data-quality or migration defect, and compare
+`deferred` with list traffic before increasing concurrency or the request-wide
+budget. Raise limits conservatively because every worker consumes a downstream
+Clearfolio connection; horizontal ScopeWeave replicas multiply the aggregate
+concurrency.
 
 ### Rollout and alerting
 
