@@ -93,10 +93,27 @@ test('session signer rejects malformed claims before minting a token', () => {
   assert.throws(() => signToken([], 60), /claims must be an object/);
   assert.throws(() => signToken({ sub: '1', tv: 0 }), /subject/);
   assert.throws(() => signToken({ sub: 0, tv: 0 }), /subject/);
+  assert.throws(
+    () => signToken({ sub: Number.MAX_SAFE_INTEGER + 1, tv: 0 }),
+    /subject/,
+  );
   assert.throws(() => signToken({ sub: 1, tv: '0' }), /token version/);
   assert.throws(() => signToken({ sub: 1, tv: -1 }), /token version/);
+  assert.throws(
+    () => signToken({ sub: 1, tv: Number.MAX_SAFE_INTEGER + 1 }),
+    /token version/,
+  );
   assert.throws(() => signToken({ sub: 1, tv: 0 }, '60'), /lifetime/);
   assert.throws(() => signToken({ sub: 1, tv: 0 }, 0), /lifetime/);
+  assert.throws(() => signToken({ sub: 1, tv: 0 }, 1.5), /lifetime/);
+  assert.throws(
+    () => signToken({ sub: 1, tv: 0 }, 60 * 60 * 24 * 7 + 1),
+    /maximum lifetime/,
+  );
+  assert.throws(
+    () => signToken({ sub: 1, tv: 0 }, Number.MAX_SAFE_INTEGER),
+    /maximum lifetime/,
+  );
 });
 
 test('logout-all and strict JWT validation cover every session transport', async () => {
