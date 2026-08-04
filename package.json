@@ -17,7 +17,7 @@
     "test:coverage": "node tests/unit/msproject.test.mjs && node tests/unit/auth-password.test.mjs && node tests/unit/editor-unsaved.test.mjs && node tests/unit/static-coverage-evidence.test.mjs && npm run test:api",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:cloud": "playwright test tests/e2e/cloud.spec.js",
+    "test:e2e:cloud": "playwright install chromium && playwright test tests/e2e/cloud.spec.js",
     "test:fuzz": "playwright install chromium && playwright test tests/e2e/csv_formula_fuzz.spec.js",
     "fuzz": "node --test tests/fuzz/*.mjs"
   },
