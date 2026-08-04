@@ -101,16 +101,17 @@ export async function submitJob(orgId, userId, { name, mime, bytes }) {
 /**
  * Read a Clearfolio conversion status with optional caller cancellation.
  *
- * Non-success HTTP responses throw instead of being converted to `FAILED`.
- * This allows the bounded refresh engine to preserve the previously persisted
- * status when Clearfolio itself is temporarily unavailable or rejects a request.
+ * Non-success HTTP responses and successful responses without a non-empty
+ * string status both throw. This allows the bounded refresh engine to preserve
+ * the previously persisted status when Clearfolio is unavailable, rejects a
+ * request, or returns a malformed payload.
  *
  * @param {string|number} orgId - ScopeWeave organization identifier.
  * @param {string|number} userId - Requesting user identifier.
  * @param {string} jobId - Clearfolio conversion job identifier.
  * @param {{signal?:AbortSignal}} [options] - Optional request cancellation signal.
- * @returns {Promise<string>} Downstream conversion status.
- * @throws {Error} If Clearfolio returns a non-success HTTP status.
+ * @returns {Promise<string>} Downstream conversion status for central validation.
+ * @throws {Error} If Clearfolio returns a non-success status or malformed payload.
  */
 export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
   if (clearfolioMock) return mockDocs.has(jobId) ? 'SUCCEEDED' : 'FAILED';
@@ -118,9 +119,18 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
     headers: tenantHeaders(orgId, userId),
     signal,
   });
-  const data = await res.json().catch(() => ({}));
+  const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(`clearfolio status failed (${res.status})`);
-  return data.status || 'FAILED';
+  if (
+    data === null
+    || typeof data !== 'object'
+    || Array.isArray(data)
+    || typeof data.status !== 'string'
+    || data.status.length === 0
+  ) {
+    throw new Error('clearfolio status response invalid');
+  }
+  return data.status;
 }
 
 /**
