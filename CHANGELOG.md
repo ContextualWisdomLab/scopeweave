@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a fail-closed hourly product-development gate that creates at most one
+  buyer-visible Copilot agent task only when both the pull-request queue and
+  active/unknown agent-task queue are empty. The repository workflow keeps
+  read-only GitHub permissions, requires a separately scoped
+  `COPILOT_GITHUB_TOKEN`, and leaves PR review, repair, revalidation, and merge
+  ownership in the organization-central `.github` workflows.
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS
   estimation coverage, dependency risk, and procurement package section checks.
 - Preserved PM-analysis research papers, NASA WBS handbook, BCP 14, and JSON
