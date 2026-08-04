@@ -54,8 +54,8 @@ assert.match(
 );
 assert.match(
   workflow,
-  /https:\/\/integrate\.api\.nvidia\.com\/v1/,
-  'OpenCode targets the NVIDIA hosted NIM OpenAI-compatible endpoint',
+  /^\s*"baseURL":\s*"https:\/\/integrate\.api\.nvidia\.com\/v1",?$/m,
+  'OpenCode targets only the NVIDIA hosted NIM OpenAI-compatible endpoint',
 );
 assert.match(
   workflow,
