@@ -107,12 +107,14 @@ test('attachment listing refreshes without internal identifier leakage', async (
   assert.equal(metrics.attachmentStatusRefreshAttempted, 2);
   assert.equal(metrics.attachmentStatusRefreshChanged, 2);
   assert.equal(metrics.attachmentStatusRefreshFailed, 0);
-  assert.equal(metrics.attachmentStatusRefreshDeferred, 1);
+  assert.equal(metrics.attachmentStatusRefreshSkipped, 1);
+  assert.equal(metrics.attachmentStatusRefreshDeferred, 0);
 
   response = await jsonRequest('/api/metrics?format=prometheus');
   const prometheus = await response.text();
   assert.match(prometheus, /scopeweave_attachment_status_refresh_attempted 2/);
   assert.match(prometheus, /scopeweave_attachment_status_refresh_changed 2/);
   assert.match(prometheus, /scopeweave_attachment_status_refresh_failed 0/);
-  assert.match(prometheus, /scopeweave_attachment_status_refresh_deferred 1/);
+  assert.match(prometheus, /scopeweave_attachment_status_refresh_skipped 1/);
+  assert.match(prometheus, /scopeweave_attachment_status_refresh_deferred 0/);
 });
