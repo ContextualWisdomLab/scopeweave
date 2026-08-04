@@ -85,15 +85,14 @@ export const mockArtifact = (jobId) => mockDocs.get(jobId) || null;
 /**
  * Submit a document conversion job through Clearfolio or the local mock.
  *
- * Downstream response text is never copied into the thrown error because the
- * caller may serialize that message to a browser. Only a fixed operation name
- * and the HTTP status code are exposed.
+ * Downstream response text and transport errors are never copied into the
+ * thrown error because the caller may serialize that message to a browser.
  *
  * @param {string|number} orgId - ScopeWeave organization identifier.
  * @param {string|number} userId - Requesting ScopeWeave user identifier.
  * @param {{name:string,mime:string,bytes:Buffer|Uint8Array}} document - Conversion payload.
  * @returns {Promise<{jobId:string,status:string}>} Downstream job identity and initial status.
- * @throws {Error} If Clearfolio rejects the request or returns a malformed response.
+ * @throws {Error} If Clearfolio is unavailable, rejects the request, or returns a malformed response.
  */
 export async function submitJob(orgId, userId, { name, mime, bytes }) {
   if (clearfolioMock) {
@@ -103,13 +102,18 @@ export async function submitJob(orgId, userId, { name, mime, bytes }) {
   }
   const form = new FormData();
   form.append('file', new Blob([bytes], { type: mime || 'application/octet-stream' }), name);
-  const res = await fetch(`${CF_URL}/api/v1/convert/jobs`, {
-    method: 'POST',
-    headers: tenantHeaders(orgId, userId),
-    body: form,
-  });
-  const data = await res.json().catch(() => null);
+  let res;
+  try {
+    res = await fetch(`${CF_URL}/api/v1/convert/jobs`, {
+      method: 'POST',
+      headers: tenantHeaders(orgId, userId),
+      body: form,
+    });
+  } catch {
+    throw new Error('clearfolio submit unavailable');
+  }
   if (!res.ok) throw new Error(`clearfolio submit failed (${res.status})`);
+  const data = await res.json().catch(() => null);
   if (
     !isJsonRecord(data)
     || typeof data.jobId !== 'string'
@@ -145,8 +149,8 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
     headers: tenantHeaders(orgId, userId),
     signal,
   });
-  const data = await res.json().catch(() => null);
   if (!res.ok) throw new Error(`clearfolio status failed (${res.status})`);
+  const data = await res.json().catch(() => null);
   if (
     !isJsonRecord(data)
     || typeof data.status !== 'string'
@@ -162,22 +166,28 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
  *
  * The hosted path prefers Clearfolio's external PDF.js viewer when an
  * `artifactToken` is available and otherwise returns a validated HTTP(S) URL.
- * Downstream error text is never exposed to the caller.
+ * Downstream response text and transport errors are never exposed to callers.
+ * An HTTPS Clearfolio deployment cannot downgrade an artifact link to HTTP.
  *
  * @param {string|number} orgId - ScopeWeave organization identifier.
  * @param {string|number} userId - Requesting ScopeWeave user identifier.
  * @param {string} jobId - Completed conversion job identifier.
  * @returns {Promise<string>} Relative mock path or validated absolute artifact URL.
- * @throws {Error} If Clearfolio rejects the request or returns an invalid link.
+ * @throws {Error} If Clearfolio is unavailable, rejects the request, or returns an invalid link.
  */
 export async function artifactUrl(orgId, userId, jobId) {
   if (clearfolioMock) return `/api/mock-clearfolio/${encodeURIComponent(jobId)}`;
-  const res = await fetch(`${CF_URL}/api/v1/viewer/${encodeURIComponent(jobId)}/artifact-links`, {
-    method: 'POST',
-    headers: tenantHeaders(orgId, userId),
-  });
-  const data = await res.json().catch(() => null);
+  let res;
+  try {
+    res = await fetch(`${CF_URL}/api/v1/viewer/${encodeURIComponent(jobId)}/artifact-links`, {
+      method: 'POST',
+      headers: tenantHeaders(orgId, userId),
+    });
+  } catch {
+    throw new Error('clearfolio artifact-link unavailable');
+  }
   if (!res.ok) throw new Error(`clearfolio artifact-link failed (${res.status})`);
+  const data = await res.json().catch(() => null);
   if (!isJsonRecord(data)) throw new Error('clearfolio artifact-link response invalid');
   const link = data.artifactUrl || data.url || data.signedUrl;
   if (typeof link !== 'string' || link.length === 0) {
@@ -185,12 +195,15 @@ export async function artifactUrl(orgId, userId, jobId) {
   }
 
   let url;
+  let clearfolioUrl;
   try {
-    url = new URL(link, CF_URL);
+    clearfolioUrl = new URL(CF_URL);
+    url = new URL(link, clearfolioUrl);
   } catch {
     throw new Error('clearfolio artifact-link response invalid');
   }
-  if (url.protocol !== 'https:' && url.protocol !== 'http:') {
+  const allowsHttp = clearfolioUrl.protocol === 'http:' && url.protocol === 'http:';
+  if (url.protocol !== 'https:' && !allowsHttp) {
     throw new Error('clearfolio artifact-link response invalid');
   }
 
