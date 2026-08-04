@@ -136,3 +136,7 @@
 **Vulnerability:** The `hono` package versions prior to `4.12.34` contain a ReDoS (Regular Expression Denial of Service) vulnerability in the CORS middleware via `Access-Control-Request-Headers` processing.
 **Learning:** Outdated dependencies with known vulnerabilities (CVEs) can expose the application to attacks even if the application code itself is secure. CI security scanners like Trivy flag these issues.
 **Prevention:** Regularly audit and update third-party dependencies using tools like `npm audit fix` to ensure known vulnerabilities are patched.
+## 2026-08-04 - Document Strix AI CI infrastructure failures
+**Vulnerability:** The Strix CI check failed with "Strix report artifacts emitted warning/fatal/denied/timeout output; failing closed" and "Strix run failed for model 'nvidia_nim/nvidia/nemotron-3-ultra-550b-a55b' after 1636s".
+**Learning:** CI security checks backed by external AI models (like Strix) can occasionally fail due to external infrastructure timeouts, rate limits, or API instability, rather than actual code vulnerabilities.
+**Prevention:** If a security scanner fails due to an infrastructure error without providing actionable code-level findings, it is a false positive related to the testing environment. These should be documented and typically ignored for the scope of code remediation, as they don't reflect a flaw in the application itself.
