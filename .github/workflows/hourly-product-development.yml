@@ -49,7 +49,7 @@ jobs:
           if ! tasks_json="$(
             GH_TOKEN="$AGENT_TOKEN" gh api \
               -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2026-03-10" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
               --paginate \
               --slurp \
               "/agents/repos/${TARGET_REPOSITORY}/tasks?per_page=100"
@@ -137,7 +137,7 @@ jobs:
           tasks_json="$(
             gh api \
               -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2026-03-10" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
               --paginate \
               --slurp \
               "/agents/repos/${TARGET_REPOSITORY}/tasks?per_page=100"
@@ -235,6 +235,6 @@ jobs:
           gh api \
             --method POST \
             -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2026-03-10" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
             "/agents/repos/${TARGET_REPOSITORY}/tasks" \
             --input - <<<"$payload"
