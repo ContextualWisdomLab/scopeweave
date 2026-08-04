@@ -4,3 +4,7 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+
+## 2026-08-04 - Promise.all prevents blocking loop cascades
+**Learning:** Sequential `for...of` loops awaiting external network requests inside Node.js serialize I/O, causing latency proportional to the array size. Concurrent execution via `Promise.all` removes that, but an unbounded `Promise.all(rows.map(...))` starts every external call at once and can exhaust upstream connections or rate limits.
+**Action:** Use plain `Promise.all` only for small fixed batches. For external database/network calls over arbitrarily sized arrays, bound concurrency (chunked `Promise.all` or a small worker pool) and keep per-item failure handling best-effort.
