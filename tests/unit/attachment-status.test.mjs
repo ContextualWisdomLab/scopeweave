@@ -123,6 +123,10 @@ test('empty and settled rows perform no downstream work', async () => {
     attachmentStatusRefreshFailed: 0,
     attachmentStatusRefreshSkipped: 0,
     attachmentStatusRefreshDeferred: 0,
+    attachmentStatusRefreshTimeoutFailures: 0,
+    attachmentStatusRefreshDownstreamLookupFailures: 0,
+    attachmentStatusRefreshInvalidStatusFailures: 0,
+    attachmentStatusRefreshPersistenceFailures: 0,
   });
 });
 
@@ -146,6 +150,10 @@ test('100 pending rows reach but never exceed configured concurrency', async () 
     attachmentStatusRefreshFailed: 30,
     attachmentStatusRefreshSkipped: 35,
     attachmentStatusRefreshDeferred: 40,
+    attachmentStatusRefreshTimeoutFailures: 1,
+    attachmentStatusRefreshDownstreamLookupFailures: 2,
+    attachmentStatusRefreshInvalidStatusFailures: 3,
+    attachmentStatusRefreshPersistenceFailures: 4,
   };
 
   const counts = await refreshAttachmentStatuses(rows, {
@@ -188,6 +196,10 @@ test('100 pending rows reach but never exceed configured concurrency', async () 
     attachmentStatusRefreshFailed: 30,
     attachmentStatusRefreshSkipped: 35,
     attachmentStatusRefreshDeferred: 40,
+    attachmentStatusRefreshTimeoutFailures: 1,
+    attachmentStatusRefreshDownstreamLookupFailures: 2,
+    attachmentStatusRefreshInvalidStatusFailures: 3,
+    attachmentStatusRefreshPersistenceFailures: 4,
   });
 });
 
@@ -229,10 +241,12 @@ test('invalid identifiers and categorized failures preserve stale state', async 
   ];
   let aborted = false;
   const categories = [];
+  const metrics = {};
   const counts = await refreshAttachmentStatuses(rows, {
     concurrency: 3,
     timeoutMs: 5,
     budgetMs: 1_000,
+    metrics,
     onError: ({ category }) => categories.push(category),
     jobStatus: async (_orgId, _userId, jobId, { signal }) => {
       if (jobId === 'throws') throw new Error('downstream failure with sensitive detail');
@@ -260,6 +274,17 @@ test('invalid identifiers and categorized failures preserve stale state', async 
     ['downstream_lookup', 'invalid_status', 'status_persistence', 'timeout'].sort(),
   );
   assert.equal(categories.some((category) => category.includes('sensitive')), false);
+  assert.deepEqual(metrics, {
+    attachmentStatusRefreshAttempted: 4,
+    attachmentStatusRefreshChanged: 0,
+    attachmentStatusRefreshFailed: 4,
+    attachmentStatusRefreshSkipped: 3,
+    attachmentStatusRefreshDeferred: 0,
+    attachmentStatusRefreshTimeoutFailures: 1,
+    attachmentStatusRefreshDownstreamLookupFailures: 1,
+    attachmentStatusRefreshInvalidStatusFailures: 1,
+    attachmentStatusRefreshPersistenceFailures: 1,
+  });
   assert.equal(rows[5].status, 'PENDING');
   assert.equal(rows[6].status, 'PENDING');
 });
