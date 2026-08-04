@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2026-06-30 - Harden dynamically generated download links in cloud-sync
+**Vulnerability:** Dynamically generated download anchors for features like ICS exports or workspace data exports were calling `.remove()` directly instead of safely using `Element.prototype.remove.call()`.
+**Learning:** Even in newly added modules or cloud features, short-lived DOM nodes should follow the same defensive DOM invocation conventions as the main application to prevent DOM clobbering attacks if attributes could be spoofed.
+**Prevention:** Consistently set `rel="noopener noreferrer"` on all generated anchors and strictly use `Element.prototype.remove.call(anchor)` for cleanup.
