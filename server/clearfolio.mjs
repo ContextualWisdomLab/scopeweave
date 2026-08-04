@@ -7,16 +7,34 @@ const CF_URL = (process.env.CLEARFOLIO_URL || '').replace(/\/$/, '');
 const CF_SECRET = process.env.CLEARFOLIO_HMAC_SECRET || '';
 const PERMISSIONS = 'job:create,job:read,viewer:read,artifact-link:create';
 
+/** Whether the process uses the in-memory Clearfolio development adapter. */
 export const clearfolioMock = !CF_URL;
 
-// Clearfolio TenantAccessService.signClaims와 동일한 규격:
-// payload = tenantId \n subjectId \n permissions \n issuedAt(epoch초),
-// HMAC-SHA256 → base64url(무패딩).
+/**
+ * Sign tenant claims using the Clearfolio HMAC interoperability contract.
+ *
+ * The payload is the newline-delimited tenant ID, subject ID, permissions, and
+ * issued-at epoch value. The signature is unpadded base64url HMAC-SHA256.
+ *
+ * @param {string} tenantId - Clearfolio tenant identifier.
+ * @param {string} subjectId - Clearfolio subject identifier.
+ * @param {string} permissions - Comma-separated permission contract.
+ * @param {string|number} issuedAt - Epoch-second issue time.
+ * @param {string} secret - Shared HMAC secret.
+ * @returns {string} Unpadded base64url signature.
+ */
 export function signClaims(tenantId, subjectId, permissions, issuedAt, secret) {
   const payload = [tenantId, subjectId, permissions, issuedAt].join('\n');
   return createHmac('sha256', secret).update(payload).digest('base64url');
 }
 
+/**
+ * Build tenant-scoped Clearfolio request headers without exposing credentials.
+ *
+ * @param {string|number} orgId - ScopeWeave organization identifier.
+ * @param {string|number} userId - Requesting ScopeWeave user identifier.
+ * @returns {Record<string,string>} Tenant, subject, permission, and optional HMAC headers.
+ */
 function tenantHeaders(orgId, userId) {
   const tenantId = `sw-org-${orgId}`;
   const subjectId = `sw-user-${userId}`;
@@ -28,7 +46,13 @@ function tenantHeaders(orgId, userId) {
   if (CF_SECRET) {
     const issuedAt = String(Math.floor(Date.now() / 1000));
     headers['X-Clearfolio-Claims-Issued-At'] = issuedAt;
-    headers['X-Clearfolio-Claims-Signature'] = signClaims(tenantId, subjectId, PERMISSIONS, issuedAt, CF_SECRET);
+    headers['X-Clearfolio-Claims-Signature'] = signClaims(
+      tenantId,
+      subjectId,
+      PERMISSIONS,
+      issuedAt,
+      CF_SECRET,
+    );
   }
   return headers;
 }
@@ -36,8 +60,24 @@ function tenantHeaders(orgId, userId) {
 // ---- mock store (dev/test 전용; 재시작 시 소실) ----
 const mockDocs = new Map(); // jobId -> { name, mime, bytes }
 let mockSeq = 0;
+
+/**
+ * Read one in-memory mock artifact.
+ *
+ * @param {string} jobId - Mock conversion job identifier.
+ * @returns {{name:string,mime:string,bytes:Buffer}|null} Stored artifact or null.
+ */
 export const mockArtifact = (jobId) => mockDocs.get(jobId) || null;
 
+/**
+ * Submit a document conversion job through Clearfolio or the local mock.
+ *
+ * @param {string|number} orgId - ScopeWeave organization identifier.
+ * @param {string|number} userId - Requesting ScopeWeave user identifier.
+ * @param {{name:string,mime:string,bytes:Buffer|Uint8Array}} document - Conversion payload.
+ * @returns {Promise<{jobId:string,status:string}>} Downstream job identity and initial status.
+ * @throws {Error} If Clearfolio rejects the request or omits a job identifier.
+ */
 export async function submitJob(orgId, userId, { name, mime, bytes }) {
   if (clearfolioMock) {
     const jobId = `mockcf-${++mockSeq}`;
@@ -52,19 +92,25 @@ export async function submitJob(orgId, userId, { name, mime, bytes }) {
     body: form,
   });
   const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.jobId) throw new Error(data.message || `clearfolio submit failed (${res.status})`);
+  if (!res.ok || !data.jobId) {
+    throw new Error(data.message || `clearfolio submit failed (${res.status})`);
+  }
   return { jobId: data.jobId, status: data.status || 'PENDING' };
 }
 
-
 /**
  * Read a Clearfolio conversion status with optional caller cancellation.
+ *
+ * Non-success HTTP responses throw instead of being converted to `FAILED`.
+ * This allows the bounded refresh engine to preserve the previously persisted
+ * status when Clearfolio itself is temporarily unavailable or rejects a request.
  *
  * @param {string|number} orgId - ScopeWeave organization identifier.
  * @param {string|number} userId - Requesting user identifier.
  * @param {string} jobId - Clearfolio conversion job identifier.
  * @param {{signal?:AbortSignal}} [options] - Optional request cancellation signal.
  * @returns {Promise<string>} Downstream conversion status.
+ * @throws {Error} If Clearfolio returns a non-success HTTP status.
  */
 export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
   if (clearfolioMock) return mockDocs.has(jobId) ? 'SUCCEEDED' : 'FAILED';
@@ -73,10 +119,22 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
     signal,
   });
   const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`clearfolio status failed (${res.status})`);
   return data.status || 'FAILED';
 }
 
-// SUCCEEDED 잡의 서명 아티팩트 URL 발급 → 뷰어/직접 열람용 절대 URL 반환.
+/**
+ * Issue a viewable artifact URL for a completed Clearfolio job.
+ *
+ * The hosted path prefers Clearfolio's external PDF.js viewer when an
+ * `artifactToken` is available and falls back to the signed artifact URL.
+ *
+ * @param {string|number} orgId - ScopeWeave organization identifier.
+ * @param {string|number} userId - Requesting ScopeWeave user identifier.
+ * @param {string} jobId - Completed conversion job identifier.
+ * @returns {Promise<string>} Relative mock path or absolute hosted artifact URL.
+ * @throws {Error} If Clearfolio cannot issue an artifact link.
+ */
 export async function artifactUrl(orgId, userId, jobId) {
   if (clearfolioMock) return `/api/mock-clearfolio/${encodeURIComponent(jobId)}`;
   const res = await fetch(`${CF_URL}/api/v1/viewer/${encodeURIComponent(jobId)}/artifact-links`, {
@@ -85,13 +143,19 @@ export async function artifactUrl(orgId, userId, jobId) {
   });
   const data = await res.json().catch(() => ({}));
   const link = data.artifactUrl || data.url || data.signedUrl;
-  if (!res.ok || !link) throw new Error(data.message || `clearfolio artifact-link failed (${res.status})`);
+  if (!res.ok || !link) {
+    throw new Error(data.message || `clearfolio artifact-link failed (${res.status})`);
+  }
   // PDF.js 뷰어 페이지 우선(clearfolio external artifactToken 모드): 토큰을
   // 추출해 /viewer/{docId}?artifactToken=… 으로 보낸다. 실패 시 원시 아티팩트.
   try {
-    const u = new URL(link, CF_URL);
-    const tok = u.searchParams.get('artifactToken');
-    if (tok) return `${CF_URL}/viewer/${encodeURIComponent(jobId)}?artifactToken=${encodeURIComponent(tok)}`;
-  } catch { /* fall through to raw link */ }
+    const url = new URL(link, CF_URL);
+    const token = url.searchParams.get('artifactToken');
+    if (token) {
+      return `${CF_URL}/viewer/${encodeURIComponent(jobId)}?artifactToken=${encodeURIComponent(token)}`;
+    }
+  } catch {
+    // Fall through to the signed raw artifact link.
+  }
   return link.startsWith('http') ? link : `${CF_URL}${link}`;
 }
