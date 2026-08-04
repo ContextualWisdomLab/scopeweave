@@ -20,7 +20,7 @@ async function api(path, { method = 'GET', body, tok } = {}) {
 
 test.beforeAll(async () => {
   server = spawn(process.execPath, ['server/server.mjs'], {
-    env: { ...process.env, SCOPEWEAVE_DB: ':memory:', SCOPEWEAVE_JWT_SECRET: '0123456789abcdef0123456789abcdef', PORT: String(PORT) },
+    env: { ...process.env, SCOPEWEAVE_DB: ':memory:', SCOPEWEAVE_JWT_SECRET: 'test-secret', PORT: String(PORT) },
     stdio: 'ignore',
   });
   // wait for the API to come up

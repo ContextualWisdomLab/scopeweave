@@ -1,3 +1,8 @@
+## [Unreleased]
+
+### Changed
+- `app.js` 내부의 빈번하게 호출되는 날짜 포맷팅 함수들(`formatDateInput`, `formatLocalDateInput`, `formatCompactDate`)에 대해, `String.padStart()` 호출 시 발생하는 불필요한 문자열 할당 및 JS-to-C++ 성능 오버헤드를 줄이기 위해 인라인 삼항 연산자를 이용한 문자열 병합 방식으로 최적화하였습니다.
+
 # Changelog
 
 All notable changes to this project will be documented in this file.
@@ -20,30 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   workflows stay inherited from `ContextualWisdomLab/.github`, not copied
   into this repository.
 
-### Security
-
-- Made `SCOPEWEAVE_JWT_SECRET` mandatory at startup and rejected weak or
-  unexpanded placeholder values so production deployments fail closed.
-- Neutralized audit-log CSV formulas even when executable prefixes are hidden
-  behind leading whitespace.
-- Replaced dynamic and lazy-regex MS Project XML block extraction with bounded
-  linear scans to prevent pathological backtracking on malformed imports.
-- Rejected non-string password candidates at the authentication boundary.
-- Added regression coverage that prevents array-valued passwords from being
-  coerced into valid credentials.
-- Updated Hono runtime dependencies to patched supported releases.
-
 ### Changed
 
-- `app.js`의 날짜 포맷팅 함수(`formatDateInput`, `formatLocalDateInput`,
-  `formatCompactDate`)에서 `String.padStart()` 호출을 인라인 삼항 연산자
-  기반 문자열 병합으로 교체해 핫루프에서의 불필요한 문자열 할당을 줄였습니다.
-- `index.html`에 `analytics.js`, `cloud-sync.js` modulepreload 힌트를 추가했습니다.
 - 프로젝트 이름 입력 필드에 입력 예시(placeholder)를 추가하여 사용자 편의성을 개선했습니다.
 - 데이터 테이블의 반복되는 액션 버튼에 컨텍스트 정보(작업명)를 포함한 명시적인 ARIA 레이블을 추가하고, 유효성 검사 에러를 폼 필드에 연결하여 접근성을 개선했습니다.
 - `createGanttBarElement`, `renderGantt`, `buildWeekdayTimeline`에서 반복적으로 호출되던 `compareDateStrings`를 직접적인 문자열 비교 연산(`>=`, `<=`)으로 교체하여 O(N*D) 복잡도의 캐시 스레싱과 정규식 검사를 방지했습니다.
-- Treat fields added only to an editor draft as unsaved changes so unload and
-  cancel safeguards cannot silently discard newly introduced data.
 - Centralized OpenCode Review, Strix Security Scan, PR Review Merge
   Scheduler, failed-check explanation, and coverage evidence ownership in
   `ContextualWisdomLab/.github`, removing repository-local workflow,

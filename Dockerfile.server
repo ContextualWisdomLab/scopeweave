@@ -16,7 +16,7 @@ COPY index.html 404.html app.js cloud-sync.js analytics.js styles.css wbs.json .
 
 ENV PORT=8787
 ENV SCOPEWEAVE_DB=/data/scopeweave.db
-# SCOPEWEAVE_JWT_SECRET MUST be supplied at runtime; startup fails when it is weak or absent.
+# SCOPEWEAVE_JWT_SECRET MUST be supplied at runtime — the app warns on the dev default.
 
 RUN mkdir -p /data && chown -R node:node /data
 USER node
