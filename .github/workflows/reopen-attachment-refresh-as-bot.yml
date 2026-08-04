@@ -1,0 +1,85 @@
+name: Reopen verified attachment refresh as bot PR
+
+on:
+  push:
+    branches:
+      - automation/reopen-420-as-bot
+
+permissions: read-all
+
+concurrency:
+  group: reopen-attachment-refresh-as-bot
+  cancel-in-progress: true
+
+jobs:
+  reopen:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_BRANCH: bot/perf-attachment-status-refresh-20260804
+    steps:
+      - name: Checkout verified source branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: automation/reopen-420-as-bot
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Create clean bot-owned branch and draft pull request
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git checkout -b "$TARGET_BRANCH"
+          rm .github/workflows/reopen-attachment-refresh-as-bot.yml
+          git add -A
+          git commit -m 'chore: prepare verified attachment refresh for independent review'
+          git push origin "$TARGET_BRANCH"
+
+          cat >"${RUNNER_TEMP}/pr-body.md" <<'EOF'
+          ## Buyer-visible problem
+
+          Opening the attachments panel previously performed one downstream Clearfolio status request per pending conversion and one database `SELECT job_id` inside the per-row loop. Sequential waiting made latency grow with the pending count; unbounded parallelism would instead overload the downstream service.
+
+          ## Implementation
+
+          This change satisfies #408 as a focused backend reliability improvement:
+
+          - includes `job_id` in both initial attachment-list queries and removes the N+1 lookup;
+          - prepares the status update once and writes only changed statuses;
+          - uses a configurable bounded worker pool, default 8 and capped at 32;
+          - applies an AbortSignal plus caller-side hard timeout to each Clearfolio lookup;
+          - skips missing or malformed job identifiers without failing the list response;
+          - preserves stale status after timeout, downstream failure, invalid response, or persistence failure;
+          - removes internal `jobId` values before serialization;
+          - publishes attempted, changed, failed, and deferred counters through JSON and Prometheus metrics;
+          - preserves Hono 4.13.0 and npm-only lock authority.
+
+          The scheduling logic lives in the documented, framework-independent `server/attachment_status.mjs` module so it can be reused by a future service adapter without coupling to Hono or SQLite.
+
+          ## Regression coverage
+
+          Focused tests prove bounded concurrency across 100 pending rows, changed-only writes, filtered/unfiltered route parity, isolated downstream/timeout/invalid-response/write failures, deferred malformed identifiers, no internal identifier leakage, no per-row `SELECT job_id`, AbortSignal propagation, and 100% statement/branch/function coverage for the new module.
+
+          ## Verification evidence
+
+          The verified source head completed focused tests, full unit/API/coverage, docstring evidence, nine cloud Playwright E2E tests, explicit 100% coverage checks for `server/attachment_status.mjs`, `git diff --check`, and all six repository checks. This bot-authored PR is intentionally Draft so a human maintainer can perform an independent exact-head review before enabling merge.
+
+          Closes #408.
+          EOF
+
+          pr_url="$(gh pr create \
+            --repo "$GITHUB_REPOSITORY" \
+            --base develop \
+            --head "$TARGET_BRANCH" \
+            --draft \
+            --title 'perf(attachments): bound status refresh and remove N+1 queries' \
+            --body-file "${RUNNER_TEMP}/pr-body.md")"
+          gh pr comment 420 --repo "$GITHUB_REPOSITORY" \
+            --body "Superseded by bot-authored independent-review PR: ${pr_url}"
