@@ -25,7 +25,10 @@ create, list, and inspect Copilot cloud-agent tasks. The API accepts
 rather than the ordinary workflow `GITHUB_TOKEN`. ScopeWeave therefore uses a
 separately scoped `COPILOT_GITHUB_TOKEN`, inventories tasks before creation,
 and fails closed when the credential, API call, response shape, or task state
-cannot be trusted.
+cannot be trusted. The current Agent Tasks endpoint examples explicitly send
+`X-GitHub-Api-Version: 2022-11-28`; the workflow follows that endpoint-specific
+documented contract instead of opting the preview integration into the newer
+general REST version without endpoint evidence.
 
 GitHub scheduled workflows execute from the latest commit on the default branch.
 Consequently, the hourly gate does not become active merely because its pull
@@ -97,7 +100,7 @@ bypassing checks and independent review.
 - one non-cancelling concurrency group;
 - read-only repository permissions;
 - absence of central PR-scheduler duplication;
-- required user-token and Agent Tasks API boundaries;
+- required user-token, documented API-version, and Agent Tasks API boundaries;
 - open-PR and active/unknown-task rejection;
 - one reviewable pull request per eligible task;
 - coverage, documentation, database naming, realistic testing, standards,
