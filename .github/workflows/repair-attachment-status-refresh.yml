@@ -1,0 +1,563 @@
+name: Repair attachment status refresh
+
+on:
+  push:
+    branches:
+      - jules-promise-all-attachments-7315426299343398085
+
+permissions:
+  contents: write
+
+concurrency:
+  group: repair-attachment-status-refresh
+  cancel-in-progress: true
+
+jobs:
+  repair:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: jules-promise-all-attachments-7315426299343398085
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Apply bounded refresh implementation and regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import json
+
+          def replace_once(path, old, new):
+              file_path = Path(path)
+              text = file_path.read_text(encoding='utf-8')
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected one replacement target, found {count}')
+              file_path.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          attachment_status = r'''/**
+           * Default maximum number of concurrent Clearfolio status lookups.
+           * The limit protects the downstream service while keeping list latency bounded.
+           */
+          export const ATTACHMENT_STATUS_DEFAULT_CONCURRENCY = 8;
+
+          /** Conservative hard ceiling for operator-configured status lookup concurrency. */
+          export const ATTACHMENT_STATUS_MAX_CONCURRENCY = 32;
+
+          /** Default downstream status lookup timeout in milliseconds. */
+          export const ATTACHMENT_STATUS_DEFAULT_TIMEOUT_MS = 3_000;
+
+          /** Hard ceiling for the downstream status lookup timeout in milliseconds. */
+          export const ATTACHMENT_STATUS_MAX_TIMEOUT_MS = 30_000;
+
+          function normalizeBoundedInteger(value, fallback, maximum) {
+            const parsed = Number(value);
+            if (!Number.isSafeInteger(parsed) || parsed < 1) return fallback;
+            return Math.min(parsed, maximum);
+          }
+
+          /**
+           * Normalize the configured attachment-status worker count.
+           *
+           * @param {unknown} value - Environment or caller supplied value.
+           * @returns {number} An integer between 1 and 32, defaulting to 8.
+           */
+          export function normalizeAttachmentStatusConcurrency(value) {
+            return normalizeBoundedInteger(
+              value,
+              ATTACHMENT_STATUS_DEFAULT_CONCURRENCY,
+              ATTACHMENT_STATUS_MAX_CONCURRENCY,
+            );
+          }
+
+          /**
+           * Normalize the configured Clearfolio status timeout.
+           *
+           * @param {unknown} value - Environment or caller supplied value.
+           * @returns {number} A positive timeout no greater than 30 seconds.
+           */
+          export function normalizeAttachmentStatusTimeoutMs(value) {
+            return normalizeBoundedInteger(
+              value,
+              ATTACHMENT_STATUS_DEFAULT_TIMEOUT_MS,
+              ATTACHMENT_STATUS_MAX_TIMEOUT_MS,
+            );
+          }
+
+          function addRefreshMetrics(metrics, counts) {
+            if (!metrics) return;
+            const fields = {
+              attachmentStatusRefreshAttempted: 'attempted',
+              attachmentStatusRefreshChanged: 'changed',
+              attachmentStatusRefreshFailed: 'failed',
+              attachmentStatusRefreshDeferred: 'deferred',
+            };
+            for (const [metric, count] of Object.entries(fields)) {
+              metrics[metric] = (Number(metrics[metric]) || 0) + counts[count];
+            }
+          }
+
+          /**
+           * Refresh pending attachment conversion statuses with a bounded worker pool.
+           *
+           * Rows are updated in place so the caller can serialize the refreshed public
+           * representation. Missing job identifiers and downstream failures preserve the
+           * stale status and never fail the attachment-list response.
+           *
+           * @param {Array<object>} rows - Attachment rows containing `id`, `status`, and `jobId`.
+           * @param {object} options - Downstream functions, tenant identifiers, limits, and metrics.
+           * @param {number|string} options.orgId - ScopeWeave organization identifier.
+           * @param {number|string} options.userId - Requesting user identifier.
+           * @param {(orgId: unknown, userId: unknown, jobId: string, options: {signal: AbortSignal}) => Promise<string>} options.jobStatus
+           *   Downstream status lookup function.
+           * @param {(status: string, attachmentId: unknown) => unknown|Promise<unknown>} options.updateStatus
+           *   Persistence callback invoked only when the status changes.
+           * @param {unknown} [options.concurrency] - Maximum concurrent downstream lookups.
+           * @param {unknown} [options.timeoutMs] - Per-lookup timeout in milliseconds.
+           * @param {object} [options.metrics] - Mutable process metrics object.
+           * @returns {Promise<{attempted:number,changed:number,failed:number,deferred:number}>}
+           *   Structured refresh counters for observability and tests.
+           */
+          export async function refreshAttachmentStatuses(rows, options) {
+            if (!Array.isArray(rows)) throw new TypeError('rows must be an array');
+            if (typeof options?.jobStatus !== 'function') throw new TypeError('jobStatus must be a function');
+            if (typeof options?.updateStatus !== 'function') throw new TypeError('updateStatus must be a function');
+
+            const counts = { attempted: 0, changed: 0, failed: 0, deferred: 0 };
+            const pending = rows.filter((row) => row?.status === 'PENDING' || row?.status === 'RUNNING');
+            const concurrency = normalizeAttachmentStatusConcurrency(options.concurrency);
+            const timeoutMs = normalizeAttachmentStatusTimeoutMs(options.timeoutMs);
+            let cursor = 0;
+
+            async function worker() {
+              for (;;) {
+                const index = cursor;
+                cursor += 1;
+                if (index >= pending.length) return;
+                const row = pending[index];
+                const jobId = typeof row.jobId === 'string' ? row.jobId.trim() : '';
+                if (!jobId) {
+                  counts.deferred += 1;
+                  continue;
+                }
+
+                counts.attempted += 1;
+                const controller = new AbortController();
+                const timer = setTimeout(() => controller.abort(), timeoutMs);
+                try {
+                  const nextStatus = await options.jobStatus(
+                    options.orgId,
+                    options.userId,
+                    jobId,
+                    { signal: controller.signal },
+                  );
+                  if (typeof nextStatus !== 'string' || !nextStatus.trim()) {
+                    throw new Error('invalid downstream status');
+                  }
+                  if (nextStatus !== row.status) {
+                    await options.updateStatus(nextStatus, row.id);
+                    row.status = nextStatus;
+                    counts.changed += 1;
+                  }
+                } catch {
+                  counts.failed += 1;
+                } finally {
+                  clearTimeout(timer);
+                }
+              }
+            }
+
+            const workerCount = Math.min(concurrency, pending.length);
+            await Promise.all(Array.from({ length: workerCount }, () => worker()));
+            addRefreshMetrics(options.metrics, counts);
+            return counts;
+          }
+          '''.strip() + '\n'
+          Path('server/attachment_status.mjs').write_text(attachment_status, encoding='utf-8')
+
+          replace_once(
+              'server/app.mjs',
+              "import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';\n",
+              "import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';\nimport { normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';\n",
+          )
+
+          replace_once(
+              'server/app.mjs',
+              "const metrics = { startedAt: new Date().toISOString(), requests: 0, s2xx: 0, s4xx: 0, s5xx: 0, signups: 0, projectsCreated: 0, webhookDeliveries: 0 };",
+              "const metrics = {\n  startedAt: new Date().toISOString(),\n  requests: 0,\n  s2xx: 0,\n  s4xx: 0,\n  s5xx: 0,\n  signups: 0,\n  projectsCreated: 0,\n  webhookDeliveries: 0,\n  attachmentStatusRefreshAttempted: 0,\n  attachmentStatusRefreshChanged: 0,\n  attachmentStatusRefreshFailed: 0,\n  attachmentStatusRefreshDeferred: 0,\n};",
+          )
+
+          replace_once(
+              'server/app.mjs',
+              "const ATTACH_MAX_BYTES = 10 * 1024 * 1024;\n",
+              "const ATTACH_MAX_BYTES = 10 * 1024 * 1024;\nconst ATTACH_STATUS_CONCURRENCY = normalizeAttachmentStatusConcurrency(\n  process.env.SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY,\n);\nconst ATTACH_STATUS_TIMEOUT_MS = normalizeAttachmentStatusTimeoutMs(\n  process.env.SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS,\n);\nconst updateAttachmentStatusStatement = db.prepare(\n  'UPDATE attachments SET status = ? WHERE id = ?',\n);\n",
+          )
+
+          old_route = r'''  const rows = (taskId
+            ? db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.status, a.created_at AS createdAt, u.email AS uploadedBy
+                FROM attachments a LEFT JOIN users u ON u.id = a.created_by
+                WHERE a.project_id = ? AND a.task_id = ? ORDER BY a.id DESC`).all(p.id, taskId)
+            : db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.status, a.created_at AS createdAt, u.email AS uploadedBy
+                FROM attachments a LEFT JOIN users u ON u.id = a.created_by
+                WHERE a.project_id = ? ORDER BY a.id DESC`).all(p.id));
+          // PENDING 잡 상태 갱신(최선 노력). Concurrent, but bounded so a large
+          // attachment list cannot open unbounded simultaneous Clearfolio calls.
+          // ponytail: fixed chunk size 5; make it configurable only if rate limits bite.
+          const pending = rows.filter((r) => r.status === 'PENDING' || r.status === 'RUNNING');
+          for (let i = 0; i < pending.length; i += 5) {
+            await Promise.all(pending.slice(i, i + 5).map(async (r) => {
+              try {
+                const jid = db.prepare('SELECT job_id FROM attachments WHERE id = ?').get(r.id).job_id;
+                const st = await jobStatus(p.org_id, uid, jid);
+                if (st !== r.status) {
+                  db.prepare('UPDATE attachments SET status = ? WHERE id = ?').run(st, r.id);
+                  r.status = st;
+                }
+              } catch { /* keep stale status */ }
+            }));
+          }
+          return c.json({ attachments: rows });'''
+          new_route = r'''  const rows = (taskId
+            ? db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.job_id AS jobId, a.status, a.created_at AS createdAt, u.email AS uploadedBy
+                FROM attachments a LEFT JOIN users u ON u.id = a.created_by
+                WHERE a.project_id = ? AND a.task_id = ? ORDER BY a.id DESC`).all(p.id, taskId)
+            : db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.job_id AS jobId, a.status, a.created_at AS createdAt, u.email AS uploadedBy
+                FROM attachments a LEFT JOIN users u ON u.id = a.created_by
+                WHERE a.project_id = ? ORDER BY a.id DESC`).all(p.id));
+          await refreshAttachmentStatuses(rows, {
+            orgId: p.org_id,
+            userId: uid,
+            jobStatus,
+            updateStatus: (status, attachmentId) => updateAttachmentStatusStatement.run(status, attachmentId),
+            concurrency: ATTACH_STATUS_CONCURRENCY,
+            timeoutMs: ATTACH_STATUS_TIMEOUT_MS,
+            metrics,
+          });
+          const attachments = rows.map(({ jobId: _internalJobId, ...publicRow }) => publicRow);
+          return c.json({ attachments });'''
+          replace_once('server/app.mjs', old_route, new_route)
+
+          old_job_status = r'''export async function jobStatus(orgId, userId, jobId) {
+            if (clearfolioMock) return mockDocs.has(jobId) ? 'SUCCEEDED' : 'FAILED';
+            const res = await fetch(`${CF_URL}/api/v1/convert/jobs/${encodeURIComponent(jobId)}`, {
+              headers: tenantHeaders(orgId, userId),
+            });
+            const data = await res.json().catch(() => ({}));
+            return data.status || 'FAILED';
+          }'''
+          new_job_status = r'''export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
+            if (clearfolioMock) return mockDocs.has(jobId) ? 'SUCCEEDED' : 'FAILED';
+            const res = await fetch(`${CF_URL}/api/v1/convert/jobs/${encodeURIComponent(jobId)}`, {
+              headers: tenantHeaders(orgId, userId),
+              signal,
+            });
+            const data = await res.json().catch(() => ({}));
+            return data.status || 'FAILED';
+          }'''
+          replace_once('server/clearfolio.mjs', old_job_status, new_job_status)
+
+          unit_test = r'''import test from 'node:test';
+          import assert from 'node:assert/strict';
+          import {
+            ATTACHMENT_STATUS_DEFAULT_CONCURRENCY,
+            ATTACHMENT_STATUS_DEFAULT_TIMEOUT_MS,
+            ATTACHMENT_STATUS_MAX_CONCURRENCY,
+            ATTACHMENT_STATUS_MAX_TIMEOUT_MS,
+            normalizeAttachmentStatusConcurrency,
+            normalizeAttachmentStatusTimeoutMs,
+            refreshAttachmentStatuses,
+          } from '../../server/attachment_status.mjs';
+
+          test('attachment status configuration is bounded and fail-safe', () => {
+            assert.equal(normalizeAttachmentStatusConcurrency(undefined), ATTACHMENT_STATUS_DEFAULT_CONCURRENCY);
+            assert.equal(normalizeAttachmentStatusConcurrency('4'), 4);
+            assert.equal(normalizeAttachmentStatusConcurrency(0), ATTACHMENT_STATUS_DEFAULT_CONCURRENCY);
+            assert.equal(normalizeAttachmentStatusConcurrency(1.5), ATTACHMENT_STATUS_DEFAULT_CONCURRENCY);
+            assert.equal(normalizeAttachmentStatusConcurrency(999), ATTACHMENT_STATUS_MAX_CONCURRENCY);
+            assert.equal(normalizeAttachmentStatusTimeoutMs(undefined), ATTACHMENT_STATUS_DEFAULT_TIMEOUT_MS);
+            assert.equal(normalizeAttachmentStatusTimeoutMs('25'), 25);
+            assert.equal(normalizeAttachmentStatusTimeoutMs(-1), ATTACHMENT_STATUS_DEFAULT_TIMEOUT_MS);
+            assert.equal(normalizeAttachmentStatusTimeoutMs(50_000), ATTACHMENT_STATUS_MAX_TIMEOUT_MS);
+          });
+
+          test('refresh validates its dependency contract', async () => {
+            await assert.rejects(() => refreshAttachmentStatuses(null, {}), /rows must be an array/);
+            await assert.rejects(
+              () => refreshAttachmentStatuses([], { updateStatus() {} }),
+              /jobStatus must be a function/,
+            );
+            await assert.rejects(
+              () => refreshAttachmentStatuses([], { jobStatus() {} }),
+              /updateStatus must be a function/,
+            );
+          });
+
+          test('empty and settled rows perform no downstream work', async () => {
+            const metrics = {};
+            const counts = await refreshAttachmentStatuses(
+              [{ id: 1, status: 'SUCCEEDED', jobId: 'job-1' }],
+              {
+                jobStatus: async () => { throw new Error('must not run'); },
+                updateStatus: () => { throw new Error('must not run'); },
+                metrics,
+              },
+            );
+            assert.deepEqual(counts, { attempted: 0, changed: 0, failed: 0, deferred: 0 });
+            assert.equal(metrics.attachmentStatusRefreshAttempted, 0);
+            assert.equal(metrics.attachmentStatusRefreshChanged, 0);
+            assert.equal(metrics.attachmentStatusRefreshFailed, 0);
+            assert.equal(metrics.attachmentStatusRefreshDeferred, 0);
+          });
+
+          test('100 pending rows respect the configured concurrency and persist only changes', async () => {
+            const rows = Array.from({ length: 100 }, (_, index) => ({
+              id: index + 1,
+              jobId: `job-${index + 1}`,
+              status: index % 3 === 0 ? 'RUNNING' : 'PENDING',
+            }));
+            let active = 0;
+            let peak = 0;
+            const updates = [];
+            const metrics = {
+              attachmentStatusRefreshAttempted: 10,
+              attachmentStatusRefreshChanged: 20,
+              attachmentStatusRefreshFailed: 30,
+              attachmentStatusRefreshDeferred: 40,
+            };
+            const counts = await refreshAttachmentStatuses(rows, {
+              orgId: 7,
+              userId: 9,
+              concurrency: 8,
+              timeoutMs: 1_000,
+              metrics,
+              jobStatus: async (orgId, userId, jobId, { signal }) => {
+                assert.equal(orgId, 7);
+                assert.equal(userId, 9);
+                assert.equal(signal.aborted, false);
+                active += 1;
+                peak = Math.max(peak, active);
+                await new Promise((resolve) => setTimeout(resolve, Number(jobId.split('-')[1]) % 3));
+                active -= 1;
+                return Number(jobId.split('-')[1]) % 2 === 0 ? 'SUCCEEDED' : rows[Number(jobId.split('-')[1]) - 1].status;
+              },
+              updateStatus: async (status, attachmentId) => updates.push([status, attachmentId]),
+            });
+            assert.ok(peak <= 8, `peak concurrency ${peak} exceeded configured limit`);
+            assert.deepEqual(counts, { attempted: 100, changed: 50, failed: 0, deferred: 0 });
+            assert.equal(updates.length, 50);
+            assert.equal(metrics.attachmentStatusRefreshAttempted, 110);
+            assert.equal(metrics.attachmentStatusRefreshChanged, 70);
+            assert.equal(metrics.attachmentStatusRefreshFailed, 30);
+            assert.equal(metrics.attachmentStatusRefreshDeferred, 40);
+          });
+
+          test('invalid identifiers, downstream failures, invalid responses, and write failures remain isolated', async () => {
+            const rows = [
+              { id: 1, jobId: null, status: 'PENDING' },
+              { id: 2, jobId: '', status: 'RUNNING' },
+              { id: 3, jobId: '   ', status: 'PENDING' },
+              { id: 4, jobId: 'throws', status: 'PENDING' },
+              { id: 5, jobId: 'invalid-status', status: 'PENDING' },
+              { id: 6, jobId: 'write-fails', status: 'PENDING' },
+              { id: 7, jobId: 'times-out', status: 'PENDING' },
+            ];
+            let aborted = false;
+            const counts = await refreshAttachmentStatuses(rows, {
+              concurrency: 3,
+              timeoutMs: 5,
+              jobStatus: async (_orgId, _userId, jobId, { signal }) => {
+                if (jobId === 'throws') throw new Error('downstream failure');
+                if (jobId === 'invalid-status') return '';
+                if (jobId === 'write-fails') return 'SUCCEEDED';
+                return new Promise((resolve, reject) => {
+                  signal.addEventListener('abort', () => {
+                    aborted = true;
+                    reject(new Error('aborted'));
+                  }, { once: true });
+                });
+              },
+              updateStatus: () => { throw new Error('write failure'); },
+            });
+            assert.equal(aborted, true);
+            assert.deepEqual(counts, { attempted: 4, changed: 0, failed: 4, deferred: 3 });
+            assert.equal(rows[5].status, 'PENDING');
+            assert.equal(rows[6].status, 'PENDING');
+          });
+          '''.strip() + '\n'
+          Path('tests/unit/attachment-status.test.mjs').write_text(unit_test, encoding='utf-8')
+
+          signal_test = r'''import test from 'node:test';
+          import assert from 'node:assert/strict';
+
+          test('Clearfolio jobStatus forwards the caller abort signal', async () => {
+            process.env.CLEARFOLIO_URL = 'https://clearfolio.example';
+            const originalFetch = globalThis.fetch;
+            let observedSignal;
+            globalThis.fetch = async (_url, options) => {
+              observedSignal = options.signal;
+              return { json: async () => ({ status: 'RUNNING' }) };
+            };
+            try {
+              const { jobStatus } = await import('../../server/clearfolio.mjs?status-signal-test=1');
+              const controller = new AbortController();
+              const status = await jobStatus(1, 2, 'job-1', { signal: controller.signal });
+              assert.equal(status, 'RUNNING');
+              assert.equal(observedSignal, controller.signal);
+            } finally {
+              globalThis.fetch = originalFetch;
+              delete process.env.CLEARFOLIO_URL;
+            }
+          });
+          '''.strip() + '\n'
+          Path('tests/unit/clearfolio-status-signal.test.mjs').write_text(signal_test, encoding='utf-8')
+
+          api_test = r'''import test from 'node:test';
+          import assert from 'node:assert/strict';
+          import { readFileSync } from 'node:fs';
+
+          process.env.SCOPEWEAVE_DB = ':memory:';
+          process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
+          process.env.SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY = '2';
+          process.env.SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS = '500';
+
+          const { app } = await import('../../server/app.mjs');
+          const { db } = await import('../../server/db.mjs');
+
+          const jsonRequest = (path, options = {}) => app.request(path, {
+            ...options,
+            headers: { 'content-type': 'application/json', ...(options.headers || {}) },
+          });
+
+          async function upload(projectId, token, taskId) {
+            const form = new FormData();
+            form.append('file', new Blob([`content-${taskId}`], { type: 'text/plain' }), `${taskId}.txt`);
+            form.set('taskId', taskId);
+            const response = await app.request(`/api/projects/${projectId}/attachments`, {
+              method: 'POST',
+              headers: { authorization: `Bearer ${token}` },
+              body: form,
+            });
+            assert.equal(response.status, 200);
+            return response.json();
+          }
+
+          test('attachment listing refreshes without N+1 queries or internal identifier leakage', async () => {
+            let response = await jsonRequest('/api/auth/signup', {
+              method: 'POST',
+              body: JSON.stringify({ email: 'attachments@scopeweave.test', password: 'password123', name: 'Attachments' }),
+            });
+            assert.equal(response.status, 200);
+            const token = (await response.json()).token;
+            const auth = { authorization: `Bearer ${token}` };
+
+            response = await jsonRequest('/api/me', { headers: auth });
+            const userId = (await response.json()).user.id;
+            response = await jsonRequest('/api/projects', {
+              method: 'POST',
+              headers: auth,
+              body: JSON.stringify({ name: 'Attachment Status Project' }),
+            });
+            const projectId = (await response.json()).id;
+
+            const first = await upload(projectId, token, 'task-a');
+            const second = await upload(projectId, token, 'task-b');
+            db.prepare("UPDATE attachments SET status = 'PENDING' WHERE id IN (?, ?)").run(first.id, second.id);
+            db.prepare(
+              'INSERT INTO attachments(project_id,task_id,name,mime,size,job_id,status,created_by) VALUES(?,?,?,?,?,?,?,?)',
+            ).run(projectId, 'task-missing', 'missing.txt', 'text/plain', 1, '', 'PENDING', userId);
+
+            response = await jsonRequest(`/api/projects/${projectId}/attachments?taskId=task-a`, { headers: auth });
+            assert.equal(response.status, 200);
+            let attachments = (await response.json()).attachments;
+            assert.equal(attachments.length, 1);
+            assert.equal(attachments[0].taskId, 'task-a');
+            assert.equal(attachments[0].status, 'SUCCEEDED');
+            assert.equal(Object.hasOwn(attachments[0], 'jobId'), false);
+
+            response = await jsonRequest(`/api/projects/${projectId}/attachments`, { headers: auth });
+            assert.equal(response.status, 200);
+            attachments = (await response.json()).attachments;
+            assert.equal(attachments.length, 3);
+            assert.equal(attachments.every((row) => !Object.hasOwn(row, 'jobId')), true);
+            assert.equal(attachments.find((row) => row.taskId === 'task-b').status, 'SUCCEEDED');
+            assert.equal(attachments.find((row) => row.taskId === 'task-missing').status, 'PENDING');
+
+            response = await jsonRequest('/api/metrics');
+            const metrics = await response.json();
+            assert.equal(metrics.attachmentStatusRefreshAttempted, 2);
+            assert.equal(metrics.attachmentStatusRefreshChanged, 2);
+            assert.equal(metrics.attachmentStatusRefreshFailed, 0);
+            assert.equal(metrics.attachmentStatusRefreshDeferred, 1);
+
+            const source = readFileSync('server/app.mjs', 'utf8');
+            const routeStart = source.indexOf("app.get('/api/projects/:id/attachments'");
+            const routeEnd = source.indexOf('// 열람:', routeStart);
+            const route = source.slice(routeStart, routeEnd);
+            assert.ok(routeStart >= 0 && routeEnd > routeStart, 'attachment list route is discoverable');
+            assert.equal((route.match(/a\.job_id AS jobId/g) || []).length, 2);
+            assert.doesNotMatch(route, /SELECT job_id FROM attachments/);
+            assert.match(route, /rows\.map\(\(\{ jobId: _internalJobId, \.\.\.publicRow \}\) => publicRow\)/);
+          });
+          '''.strip() + '\n'
+          Path('tests/api/attachment-status.test.mjs').write_text(api_test, encoding='utf-8')
+
+          package_path = Path('package.json')
+          package = json.loads(package_path.read_text(encoding='utf-8'))
+          package['scripts']['coverage'] = package['scripts']['coverage'].replace(
+              '--include=server/app.mjs',
+              '--include=server/attachment_status.mjs --include=server/app.mjs',
+          )
+          package['scripts']['test:api'] += ' && node tests/api/attachment-status.test.mjs'
+          package['scripts']['test:unit'] += ' && node tests/unit/attachment-status.test.mjs && node tests/unit/clearfolio-status-signal.test.mjs'
+          package['scripts']['test:coverage'] = (
+              'node tests/unit/attachment-status.test.mjs && '
+              + package['scripts']['test:coverage']
+              + ' && node tests/api/attachment-status.test.mjs'
+          )
+          package_path.write_text(json.dumps(package, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+
+          replace_once(
+              'CHANGELOG.md',
+              '### Changed\n\n',
+              '### Changed\n\n- Attachment status refresh now removes the per-row database lookup, uses a configurable bounded worker pool with abortable downstream timeouts, isolates partial failures, excludes internal conversion identifiers from list responses, and exports attempted/changed/failed/deferred operational metrics.\n',
+          )
+          PY
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run focused and full validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tests/unit/attachment-status.test.mjs
+          node tests/unit/clearfolio-status-signal.test.mjs
+          node tests/api/attachment-status.test.mjs
+          npm run test:unit
+          npm run test:api
+          npm run coverage
+          npm run test:e2e:cloud
+          git diff --check
+
+      - name: Commit verified repair and remove one-shot workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/repair-attachment-status-refresh.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'perf(attachments): bound status refresh and remove N+1 queries'
+          git push origin HEAD:jules-promise-all-attachments-7315426299343398085
