@@ -36,6 +36,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   so network details and downstream response text cannot reach browser or
   diagnostic payloads; rejected unknown or whitespace-padded conversion states
   and malformed, unsupported-scheme, or HTTPS-downgrade artifact links.
+- Centralized session JWT verification and database-backed `token_version`
+  revocation across bearer middleware, calendar feeds, server-sent events, and
+  attachment-view URL transports.
+- Made session-token minting fail closed unless the subject, token version, and
+  lifetime are bounded safe integers, and capped general session lifetime at
+  seven days so internal callers cannot mint excessive or numerically unsafe
+  credentials.
+- Rejected signed session JWTs with a non-HS256/JWT header, non-object claims,
+  missing or invalid subject/expiry, or a missing, Boolean, fractional,
+  negative, unsafe, or otherwise invalid token-version claim before user lookup.
+- Added cross-device regression coverage proving that `logout-all` rejects stale
+  tokens on bearer, calendar, SSE, and attachment-view transports while the
+  replacement token continues through the same authentication boundary.
 
 ### Changed
 
