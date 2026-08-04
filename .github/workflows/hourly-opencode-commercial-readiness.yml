@@ -1,182 +1,354 @@
-name: Hourly OpenCode commercial readiness
+name: Hourly ScopeWeave OpenCode Commercial Readiness
 
 on:
-  schedule:
-    - cron: "17 * * * *"
   workflow_dispatch:
-
-permissions: read-all
+    inputs:
+      dry_run:
+        description: Evaluate the gate and prompt without running OpenCode
+        required: false
+        default: false
+        type: boolean
+  schedule:
+    - cron: "41 * * * *"
 
 concurrency:
-  group: hourly-opencode-commercial-readiness-${{ github.repository }}
+  group: scopeweave-hourly-opencode-commercial-readiness
   cancel-in-progress: false
 
+# The default token is read-only. The single trusted publication step uses the
+# job-scoped write token after the OpenCode process has exited. OpenCode receives
+# only NVIDIA_API_KEY, which is sourced from NVIDIA_NIM_API_KEY.
+permissions:
+  contents: read
+
 jobs:
-  commercial_readiness:
-    name: Review, repair, verify, and advance one protected slice
-    if: github.repository_owner == 'ContextualWisdomLab'
+  develop-one-bounded-slice:
+    if: github.repository == 'ContextualWisdomLab/scopeweave'
     runs-on: ubuntu-latest
     timeout-minutes: 55
     permissions:
-      actions: read
-      checks: read
       contents: write
-      issues: write
+      issues: read
       pull-requests: write
     env:
-      OPENCODE_NIM_MODEL: ${{ vars.OPENCODE_NIM_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct' }}
-      OPENCODE_VERSION: ${{ vars.OPENCODE_VERSION || 'latest' }}
+      DEFAULT_BRANCH: develop
+      DRY_RUN: ${{ inputs.dry_run || false }}
+      OPENCODE_VERSION: "1.17.13"
+      OPENCODE_SHA256: 157afa289d1a8d9372de0ce19ac726119b937a1f6b201808d46f06e4e59bb348
+      OPENCODE_MODEL_CANDIDATES: >-
+        nvidia-nim/nvidia/llama-3.3-nemotron-super-49b-v1.5
+        nvidia-nim/nvidia/nemotron-3-super-120b-a12b
+        nvidia-nim/deepseek-ai/deepseek-v4-pro
+      OPENCODE_RUN_TIMEOUT_SECONDS: "2400"
     steps:
-      - name: Check out the protected repository baseline
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - name: Enforce pull-request-first single-flight gate
+        id: gate
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
+        run: |
+          set -euo pipefail
+
+          if ! open_prs="$(
+            gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --limit 1 \
+              --json number,url
+          )"; then
+            {
+              echo "dispatch=false"
+              echo "reason=pull_request_inventory_unavailable"
+            } >>"$GITHUB_OUTPUT"
+            echo "Pull-request inventory was unavailable; failing closed." \
+              >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$(jq 'length' <<<"$open_prs")" -gt 0 ]; then
+            {
+              echo "dispatch=false"
+              echo "reason=open_pull_request"
+            } >>"$GITHUB_OUTPUT"
+            echo "An open pull request exists; central PR governance owns this hour." \
+              >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ -z "${NVIDIA_API_KEY:-}" ]; then
+            {
+              echo "dispatch=false"
+              echo "reason=nim_api_key_unavailable"
+            } >>"$GITHUB_OUTPUT"
+            cat >>"$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          Autonomous development is disabled because `NVIDIA_NIM_API_KEY` is not configured.
+          No Copilot subscription, Agent Tasks API, or fine-grained user token is used.
+          SUMMARY
+            exit 0
+          fi
+
+          {
+            echo "dispatch=true"
+            echo "reason=ready"
+          } >>"$GITHUB_OUTPUT"
+
+      - name: Prepare bounded commercial-quality assignment
+        if: steps.gate.outputs.dispatch == 'true'
+        shell: bash
+        run: |
+          cat >"$RUNNER_TEMP/scopeweave-agent-prompt.md" <<'PROMPT'
+          Continue product development for ContextualWisdomLab/scopeweave on the develop branch.
+
+          Start by reading AGENTS.md, README.md, CHANGELOG.md, docs/doctoring,
+          docs/operations, the trusted open-issue and recently-merged-PR snapshots under
+          .opencode-context, current source, tests, package contracts, service adapters,
+          database schema, and release evidence. Select exactly one highest-impact,
+          buyer-visible product, reliability, interoperability, security, evaluation,
+          accessibility, or operations gap that can be completed as one bounded pull request.
+          Do not create another repository or a broad platform rewrite.
+
+          Preserve standalone ScopeWeave operation while keeping framework-independent seams
+          suitable for ContextualWisdomLab/.github, naruon, Clearfolio,
+          contextual-orchestrator, and future MSA adapters. Use or improve
+          contextual-orchestrator for every product LLM path instead of adding a direct,
+          provider-specific client. Treat all model output as untrusted, bounded, auditable
+          input that requires deterministic validation before persistence or user-visible use.
+
+          Work test-first: establish a failing realistic regression or executable contract
+          before production code, confirm that it fails for the intended reason, and then
+          implement the smallest coherent vertical slice. Never weaken, skip, delete,
+          suppress, or mark a meaningful release-gate test expected-to-fail merely to obtain
+          green output. Maintain 100% production statement, branch, function, and line
+          coverage for each new or materially changed production module. Every public module,
+          class, function, method, property, exported constant, security invariant, input,
+          output, and exception must have beginner-readable JSDoc or docstrings.
+
+          New database tables, columns, indexes, triggers, constraints, migration objects,
+          and durable queues must use descriptive two-word-or-longer snake_case names. Preserve
+          tenant isolation, least privilege, bounded resource use, idempotency, deterministic
+          behavior where applicable, migration rollback, immutable audit evidence, and
+          secret-free logs. Tests must model realistic multi-tenant projects, concurrent edits
+          or requests, partial downstream failure, restart and migration behavior, large WBS
+          inputs, accessibility, recovery, and customer-visible outputs as appropriate.
+
+          Use the latest authoritative international standard, primary technical
+          specification, or peer-reviewed paper for every material decision. Record the
+          decision, limitations, executable evidence, and APA 7th references under
+          docs/doctoring/. Distinguish source-supported claims, measurements, assumptions, and
+          inference. Do not claim certification or compliance beyond executable evidence.
+
+          Use Figma or Product Design only when the selected slice has a real buyer-facing UI.
+          For such a slice, account for loading, empty, validation, error, keyboard,
+          screen-reader, touch, narrow-viewport, and permission states. Do not manufacture
+          design work for a backend-only or library-only increment.
+
+          If an LLM-dependent test is genuinely necessary, use the established
+          contextual-orchestrator boundary and NVIDIA_NIM_API_KEY in GitHub Actions; keep
+          deterministic non-LLM tests as the required merge gate. Do not edit, copy, replace,
+          or weaken CodeRabbit, Noema, OpenCode-review, Strix, security-review, organization
+          rules, reviewer credentials, `.trivyignore`, or branch protection.
+
+          Run focused tests, npm ci, complete unit and API suites, coverage and docstring
+          gates, cloud browser E2E for user-visible changes, syntax and dependency checks,
+          relevant adversarial/security tests, and git diff --check. Update CHANGELOG.md and
+          all affected product, architecture, operations, security, accessibility, evaluation,
+          migration, and rollback documentation. Change package versions only when the
+          integrated repository is genuinely release-ready. Do not merge, publish, release,
+          push, or commit. Leave one bounded verified working-tree increment and create
+          PR_MESSAGE.md at the repository root: first line is the proposed title, followed by
+          a body with buyer impact, exact verification evidence, standards references, risks,
+          compatibility, and residual gaps. A trusted workflow step will publish the branch;
+          central PR governance owns review, repair, exact-head checks, approval, and merge.
+          PROMPT
+
+      - name: Record dry-run decision
+        if: steps.gate.outputs.dispatch == 'true' && env.DRY_RUN == 'true'
+        shell: bash
+        run: |
+          {
+            echo "Dry run: one bounded OpenCode/NVIDIA NIM development session would start."
+            echo
+            cat "$RUNNER_TEMP/scopeweave-agent-prompt.md"
+          } >>"$GITHUB_STEP_SUMMARY"
+
+      - name: Check out develop without persisted credentials
+        if: steps.gate.outputs.dispatch == 'true' && env.DRY_RUN != 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
+          ref: develop
           fetch-depth: 0
           persist-credentials: false
 
       - name: Set up the supported Node.js runtime
-        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        if: steps.gate.outputs.dispatch == 'true' && env.DRY_RUN != 'true'
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903
         with:
           node-version: 22.13.0
           cache: npm
 
-      - name: Select one trusted pull request or the next product slice
-        id: target
+      - name: Materialize trusted repository context
+        if: steps.gate.outputs.dispatch == 'true' && env.DRY_RUN != 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p .opencode
-          default_branch="$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.default_branch')"
-          test -n "$default_branch"
+          mkdir -p .opencode-context
+          gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state open \
+            --limit 100 \
+            --json number,title,body,labels,createdAt,updatedAt \
+            >.opencode-context/open-issues.json
+          gh pr list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state merged \
+            --limit 30 \
+            --json number,title,body,mergedAt,files \
+            >.opencode-context/recent-merged-prs.json
+          {
+            echo /opencode.json
+            echo /.opencode-context/
+          } >>.git/info/exclude
 
-          gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 100 \
-            --json number,title,isDraft,headRefName,headRefOid,headRepositoryOwner,author,authorAssociation,updatedAt \
-            > .opencode/open-pull-requests.json
+      - name: Install the pinned OpenCode CLI
+        if: steps.gate.outputs.dispatch == 'true' && env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="${RUNNER_TEMP}/opencode-linux-x64.tar.gz"
+          install_dir="${HOME}/.opencode/bin"
+          mkdir -p "$install_dir"
+          curl -fsSL \
+            -o "$archive" \
+            "https://github.com/anomalyco/opencode/releases/download/v${OPENCODE_VERSION}/opencode-linux-x64.tar.gz"
+          printf '%s  %s\n' "$OPENCODE_SHA256" "$archive" | sha256sum -c -
+          tar -xzf "$archive" -C "$RUNNER_TEMP"
+          install -m 0755 "${RUNNER_TEMP}/opencode" "${install_dir}/opencode"
+          "${install_dir}/opencode" --version
+          echo "$install_dir" >>"$GITHUB_PATH"
 
-          python3 <<'PY' > .opencode/selected-target.json
-          import json
-          from pathlib import Path
+      - name: Configure OpenCode for NVIDIA NIM
+        if: steps.gate.outputs.dispatch == 'true' && env.DRY_RUN != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat >"$GITHUB_WORKSPACE/opencode.json" <<'CONFIG'
+          {
+            "$schema": "https://opencode.ai/config.json",
+            "enabled_providers": ["nvidia-nim"],
+            "model": "nvidia-nim/nvidia/llama-3.3-nemotron-super-49b-v1.5",
+            "small_model": "nvidia-nim/meta/llama-3.3-70b-instruct",
+            "provider": {
+              "nvidia-nim": {
+                "npm": "@ai-sdk/openai-compatible",
+                "name": "NVIDIA NIM",
+                "options": {
+                  "baseURL": "https://integrate.api.nvidia.com/v1",
+                  "apiKey": "{env:NVIDIA_API_KEY}"
+                },
+                "models": {
+                  "nvidia/llama-3.3-nemotron-super-49b-v1.5": {
+                    "name": "NVIDIA Llama 3.3 Nemotron Super 49B v1.5",
+                    "tool_call": true,
+                    "limit": {"context": 131072, "output": 8192}
+                  },
+                  "nvidia/nemotron-3-super-120b-a12b": {
+                    "name": "NVIDIA Nemotron 3 Super 120B",
+                    "tool_call": true,
+                    "limit": {"context": 131072, "output": 8192}
+                  },
+                  "deepseek-ai/deepseek-v4-pro": {
+                    "name": "DeepSeek V4 Pro (NIM)",
+                    "tool_call": true,
+                    "limit": {"context": 131072, "output": 8192}
+                  },
+                  "meta/llama-3.3-70b-instruct": {
+                    "name": "Meta Llama 3.3 70B Instruct (NIM)",
+                    "tool_call": true,
+                    "limit": {"context": 131072, "output": 8192}
+                  }
+                }
+              }
+            }
+          }
+          CONFIG
 
-          trusted_associations = {"OWNER", "MEMBER", "COLLABORATOR"}
-          pulls = json.loads(Path(".opencode/open-pull-requests.json").read_text(encoding="utf-8"))
-          trusted = [
-              pull
-              for pull in pulls
-              if pull.get("authorAssociation") in trusted_associations
-              and (pull.get("headRepositoryOwner") or {}).get("login") == "ContextualWisdomLab"
-          ]
-          trusted.sort(key=lambda pull: (pull.get("isDraft", False), pull.get("updatedAt", ""), pull["number"]))
-          selected = trusted[0] if trusted else None
-          Path(".opencode/selected-target.json").write_text(
-              json.dumps({"selected": selected}, ensure_ascii=False, indent=2) + "\n",
-              encoding="utf-8",
-          )
-          print(json.dumps({"selected": selected}, ensure_ascii=False))
-          PY
-
-          pr_number="$(jq -r '.selected.number // empty' .opencode/selected-target.json)"
-          if [[ -n "$pr_number" ]]; then
-            head_branch="$(jq -r '.selected.headRefName' .opencode/selected-target.json)"
-            head_sha="$(jq -r '.selected.headRefOid' .opencode/selected-target.json)"
-            gh pr view "$pr_number" --repo "$GITHUB_REPOSITORY" \
-              --json number,title,body,isDraft,mergeStateStatus,reviewDecision,reviews,comments,statusCheckRollup,files \
-              > .opencode/pull-request-context.json
-            gh pr checkout "$pr_number" --repo "$GITHUB_REPOSITORY" --branch "$head_branch"
-            test "$(git rev-parse HEAD)" = "$head_sha"
-            printf 'mode=pull_request\n' >> "$GITHUB_OUTPUT"
-            printf 'pr_number=%s\n' "$pr_number" >> "$GITHUB_OUTPUT"
-            printf 'head_branch=%s\n' "$head_branch" >> "$GITHUB_OUTPUT"
-          else
-            branch_name="opencode/commercial-readiness-${GITHUB_RUN_ID}"
-            git checkout -b "$branch_name" "origin/${default_branch}"
-            gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 \
-              --json number,title,body,labels,createdAt,updatedAt \
-              > .opencode/open-issues.json
-            printf 'mode=product_gap\n' >> "$GITHUB_OUTPUT"
-            printf 'pr_number=\n' >> "$GITHUB_OUTPUT"
-            printf 'head_branch=%s\n' "$branch_name" >> "$GITHUB_OUTPUT"
-          fi
-          printf 'start_sha=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
-
-      - name: Build the bounded commercial-readiness assignment
+      - name: Run the bounded NVIDIA NIM development agent
+        if: steps.gate.outputs.dispatch == 'true' && env.DRY_RUN != 'true'
         shell: bash
         env:
-          TARGET_MODE: ${{ steps.target.outputs.mode }}
-          TARGET_PR: ${{ steps.target.outputs.pr_number }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
         run: |
           set -euo pipefail
-          cat > .opencode/assignment.md <<'EOF'
-          You are the implementation agent for ContextualWisdomLab/scopeweave. Work autonomously on exactly the checked-out target and stop before 45 minutes.
-
-          Operating order:
-          1. Read AGENTS.md, the selected PR or issue context under .opencode/, current source, tests, CHANGELOG.md, and documentation.
-          2. For an existing PR, inspect every review comment and failing or pending check represented in the captured context. Reproduce each actionable failure before changing production code. Resolve comments in code rather than explaining them away.
-          3. For an empty PR queue, select one bounded buyer-visible gap from the captured open issues. Do not invent a broad platform rewrite. Start with a failing realistic test, then implement the smallest complete vertical slice.
-          4. Follow strict red-green-refactor TDD. Never weaken, skip, delete, or mark a meaningful test expected-to-fail merely to obtain green output.
-          5. Preserve standalone ScopeWeave operation and framework-independent module seams suitable for ContextualWisdomLab/.github, naruon, or a future MSA adapter.
-          6. Every new function, exported constant, security invariant, and non-obvious branch requires beginner-readable JSDoc. New or materially changed production modules require 100% statement, branch, function, and line coverage.
-          7. Use multi-word snake_case for every new database table, column, index, trigger, constraint, and migration object.
-          8. Add realistic API, concurrency, tenant-boundary, failure, privacy, and recovery tests appropriate to the feature. LLM-dependent tests must use NVIDIA_NIM_API_KEY through the repository's established contextual-orchestrator boundary; do not hard-code credentials or call GitHub Copilot.
-          9. Ground design choices in current authoritative standards or peer-reviewed research, add APA 7th references to the relevant documentation, and update CHANGELOG.md. Do not fabricate citations.
-          10. Do not edit, replace, copy, or weaken the existing CodeRabbit, Noema, OpenCode-review, Strix, security-review, or organization-central workflow/key system. Do not modify branch protection or use administrator bypass.
-          11. Run npm ci, focused tests, complete unit and API suites, coverage, docstring evidence, cloud E2E where the changed behavior is user-visible, security checks available locally, and git diff --check. Fix every failure.
-          12. Commit coherent changes locally with conventional commit messages. Do not push, merge, mark a PR ready, or create a release; the trusted publication step owns those operations.
-
-          Never print, persist, summarize, or place credentials in logs, commits, prompts, test fixtures, URLs, issue comments, audit data, or generated artifacts.
-          EOF
-          printf '\nTarget mode: %s\nTarget PR: %s\n' "$TARGET_MODE" "${TARGET_PR:-none}" >> .opencode/assignment.md
-
-      - name: Install the configured OpenCode release
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "$OPENCODE_VERSION" != "latest" && ! "$OPENCODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
-            echo 'OPENCODE_VERSION must be latest or an explicit semantic version.' >&2
+          test -n "$NVIDIA_API_KEY"
+          start_sha="$(git rev-parse HEAD)"
+          printf '%s\n' "$start_sha" >"$RUNNER_TEMP/start-sha"
+          prompt="$(cat "$RUNNER_TEMP/scopeweave-agent-prompt.md")"
+          status=1
+          for model in $OPENCODE_MODEL_CANDIDATES; do
+            echo "::group::opencode $model"
+            if timeout --kill-after=30s "${OPENCODE_RUN_TIMEOUT_SECONDS}s" \
+              env -u GH_TOKEN -u GITHUB_TOKEN -u REPOSITORY_TOKEN \
+              -u ACTIONS_ID_TOKEN_REQUEST_TOKEN -u ACTIONS_ID_TOKEN_REQUEST_URL \
+              opencode run "$prompt" --model "$model"; then
+              status=0
+              echo "::endgroup::"
+              echo "Agent session completed with \`$model\`." >>"$GITHUB_STEP_SUMMARY"
+              break
+            fi
+            echo "::endgroup::"
+            echo "::warning::Model $model failed; discarding partial work and trying the next candidate."
+            git reset --hard "$start_sha"
+            git clean -fd
+          done
+          if [ "$status" -ne 0 ]; then
+            echo "::error::Every NVIDIA NIM model candidate failed; no work was proposed."
             exit 1
           fi
-          npm install --global --ignore-scripts "opencode-ai@${OPENCODE_VERSION}"
-          resolved_version="$(opencode --version)"
-          test -n "$resolved_version"
-          printf 'OpenCode version: `%s`\n' "$resolved_version" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$(git rev-parse HEAD)" != "$start_sha" ]; then
+            echo "::error::The agent created commits; trusted publication requires working-tree-only output."
+            exit 1
+          fi
 
-      - name: Execute OpenCode with NVIDIA NIM
+      - name: Enforce protected workflow and credential boundaries
+        if: steps.gate.outputs.dispatch == 'true' && env.DRY_RUN != 'true'
         shell: bash
-        env:
-          NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
-          OPENCODE_CONFIG_CONTENT: >-
-            {"$schema":"https://opencode.ai/config.json","model":"nvidia_nim/${{ env.OPENCODE_NIM_MODEL }}","provider":{"nvidia_nim":{"npm":"@ai-sdk/openai-compatible","name":"NVIDIA NIM","options":{"baseURL":"https://integrate.api.nvidia.com/v1","apiKey":"{env:NVIDIA_NIM_API_KEY}"},"models":{"${{ env.OPENCODE_NIM_MODEL }}":{"name":"NVIDIA NIM commercial-readiness model"}}}},"permission":{"bash":"allow","edit":"allow","write":"allow","read":"allow","glob":"allow","grep":"allow"}}
         run: |
           set -euo pipefail
-          test -n "$NVIDIA_NIM_API_KEY"
-          opencode run \
-            --model "nvidia_nim/${OPENCODE_NIM_MODEL}" \
-            --format json \
-            "$(cat .opencode/assignment.md)" \
-            | tee "${RUNNER_TEMP}/opencode-commercial-readiness.jsonl"
-
-      - name: Enforce repository and review-agent safety boundaries
-        shell: bash
-        env:
-          START_SHA: ${{ steps.target.outputs.start_sha }}
-        run: |
-          set -euo pipefail
-          git diff --check "$START_SHA"...HEAD
-          changed_files="$(git diff --name-only "$START_SHA"...HEAD; git diff --name-only)"
+          start_sha="$(cat "$RUNNER_TEMP/start-sha")"
+          changed_files="$(
+            {
+              git diff --name-only "$start_sha"...HEAD
+              git diff --name-only
+              git ls-files --others --exclude-standard
+            } | sort -u
+          )"
+          if [ -z "$changed_files" ]; then
+            echo "No product change was produced." >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           if printf '%s\n' "$changed_files" | grep -E '^\.github/workflows/.*(coderabbit|noema|opencode-review|review-agent|strix|security-review).*\.ya?ml$'; then
-            echo 'The commercial-readiness agent modified a protected review-agent workflow.' >&2
+            echo "::error::The development agent modified a protected review-agent workflow."
             exit 1
           fi
-          if git diff "$START_SHA"...HEAD | grep -E '(^|[^A-Za-z])(NVIDIA_NIM_API_KEY|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})[[:space:]]*[:=][[:space:]]*[^$<{[:space:]]'; then
-            echo 'A credential-like literal was introduced.' >&2
+          if printf '%s\n' "$changed_files" | grep -E '(^|/)(\.trivyignore|\.semgrepignore|\.gitleaksignore)$'; then
+            echo "::error::The development agent introduced or changed a security-scan suppression file."
             exit 1
           fi
-          git status --short
+          if git diff --no-ext-diff "$start_sha" -- . \
+            | grep -E '(^|[^A-Za-z])(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|nvapi-[A-Za-z0-9_-]{20,})'; then
+            echo "::error::A credential-like literal was introduced."
+            exit 1
+          fi
+          git diff --check
 
       - name: Run the complete product verification contract
+        if: steps.gate.outputs.dispatch == 'true' && env.DRY_RUN != 'true'
         shell: bash
         env:
-          CI: 'true'
+          CI: "true"
         run: |
           set -euo pipefail
           npm ci
@@ -189,48 +361,70 @@ jobs:
           fi
           git diff --check
 
-      - name: Publish the verified exact head without exposing credentials to the agent
-        id: publish
+      - name: Revalidate queue ownership and open exactly one pull request
+        if: steps.gate.outputs.dispatch == 'true' && env.DRY_RUN != 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          HEAD_BRANCH: ${{ steps.target.outputs.head_branch }}
-          TARGET_MODE: ${{ steps.target.outputs.mode }}
-          TARGET_PR: ${{ steps.target.outputs.pr_number }}
         run: |
           set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          if git diff --cached --quiet; then
-            echo 'No verified source change was produced.'
+          cd "$GITHUB_WORKSPACE"
+          rm -f opencode.json
+          rm -rf .opencode-context
+
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "The agent made no verified source change; nothing to propose this hour." \
+              >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          if [ "$(
+            gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --limit 1 \
+              --json number \
+              --jq 'length'
+          )" -ne 0 ]; then
+            echo "A pull request appeared while the agent was running; refusing duplicate development." \
+              >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          title="ScopeWeave autonomous commercial-readiness increment"
+          body_file="$RUNNER_TEMP/pr-body.md"
+          if [ -f PR_MESSAGE.md ]; then
+            candidate_title="$(head -n 1 PR_MESSAGE.md | sed 's/^#\+ *//')"
+            [ -n "$candidate_title" ] && title="$candidate_title"
+            tail -n +2 PR_MESSAGE.md >"$body_file"
+            rm -f PR_MESSAGE.md
           else
-            git commit -m 'fix: advance verified commercial readiness'
+            cat >"$body_file" <<'BODY'
+          Bounded OpenCode/NVIDIA NIM product increment. See the focused diff,
+          executable verification, CHANGELOG.md, and doctoring record. Central PR
+          governance remains responsible for independent review, repair, exact-head
+          checks, approval, and merge.
+          BODY
           fi
-          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
-          git push origin "HEAD:${HEAD_BRANCH}"
-          git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
 
-          if [[ "$TARGET_MODE" == 'product_gap' ]]; then
-            pr_url="$(gh pr create --repo "$GITHUB_REPOSITORY" --base "$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.default_branch')" --head "$HEAD_BRANCH" --draft \
-              --title 'feat: advance the next commercial-readiness slice' \
-              --body 'Automated OpenCode/NVIDIA NIM development slice. Remains Draft until all exact-head required checks, independent reviews, coverage, documentation, and release gates pass.')"
-            TARGET_PR="${pr_url##*/}"
-          fi
-          printf 'pr_number=%s\n' "$TARGET_PR" >> "$GITHUB_OUTPUT"
-
-      - name: Request current-head review and arm protected auto-merge only for Ready work
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PR_NUMBER: ${{ steps.publish.outputs.pr_number }}
-        run: |
-          set -euo pipefail
-          test -n "$PR_NUMBER"
-          head_sha="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.headRefOid')"
-          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
-            --body "@coderabbitai review\n\nOpenCode/NVIDIA NIM completed the bounded implementation and local verification contract on exact head \`${head_sha}\`. Repository and organization-required checks and independent review remain authoritative."
-          is_draft="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
-          if [[ "$is_draft" == 'false' ]]; then
-            gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --squash --auto || true
-          fi
+          branch="nim-agent/product-dev-${GITHUB_RUN_ID}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add -A
+          git commit -m "$title"
+          git push \
+            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
+            "HEAD:refs/heads/${branch}"
+          pr_url="$(
+            gh pr create \
+              --repo "$GITHUB_REPOSITORY" \
+              --base "$DEFAULT_BRANCH" \
+              --head "$branch" \
+              --title "$title" \
+              --body-file "$body_file"
+          )"
+          {
+            echo "Opened bounded pull request: $pr_url"
+            echo "Central PR governance owns review, repair, revalidation, and merge."
+          } >>"$GITHUB_STEP_SUMMARY"
