@@ -1054,7 +1054,7 @@ app.post('/api/projects/:id/attachments', requireAuth, async (c) => {
     'INSERT INTO attachments(project_id,task_id,name,mime,size,job_id,status,created_by) VALUES(?,?,?,?,?,?,?,?)'
   ).run(p.id, taskId, file.name || 'document', file.type || '', file.size, job.jobId, job.status, uid));
   logAudit(p.org_id, uid, 'attachment.upload', 'project', p.id, { attachmentId: aid, name: file.name, taskId: taskId || null });
-  return c.json({ id: aid, jobId: job.jobId, status: job.status });
+  return c.json({ id: aid, status: job.status });
 });
 
 app.get('/api/projects/:id/attachments', requireAuth, async (c) => {

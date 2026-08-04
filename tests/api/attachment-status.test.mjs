@@ -29,7 +29,9 @@ async function upload(projectId, token, taskId) {
     body: form,
   });
   assert.equal(response.status, 200);
-  return response.json();
+  const payload = await response.json();
+  assert.equal(Object.hasOwn(payload, 'jobId'), false);
+  return payload;
 }
 
 test('attachment listing refreshes without internal identifier leakage', async () => {

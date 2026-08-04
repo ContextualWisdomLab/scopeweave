@@ -632,7 +632,8 @@ assert.equal(r.status, 404, 'non-member ai brief → 404');
   r = await app.request(`/api/projects/${proj.id}/attachments`, { method: 'POST', headers: auth, body: fd });
   assert.equal(r.status, 200, 'attachment upload');
   const att = await r.json();
-  assert.ok(att.id && att.jobId.startsWith('mockcf-'), 'mock job id');
+  assert.ok(att.id, 'attachment id');
+  assert.equal(Object.hasOwn(att, 'jobId'), false, 'internal job id omitted');
   assert.equal(att.status, 'SUCCEEDED', 'mock converts immediately');
   // 목록 + 작업 바인딩 + 업로더
   r = await req(`/api/projects/${proj.id}/attachments?taskId=s1`, { headers: auth });
