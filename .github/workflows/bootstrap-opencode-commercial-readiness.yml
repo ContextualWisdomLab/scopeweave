@@ -1,0 +1,182 @@
+name: Bootstrap OpenCode commercial readiness
+
+on:
+  push:
+    branches:
+      - feat/opencode-hourly-commercial-readiness-v2
+
+permissions: read-all
+
+concurrency:
+  group: bootstrap-opencode-commercial-readiness-v2
+  cancel-in-progress: true
+
+jobs:
+  finalize:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_BRANCH: feat/opencode-hourly-commercial-readiness-v2
+    steps:
+      - name: Check out the exact scheduler branch
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: feat/opencode-hourly-commercial-readiness-v2
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up the supported Node.js runtime
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Record the scheduler in the unreleased changelog
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('CHANGELOG.md')
+          text = path.read_text(encoding='utf-8')
+          entry = (
+              '- Added an hourly, fail-closed OpenCode commercial-readiness loop backed by '
+              '`NVIDIA_NIM_API_KEY`. It selects one trusted same-repository pull request or '
+              'bounded product gap, keeps the model credential out of publication and test '
+              'steps, runs the complete verification contract, blocks review-agent workflow '
+              'changes and credential-like diffs, opens new work as Draft, and delegates final '
+              'merging to protected squash auto-merge.\n'
+          )
+          if entry in text:
+              raise SystemExit(0)
+
+          unreleased = re.search(r'(?mi)^##\s+(?:\[Unreleased\]|Unreleased)\s*$', text)
+          if unreleased is None:
+              heading = '# Changelog\n'
+              if text.startswith(heading):
+                  text = heading + '\n## Unreleased\n\n### Added\n\n' + entry + '\n' + text[len(heading):].lstrip('\n')
+              else:
+                  text = '## Unreleased\n\n### Added\n\n' + entry + '\n' + text
+          else:
+              section_start = unreleased.end()
+              next_section = re.search(r'(?m)^##\s+', text[section_start:])
+              section_end = section_start + (next_section.start() if next_section else len(text[section_start:]))
+              section = text[section_start:section_end]
+              added = re.search(r'(?mi)^###\s+Added\s*$', section)
+              if added is None:
+                  replacement = '\n\n### Added\n\n' + entry + section
+              else:
+                  insert_at = added.end()
+                  replacement = section[:insert_at] + '\n\n' + entry + section[insert_at:].lstrip('\n')
+              text = text[:section_start] + replacement + text[section_end:]
+
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Validate workflow syntax and security contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          ruby -e "require 'yaml'; YAML.load_file('.github/workflows/hourly-opencode-commercial-readiness.yml'); puts 'YAML parsed'"
+          node --test tests/unit/hourly-opencode-commercial-readiness.test.mjs
+          python3 <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/hourly-opencode-commercial-readiness.yml').read_text(encoding='utf-8')
+          documentation = Path('docs/operations/hourly-opencode-commercial-readiness.md').read_text(encoding='utf-8')
+          changelog = Path('CHANGELOG.md').read_text(encoding='utf-8')
+
+          required = [
+              'cron: "17 * * * *"',
+              'NVIDIA_NIM_API_KEY',
+              'opencode run',
+              'persist-credentials: false',
+              'git merge-base --is-ancestor',
+              'npm run test:unit',
+              'npm run test:api',
+              'npm run coverage',
+              '--squash --auto',
+          ]
+          for value in required:
+              if value not in workflow:
+                  raise SystemExit(f'missing scheduler contract: {value}')
+          for forbidden in ('pull_request_target:', '--admin', 'gh pr ready', 'dismiss-review'):
+              if forbidden in workflow:
+                  raise SystemExit(f'forbidden scheduler behavior: {forbidden}')
+          if 'GitHub Copilot' not in documentation or 'does not invoke GitHub Copilot' not in documentation:
+              raise SystemExit('documentation does not state the provider boundary')
+          if 'NIST.SP.800-218' not in documentation or 'NIST.AI.600-1' not in documentation:
+              raise SystemExit('APA standards evidence is incomplete')
+          if 'hourly, fail-closed OpenCode' not in changelog:
+              raise SystemExit('CHANGELOG entry is missing')
+          PY
+          git diff --check
+
+      - name: Run the complete repository regression contract
+        shell: bash
+        env:
+          CI: 'true'
+        run: |
+          set -euo pipefail
+          npm ci
+          npm audit --omit=dev
+          npm run test:unit
+          npm run test:api
+          npm run coverage
+          node scripts/ci/static_coverage_evidence.mjs docstrings
+          git diff --check
+
+      - name: Publish an automation-authored exact head and remove the bootstrap
+        id: publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/bootstrap-opencode-commercial-readiness.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'ci: add hourly OpenCode commercial readiness'
+          git push origin "HEAD:${TARGET_BRANCH}"
+          printf 'head_sha=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Open the protected Draft pull request and request review
+        shell: bash
+        env:
+          HEAD_SHA: ${{ steps.publish.outputs.head_sha }}
+        run: |
+          set -euo pipefail
+          pr_number="$(gh pr list --repo "$GITHUB_REPOSITORY" --state open --head "$TARGET_BRANCH" --json number --jq '.[0].number // empty')"
+          if [[ -z "$pr_number" ]]; then
+            pr_url="$(gh pr create --repo "$GITHUB_REPOSITORY" --base develop --head "$TARGET_BRANCH" --draft \
+              --title 'ci: schedule commercial readiness with OpenCode and NVIDIA NIM' \
+              --body "## Purpose
+
+          Add the hourly commercial-readiness loop required for ScopeWeave. The scheduler uses OpenCode with \`NVIDIA_NIM_API_KEY\`, never GitHub Copilot, processes one trusted same-repository pull request or bounded product gap per run, executes the complete local verification contract, and delegates final decisions to existing protected review workflows.
+
+          ## Security boundary
+
+          - model and GitHub publication credentials are scoped to different steps;
+          - checkout credentials are not persisted into the model or test environment;
+          - raw model output is never logged or uploaded;
+          - credential-like diffs, history rewrites, self-modification, submodule changes, and review-agent workflow changes fail closed;
+          - remote head movement aborts publication;
+          - new product work remains Draft and Ready work uses protected squash auto-merge only.
+
+          ## Evidence
+
+          The branch includes a permanent workflow contract test, operator documentation with APA 7th standards references, and an Unreleased CHANGELOG entry. The bootstrap ran unit, API, coverage, docstring, dependency-audit, YAML, and whitespace gates before publishing exact head \`${HEAD_SHA}\`.
+
+          This pull request remains Draft until hosted exact-head security checks and independent review succeed. No existing CodeRabbit, Noema, OpenCode-review, Strix, or security-review key configuration is changed.")"
+            pr_number="${pr_url##*/}"
+          fi
+          gh pr comment "$pr_number" --repo "$GITHUB_REPOSITORY" --body "<!-- opencode-scheduler-bootstrap:${HEAD_SHA} -->
+          @coderabbitai review
+
+          The one-shot bootstrap verified the workflow contract and repository regressions on exact head \`${HEAD_SHA}\`. Hosted required checks and independent review remain authoritative."
