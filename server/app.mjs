@@ -1030,9 +1030,12 @@ app.get('/api/projects/:id/attachments', requireAuth, async (c) => {
     : db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.status, a.created_at AS createdAt, u.email AS uploadedBy
         FROM attachments a LEFT JOIN users u ON u.id = a.created_by
         WHERE a.project_id = ? ORDER BY a.id DESC`).all(p.id));
-  // PENDING 잡 상태 갱신(최선 노력)
-  await Promise.all(rows.map(async (r) => {
-    if (r.status === 'PENDING' || r.status === 'RUNNING') {
+  // PENDING 잡 상태 갱신(최선 노력). Concurrent, but bounded so a large
+  // attachment list cannot open unbounded simultaneous Clearfolio calls.
+  // ponytail: fixed chunk size 5; make it configurable only if rate limits bite.
+  const pending = rows.filter((r) => r.status === 'PENDING' || r.status === 'RUNNING');
+  for (let i = 0; i < pending.length; i += 5) {
+    await Promise.all(pending.slice(i, i + 5).map(async (r) => {
       try {
         const jid = db.prepare('SELECT job_id FROM attachments WHERE id = ?').get(r.id).job_id;
         const st = await jobStatus(p.org_id, uid, jid);
@@ -1041,8 +1044,8 @@ app.get('/api/projects/:id/attachments', requireAuth, async (c) => {
           r.status = st;
         }
       } catch { /* keep stale status */ }
-    }
-  }));
+    }));
+  }
   return c.json({ attachments: rows });
 });
 
