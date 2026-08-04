@@ -95,7 +95,7 @@ function readClock(clock) {
  * Add one refresh result to process-level operational counters.
  *
  * @param {object|undefined} metrics - Mutable process metric registry.
- * @param {{attempted:number,changed:number,failed:number,deferred:number}} counts - Refresh result.
+ * @param {{attempted:number,changed:number,failed:number,skipped:number,deferred:number}} counts - Refresh result.
  * @returns {void}
  */
 function addRefreshMetrics(metrics, counts) {
@@ -104,6 +104,7 @@ function addRefreshMetrics(metrics, counts) {
     attachmentStatusRefreshAttempted: 'attempted',
     attachmentStatusRefreshChanged: 'changed',
     attachmentStatusRefreshFailed: 'failed',
+    attachmentStatusRefreshSkipped: 'skipped',
     attachmentStatusRefreshDeferred: 'deferred',
   };
   for (const [metric, count] of Object.entries(fields)) {
@@ -165,9 +166,10 @@ async function withTimeout(lookup, controller, timeoutMs) {
  * Rows are updated in place so the caller can serialize the refreshed public
  * representation. A shared wall-clock deadline bounds the whole refresh pass;
  * workers clamp each lookup timeout to the remaining request budget and mark
- * unstarted rows as deferred after the deadline. Missing job identifiers and
- * downstream, validation, or persistence failures preserve stale status and
- * never fail the attachment-list response.
+ * unstarted rows as deferred after the deadline. Rows with missing conversion
+ * identifiers are counted as skipped data-quality cases. Downstream,
+ * validation, or persistence failures preserve stale status and never fail the
+ * attachment-list response.
  *
  * @param {Array<object>} rows - Attachment rows containing `id`, `status`, and `jobId`.
  * @param {object} options - Downstream functions, tenant identifiers, limits, and metrics.
@@ -181,7 +183,7 @@ async function withTimeout(lookup, controller, timeoutMs) {
  * @param {object} [options.metrics] - Mutable process metrics object.
  * @param {(event:{category:string}) => unknown} [options.onError] - Sanitized diagnostic callback.
  * @param {() => number} [options.now] - Injectable finite millisecond clock for deterministic tests.
- * @returns {Promise<{attempted:number,changed:number,failed:number,deferred:number}>} Structured counters.
+ * @returns {Promise<{attempted:number,changed:number,failed:number,skipped:number,deferred:number}>} Structured counters.
  */
 export async function refreshAttachmentStatuses(rows, options) {
   if (!Array.isArray(rows)) throw new TypeError('rows must be an array');
@@ -194,7 +196,7 @@ export async function refreshAttachmentStatuses(rows, options) {
     throw new TypeError('now must be a function');
   }
 
-  const counts = { attempted: 0, changed: 0, failed: 0, deferred: 0 };
+  const counts = { attempted: 0, changed: 0, failed: 0, skipped: 0, deferred: 0 };
   const pending = rows.filter((row) => row?.status === 'PENDING' || row?.status === 'RUNNING');
   const concurrency = normalizeAttachmentStatusConcurrency(options.concurrency);
   const timeoutMs = normalizeAttachmentStatusTimeoutMs(options.timeoutMs);
@@ -226,7 +228,7 @@ export async function refreshAttachmentStatuses(rows, options) {
 
       const jobId = typeof row.jobId === 'string' ? row.jobId.trim() : '';
       if (!jobId) {
-        counts.deferred += 1;
+        counts.skipped += 1;
         continue;
       }
 
