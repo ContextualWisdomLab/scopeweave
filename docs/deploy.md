@@ -41,7 +41,35 @@ persists the database in the `scopeweave-data` volume.
 | `ORCHESTRATOR_TOKEN` | with URL | orchestrator Bearer 토큰 (`CONTEXTUAL_ORCHESTRATOR_TOKEN`). |
 | `CLEARFOLIO_URL` | for 산출물 viewer | Clearfolio 문서 뷰어 백엔드 주소. Unset → built-in mock (dev/test). |
 | `CLEARFOLIO_HMAC_SECRET` | optional | Signs tenant-claim headers (`clearfolio.tenant-claims.hmac-secret`와 동일 값). |
+| `SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY` | no (default 8, maximum 32) | Maximum concurrent Clearfolio status lookups during one attachment-list request. Invalid values fall back to 8; values above 32 are clamped. |
+| `SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS` | no (default 3000, maximum 30000) | Hard caller-side timeout for each Clearfolio status lookup. The AbortSignal is also forwarded downstream. |
+| `SCOPEWEAVE_ATTACHMENT_STATUS_BUDGET_MS` | no (default 5000, maximum 60000) | Wall-clock budget for the entire best-effort refresh pass. Work not started before the deadline is deferred to a later list request. |
 | `SCOPEWEAVE_RATE_LIMIT_MAX` (+ `SCOPEWEAVE_RATE_LIMIT_WINDOW_MS`) | recommended | Per-IP fixed-window rate limiting (429 + Retry-After). Off when unset. |
+
+## Attachment status refresh operations
+
+The attachment-list API reads `job_id` in its initial project-scoped query and
+refreshes only `PENDING` or `RUNNING` rows through a bounded worker pool. It
+never performs one database lookup per row. A timeout, unsuccessful HTTP
+response, malformed response body, invalid status value, or persistence failure
+is isolated to that attachment: ScopeWeave preserves its previously stored
+status and still returns the rest of the list. Internal Clearfolio job
+identifiers are removed before JSON serialization.
+
+The process metrics endpoint exposes cumulative counters for operational
+monitoring:
+
+- `attachmentStatusRefreshAttempted`
+- `attachmentStatusRefreshChanged`
+- `attachmentStatusRefreshFailed`
+- `attachmentStatusRefreshDeferred`
+
+The Prometheus representation uses the corresponding
+`scopeweave_attachment_status_refresh_*` names. Alert on a sustained increase in
+`failed`, and compare `deferred` with list traffic before increasing concurrency
+or the request-wide budget. Raise limits conservatively because every worker
+consumes a downstream Clearfolio connection; horizontal ScopeWeave replicas
+multiply the aggregate concurrency.
 
 ## Data & scale path
 
