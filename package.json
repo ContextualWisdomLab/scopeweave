@@ -10,20 +10,21 @@
   },
   "scripts": {
     "check:python-docstrings": "node scripts/ci/static_coverage_evidence.mjs docstrings",
-    "coverage": "c8 --all --include=app.js --include=cloud-sync.js --include=scripts/ci/static_coverage_evidence.mjs --include=server/app.mjs --include=server/auth.mjs --reporter=json --reporter=json-summary npm run test:coverage",
+    "coverage": "npm run test:coverage",
     "server": "node server/server.mjs",
-    "test:api": "node tests/api/auth-secret.test.mjs && node tests/api/smoke.mjs && node tests/api/ratelimit.test.mjs",
-    "test:unit": "node tests/unit/analytics.test.mjs && node tests/unit/cpm.test.mjs && node tests/unit/baseline-compare.test.mjs && node tests/unit/workload.test.mjs && node tests/unit/cost-evm.test.mjs && node tests/unit/msproject.test.mjs && node tests/unit/auth-password.test.mjs && node tests/unit/editor-unsaved.test.mjs && node tests/unit/static-coverage-evidence.test.mjs && node tests/unit/dep-types.test.mjs && node tests/unit/weekly-report.test.mjs && node tests/unit/clearfolio.test.mjs && node tests/unit/sprint-stats.test.mjs && node tests/unit/burndown.test.mjs && node tests/unit/pm-analysis.test.mjs && node tests/unit/cloud-sync-security.test.mjs && node tests/config/hourly-opencode-commercial-readiness.test.mjs",
-    "test:coverage": "node tests/unit/msproject.test.mjs && node tests/unit/auth-password.test.mjs && node tests/unit/editor-unsaved.test.mjs && node tests/unit/static-coverage-evidence.test.mjs && npm run test:api",
+    "test:api": "node tests/api/auth-secret.test.mjs && node tests/api/smoke.mjs && node tests/api/ratelimit.test.mjs && node tests/api/attachment-status.test.mjs",
+    "test:unit": "node tests/unit/analytics.test.mjs && node tests/unit/cpm.test.mjs && node tests/unit/baseline-compare.test.mjs && node tests/unit/workload.test.mjs && node tests/unit/cost-evm.test.mjs && node tests/unit/msproject.test.mjs && node tests/unit/auth-password.test.mjs && node tests/unit/editor-unsaved.test.mjs && node tests/unit/static-coverage-evidence.test.mjs && node tests/unit/dep-types.test.mjs && node tests/unit/weekly-report.test.mjs && node tests/unit/clearfolio.test.mjs && node tests/unit/clearfolio-adapter-mock-hmac.test.mjs && node tests/unit/sprint-stats.test.mjs && node tests/unit/burndown.test.mjs && node tests/unit/pm-analysis.test.mjs && node tests/unit/cloud-sync-security.test.mjs && node tests/unit/attachment-status.test.mjs && node tests/unit/clearfolio-status-signal.test.mjs && node tests/unit/coverage-script-contract.test.mjs && node tests/config/hourly-opencode-commercial-readiness.test.mjs",
+    "test:coverage": "c8 --all --include=app.js --include=cloud-sync.js --include=scripts/ci/static_coverage_evidence.mjs --include=server/attachment_status.mjs --include=server/app.mjs --include=server/auth.mjs --include=server/clearfolio.mjs --reporter=json --reporter=json-summary npm run test:coverage:cases",
+    "test:coverage:cases": "node tests/unit/coverage-script-contract.test.mjs && node tests/unit/attachment-status.test.mjs && node tests/unit/clearfolio-status-signal.test.mjs && node tests/unit/clearfolio-adapter-mock-hmac.test.mjs && node tests/unit/msproject.test.mjs && node tests/unit/auth-password.test.mjs && node tests/unit/editor-unsaved.test.mjs && node tests/unit/static-coverage-evidence.test.mjs && npm run test:api",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:cloud": "playwright test tests/e2e/cloud.spec.js",
+    "test:e2e:cloud": "playwright install chromium && playwright test tests/e2e/cloud.spec.js",
     "test:fuzz": "playwright install chromium && playwright test tests/e2e/csv_formula_fuzz.spec.js",
     "fuzz": "node --test tests/fuzz/*.mjs"
   },
   "dependencies": {
     "@hono/node-server": "^2.0.12",
-    "hono": "^4.12.32"
+    "hono": "^4.13.0"
   },
   "devDependencies": {
     "@playwright/test": "1.61.1",
