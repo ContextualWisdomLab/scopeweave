@@ -1,0 +1,236 @@
+name: Hourly OpenCode commercial readiness
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+
+permissions: read-all
+
+concurrency:
+  group: hourly-opencode-commercial-readiness-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  commercial_readiness:
+    name: Review, repair, verify, and advance one protected slice
+    if: github.repository_owner == 'ContextualWisdomLab'
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    permissions:
+      actions: read
+      checks: read
+      contents: write
+      issues: write
+      pull-requests: write
+    env:
+      OPENCODE_NIM_MODEL: ${{ vars.OPENCODE_NIM_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct' }}
+      OPENCODE_VERSION: ${{ vars.OPENCODE_VERSION || 'latest' }}
+    steps:
+      - name: Check out the protected repository baseline
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up the supported Node.js runtime
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Select one trusted pull request or the next product slice
+        id: target
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p .opencode
+          default_branch="$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.default_branch')"
+          test -n "$default_branch"
+
+          gh pr list --repo "$GITHUB_REPOSITORY" --state open --limit 100 \
+            --json number,title,isDraft,headRefName,headRefOid,headRepositoryOwner,author,authorAssociation,updatedAt \
+            > .opencode/open-pull-requests.json
+
+          python3 <<'PY' > .opencode/selected-target.json
+          import json
+          from pathlib import Path
+
+          trusted_associations = {"OWNER", "MEMBER", "COLLABORATOR"}
+          pulls = json.loads(Path(".opencode/open-pull-requests.json").read_text(encoding="utf-8"))
+          trusted = [
+              pull
+              for pull in pulls
+              if pull.get("authorAssociation") in trusted_associations
+              and (pull.get("headRepositoryOwner") or {}).get("login") == "ContextualWisdomLab"
+          ]
+          trusted.sort(key=lambda pull: (pull.get("isDraft", False), pull.get("updatedAt", ""), pull["number"]))
+          selected = trusted[0] if trusted else None
+          Path(".opencode/selected-target.json").write_text(
+              json.dumps({"selected": selected}, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps({"selected": selected}, ensure_ascii=False))
+          PY
+
+          pr_number="$(jq -r '.selected.number // empty' .opencode/selected-target.json)"
+          if [[ -n "$pr_number" ]]; then
+            head_branch="$(jq -r '.selected.headRefName' .opencode/selected-target.json)"
+            head_sha="$(jq -r '.selected.headRefOid' .opencode/selected-target.json)"
+            gh pr view "$pr_number" --repo "$GITHUB_REPOSITORY" \
+              --json number,title,body,isDraft,mergeStateStatus,reviewDecision,reviews,comments,statusCheckRollup,files \
+              > .opencode/pull-request-context.json
+            gh pr checkout "$pr_number" --repo "$GITHUB_REPOSITORY" --branch "$head_branch"
+            test "$(git rev-parse HEAD)" = "$head_sha"
+            printf 'mode=pull_request\n' >> "$GITHUB_OUTPUT"
+            printf 'pr_number=%s\n' "$pr_number" >> "$GITHUB_OUTPUT"
+            printf 'head_branch=%s\n' "$head_branch" >> "$GITHUB_OUTPUT"
+          else
+            branch_name="opencode/commercial-readiness-${GITHUB_RUN_ID}"
+            git checkout -b "$branch_name" "origin/${default_branch}"
+            gh issue list --repo "$GITHUB_REPOSITORY" --state open --limit 100 \
+              --json number,title,body,labels,createdAt,updatedAt \
+              > .opencode/open-issues.json
+            printf 'mode=product_gap\n' >> "$GITHUB_OUTPUT"
+            printf 'pr_number=\n' >> "$GITHUB_OUTPUT"
+            printf 'head_branch=%s\n' "$branch_name" >> "$GITHUB_OUTPUT"
+          fi
+          printf 'start_sha=%s\n' "$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build the bounded commercial-readiness assignment
+        shell: bash
+        env:
+          TARGET_MODE: ${{ steps.target.outputs.mode }}
+          TARGET_PR: ${{ steps.target.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          cat > .opencode/assignment.md <<'EOF'
+          You are the implementation agent for ContextualWisdomLab/scopeweave. Work autonomously on exactly the checked-out target and stop before 45 minutes.
+
+          Operating order:
+          1. Read AGENTS.md, the selected PR or issue context under .opencode/, current source, tests, CHANGELOG.md, and documentation.
+          2. For an existing PR, inspect every review comment and failing or pending check represented in the captured context. Reproduce each actionable failure before changing production code. Resolve comments in code rather than explaining them away.
+          3. For an empty PR queue, select one bounded buyer-visible gap from the captured open issues. Do not invent a broad platform rewrite. Start with a failing realistic test, then implement the smallest complete vertical slice.
+          4. Follow strict red-green-refactor TDD. Never weaken, skip, delete, or mark a meaningful test expected-to-fail merely to obtain green output.
+          5. Preserve standalone ScopeWeave operation and framework-independent module seams suitable for ContextualWisdomLab/.github, naruon, or a future MSA adapter.
+          6. Every new function, exported constant, security invariant, and non-obvious branch requires beginner-readable JSDoc. New or materially changed production modules require 100% statement, branch, function, and line coverage.
+          7. Use multi-word snake_case for every new database table, column, index, trigger, constraint, and migration object.
+          8. Add realistic API, concurrency, tenant-boundary, failure, privacy, and recovery tests appropriate to the feature. LLM-dependent tests must use NVIDIA_NIM_API_KEY through the repository's established contextual-orchestrator boundary; do not hard-code credentials or call GitHub Copilot.
+          9. Ground design choices in current authoritative standards or peer-reviewed research, add APA 7th references to the relevant documentation, and update CHANGELOG.md. Do not fabricate citations.
+          10. Do not edit, replace, copy, or weaken the existing CodeRabbit, Noema, OpenCode-review, Strix, security-review, or organization-central workflow/key system. Do not modify branch protection or use administrator bypass.
+          11. Run npm ci, focused tests, complete unit and API suites, coverage, docstring evidence, cloud E2E where the changed behavior is user-visible, security checks available locally, and git diff --check. Fix every failure.
+          12. Commit coherent changes locally with conventional commit messages. Do not push, merge, mark a PR ready, or create a release; the trusted publication step owns those operations.
+
+          Never print, persist, summarize, or place credentials in logs, commits, prompts, test fixtures, URLs, issue comments, audit data, or generated artifacts.
+          EOF
+          printf '\nTarget mode: %s\nTarget PR: %s\n' "$TARGET_MODE" "${TARGET_PR:-none}" >> .opencode/assignment.md
+
+      - name: Install the configured OpenCode release
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$OPENCODE_VERSION" != "latest" && ! "$OPENCODE_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo 'OPENCODE_VERSION must be latest or an explicit semantic version.' >&2
+            exit 1
+          fi
+          npm install --global --ignore-scripts "opencode-ai@${OPENCODE_VERSION}"
+          resolved_version="$(opencode --version)"
+          test -n "$resolved_version"
+          printf 'OpenCode version: `%s`\n' "$resolved_version" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Execute OpenCode with NVIDIA NIM
+        shell: bash
+        env:
+          NVIDIA_NIM_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
+          OPENCODE_CONFIG_CONTENT: >-
+            {"$schema":"https://opencode.ai/config.json","model":"nvidia_nim/${{ env.OPENCODE_NIM_MODEL }}","provider":{"nvidia_nim":{"npm":"@ai-sdk/openai-compatible","name":"NVIDIA NIM","options":{"baseURL":"https://integrate.api.nvidia.com/v1","apiKey":"{env:NVIDIA_NIM_API_KEY}"},"models":{"${{ env.OPENCODE_NIM_MODEL }}":{"name":"NVIDIA NIM commercial-readiness model"}}}},"permission":{"bash":"allow","edit":"allow","write":"allow","read":"allow","glob":"allow","grep":"allow"}}
+        run: |
+          set -euo pipefail
+          test -n "$NVIDIA_NIM_API_KEY"
+          opencode run \
+            --model "nvidia_nim/${OPENCODE_NIM_MODEL}" \
+            --format json \
+            "$(cat .opencode/assignment.md)" \
+            | tee "${RUNNER_TEMP}/opencode-commercial-readiness.jsonl"
+
+      - name: Enforce repository and review-agent safety boundaries
+        shell: bash
+        env:
+          START_SHA: ${{ steps.target.outputs.start_sha }}
+        run: |
+          set -euo pipefail
+          git diff --check "$START_SHA"...HEAD
+          changed_files="$(git diff --name-only "$START_SHA"...HEAD; git diff --name-only)"
+          if printf '%s\n' "$changed_files" | grep -E '^\.github/workflows/.*(coderabbit|noema|opencode-review|review-agent|strix|security-review).*\.ya?ml$'; then
+            echo 'The commercial-readiness agent modified a protected review-agent workflow.' >&2
+            exit 1
+          fi
+          if git diff "$START_SHA"...HEAD | grep -E '(^|[^A-Za-z])(NVIDIA_NIM_API_KEY|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})[[:space:]]*[:=][[:space:]]*[^$<{[:space:]]'; then
+            echo 'A credential-like literal was introduced.' >&2
+            exit 1
+          fi
+          git status --short
+
+      - name: Run the complete product verification contract
+        shell: bash
+        env:
+          CI: 'true'
+        run: |
+          set -euo pipefail
+          npm ci
+          npm run test:unit
+          npm run test:api
+          npm run coverage
+          node scripts/ci/static_coverage_evidence.mjs docstrings
+          if npm run | grep -q 'test:e2e:cloud'; then
+            npm run test:e2e:cloud
+          fi
+          git diff --check
+
+      - name: Publish the verified exact head without exposing credentials to the agent
+        id: publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ steps.target.outputs.head_branch }}
+          TARGET_MODE: ${{ steps.target.outputs.mode }}
+          TARGET_PR: ${{ steps.target.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            echo 'No verified source change was produced.'
+          else
+            git commit -m 'fix: advance verified commercial readiness'
+          fi
+          git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin "HEAD:${HEAD_BRANCH}"
+          git remote set-url origin "https://github.com/${GITHUB_REPOSITORY}.git"
+
+          if [[ "$TARGET_MODE" == 'product_gap' ]]; then
+            pr_url="$(gh pr create --repo "$GITHUB_REPOSITORY" --base "$(gh api "repos/${GITHUB_REPOSITORY}" --jq '.default_branch')" --head "$HEAD_BRANCH" --draft \
+              --title 'feat: advance the next commercial-readiness slice' \
+              --body 'Automated OpenCode/NVIDIA NIM development slice. Remains Draft until all exact-head required checks, independent reviews, coverage, documentation, and release gates pass.')"
+            TARGET_PR="${pr_url##*/}"
+          fi
+          printf 'pr_number=%s\n' "$TARGET_PR" >> "$GITHUB_OUTPUT"
+
+      - name: Request current-head review and arm protected auto-merge only for Ready work
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ steps.publish.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          test -n "$PR_NUMBER"
+          head_sha="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json headRefOid --jq '.headRefOid')"
+          gh pr comment "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+            --body "@coderabbitai review\n\nOpenCode/NVIDIA NIM completed the bounded implementation and local verification contract on exact head \`${head_sha}\`. Repository and organization-required checks and independent review remain authoritative."
+          is_draft="$(gh pr view "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
+          if [[ "$is_draft" == 'false' ]]; then
+            gh pr merge "$PR_NUMBER" --repo "$GITHUB_REPOSITORY" --squash --auto || true
+          fi
