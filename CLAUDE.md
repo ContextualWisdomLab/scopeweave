@@ -24,7 +24,7 @@ CPM critical path, and a weekly Gantt overlay. Two modes:
 # Standalone client (no install needed)
 python3 -m http.server 4173          # open http://127.0.0.1:4173
 
-# Cloud server (Node ^22.13.0 || >=23.4.0 — uses node:sqlite; matches package.json engines)
+# Cloud server (Node >= 22 — uses node:sqlite)
 npm install
 npm run server                       # API + static client on :8787
 
@@ -40,11 +40,7 @@ python3 -m pytest tests/config       # workflow-ownership / governance checks
 node tests/unit/cpm.test.mjs
 npx playwright test tests/e2e/scopeweave.spec.js
 
-# Full stack via Docker (needs SCOPEWEAVE_JWT_SECRET — persist across restarts)
-# Generate once and store outside git (e.g. shell profile / secrets manager).
-# Re-running openssl each start mints a new key and invalidates existing JWTs.
-: "${SCOPEWEAVE_JWT_SECRET:?Set a persistent ≥32-char secret before starting}"
-# First-time only: export SCOPEWEAVE_JWT_SECRET="$(openssl rand -base64 32)"
+# Full stack via Docker (needs SCOPEWEAVE_JWT_SECRET in prod)
 docker compose up --build            # Dockerfile.server → :8787
 ```
 
