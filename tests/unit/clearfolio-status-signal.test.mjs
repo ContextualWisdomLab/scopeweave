@@ -6,10 +6,12 @@ const originalFetch = globalThis.fetch;
 let observedUrl;
 let observedOptions;
 let downstreamResponse;
+let downstreamError;
 
 globalThis.fetch = async (url, options = {}) => {
   observedUrl = String(url);
   observedOptions = options;
+  if (downstreamError) throw downstreamError;
   return downstreamResponse;
 };
 
@@ -18,7 +20,13 @@ const { artifactUrl, jobStatus, submitJob } = await import(
 );
 
 function setResponse({ ok = true, status = 200, json }) {
+  downstreamError = undefined;
   downstreamResponse = { ok, status, json };
+}
+
+function setNetworkError(error) {
+  downstreamResponse = undefined;
+  downstreamError = error;
 }
 
 async function expectSanitizedFailure(operation, expectedMessage, forbiddenPattern) {
@@ -76,12 +84,19 @@ test('jobStatus enforces endpoint, signal, HTTP, and payload contracts', async (
   }
 });
 
-test('submitJob rejects downstream text and malformed successful responses', async () => {
+test('submitJob rejects transport details and malformed successful responses', async () => {
   const document = {
     name: 'status.txt',
     mime: 'text/plain',
     bytes: Buffer.from('status'),
   };
+
+  setNetworkError(new Error('connect ECONNREFUSED https://private-clearfolio.internal'));
+  await expectSanitizedFailure(
+    () => submitJob(7, 9, document),
+    'clearfolio submit unavailable',
+    /private-clearfolio|ECONNREFUSED/,
+  );
 
   setResponse({
     ok: false,
@@ -134,7 +149,14 @@ test('submitJob rejects downstream text and malformed successful responses', asy
   });
 });
 
-test('artifactUrl validates links and never exposes downstream error text', async () => {
+test('artifactUrl validates links and never exposes transport or response text', async () => {
+  setNetworkError(new Error('getaddrinfo ENOTFOUND private-clearfolio.internal'));
+  await expectSanitizedFailure(
+    () => artifactUrl(4, 5, 'job-1'),
+    'clearfolio artifact-link unavailable',
+    /private-clearfolio|ENOTFOUND/,
+  );
+
   setResponse({
     ok: false,
     status: 502,
@@ -164,6 +186,7 @@ test('artifactUrl validates links and never exposes downstream error text', asyn
     { label: 'empty link', json: async () => ({ artifactUrl: '' }) },
     { label: 'malformed URL', json: async () => ({ artifactUrl: 'http://[' }) },
     { label: 'unsupported URL scheme', json: async () => ({ artifactUrl: 'javascript:alert(1)' }) },
+    { label: 'HTTPS downgrade', json: async () => ({ artifactUrl: 'http://cdn.example/file.pdf' }) },
   ];
 
   for (const malformed of malformedPayloads) {
@@ -196,4 +219,20 @@ test('artifactUrl validates links and never exposes downstream error text', asyn
     await artifactUrl(4, 5, 'job-1'),
     'https://clearfolio.example/viewer/job-1?artifactToken=token%20value',
   );
+});
+
+test('artifactUrl permits HTTP only when the configured Clearfolio endpoint is HTTP', async () => {
+  process.env.CLEARFOLIO_URL = 'http://clearfolio.local';
+  try {
+    const { artifactUrl: httpArtifactUrl } = await import(
+      '../../server/clearfolio.mjs?http-artifact-contract-test=1'
+    );
+    setResponse({ json: async () => ({ artifactUrl: 'http://cdn.local/file.pdf' }) });
+    assert.equal(
+      await httpArtifactUrl(4, 5, 'job-http'),
+      'http://cdn.local/file.pdf',
+    );
+  } finally {
+    process.env.CLEARFOLIO_URL = 'https://clearfolio.example';
+  }
 });
