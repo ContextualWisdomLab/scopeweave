@@ -154,7 +154,7 @@ if (RL_MAX > 0) {
 
 app.post('/api/auth/signup', async (c) => {
   const { email, password, name } = await c.req.json().catch(() => ({}));
-  if (!email || !password || String(password).length < 8) {
+  if (!email || typeof password !== 'string' || password.length < 8) {
     return c.json({ error: 'email and password (min 8 chars) required' }, 400);
   }
   if (db.prepare('SELECT id FROM users WHERE email = ?').get(email)) {
@@ -178,7 +178,9 @@ app.post('/api/auth/signup', async (c) => {
 app.post('/api/auth/login', async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}));
   const u = db.prepare('SELECT * FROM users WHERE email = ?').get(email || '');
-  if (!u || !verifyPassword(password || '', u.password_hash)) {
+  // Pass password through only when it is a string — verifyPassword rejects
+  // non-strings (objects/arrays) so they never match an empty-password hash.
+  if (!u || typeof password !== 'string' || !verifyPassword(password, u.password_hash)) {
     return c.json({ error: 'invalid credentials' }, 401);
   }
   return c.json({ token: signToken({ sub: u.id, email: u.email, tv: u.token_version }) });
@@ -649,11 +651,13 @@ app.get('/api/orgs/:id/audit', requireAuth, (c) => {
   ).all(orgId, limit);
   const events = rows.map((r) => ({ ...r, meta: r.meta ? JSON.parse(r.meta) : null }));
   if (c.req.query('format') === 'csv') {
-    // Compliance deliverable. Formula-injection-safe: values starting with
-    // = + - @ | are prefixed with ' so spreadsheets treat them as text.
+    // Compliance deliverable. Formula-injection-safe: values that (after optional
+    // leading whitespace) start with = + - @ | are prefixed with ' so
+    // spreadsheets treat them as text. Leading whitespace alone used to bypass
+    // /^[=+\-@|]/ — match the client-side CSV_FORMULA_PREFIX_PATTERN.
     const csvCell = (v) => {
       let s = v == null ? '' : String(v);
-      if (/^[=+\-@|]/.test(s)) s = `'${s}`;
+      if (/^\s*[=+\-@|]/.test(s)) s = `'${s}`;
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
     const header = ['id', 'createdAt', 'actorEmail', 'action', 'targetType', 'targetId', 'meta'];
@@ -1308,9 +1312,11 @@ app.post('/api/auth/logout-all', requireAuth, (c) => {
 app.post('/api/auth/change-password', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const { oldPassword, newPassword } = await c.req.json().catch(() => ({}));
-  if (!newPassword || String(newPassword).length < 8) return c.json({ error: 'new password (min 8) required' }, 400);
+  if (typeof newPassword !== 'string' || newPassword.length < 8) return c.json({ error: 'new password (min 8) required' }, 400);
   const u = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(uid);
-  if (!u || !verifyPassword(oldPassword || '', u.password_hash)) return c.json({ error: 'current password incorrect' }, 403);
+  if (!u || typeof oldPassword !== 'string' || !verifyPassword(oldPassword, u.password_hash)) {
+    return c.json({ error: 'current password incorrect' }, 403);
+  }
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(newPassword), uid);
   return c.json({ ok: true });
 });
@@ -1321,7 +1327,9 @@ app.delete('/api/account', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const { password } = await c.req.json().catch(() => ({}));
   const u = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(uid);
-  if (!u || !verifyPassword(password || '', u.password_hash)) return c.json({ error: 'password required to delete account' }, 403);
+  if (!u || typeof password !== 'string' || !verifyPassword(password, u.password_hash)) {
+    return c.json({ error: 'password required to delete account' }, 403);
+  }
   db.exec('BEGIN');
   try {
     db.prepare('DELETE FROM orgs WHERE owner_id = ?').run(uid); // cascades projects/members/webhooks/invites/audit
