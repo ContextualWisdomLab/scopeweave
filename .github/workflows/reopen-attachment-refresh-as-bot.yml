@@ -1,9 +1,9 @@
 name: Reopen verified attachment refresh as bot PR
 
 on:
-  push:
-    branches:
-      - automation/reopen-420-as-bot
+  pull_request:
+    branches: [develop]
+    types: [opened, ready_for_review]
 
 permissions: read-all
 
@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   reopen:
-    if: github.actor != 'github-actions[bot]'
+    if: github.event.pull_request.head.ref == 'automation/reopen-420-as-bot' && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
