@@ -22,6 +22,14 @@ const ATTACHMENT_STATUS_VALUES = new Set(['PENDING', 'RUNNING', 'SUCCEEDED', 'FA
 /** Timeout error name used only for sanitized failure categorization. */
 const ATTACHMENT_STATUS_TIMEOUT_ERROR = 'AttachmentStatusTimeoutError';
 
+/** Fixed low-cardinality failure categories safe for operational metrics. */
+const ATTACHMENT_STATUS_FAILURE_METRICS = Object.freeze({
+  timeout: 'attachmentStatusRefreshTimeoutFailures',
+  downstream_lookup: 'attachmentStatusRefreshDownstreamLookupFailures',
+  invalid_status: 'attachmentStatusRefreshInvalidStatusFailures',
+  status_persistence: 'attachmentStatusRefreshPersistenceFailures',
+});
+
 /**
  * Normalize a positive integer while applying a conservative upper bound.
  *
@@ -94,11 +102,16 @@ function readClock(clock) {
 /**
  * Add one refresh result to process-level operational counters.
  *
+ * Aggregate counters preserve the public refresh result contract. Fixed
+ * category counters provide operator diagnostics without job identifiers,
+ * downstream text, URLs, or other high-cardinality labels.
+ *
  * @param {object|undefined} metrics - Mutable process metric registry.
  * @param {{attempted:number,changed:number,failed:number,skipped:number,deferred:number}} counts - Refresh result.
+ * @param {Record<string,number>} failureCounts - Sanitized fixed-category failures.
  * @returns {void}
  */
-function addRefreshMetrics(metrics, counts) {
+function addRefreshMetrics(metrics, counts, failureCounts) {
   if (!metrics) return;
   const fields = {
     attachmentStatusRefreshAttempted: 'attempted',
@@ -109,6 +122,9 @@ function addRefreshMetrics(metrics, counts) {
   };
   for (const [metric, count] of Object.entries(fields)) {
     metrics[metric] = (Number(metrics[metric]) || 0) + counts[count];
+  }
+  for (const [category, metric] of Object.entries(ATTACHMENT_STATUS_FAILURE_METRICS)) {
+    metrics[metric] = (Number(metrics[metric]) || 0) + failureCounts[category];
   }
 }
 
@@ -197,6 +213,9 @@ export async function refreshAttachmentStatuses(rows, options) {
   }
 
   const counts = { attempted: 0, changed: 0, failed: 0, skipped: 0, deferred: 0 };
+  const failureCounts = Object.fromEntries(
+    Object.keys(ATTACHMENT_STATUS_FAILURE_METRICS).map((category) => [category, 0]),
+  );
   const pending = rows.filter((row) => row?.status === 'PENDING' || row?.status === 'RUNNING');
   const concurrency = normalizeAttachmentStatusConcurrency(options.concurrency);
   const timeoutMs = normalizeAttachmentStatusTimeoutMs(options.timeoutMs);
@@ -265,6 +284,7 @@ export async function refreshAttachmentStatuses(rows, options) {
         const category = error?.name === ATTACHMENT_STATUS_TIMEOUT_ERROR
           ? 'timeout'
           : failureCategory;
+        failureCounts[category] += 1;
         reportRefreshFailure(options.onError, category);
       }
     }
@@ -272,6 +292,6 @@ export async function refreshAttachmentStatuses(rows, options) {
 
   const workerCount = Math.min(concurrency, pending.length);
   await Promise.all(Array.from({ length: workerCount }, () => worker()));
-  addRefreshMetrics(options.metrics, counts);
+  addRefreshMetrics(options.metrics, counts, failureCounts);
   return counts;
 }
