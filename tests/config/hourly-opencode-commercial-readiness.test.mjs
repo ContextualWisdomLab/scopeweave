@@ -104,7 +104,7 @@ assert.match(
 );
 assert.match(
   workflow,
-  /Do not merge, publish, release, push, or commit/,
+  /Do not merge, publish, release,\s+push, or commit/,
   'the coding agent cannot own publication or merge decisions',
 );
 assert.match(
