@@ -6,35 +6,20 @@ const packageJson = JSON.parse(
 );
 const scripts = packageJson.scripts;
 
-assert.equal(
-  scripts.coverage,
-  'npm run test:coverage',
-  'the public coverage command delegates to the canonical coverage producer',
-);
+assert.equal(scripts.coverage, 'npm run test:coverage');
 assert.match(
   scripts['test:coverage'],
   /\bc8\b.*--reporter=json.*npm run test:coverage:cases/,
-  'test:coverage must write Istanbul JSON before running the coverage cases',
 );
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/attachment_status\.mjs/,
-  'the bounded refresh module must be instrumented',
-);
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/clearfolio\.mjs/,
-  'the abortable Clearfolio adapter must be instrumented',
-);
+assert.match(scripts['test:coverage'], /--include=server\/attachment_status\.mjs/);
+assert.match(scripts['test:coverage'], /--include=server\/clearfolio\.mjs/);
 assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
-  'the Clearfolio timeout and HTTP regression must execute under c8',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
   /npm run (?:coverage|test:coverage)(?:\s|$)/,
-  'coverage cases must not recursively invoke a coverage wrapper',
 );
 
 console.log('✓ coverage script contract tests passed');

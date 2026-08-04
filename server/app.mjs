@@ -8,7 +8,7 @@ import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
-import { normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
+import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
@@ -1014,6 +1014,21 @@ const ATTACH_STATUS_CONCURRENCY = normalizeAttachmentStatusConcurrency(
 const ATTACH_STATUS_TIMEOUT_MS = normalizeAttachmentStatusTimeoutMs(
   process.env.SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS,
 );
+const ATTACH_STATUS_BUDGET_MS = normalizeAttachmentStatusBudgetMs(
+  process.env.SCOPEWEAVE_ATTACHMENT_STATUS_BUDGET_MS,
+);
+const ATTACHMENT_LIST_COLUMNS = `a.id, a.task_id AS taskId, a.name, a.mime, a.size,
+  a.job_id AS jobId, a.status, a.created_at AS createdAt, u.email AS uploadedBy`;
+const ATTACHMENT_LIST_FROM =
+  'FROM attachments a LEFT JOIN users u ON u.id = a.created_by';
+const listAttachmentsStatement = db.prepare(
+  `SELECT ${ATTACHMENT_LIST_COLUMNS} ${ATTACHMENT_LIST_FROM}
+   WHERE a.project_id = ? ORDER BY a.id DESC`,
+);
+const listTaskAttachmentsStatement = db.prepare(
+  `SELECT ${ATTACHMENT_LIST_COLUMNS} ${ATTACHMENT_LIST_FROM}
+   WHERE a.project_id = ? AND a.task_id = ? ORDER BY a.id DESC`,
+);
 const updateAttachmentStatusStatement = db.prepare(
   'UPDATE attachments SET status = ? WHERE id = ?',
 );
@@ -1047,26 +1062,23 @@ app.get('/api/projects/:id/attachments', requireAuth, async (c) => {
   const p = projectAccess(uid, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
 
-const taskId = c.req.query('taskId');
-const rows = (taskId
-  ? db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.job_id AS jobId, a.status, a.created_at AS createdAt, u.email AS uploadedBy
-      FROM attachments a LEFT JOIN users u ON u.id = a.created_by
-      WHERE a.project_id = ? AND a.task_id = ? ORDER BY a.id DESC`).all(p.id, taskId)
-  : db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.job_id AS jobId, a.status, a.created_at AS createdAt, u.email AS uploadedBy
-      FROM attachments a LEFT JOIN users u ON u.id = a.created_by
-      WHERE a.project_id = ? ORDER BY a.id DESC`).all(p.id));
-await refreshAttachmentStatuses(rows, {
-  orgId: p.org_id,
-  userId: uid,
-  jobStatus,
-  updateStatus: (status, attachmentId) =>
-    updateAttachmentStatusStatement.run(status, attachmentId),
-  concurrency: ATTACH_STATUS_CONCURRENCY,
-  timeoutMs: ATTACH_STATUS_TIMEOUT_MS,
-  metrics,
-});
-const attachments = rows.map(({ jobId: _internalJobId, ...publicRow }) => publicRow);
-return c.json({ attachments });
+  const taskId = c.req.query('taskId');
+  const rows = taskId
+    ? listTaskAttachmentsStatement.all(p.id, taskId)
+    : listAttachmentsStatement.all(p.id);
+  await refreshAttachmentStatuses(rows, {
+    orgId: p.org_id,
+    userId: uid,
+    jobStatus,
+    updateStatus: (status, attachmentId) =>
+      updateAttachmentStatusStatement.run(status, attachmentId),
+    concurrency: ATTACH_STATUS_CONCURRENCY,
+    timeoutMs: ATTACH_STATUS_TIMEOUT_MS,
+    budgetMs: ATTACH_STATUS_BUDGET_MS,
+    metrics,
+  });
+  const attachments = rows.map(({ jobId: _internalJobId, ...publicRow }) => publicRow);
+  return c.json({ attachments });
 });
 
 // 열람: 서명 아티팩트 URL로 302. 새 탭 열기용으로 ?token=도 허용(ics/stream 패턴).
