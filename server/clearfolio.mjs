@@ -128,12 +128,10 @@ export async function submitJob(orgId, userId, { name, mime, bytes }) {
   }
   if (!res.ok) throw new Error(`clearfolio submit failed (${res.status})`);
   const data = await res.json().catch(() => null);
-  const status = isJsonRecord(data) && data.status === undefined
-    ? 'PENDING'
-    : data?.status;
+  if (!isJsonRecord(data)) throw new Error('clearfolio submit response invalid');
+  const status = data.status === undefined ? 'PENDING' : data.status;
   if (
-    !isJsonRecord(data)
-    || typeof data.jobId !== 'string'
+    typeof data.jobId !== 'string'
     || data.jobId.trim().length === 0
     || !isClearfolioJobStatus(status)
   ) {
