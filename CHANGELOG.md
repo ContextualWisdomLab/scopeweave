@@ -32,9 +32,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added regression coverage that prevents array-valued passwords from being
   coerced into valid credentials.
 - Updated Hono runtime dependencies to patched supported releases.
-- Sanitized Clearfolio submission and artifact-link failures so network details
-  and downstream response text cannot reach browser error payloads, and
-  rejected malformed, unsupported-scheme, or HTTPS-downgrade artifact links.
+- Sanitized Clearfolio submission, status, and artifact-link transport failures
+  so network details and downstream response text cannot reach browser or
+  diagnostic payloads; rejected unknown or whitespace-padded conversion states
+  and malformed, unsupported-scheme, or HTTPS-downgrade artifact links.
 
 ### Changed
 
