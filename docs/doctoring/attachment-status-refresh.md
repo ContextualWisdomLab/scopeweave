@@ -26,7 +26,8 @@ The implementation:
 7. preserves the previously stored status after timeout, transport, HTTP,
    malformed-response, invalid-state, diagnostic, or persistence failure;
 8. persists only changed states;
-9. strips internal conversion identifiers before serialization;
+9. strips internal conversion identifiers from both upload and list JSON before
+   they cross the browser-facing API boundary;
 10. publishes attempted, changed, failed, skipped, and deferred counters without
     sensitive downstream payloads or identifiers;
 11. publishes fixed timeout, downstream-lookup, invalid-status, and persistence
@@ -84,8 +85,10 @@ Regression tests must prove:
 - skipped and deferred metrics remain distinct in JSON and Prometheus output;
 - the four failure-category counters sum to the aggregate failure count and
   never contain raw errors, identifiers, URLs, or downstream response text;
-- downstream response text, network details, and internal conversion identifiers
-  never appear in client JSON;
+- upload responses and attachment-list responses omit the internal Clearfolio
+  conversion identifier while retaining the public attachment identifier and
+  current status;
+- downstream response text and network details never appear in client JSON;
 - the caller `AbortSignal` reaches Clearfolio;
 - submission, status, and artifact-link non-success responses expose only fixed
   operation-level errors;
