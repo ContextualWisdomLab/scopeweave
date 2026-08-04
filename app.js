@@ -2381,10 +2381,22 @@ function createGanttMetaTable() {
   return table;
 }
 
+// ⚡ Bolt: Cache templates for Gantt chart rows/cells to avoid O(N) document.createElement overhead
+let ganttRowTemplate = null;
+let ganttCellTemplate = null;
+let ganttTrackTemplate = null;
+
 function createGanttChartTable(weeks, weekdays, totalWidth) {
+  if (!ganttRowTemplate) {
+    ganttRowTemplate = document.createElement('tr');
+    ganttCellTemplate = document.createElement('td');
+    ganttTrackTemplate = document.createElement('div');
+    ganttTrackTemplate.className = 'gantt-day-track';
+  }
+
   const table = document.createElement('table');
   const thead = document.createElement('thead');
-  const weekRow = document.createElement('tr');
+  const weekRow = ganttRowTemplate.cloneNode(false);
   weeks.forEach((week) => {
     const th = document.createElement('th');
     th.className = 'gantt-week-header';
@@ -2393,7 +2405,7 @@ function createGanttChartTable(weeks, weekdays, totalWidth) {
     weekRow.appendChild(th);
   });
 
-  const dayRow = document.createElement('tr');
+  const dayRow = ganttRowTemplate.cloneNode(false);
   weekdays.forEach((day) => {
     const th = document.createElement('th');
     th.className = 'gantt-day-cell';
@@ -2404,12 +2416,11 @@ function createGanttChartTable(weeks, weekdays, totalWidth) {
 
   const tbody = document.createElement('tbody');
   state.tasks.forEach((task) => {
-    const row = document.createElement('tr');
-    const cell = document.createElement('td');
+    const row = ganttRowTemplate.cloneNode(false);
+    const cell = ganttCellTemplate.cloneNode(false);
     cell.colSpan = weekdays.length;
 
-    const track = document.createElement('div');
-    track.className = 'gantt-day-track';
+    const track = ganttTrackTemplate.cloneNode(false);
     track.style.width = `${totalWidth}px`;
 
     const planBar = createGanttBarElement(task.plannedStartDate, task.plannedEndDate, weekdays, 'plan', task);
@@ -2505,6 +2516,9 @@ function findLastWeekdayIndexOnOrBefore(weekdays, targetDate) {
   return result;
 }
 
+// ⚡ Bolt: Cache gantt bar element template to reduce O(N) allocation overhead
+let ganttBarTemplate = null;
+
 function createGanttBarElement(startDate, endDate, weekdays, type, task) {
   if (!isValidDateString(startDate) || !isValidDateString(endDate)) {
     return null;
@@ -2518,7 +2532,10 @@ function createGanttBarElement(startDate, endDate, weekdays, type, task) {
   if (normalizedEndIndex < startIndex) {
     return null;
   }
-  const bar = document.createElement('div');
+  if (!ganttBarTemplate) {
+    ganttBarTemplate = document.createElement('div');
+  }
+  const bar = ganttBarTemplate.cloneNode(false);
   bar.className = `gantt-bar ${type}`;
   bar.style.left = `${startIndex * 36}px`;
   bar.style.width = `${(normalizedEndIndex - startIndex + 1) * 36}px`;
