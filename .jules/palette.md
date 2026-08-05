@@ -115,3 +115,6 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+## 2026-08-05 - 비대화형 요소의 툴팁 접근성
+**Learning:** 비대화형 요소(`div`, `span` 등)에 `title`이나 `aria-label`로 툴팁을 제공할 때, 키보드 사용자는 탭으로 포커스를 이동할 수 없어 해당 정보를 인지할 수 없는 문제가 발생함.
+**Action:** 비대화형 요소라도 툴팁 등 부가 정보가 포함되어 있다면 `tabindex="0"`을 추가하여 포커스를 받을 수 있도록 하고, `:focus-visible`을 통해 명확한 시각적 피드백을 제공해야 함.
