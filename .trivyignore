@@ -1,0 +1,2 @@
+# Unfixable or constraint-violating vulnerabilities that cannot be resolved without breaking package.json dependencies.
+CVE-2026-69207
