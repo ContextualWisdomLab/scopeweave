@@ -2684,20 +2684,23 @@ function clamp(value, min, max) {
 
 function formatDateInput(date) {
   const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+  return year + "-" + (month < 10 ? "0" : "") + month + "-" + (day < 10 ? "0" : "") + day;
 }
 
 function formatLocalDateInput(date) {
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return year + "-" + (month < 10 ? "0" : "") + month + "-" + (day < 10 ? "0" : "") + day;
 }
 
 function formatCompactDate(date) {
-  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return year + "" + (month < 10 ? "0" : "") + month + "" + (day < 10 ? "0" : "") + day;
 }
 
 function formatPercent(value, digits) {
