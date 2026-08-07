@@ -62,9 +62,10 @@ async function api(path, { method = 'GET', body } = {}) {
 
 // ---- realtime (EventSource can't set headers → token via query; ceiling:
 // swap for a short-lived stream token before prod so JWTs stay out of URLs)
-function subscribe(id) {
+async function subscribe(id) {
   if (sse) { sse.close(); sse = null; }
-  sse = new EventSource(`/api/projects/${id}/stream?token=${encodeURIComponent(getToken())}`);
+  const urlTokenRes = await api('/api/auth/url-token');
+  sse = new EventSource(`/api/projects/${id}/stream?token=${encodeURIComponent(urlTokenRes.urlToken)}`);
   sse.onmessage = (ev) => {
     let msg;
     try { msg = JSON.parse(ev.data); } catch { return; }
@@ -1302,8 +1303,9 @@ async function openAttachmentsModal() {
         view.type = 'button';
         view.className = 'secondary-button';
         view.textContent = '보기';
-        view.addEventListener('click', () => {
-          window.open(`/api/projects/${pid}/attachments/${a.id}/view?token=${encodeURIComponent(getToken())}`, '_blank', 'noopener');
+        view.addEventListener('click', async () => {
+          const urlTokenRes = await api('/api/auth/url-token');
+          window.open(`/api/projects/${pid}/attachments/${a.id}/view?token=${encodeURIComponent(urlTokenRes.urlToken)}`, '_blank', 'noopener');
         });
         li.appendChild(view);
       }

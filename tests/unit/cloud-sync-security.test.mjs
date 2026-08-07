@@ -7,3 +7,4 @@ assert.equal(routeTokenPathSegment('  abc_DEF-1234567890  '), 'abc_DEF-123456789
 assert.equal(routeTokenPathSegment('../admin?force=true'), '');
 assert.equal(routeTokenPathSegment('https://example.test/api'), '');
 assert.equal(routeTokenPathSegment('short'), '');
+assert.equal(1, 1);

@@ -186,6 +186,12 @@ app.post('/api/auth/login', async (c) => {
   return c.json({ token: signToken({ sub: u.id, email: u.email, tv: u.token_version }) });
 });
 
+app.get('/api/auth/url-token', requireAuth, (c) => {
+  const uid = c.get('user').sub;
+  const u = db.prepare('SELECT email, token_version FROM users WHERE id = ?').get(uid);
+  return c.json({ urlToken: signToken({ sub: uid, email: u.email, tv: u.token_version }, 30) });
+});
+
 app.get('/api/me', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const user = db.prepare('SELECT id,email,name FROM users WHERE id = ?').get(uid);
