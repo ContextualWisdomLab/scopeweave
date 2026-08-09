@@ -6,7 +6,8 @@ import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
-import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
+import { BillingConfigurationError, PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
+import { StripeWebhookError, processStripeWebhook } from './stripe-webhook.mjs';
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
@@ -583,19 +584,51 @@ app.post('/api/orgs/:id/checkout', requireAuth, async (c) => {
   const orgId = c.req.param('id');
   if (orgRole(uid, orgId) !== 'owner') return c.json({ error: 'only the owner can upgrade' }, 403);
   const origin = new URL(c.req.url).origin;
-  const session = await createCheckout({ orgId, origin });
-  return c.json(session);
+  try {
+    const session = await createCheckout({ orgId, origin });
+    return c.json(session);
+  } catch (error) {
+    if (!(error instanceof BillingConfigurationError)) throw error;
+    const status = error.code.startsWith('billing_provider_') ? 502 : 503;
+    return c.json({ error: error.code }, status);
+  }
 });
 
-// Stripe webhook (stub). Live mode should verify the signature with
-// STRIPE_WEBHOOK_SECRET before trusting the event — named ceiling.
+// Stripe sends retries and out-of-order events. Verify the exact raw body,
+// apply entitlement changes transactionally, and deduplicate by provider event ID.
 app.post('/api/stripe/webhook', async (c) => {
-  const event = await c.req.json().catch(() => ({}));
-  if (event?.type === 'checkout.session.completed') {
-    const orgId = event.data?.object?.client_reference_id || event.data?.object?.metadata?.orgId;
-    if (orgId) db.prepare("UPDATE orgs SET plan = 'pro' WHERE id = ?").run(orgId);
+  let rawBody;
+  try {
+    rawBody = Buffer.from(await c.req.arrayBuffer());
+  } catch {
+    return c.json({ error: 'stripe_webhook_body_invalid' }, 400);
   }
-  return c.json({ received: true });
+  try {
+    const result = processStripeWebhook({
+      db,
+      rawBody,
+      signatureHeader: c.req.header('stripe-signature') || '',
+      webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+    });
+    if (!result.duplicate && result.organizationId != null && result.plan != null) {
+      logAudit(
+        result.organizationId,
+        null,
+        'billing.entitlement_sync',
+        'org',
+        result.organizationId,
+        { eventType: result.eventType, plan: result.plan },
+      );
+      deliver(result.organizationId, 'billing.entitlement_sync', {
+        eventType: result.eventType,
+        plan: result.plan,
+      });
+    }
+    return c.json({ received: true, duplicate: result.duplicate });
+  } catch (error) {
+    if (!(error instanceof StripeWebhookError)) throw error;
+    return c.json({ error: error.code }, error.statusCode);
+  }
 });
 
 // Dev-only: simulate a successful checkout upgrading the org to Pro.
