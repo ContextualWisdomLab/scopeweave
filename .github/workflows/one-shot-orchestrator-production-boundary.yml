@@ -1,0 +1,70 @@
+name: One-shot orchestrator production boundary verification
+
+on:
+  push:
+    branches: [fix/orchestrator-production-fail-closed-20260809]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: one-shot-orchestrator-production-boundary
+  cancel-in-progress: false
+
+jobs:
+  verify-document-commit:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Harden runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920 # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Checkout exact branch head
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: fix/orchestrator-production-fail-closed-20260809
+          fetch-depth: 0
+
+      - name: Record the product contract in CHANGELOG
+        shell: python3 {0}
+        run: |
+          from pathlib import Path
+
+          path = Path('CHANGELOG.md')
+          source = path.read_text(encoding='utf-8')
+          anchor = '### Security\n\n'
+          entry = '- Made contextual-orchestrator briefing requests fail closed unless an authenticated endpoint is configured. Deterministic generated text is now restricted to explicit `SCOPEWEAVE_DEV=1`, message/provider responses are bounded and validated, and non-loopback HTTP transport is rejected.\n'
+          if source.count(anchor) != 1:
+              raise SystemExit('expected exactly one Unreleased Security anchor')
+          if entry not in source:
+              source = source.replace(anchor, anchor + entry, 1)
+          path.write_text(source, encoding='utf-8')
+
+      - name: Setup Node 22.13
+        uses: actions/setup-node@2028fbc5c25fe9cf00d9f06a71cc4710d4507903 # v6.0.0
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run orchestrator and full coverage verification
+        run: |
+          node tests/unit/orchestrator.test.mjs
+          npm run test:unit
+          npm run test:api
+          npm run coverage
+
+      - name: Commit verified documentation and remove one-shot workflow
+        run: |
+          set -euo pipefail
+          git rm .github/workflows/one-shot-orchestrator-production-boundary.yml
+          git add CHANGELOG.md
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m 'docs(changelog): record orchestrator production boundary'
+          git push origin HEAD:fix/orchestrator-production-fail-closed-20260809
