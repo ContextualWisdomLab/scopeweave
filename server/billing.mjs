@@ -1,6 +1,8 @@
-// Billing / plan configuration + checkout. Stripe is imported dynamically only
-// after complete production credentials are present. Mock checkout is confined to
-// the explicit SCOPEWEAVE_DEV=1 development boundary. Plan changes remain server-side.
+import { randomUUID } from 'node:crypto';
+
+// Billing / plan configuration + checkout. Stripe requests are sent directly
+// from the trusted server boundary after complete credentials are present. Mock
+// checkout is confined to SCOPEWEAVE_DEV=1. Plan changes remain server-side.
 
 export const PLANS = {
   free: { name: 'Free', limits: { projects: 2, members: 3 }, priceKrw: 0 },
@@ -63,35 +65,94 @@ function stripeCheckoutConfiguration() {
 }
 
 /**
+ * Parse a bounded Stripe response without exposing provider payloads in errors.
+ * @param {Response} response provider response
+ * @returns {Promise<Record<string, unknown>>}
+ */
+async function stripeResponseJson(response) {
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new BillingConfigurationError(
+      'billing_provider_invalid_response',
+      'Stripe returned a non-JSON Checkout response.',
+    );
+  }
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+    throw new BillingConfigurationError(
+      'billing_provider_invalid_response',
+      'Stripe returned an invalid Checkout response.',
+    );
+  }
+  return payload;
+}
+
+/**
  * Create a production Stripe Checkout Session.
  *
  * A mock URL is returned only under the explicit `SCOPEWEAVE_DEV=1`
  * development boundary; an unconfigured production process fails closed.
  *
- * @param {{orgId: string | number, origin: string}} checkoutContext checkout identity
+ * @param {{orgId: string | number, origin: string, fetchImpl?: typeof fetch, idempotencyKey?: string}} checkoutContext checkout identity
  * @returns {Promise<{url: string, live: boolean, mock?: boolean}>}
  */
-export async function createCheckout({ orgId, origin }) {
+export async function createCheckout({
+  orgId,
+  origin,
+  fetchImpl = globalThis.fetch,
+  idempotencyKey = `scopeweave-checkout-${orgId}-${randomUUID()}`,
+}) {
   const configuration = stripeCheckoutConfiguration();
   if (!configuration) {
     return { url: `${origin}/?billing=mock&org=${orgId}`, live: false, mock: true };
   }
+  if (typeof fetchImpl !== 'function') {
+    throw new BillingConfigurationError(
+      'billing_transport_unavailable',
+      'Stripe checkout transport is unavailable.',
+    );
+  }
 
-  const { default: Stripe } = await import('stripe');
-  const stripe = new Stripe(configuration.secretKey);
-  const session = await stripe.checkout.sessions.create({
+  const form = new URLSearchParams({
     mode: 'subscription',
-    line_items: [{ price: configuration.priceId, quantity: 1 }],
+    'line_items[0][price]': configuration.priceId,
+    'line_items[0][quantity]': '1',
     success_url: `${origin}/?billing=success`,
     cancel_url: `${origin}/?billing=cancel`,
     client_reference_id: String(orgId),
-    metadata: { orgId: String(orgId) },
+    'metadata[orgId]': String(orgId),
   });
-  if (!session.url) {
+  let response;
+  try {
+    response = await fetchImpl('https://api.stripe.com/v1/checkout/sessions', {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${configuration.secretKey}`,
+        'content-type': 'application/x-www-form-urlencoded',
+        'idempotency-key': idempotencyKey,
+      },
+      body: form.toString(),
+    });
+  } catch {
     throw new BillingConfigurationError(
-      'billing_provider_invalid_response',
-      'Stripe did not return a Checkout Session URL.',
+      'billing_provider_unavailable',
+      'Stripe Checkout could not be reached.',
     );
   }
-  return { url: session.url, live: true };
+
+  const payload = await stripeResponseJson(response);
+  if (!response.ok) {
+    throw new BillingConfigurationError(
+      'billing_provider_rejected',
+      `Stripe Checkout rejected the request with HTTP ${response.status}.`,
+    );
+  }
+  if (typeof payload.url !== 'string' || !payload.url.startsWith('https://checkout.stripe.com/')) {
+    throw new BillingConfigurationError(
+      'billing_provider_invalid_response',
+      'Stripe did not return a trusted Checkout Session URL.',
+    );
+  }
+  return { url: payload.url, live: true };
 }
