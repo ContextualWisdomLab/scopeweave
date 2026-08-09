@@ -65,11 +65,13 @@ try {
   assert.equal(calls[0].init.method, 'POST');
   assert.equal(calls[0].init.headers.authorization, 'Bearer sk_test_partial');
   assert.equal(calls[0].init.headers['idempotency-key'], 'checkout-attempt-42');
+  assert.equal(calls[0].init.headers['stripe-version'], '2026-02-25.clover');
   const posted = new URLSearchParams(calls[0].init.body);
   assert.equal(posted.get('mode'), 'subscription');
   assert.equal(posted.get('line_items[0][price]'), 'price_pro');
   assert.equal(posted.get('client_reference_id'), '42');
   assert.equal(posted.get('metadata[orgId]'), '42');
+  assert.equal(posted.get('subscription_data[metadata][orgId]'), '42');
 
   await assert.rejects(
     createCheckout({
