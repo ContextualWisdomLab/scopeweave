@@ -128,11 +128,3 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
-## 2026-08-05 - Avoid innerHTML when creating DOM elements
-**Vulnerability:** Constructing HTML markup dynamically and injecting it with `innerHTML` may lead to Stored XSS vulnerabilities or false positives by security scanners.
-**Learning:** Using `innerHTML` with string templates, even if initially hardcoded, can evolve or be mistakenly combined with user input, leading to XSS vulnerabilities. Additionally, security scanners (like Strix) often flag `innerHTML` usage to enforce secure coding standards.
-**Prevention:** Construct DOM elements securely using APIs like `document.createElement()`, `document.createTextNode()`, and `.append()`, avoiding `innerHTML` entirely for component initialization.
-## 2026-08-07 - Avoid transmitting authentication tokens in URLs
-**Vulnerability:** Sending long-lived authentication tokens (JWT) through URL query parameters exposes them to leakage via browser history, HTTP Referer headers, or logs.
-**Learning:** SSE (`EventSource`) and `window.open` APIs do not support standard `Authorization` headers out-of-the-box. Transmitting standard access tokens in query parameters to work around this creates a significant risk of exposure.
-**Prevention:** Introduce a backend endpoint to exchange a long-lived token (via a secure header) for a short-lived URL-safe token. Use the short-lived token specifically for endpoints like SSE and popup windows.
