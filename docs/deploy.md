@@ -34,14 +34,27 @@ persists the database in the `scopeweave-data` volume.
 | `SCOPEWEAVE_JWT_SECRET` | **yes** | Signs session JWTs. Startup fails unless it contains at least 32 non-whitespace characters. |
 | `PORT` | no (default 8787) | Listen port |
 | `SCOPEWEAVE_DB` | no (default `/data/scopeweave.db`) | SQLite file path (on the volume) |
-| `SCOPEWEAVE_DEV` | no | Must be `1` to enable the dev `activate-pro` endpoint. **Never set in production.** |
-| `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | for live billing | Enables real Stripe Checkout (`npm i stripe` too). Without them, billing uses the mock path. |
-| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI` | for real SSO | Points the OIDC login at your IdP. Unset → a built-in mock IdP (dev/test only). |
-| `ORCHESTRATOR_URL` | for AI 브리핑 | contextual-orchestrator 주소. Unset → deterministic mock. |
+| `SCOPEWEAVE_DEV` | no | Must be `1` to enable explicit development-only adapters and the dev `activate-pro` endpoint. **Never set in production.** |
+| `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | for live billing | Enables real Stripe Checkout. Billing must fail closed outside explicit development mode when these are absent. |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI` | for real SSO | Points the OIDC login at your IdP. The legacy built-in mock remains development-only and must not be enabled in production. |
+| `ORCHESTRATOR_URL` | for AI 브리핑 | contextual-orchestrator 주소. The legacy deterministic adapter is development-only; production must fail closed when the endpoint is absent. |
 | `ORCHESTRATOR_TOKEN` | with URL | orchestrator Bearer 토큰 (`CONTEXTUAL_ORCHESTRATOR_TOKEN`). |
-| `CLEARFOLIO_URL` | for 산출물 viewer | Clearfolio 문서 뷰어 백엔드 주소. Unset → built-in mock (dev/test). |
-| `CLEARFOLIO_HMAC_SECRET` | optional | Signs tenant-claim headers (`clearfolio.tenant-claims.hmac-secret`와 동일 값). |
+| `CLEARFOLIO_URL` | for 산출물 viewer | Required in production for Clearfolio conversion and viewing. When absent, operations fail closed unless `SCOPEWEAVE_DEV=1`. |
+| `CLEARFOLIO_HMAC_SECRET` | with URL | Required in production. Signs tenant-claim headers and must match `clearfolio.tenant-claims.hmac-secret`. |
 | `SCOPEWEAVE_RATE_LIMIT_MAX` (+ `SCOPEWEAVE_RATE_LIMIT_WINDOW_MS`) | recommended | Per-IP fixed-window rate limiting (429 + Retry-After). Off when unset. |
+
+## Clearfolio production boundary
+
+ScopeWeave never converts or stores a fake successful artifact merely because
+Clearfolio is not configured. Production requires an HTTPS `CLEARFOLIO_URL`
+and `CLEARFOLIO_HMAC_SECRET`; loopback HTTP is accepted only for local service
+development. Provider calls have a 30-second timeout, uploads are bounded to
+100 MiB, tenant claims are signed, malformed provider responses fail closed,
+and non-HTTPS artifact URLs are rejected.
+
+The in-memory conversion adapter and `/api/mock-clearfolio/:jobId` route exist
+only when `SCOPEWEAVE_DEV=1` and no Clearfolio URL is configured. Do not enable
+that variable in staging or production.
 
 ## Data & scale path
 
