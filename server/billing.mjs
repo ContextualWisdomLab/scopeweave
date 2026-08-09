@@ -1,7 +1,6 @@
-// Billing / plan configuration + checkout. Stripe is OPTIONAL — imported
-// dynamically only when STRIPE_SECRET_KEY is set, so it is not a hard dependency
-// (npm i stripe + keys required for live payments; without them the mock path
-// keeps the whole flow testable). Plan changes only ever happen server-side.
+// Billing / plan configuration + checkout. Stripe is imported dynamically only
+// after complete production credentials are present. Mock checkout is confined to
+// the explicit SCOPEWEAVE_DEV=1 development boundary. Plan changes remain server-side.
 
 export const PLANS = {
   free: { name: 'Free', limits: { projects: 2, members: 3 }, priceKrw: 0 },
@@ -26,22 +25,73 @@ export function wouldExceed(db, org, kind) {
   return orgUsage(db, org.id)[kind] >= limit;
 }
 
-// Create a checkout session. Real Stripe when a key is present, else a mock URL
-// that the dev-activate endpoint / webhook stub can complete.
-export async function createCheckout({ orgId, origin }) {
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (key) {
-    const { default: Stripe } = await import('stripe');
-    const stripe = new Stripe(key);
-    const session = await stripe.checkout.sessions.create({
-      mode: 'subscription',
-      line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
-      success_url: `${origin}/?billing=success`,
-      cancel_url: `${origin}/?billing=cancel`,
-      client_reference_id: String(orgId),
-      metadata: { orgId: String(orgId) },
-    });
-    return { url: session.url, live: true };
+/** Error raised when production billing cannot be configured or completed safely. */
+export class BillingConfigurationError extends Error {
+  /**
+   * Create one stable billing configuration error.
+   * @param {string} code machine-readable failure code
+   * @param {string} message operator-safe failure detail
+   */
+  constructor(code, message) {
+    super(message);
+    this.name = 'BillingConfigurationError';
+    this.code = code;
   }
-  return { url: `${origin}/?billing=mock&org=${orgId}`, live: false, mock: true };
+}
+
+/**
+ * Resolve the complete Stripe Checkout configuration or the explicit dev-only mock boundary.
+ * @returns {{secretKey: string, priceId: string} | null}
+ */
+function stripeCheckoutConfiguration() {
+  const secretKey = String(process.env.STRIPE_SECRET_KEY || '').trim();
+  const priceId = String(process.env.STRIPE_PRICE_ID || '').trim();
+  if (!secretKey && !priceId) {
+    if (process.env.SCOPEWEAVE_DEV === '1') return null;
+    throw new BillingConfigurationError(
+      'billing_not_configured',
+      'Stripe checkout is unavailable because billing credentials are not configured.',
+    );
+  }
+  if (!secretKey || !priceId) {
+    throw new BillingConfigurationError(
+      'billing_configuration_incomplete',
+      'Stripe checkout requires both STRIPE_SECRET_KEY and STRIPE_PRICE_ID.',
+    );
+  }
+  return { secretKey, priceId };
+}
+
+/**
+ * Create a production Stripe Checkout Session.
+ *
+ * A mock URL is returned only under the explicit `SCOPEWEAVE_DEV=1`
+ * development boundary; an unconfigured production process fails closed.
+ *
+ * @param {{orgId: string | number, origin: string}} checkoutContext checkout identity
+ * @returns {Promise<{url: string, live: boolean, mock?: boolean}>}
+ */
+export async function createCheckout({ orgId, origin }) {
+  const configuration = stripeCheckoutConfiguration();
+  if (!configuration) {
+    return { url: `${origin}/?billing=mock&org=${orgId}`, live: false, mock: true };
+  }
+
+  const { default: Stripe } = await import('stripe');
+  const stripe = new Stripe(configuration.secretKey);
+  const session = await stripe.checkout.sessions.create({
+    mode: 'subscription',
+    line_items: [{ price: configuration.priceId, quantity: 1 }],
+    success_url: `${origin}/?billing=success`,
+    cancel_url: `${origin}/?billing=cancel`,
+    client_reference_id: String(orgId),
+    metadata: { orgId: String(orgId) },
+  });
+  if (!session.url) {
+    throw new BillingConfigurationError(
+      'billing_provider_invalid_response',
+      'Stripe did not return a Checkout Session URL.',
+    );
+  }
+  return { url: session.url, live: true };
 }
