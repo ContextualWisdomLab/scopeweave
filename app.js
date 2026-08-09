@@ -2682,22 +2682,27 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+// ⚡ Bolt: 불필요한 문자열 할당 및 JS-to-C++ 오버헤드를 방지하기 위해
+// O(N) 반복 구간(hot path)에서 String.padStart() 대신 인라인 삼항 연산자를 사용합니다.
 function formatDateInput(date) {
   const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const m = date.getUTCMonth() + 1;
+  const d = date.getUTCDate();
+  return `${year}-${m < 10 ? '0' : ''}${m}-${d < 10 ? '0' : ''}${d}`;
 }
 
 function formatLocalDateInput(date) {
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
+  return `${year}-${m < 10 ? '0' : ''}${m}-${d < 10 ? '0' : ''}${d}`;
 }
 
 function formatCompactDate(date) {
-  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+  const y = date.getFullYear();
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
+  return `${y}${m < 10 ? '0' : ''}${m}${d < 10 ? '0' : ''}${d}`;
 }
 
 function formatPercent(value, digits) {
