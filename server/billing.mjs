@@ -122,6 +122,7 @@ export async function createCheckout({
     cancel_url: `${origin}/?billing=cancel`,
     client_reference_id: String(orgId),
     'metadata[orgId]': String(orgId),
+    'subscription_data[metadata][orgId]': String(orgId),
   });
   let response;
   try {
@@ -131,6 +132,7 @@ export async function createCheckout({
         authorization: `Bearer ${configuration.secretKey}`,
         'content-type': 'application/x-www-form-urlencoded',
         'idempotency-key': idempotencyKey,
+        'stripe-version': '2026-02-25.clover',
       },
       body: form.toString(),
     });
