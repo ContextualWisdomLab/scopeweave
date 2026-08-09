@@ -128,6 +128,3 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
-## 2026-08-08 - Suppressing Trivy findings via `.trivyignore`
-**Learning:** Trivy CI checks sometimes flag vulnerabilities in dependencies that cannot be updated because `package.json` modifications are forbidden (or they are false positives).
-**Action:** Always add specific CVE or GHSA identifiers (e.g., `CVE-2026-69207`) to `.trivyignore` to suppress these errors and unblock CI pipelines when direct dependency upgrades are restricted.
