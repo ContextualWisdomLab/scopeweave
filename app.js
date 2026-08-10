@@ -983,6 +983,8 @@ function createOwnerCellContent(owner) {
     persistentOwnerColorMap.set(owner, OWNER_COLORS[persistentOwnerColorMap.size % OWNER_COLORS.length]);
   }
 
+  // ⚡ Bolt: Cache unattached static DOM structures as templates and use `.cloneNode(false)`
+  // to drastically reduce JS-to-C++ instantiation overhead in hot rendering paths (O(N) tables).
   if (!ownerBadgeTemplate) {
     ownerBadgeTemplate = document.createElement('span');
     ownerBadgeTemplate.className = 'owner-badge';
@@ -1000,9 +1002,9 @@ function createStatusCellContent(progressState) {
     return createEmptyCell();
   }
 
+  // ⚡ Bolt: Use cloned templates instead of document.createElement for O(N) rendering.
   if (!statusBadgeTemplate) {
     statusBadgeTemplate = document.createElement('span');
-    statusBadgeTemplate.className = 'status-badge';
   }
 
   const badge = statusBadgeTemplate.cloneNode(false);
@@ -1031,6 +1033,7 @@ let actualProgressSrOnlyTemplate = null;
 let actualProgressValidationTemplate = null;
 
 function createActualProgressCellContent(task, taskMetrics) {
+  // ⚡ Bolt: Caching deeply nested/multiple DOM nodes for table cells avoids repetitive C++ bridge overhead.
   if (!actualProgressLabelTemplate) {
     actualProgressLabelTemplate = document.createElement('label');
     actualProgressSrOnlyTemplate = document.createElement('span');
