@@ -5,6 +5,6 @@
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
 
-## 2026-08-10 - Optimize Gantt Chart Rendering with cloneNode
-**Learning:** In vanilla HTML/JS applications, repeatedly calling `document.createElement()` within large O(N) rendering loops (e.g., rendering hundreds of Gantt chart rows) introduces significant JS-to-C++ allocation overhead and GC pressure.
-**Action:** Always cache static unattached DOM structures as templates outside the loop and instantiate them via `.cloneNode(false)` or `.cloneNode(true)`. This minimizes cross-language boundary costs and yields measurable performance gains.
+## 2026-08-10 - JSDOM Global Caching Danger
+**Learning:** Caching unattached DOM elements in module-level global variables (e.g., `let rowTemplate = document.createElement('tr')`) and reusing them via `cloneNode()` across renders is a dangerous anti-pattern in environments tested with JSDOM. JSDOM recreates the `document` context per test. Cloned nodes retain the original `document` reference, causing `HierarchyRequestError` or `WrongDocumentError` when appending them to a new test's `document`.
+**Action:** Avoid global DOM caching optimizations in frontend codebases heavily reliant on JSDOM. If caching is necessary for extreme performance, encapsulate the template cache within a factory function or class that is scoped to the current `document` instance, or ensure templates are re-initialized when the `document` context changes.

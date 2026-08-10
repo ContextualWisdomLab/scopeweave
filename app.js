@@ -1370,21 +1370,28 @@ function validateDateRange(startLabel, startValue, endLabel, endValue, errors) {
 }
 
 function computeTaskMetrics() {
-  // ⚡ Bolt: Cache durationDays during total calculation to avoid recalculating for every task
-  const durationCache = new Map();
-  const totalDays = state.tasks.reduce((sum, task) => {
-    const duration = calculateDurationDays(task.plannedStartDate, task.plannedEndDate);
-    durationCache.set(task.id, duration);
-    return sum + duration;
-  }, 0);
-
   const baseDate = state.baseDate;
+  const taskCount = state.tasks.length;
+
+  // ⚡ Bolt: Use Int32Array and standard loops to eliminate JS engine allocation overhead
+  // from Map lookups and Array callback methods (reduce/forEach) during O(N) calculations.
+  const durations = new Int32Array(taskCount);
+  let totalDays = 0;
+
+  for (let i = 0; i < taskCount; i++) {
+    const task = state.tasks[i];
+    const duration = calculateDurationDays(task.plannedStartDate, task.plannedEndDate);
+    durations[i] = duration;
+    totalDays += duration;
+  }
+
   const byTask = new Map();
   let totalWeightedPlannedRatio = 0;
   let totalWeightedActualRatio = 0;
 
-  state.tasks.forEach((task) => {
-    const durationDays = durationCache.get(task.id);
+  for (let i = 0; i < taskCount; i++) {
+    const task = state.tasks[i];
+    const durationDays = durations[i];
     const weightRatio = totalDays > 0 ? durationDays / totalDays : 0;
     const plannedProgressRatio = calculatePlannedProgressRatio(baseDate, task.plannedStartDate, task.plannedEndDate, durationDays);
     const actualProgressRatio = (ACTUAL_PROGRESS_MAP[task.actualProgressStatus] || 0) / 100;
@@ -1408,14 +1415,9 @@ function computeTaskMetrics() {
       plannedDateWarning,
       actualDateWarning
     });
-  });
+  }
 
-  return {
-    totalDays,
-    totalWeightedPlannedRatio,
-    totalWeightedActualRatio,
-    byTask
-  };
+  return { totalDays, totalWeightedPlannedRatio, totalWeightedActualRatio, byTask };
 }
 
 const PROGRESS_STATE_EMPTY = Object.freeze({ label: '', className: '', description: '' });
@@ -2381,59 +2383,35 @@ function createGanttMetaTable() {
   return table;
 }
 
-// ⚡ Bolt: Cache unattached DOM elements to avoid JS-to-C++ instantiation overhead during O(N) Gantt chart rendering
-let ganttRowTemplate = null;
-let ganttCellTemplate = null;
-let ganttTrackTemplate = null;
-let ganttThWeekTemplate = null;
-let ganttThDayTemplate = null;
-
 function createGanttChartTable(weeks, weekdays, totalWidth) {
   const table = document.createElement('table');
   const thead = document.createElement('thead');
   const weekRow = document.createElement('tr');
-
-  if (!ganttThWeekTemplate) {
-    ganttThWeekTemplate = document.createElement('th');
-    ganttThWeekTemplate.className = 'gantt-week-header';
-  }
-
   weeks.forEach((week) => {
-    const th = ganttThWeekTemplate.cloneNode(false);
+    const th = document.createElement('th');
+    th.className = 'gantt-week-header';
     th.colSpan = week.days.length;
     th.textContent = week.label;
     weekRow.appendChild(th);
   });
 
   const dayRow = document.createElement('tr');
-
-  if (!ganttThDayTemplate) {
-    ganttThDayTemplate = document.createElement('th');
-    ganttThDayTemplate.className = 'gantt-day-cell';
-  }
-
   weekdays.forEach((day) => {
-    const th = ganttThDayTemplate.cloneNode(false);
+    const th = document.createElement('th');
+    th.className = 'gantt-day-cell';
     th.textContent = day.dayLabel;
     dayRow.appendChild(th);
   });
   thead.append(weekRow, dayRow);
 
   const tbody = document.createElement('tbody');
-
-  if (!ganttRowTemplate) {
-    ganttRowTemplate = document.createElement('tr');
-    ganttCellTemplate = document.createElement('td');
-    ganttTrackTemplate = document.createElement('div');
-    ganttTrackTemplate.className = 'gantt-day-track';
-  }
-
   state.tasks.forEach((task) => {
-    const row = ganttRowTemplate.cloneNode(false);
-    const cell = ganttCellTemplate.cloneNode(false);
+    const row = document.createElement('tr');
+    const cell = document.createElement('td');
     cell.colSpan = weekdays.length;
 
-    const track = ganttTrackTemplate.cloneNode(false);
+    const track = document.createElement('div');
+    track.className = 'gantt-day-track';
     track.style.width = `${totalWidth}px`;
 
     const planBar = createGanttBarElement(task.plannedStartDate, task.plannedEndDate, weekdays, 'plan', task);
