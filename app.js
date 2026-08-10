@@ -2381,35 +2381,59 @@ function createGanttMetaTable() {
   return table;
 }
 
+// ⚡ Bolt: Cache unattached DOM elements to avoid JS-to-C++ instantiation overhead during O(N) Gantt chart rendering
+let ganttRowTemplate = null;
+let ganttCellTemplate = null;
+let ganttTrackTemplate = null;
+let ganttThWeekTemplate = null;
+let ganttThDayTemplate = null;
+
 function createGanttChartTable(weeks, weekdays, totalWidth) {
   const table = document.createElement('table');
   const thead = document.createElement('thead');
   const weekRow = document.createElement('tr');
+
+  if (!ganttThWeekTemplate) {
+    ganttThWeekTemplate = document.createElement('th');
+    ganttThWeekTemplate.className = 'gantt-week-header';
+  }
+
   weeks.forEach((week) => {
-    const th = document.createElement('th');
-    th.className = 'gantt-week-header';
+    const th = ganttThWeekTemplate.cloneNode(false);
     th.colSpan = week.days.length;
     th.textContent = week.label;
     weekRow.appendChild(th);
   });
 
   const dayRow = document.createElement('tr');
+
+  if (!ganttThDayTemplate) {
+    ganttThDayTemplate = document.createElement('th');
+    ganttThDayTemplate.className = 'gantt-day-cell';
+  }
+
   weekdays.forEach((day) => {
-    const th = document.createElement('th');
-    th.className = 'gantt-day-cell';
+    const th = ganttThDayTemplate.cloneNode(false);
     th.textContent = day.dayLabel;
     dayRow.appendChild(th);
   });
   thead.append(weekRow, dayRow);
 
   const tbody = document.createElement('tbody');
+
+  if (!ganttRowTemplate) {
+    ganttRowTemplate = document.createElement('tr');
+    ganttCellTemplate = document.createElement('td');
+    ganttTrackTemplate = document.createElement('div');
+    ganttTrackTemplate.className = 'gantt-day-track';
+  }
+
   state.tasks.forEach((task) => {
-    const row = document.createElement('tr');
-    const cell = document.createElement('td');
+    const row = ganttRowTemplate.cloneNode(false);
+    const cell = ganttCellTemplate.cloneNode(false);
     cell.colSpan = weekdays.length;
 
-    const track = document.createElement('div');
-    track.className = 'gantt-day-track';
+    const track = ganttTrackTemplate.cloneNode(false);
     track.style.width = `${totalWidth}px`;
 
     const planBar = createGanttBarElement(task.plannedStartDate, task.plannedEndDate, weekdays, 'plan', task);
