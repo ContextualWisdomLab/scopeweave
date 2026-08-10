@@ -972,6 +972,7 @@ function createWarningBadge(warning) {
 }
 
 const persistentOwnerColorMap = new Map();
+let ownerBadgeTemplate = null;
 
 function createOwnerCellContent(owner) {
   if (!owner) {
@@ -982,18 +983,29 @@ function createOwnerCellContent(owner) {
     persistentOwnerColorMap.set(owner, OWNER_COLORS[persistentOwnerColorMap.size % OWNER_COLORS.length]);
   }
 
-  const badge = document.createElement('span');
-  badge.className = 'owner-badge';
+  if (!ownerBadgeTemplate) {
+    ownerBadgeTemplate = document.createElement('span');
+    ownerBadgeTemplate.className = 'owner-badge';
+  }
+  const badge = ownerBadgeTemplate.cloneNode(false);
   badge.style.background = persistentOwnerColorMap.get(owner);
   badge.textContent = owner;
   return badge;
 }
 
+let statusBadgeTemplate = null;
+
 function createStatusCellContent(progressState) {
   if (!progressState.label) {
     return createEmptyCell();
   }
-  const badge = document.createElement('span');
+
+  if (!statusBadgeTemplate) {
+    statusBadgeTemplate = document.createElement('span');
+    statusBadgeTemplate.className = 'status-badge';
+  }
+
+  const badge = statusBadgeTemplate.cloneNode(false);
   badge.className = `status-badge ${progressState.className}`;
   badge.textContent = progressState.label;
   if (progressState.description) {
@@ -1014,12 +1026,23 @@ function createMetricText(value, testId = '') {
   return metric;
 }
 
+let actualProgressLabelTemplate = null;
+let actualProgressSrOnlyTemplate = null;
+let actualProgressValidationTemplate = null;
+
 function createActualProgressCellContent(task, taskMetrics) {
-  const label = document.createElement('label');
+  if (!actualProgressLabelTemplate) {
+    actualProgressLabelTemplate = document.createElement('label');
+    actualProgressSrOnlyTemplate = document.createElement('span');
+    actualProgressSrOnlyTemplate.className = 'sr-only';
+    actualProgressValidationTemplate = document.createElement('div');
+    actualProgressValidationTemplate.className = 'validation-message';
+  }
+
+  const label = actualProgressLabelTemplate.cloneNode(false);
   const fieldId = `actual-progress-${task.id}`;
   label.htmlFor = fieldId;
-  const srOnly = document.createElement('span');
-  srOnly.className = 'sr-only';
+  const srOnly = actualProgressSrOnlyTemplate.cloneNode(false);
   const rowEntityName = task.task || task.activity || task.phase || '작업';
   srOnly.textContent = `실적진척상태 - ${rowEntityName}`;
   if (!actualProgressSelectTemplate) {
@@ -1042,9 +1065,8 @@ function createActualProgressCellContent(task, taskMetrics) {
 
   const warning = taskMetrics.plannedDateWarning || taskMetrics.actualDateWarning;
   if (warning) {
-    const validation = document.createElement('div');
+    const validation = actualProgressValidationTemplate.cloneNode(false);
     validation.id = `actual-progress-error-${task.id}`;
-    validation.className = 'validation-message';
     validation.textContent = warning;
     label.appendChild(validation);
     select.setAttribute('aria-invalid', 'true');
