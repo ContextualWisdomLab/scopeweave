@@ -9,6 +9,12 @@ import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken,
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
+import {
+  OidcConfigurationError,
+  oidcMock,
+  authorizationUrl as createOidcAuthorizationUrl,
+  exchangeAuthorizationCode,
+} from './oidc.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
@@ -776,102 +782,151 @@ app.delete('/api/orgs/:id/webhooks/:whId', requireAuth, (c) => {
 });
 
 // ------------------------------------------------------------ SSO (OIDC)
-// Real IdP via env (OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI). When
-// unset, a built-in mock provider makes the whole flow self-contained + testable.
-const OIDC = {
-  issuer: process.env.OIDC_ISSUER,
-  clientId: process.env.OIDC_CLIENT_ID,
-  clientSecret: process.env.OIDC_CLIENT_SECRET,
-  redirectUri: process.env.OIDC_REDIRECT_URI,
-};
-const oidcMock = !OIDC.issuer;
-const oidcStates = new Map(); // state -> { verifier, exp }
-const oidcCodes = new Map();  // mock only: code -> email
+// Production uses discovery, S256 PKCE, a nonce, provider JWKS verification,
+// and exact issuer/audience/time checks. The local provider is explicit dev-only.
+const oidcStates = new Map(); // state -> { verifier, nonce, redirectUri, exp }
+const oidcCodes = new Map();  // dev-only: code -> { email, state, exp }
+const OIDC_STATE_LIMIT = 10_000;
+
+function pruneOidcState() {
+  const now = Date.now();
+  for (const [state, value] of oidcStates) {
+    if (value.exp < now) oidcStates.delete(state);
+  }
+  for (const [code, value] of oidcCodes) {
+    if (value.exp < now) oidcCodes.delete(code);
+  }
+}
 
 function upsertSsoUser(email) {
-  let user = db.prepare('SELECT id, email, token_version FROM users WHERE email = ?').get(email);
+  const normalizedEmail = String(email).trim().toLowerCase();
+  let user = db.prepare('SELECT id, email, token_version FROM users WHERE email = ?').get(normalizedEmail);
   if (user) return user;
   db.exec('BEGIN');
   try {
     const uid = rowid(db.prepare('INSERT INTO users(email,password_hash,name) VALUES(?,?,?)')
-      .run(email, hashPassword(randomBytes(24).toString('hex')), ''));
-    const oid = rowid(db.prepare('INSERT INTO orgs(name,owner_id) VALUES(?,?)').run(`${email}'s workspace`, uid));
+      .run(normalizedEmail, hashPassword(randomBytes(24).toString('hex')), ''));
+    const oid = rowid(db.prepare('INSERT INTO orgs(name,owner_id) VALUES(?,?)').run(`${normalizedEmail}'s workspace`, uid));
     db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)').run(oid, uid, 'owner');
     db.exec('COMMIT');
     metrics.signups++;
-    return { id: uid, email };
-  } catch (e) { db.exec('ROLLBACK'); throw e; }
+    return { id: uid, email: normalizedEmail };
+  } catch (error) {
+    db.exec('ROLLBACK');
+    throw error;
+  }
 }
 
-app.get('/api/auth/oidc/start', (c) => {
-  const origin = new URL(c.req.url).origin;
-  const state = randomBytes(16).toString('hex');
-  const verifier = randomBytes(32).toString('base64url');
-  const challenge = createHash('sha256').update(verifier).digest('base64url');
-  oidcStates.set(state, { verifier, exp: Date.now() + 5 * 60 * 1000 });
-  const redirectUri = OIDC.redirectUri || `${origin}/api/auth/oidc/callback`;
-  if (oidcMock) {
-    const email = c.req.query('email') || 'sso-user@example.com';
-    const u = new URL(`${origin}/api/auth/oidc/mock/authorize`);
-    u.searchParams.set('state', state);
-    u.searchParams.set('email', email);
-    u.searchParams.set('redirect_uri', redirectUri);
-    return c.redirect(u.toString());
+function oidcFailure(c, error) {
+  if (!(error instanceof OidcConfigurationError)) throw error;
+  return c.json({ error: error.code }, error.statusCode);
+}
+
+app.get('/api/auth/oidc/start', async (c) => {
+  pruneOidcState();
+  if (oidcStates.size >= OIDC_STATE_LIMIT) {
+    return c.json({ error: 'oidc_state_capacity_exceeded' }, 429);
   }
-  const u = new URL(`${OIDC.issuer.replace(/\/$/, '')}/authorize`);
-  u.searchParams.set('client_id', OIDC.clientId);
-  u.searchParams.set('redirect_uri', redirectUri);
-  u.searchParams.set('response_type', 'code');
-  u.searchParams.set('scope', 'openid email profile');
-  u.searchParams.set('state', state);
-  u.searchParams.set('code_challenge', challenge);
-  u.searchParams.set('code_challenge_method', 'S256');
-  return c.redirect(u.toString());
+  const origin = new URL(c.req.url).origin;
+  const state = randomBytes(32).toString('base64url');
+  const nonce = randomBytes(32).toString('base64url');
+  const verifier = randomBytes(64).toString('base64url');
+  const challenge = createHash('sha256').update(verifier).digest('base64url');
+  const exp = Date.now() + 5 * 60 * 1000;
+
+  if (oidcMock) {
+    const redirectUri = `${origin}/api/auth/oidc/callback`;
+    oidcStates.set(state, { verifier, nonce, redirectUri, exp });
+    const email = c.req.query('email') || 'sso-user@example.com';
+    const url = new URL(`${origin}/api/auth/oidc/mock/authorize`);
+    url.searchParams.set('state', state);
+    url.searchParams.set('email', email);
+    return c.redirect(url.toString());
+  }
+
+  try {
+    const authorization = await createOidcAuthorizationUrl({
+      state,
+      nonce,
+      codeChallenge: challenge,
+    });
+    oidcStates.set(state, {
+      verifier,
+      nonce,
+      redirectUri: authorization.redirectUri,
+      exp,
+    });
+    return c.redirect(authorization.url);
+  } catch (error) {
+    return oidcFailure(c, error);
+  }
 });
 
-// Built-in mock IdP authorize — instantly issues a code (dev/test only).
+// Explicit development provider. It is unreachable unless SCOPEWEAVE_DEV=1
+// and no production issuer is configured.
 app.get('/api/auth/oidc/mock/authorize', (c) => {
   if (!oidcMock) return c.json({ error: 'mock disabled' }, 404);
+  pruneOidcState();
   const state = c.req.query('state');
-  const email = c.req.query('email');
-  const redirectUri = c.req.query('redirect_uri');
-  const code = randomBytes(16).toString('hex');
-  oidcCodes.set(code, email);
-  const u = new URL(redirectUri);
-  u.searchParams.set('code', code);
-  u.searchParams.set('state', state);
-  return c.redirect(u.toString());
+  const pending = oidcStates.get(state);
+  if (!pending || pending.exp < Date.now()) {
+    return c.json({ error: 'invalid or expired state' }, 400);
+  }
+  const email = String(c.req.query('email') || '').trim().toLowerCase();
+  if (email.length > 320 || !/^[^\s@]+@[^\s@]+$/.test(email)) {
+    return c.json({ error: 'invalid email' }, 400);
+  }
+  const code = randomBytes(32).toString('base64url');
+  oidcCodes.set(code, { email, state, exp: pending.exp });
+  const url = new URL(pending.redirectUri);
+  url.searchParams.set('code', code);
+  url.searchParams.set('state', state);
+  return c.redirect(url.toString());
 });
 
 app.get('/api/auth/oidc/callback', async (c) => {
+  pruneOidcState();
   const state = c.req.query('state');
   const code = c.req.query('code');
-  const s = oidcStates.get(state);
-  if (!s || s.exp < Date.now()) return c.json({ error: 'invalid or expired state' }, 400);
-  oidcStates.delete(state);
-  let email;
-  if (oidcMock) {
-    email = oidcCodes.get(code);
-    oidcCodes.delete(code);
-    if (!email) return c.json({ error: 'invalid code' }, 400);
-  } else {
-    const redirectUri = OIDC.redirectUri || `${new URL(c.req.url).origin}/api/auth/oidc/callback`;
-    const tokenRes = await fetch(`${OIDC.issuer.replace(/\/$/, '')}/token`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri, client_id: OIDC.clientId, client_secret: OIDC.clientSecret, code_verifier: s.verifier }),
-    }).catch(() => null);
-    const tok = tokenRes ? await tokenRes.json().catch(() => ({})) : {};
-    if (!tok.id_token) return c.json({ error: 'token exchange failed' }, 400);
-    // Ceiling: verify the id_token signature via the issuer JWKS before prod.
-    const claims = JSON.parse(Buffer.from(String(tok.id_token).split('.')[1] || '', 'base64url').toString() || '{}');
-    email = claims.email;
-    if (!email) return c.json({ error: 'no email claim' }, 400);
+  const pending = oidcStates.get(state);
+  if (!pending || pending.exp < Date.now()) {
+    return c.json({ error: 'invalid or expired state' }, 400);
   }
-  const user = upsertSsoUser(email);
-  const token = signToken({ sub: user.id, email, tv: user.token_version || 0 });
-  // Return the token in the URL fragment (not query → not logged); the client
-  // stores it and cleans the URL.
+  oidcStates.delete(state); // single-use before provider I/O
+
+  let identity;
+  if (oidcMock) {
+    const authorizationCode = oidcCodes.get(code);
+    oidcCodes.delete(code);
+    if (
+      !authorizationCode
+      || authorizationCode.exp < Date.now()
+      || authorizationCode.state !== state
+    ) {
+      return c.json({ error: 'invalid code' }, 400);
+    }
+    identity = { email: authorizationCode.email };
+  } else {
+    try {
+      identity = await exchangeAuthorizationCode({
+        code,
+        codeVerifier: pending.verifier,
+        nonce: pending.nonce,
+        redirectUri: pending.redirectUri,
+      });
+    } catch (error) {
+      return oidcFailure(c, error);
+    }
+  }
+
+  const user = upsertSsoUser(identity.email);
+  const token = signToken({
+    sub: user.id,
+    email: user.email,
+    tv: user.token_version || 0,
+  });
+  // Return the token in the fragment rather than the query so intermediaries do
+  // not receive it; the client stores the token and immediately cleans the URL.
   return c.redirect(`/#token=${token}`);
 });
 
