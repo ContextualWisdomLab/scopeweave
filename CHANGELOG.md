@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Replaced production OIDC payload decoding with discovery, exact issuer
+  binding, S256 PKCE, nonce protection, JWKS-backed RS256 signature
+  verification, audience and authorized-party checks, bounded provider I/O,
+  verified-email enforcement, and single-use callback state. The local
+  provider now requires explicit `SCOPEWEAVE_DEV=1`.
 - Made `SCOPEWEAVE_JWT_SECRET` mandatory at startup and rejected weak or
   unexpanded placeholder values so production deployments fail closed.
 - Neutralized audit-log CSV formulas even when executable prefixes are hidden
