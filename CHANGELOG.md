@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added `attribution` (`service`/`account`) to the contextual-orchestrator AI
+  briefing call so scopeweave's LLM usage is attributed in the
+  orchestrator's cost ledger instead of appearing as unattributed spend.
+  Only orchestrator's own allowed attribution dimensions are ever forwarded
+  (unknown keys and empty/null values are dropped); omitted entirely when
+  the caller passes none, matching pre-existing behavior exactly.
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS
   estimation coverage, dependency risk, and procurement package section checks.
 - Preserved PM-analysis research papers, NASA WBS handbook, BCP 14, and JSON

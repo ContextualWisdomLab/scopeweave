@@ -6,7 +6,24 @@ const OC_TOKEN = process.env.ORCHESTRATOR_TOKEN || '';
 
 export const orchestratorMock = !OC_URL;
 
-export async function chat(messages) {
+// orchestrator는 알 수 없는 필드를 거부(strict validation)하지만 attribution은
+// 명시적으로 허용된 필드다(ATTRIBUTION_DIMENSIONS: account/service/upstream_api/
+// model_name/team/group/company, + provider 별칭). 값을 넘기지 않으면 해당 호출은
+// orchestrator 비용 원장에서 "unattributed"로 집계된다.
+const ATTRIBUTION_DIMENSIONS = new Set([
+  'account', 'service', 'upstream_api', 'model_name', 'team', 'group', 'company', 'provider',
+]);
+
+function sanitizeAttribution(attribution) {
+  if (!attribution || typeof attribution !== 'object') return undefined;
+  const entries = Object.entries(attribution).filter(
+    ([key, value]) => ATTRIBUTION_DIMENSIONS.has(key) && value != null && String(value).length > 0,
+  );
+  if (entries.length === 0) return undefined;
+  return Object.fromEntries(entries.map(([key, value]) => [key, String(value)]));
+}
+
+export async function chat(messages, attribution) {
   if (orchestratorMock) {
     const user = messages.filter((m) => m.role === 'user').map((m) => m.content).join('\n');
     return `[mock-orchestrator] 분석 요약: ${user.slice(0, 120)}…에 대한 모의 응답입니다. `
@@ -15,14 +32,18 @@ export async function chat(messages) {
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 60000);
   try {
+    const cleanAttribution = sanitizeAttribution(attribution);
     const res = await fetch(`${OC_URL}/v1/chat/completions`, {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
         ...(OC_TOKEN ? { authorization: `Bearer ${OC_TOKEN}` } : {}),
       },
-      // orchestrator는 알 수 없는 필드를 거부(strict validation) — model+messages만 전송.
-      body: JSON.stringify({ model: 'contextual-orchestrator', messages }),
+      body: JSON.stringify({
+        model: 'contextual-orchestrator',
+        messages,
+        ...(cleanAttribution ? { attribution: cleanAttribution } : {}),
+      }),
       signal: ctrl.signal,
     });
     const data = await res.json().catch(() => ({}));
