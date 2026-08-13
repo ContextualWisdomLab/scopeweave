@@ -4,3 +4,6 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+## 2026-08-13 - Replace String.padStart() with inline ternary concatenation
+**Learning:** For performance optimizations in hot loops (e.g., date formatters), `String.padStart()` has unnecessary string allocations and JS-to-C++ overhead.
+**Action:** Prefer using inline ternary string concatenation (e.g., `val < 10 ? '0' + val : '' + val`) instead of methods like `String.padStart()` to avoid unnecessary string allocations.
