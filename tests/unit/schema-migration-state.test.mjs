@@ -1,5 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import {
   CANONICAL_SCHEMA_OBJECTS,
@@ -8,6 +13,8 @@ import {
   classifySchemaMigrationState,
   ensureSchemaMigrationState,
 } from '../../server/schema_migration.mjs';
+
+const REPOSITORY_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 
 function createTables(db, names) {
   for (const name of names) {
@@ -96,4 +103,52 @@ test('schema-state classifier rejects unusable inputs and names every expected o
   assert.throws(() => classifySchemaMigrationState(new Set()), /partial or mixed/);
   assert.equal(new Set(LEGACY_SCHEMA_OBJECTS).size, 10);
   assert.equal(new Set(CANONICAL_SCHEMA_OBJECTS).size, 10);
+});
+
+test('database bootstrap never recreates legacy tables over a canonical generation', () => {
+  const tempDirectory = mkdtempSync(join(tmpdir(), 'scopeweave-schema-'));
+  const databasePath = join(tempDirectory, 'canonical.sqlite');
+  const database = new DatabaseSync(databasePath);
+  createTables(database, CANONICAL_SCHEMA_OBJECTS);
+  database.close();
+
+  try {
+    const result = spawnSync(
+      process.execPath,
+      ['--input-type=module', '--eval', "await import('./server/db.mjs')"],
+      {
+        cwd: REPOSITORY_ROOT,
+        env: {
+          ...process.env,
+          SCOPEWEAVE_DB: databasePath,
+          SCOPEWEAVE_JWT_SECRET: '0123456789abcdef0123456789abcdef',
+        },
+        encoding: 'utf8',
+      },
+    );
+
+    assert.notEqual(result.status, 0, 'current application must fail closed on a canonical-only database');
+    assert.match(
+      result.stderr,
+      /canonical schema generation is not yet supported by this application version/,
+      'failure explains that query migration is still required instead of reporting a fabricated mixed schema',
+    );
+
+    const verificationDatabase = new DatabaseSync(databasePath);
+    const names = new Set(
+      verificationDatabase.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
+      ).all().map((row) => String(row.name)),
+    );
+    verificationDatabase.close();
+
+    assert.deepEqual(
+      LEGACY_SCHEMA_OBJECTS.filter((name) => names.has(name)),
+      [],
+      'startup must not mutate a canonical database back toward the legacy generation',
+    );
+    assert.equal(names.has('schema_migrations'), true, 'the canonical generation is durably identified');
+  } finally {
+    rmSync(tempDirectory, { recursive: true, force: true });
+  }
 });
