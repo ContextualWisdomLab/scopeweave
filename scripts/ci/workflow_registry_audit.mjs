@@ -10,6 +10,13 @@ import { pathToFileURL } from 'node:url';
 export const GITHUB_API_VERSION = '2026-03-10';
 export const WORKFLOW_DIRECTORY = '.github/workflows';
 const TRANSIENT_STATUS = new Set([500, 502, 503, 504]);
+const KNOWN_WORKFLOW_STATES = new Set([
+  'active',
+  'deleted',
+  'disabled_fork',
+  'disabled_inactivity',
+  'disabled_manually',
+]);
 const CANONICAL_WORKFLOW_PATH = /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/;
 
 /** Validate and return an exact `owner/repository` identifier. */
@@ -112,6 +119,12 @@ export async function listAllWorkflows({ fetchImpl, apiBase, repository, token =
   if (workflows.length !== totalCount) {
     throw new Error(`workflow pagination incomplete: observed ${workflows.length} of ${totalCount}`);
   }
+  const workflowIds = new Set();
+  for (const item of workflows) {
+    if (!Number.isSafeInteger(item?.id)) throw new Error('workflow registry contains an invalid workflow id');
+    if (workflowIds.has(item.id)) throw new Error(`workflow registry contains duplicate workflow id ${item.id}`);
+    workflowIds.add(item.id);
+  }
   return { workflows, receipts, totalCount };
 }
 
@@ -140,6 +153,9 @@ export function classifyWorkflows(workflows, protectedPaths, preservePaths = [])
     const { id, path, state } = workflow || {};
     if (!Number.isSafeInteger(id) || typeof path !== 'string' || typeof state !== 'string') {
       throw new Error('workflow registry contains an invalid identity');
+    }
+    if (!KNOWN_WORKFLOW_STATES.has(state)) {
+      throw new Error(`workflow registry contains unknown workflow state ${state}`);
     }
     let classification;
     if (path.startsWith('dynamic/')) classification = 'github_dynamic';
