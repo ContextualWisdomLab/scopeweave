@@ -34,17 +34,32 @@ persists the database in the `scopeweave-data` volume.
 | `SCOPEWEAVE_JWT_SECRET` | **yes** | Signs session JWTs. Startup fails unless it contains at least 32 non-whitespace characters. |
 | `PORT` | no (default 8787) | Listen port |
 | `SCOPEWEAVE_DB` | no (default `/data/scopeweave.db`) | SQLite file path (on the volume) |
-| `SCOPEWEAVE_DEV` | no | Must be `1` to enable the dev `activate-pro` endpoint. **Never set in production.** |
+| `SCOPEWEAVE_DEV` | no | Must be `1` to enable development-only behavior, including `activate-pro`, loopback Clearfolio HTTP, and the in-memory Clearfolio adapter when no provider URL exists. **Never set in production.** |
 | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | for live billing | Enables real Stripe Checkout (`npm i stripe` too). Without them, billing uses the mock path. |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI` | for real SSO | Points the OIDC login at your IdP. Unset → a built-in mock IdP (dev/test only). |
 | `ORCHESTRATOR_URL` | for AI 브리핑 | contextual-orchestrator 주소. Unset → deterministic mock. |
 | `ORCHESTRATOR_TOKEN` | with URL | orchestrator Bearer 토큰 (`CONTEXTUAL_ORCHESTRATOR_TOKEN`). |
-| `CLEARFOLIO_URL` | for 산출물 viewer | Clearfolio 문서 뷰어 백엔드 주소. Unset → built-in mock (dev/test). |
-| `CLEARFOLIO_HMAC_SECRET` | optional | Signs tenant-claim headers (`clearfolio.tenant-claims.hmac-secret`와 동일 값). |
+| `CLEARFOLIO_URL` | for production 산출물 viewer | Root Clearfolio service origin. Production requires HTTPS and rejects credentials, paths, query strings, and fragments. When absent in production, document conversion/viewing is unavailable rather than simulated. |
+| `CLEARFOLIO_HMAC_SECRET` | with URL | Required tenant-claim HMAC secret; must contain at least 32 non-whitespace characters and match Clearfolio's configured verifier secret. |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY` | no (default 8, maximum 32) | Maximum concurrent Clearfolio status lookups during one attachment-list request. Invalid values fall back to 8; values above 32 are clamped. |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS` | no (default 3000, maximum 30000) | Hard caller-side timeout for each Clearfolio status lookup. The AbortSignal is also forwarded downstream. |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_BUDGET_MS` | no (default 5000, maximum 60000) | Wall-clock budget for the entire best-effort refresh pass. Work not started before the deadline is deferred to a later list request. |
 | `SCOPEWEAVE_RATE_LIMIT_MAX` (+ `SCOPEWEAVE_RATE_LIMIT_WINDOW_MS`) | recommended | Per-IP fixed-window rate limiting (429 + Retry-After). Off when unset. |
+
+### Clearfolio capability readiness
+
+An unset `CLEARFOLIO_URL` is not a successful production conversion service.
+Outside explicit `SCOPEWEAVE_DEV=1`, Clearfolio operations fail closed with a
+stable configuration error and the mock artifact route is not registered. Other
+ScopeWeave planning capabilities remain available. For local integration work,
+`SCOPEWEAVE_DEV=1` permits the in-memory adapter when the URL is absent and also
+permits HTTP only for `localhost`, `127.0.0.1`, or `::1`; remote HTTP endpoints
+are rejected.
+
+Provider URLs are treated as service origins, not arbitrary request prefixes.
+Keep credentials in the dedicated HMAC secret setting rather than URL userinfo,
+and do not configure a path, query string, or fragment. The adapter constructs
+its own versioned API paths from the validated origin.
 
 ## Attachment status refresh operations
 
