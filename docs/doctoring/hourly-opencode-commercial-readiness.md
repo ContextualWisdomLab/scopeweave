@@ -232,4 +232,4 @@ https://doi.org/10.6028/NIST.SP.800-218
 
 NVIDIA Corporation. (2026). *NVIDIA NIM for large language models API
 reference*. NVIDIA Documentation.
-https://docs.nvidia.com/nim/large-language-models/latest/reference.html
+https://docs.nvidia.com/nim/large-language-models/latest/api-reference.html
