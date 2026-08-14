@@ -73,4 +73,17 @@ assert.deepEqual(
   'omitting attribution preserves the hardened request shape exactly',
 );
 
+for (const invalidAttribution of [
+  [],
+  'scopeweave',
+  { service: 'x'.repeat(257) },
+]) {
+  await assert.rejects(
+    chat(messages, invalidAttribution),
+    (error) => error.code === 'orchestrator_attribution_invalid',
+    'malformed or unbounded attribution fails before provider transport',
+  );
+}
+assert.equal(calls.length, 3, 'invalid attribution never reaches the provider');
+
 console.log('✓ orchestrator attribution boundary tests passed');
