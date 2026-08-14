@@ -35,6 +35,16 @@ assert.match(
   'the abortable Clearfolio adapter is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=scripts\/ci\/workflow_registry_audit\.mjs/,
+  'the workflow registry detector is instrumented as owned production code',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/workflow-registry-audit\.test\.mjs/,
+  'the workflow registry detector regression executes under c8',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
