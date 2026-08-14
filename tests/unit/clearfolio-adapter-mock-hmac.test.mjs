@@ -58,6 +58,7 @@ test('Clearfolio mock adapter exists only in explicit development mode', async (
 test('production URL and HMAC configuration rejects ambiguous or unsafe input', async () => {
   delete process.env.SCOPEWEAVE_DEV;
   const cases = [
+    ['not a url', HMAC_SECRET, 'clearfolio_url_invalid'],
     ['ftp://clearfolio.example', HMAC_SECRET, 'clearfolio_url_invalid'],
     ['http://clearfolio.example', HMAC_SECRET, 'clearfolio_transport_insecure'],
     ['https://user:pass@clearfolio.example', HMAC_SECRET, 'clearfolio_url_credentials_forbidden'],
