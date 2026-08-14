@@ -52,6 +52,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Kept invalid editor save actions keyboard-discoverable with
+  `aria-disabled="true"` and an explicit `aria-describedby` relationship while
+  preserving synchronous submit-time validation as the only persistence gate;
+  immediately corrected click and Enter submissions now use the latest draft.
 - Attachment-list status refresh now removes the per-row database lookup,
   uses a configurable bounded worker pool with per-item abortable timeouts and
   a request-wide latency budget, preserves stale status after downstream,

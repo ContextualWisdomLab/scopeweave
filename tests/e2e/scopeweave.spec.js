@@ -14,8 +14,16 @@ const addTopLevelTask = async (page, values) => {
 
 const expectSaveBlockedWith = async (page, message) => {
   const saveButton = page.getByRole('button', { name: '저장', exact: true });
-  await expect(saveButton).toBeDisabled();
+  const initialTaskCount = await page.locator('tbody tr[data-task-id]').count();
+
+  await expect(saveButton).not.toHaveAttribute('disabled');
+  await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
+  await expect(saveButton).toHaveAttribute('aria-describedby', 'editor-errors');
   await expect(page.locator('#editor-errors')).toContainText(message);
+
+  await saveButton.evaluate((button) => button.click());
+
+  await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(initialTaskCount);
   await expect(page.locator('.editor-panel')).toBeVisible();
 };
 
@@ -702,12 +710,9 @@ test.describe('ScopeWeave Planner', () => {
     await page.locator('[data-testid="editor-planned-start"]').fill('2026-05-20');
     await page.locator('[data-testid="editor-planned-end"]').fill('2026-05-19');
 
-    const saveButton = page.getByRole('button', { name: '저장', exact: true });
-    await expect(saveButton).toBeDisabled();
+    await expectSaveBlockedWith(page, '계획종료일은 계획시작일보다 빠를 수 없습니다');
     await expect(page.locator('[data-testid="editor-planned-end"]')).toHaveAttribute('aria-invalid', 'true');
-    await expect(page.locator('#editor-errors')).toContainText('계획종료일은 계획시작일보다 빠를 수 없습니다');
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
-    await expect(page.locator('.editor-panel')).toBeVisible();
   });
 
   test('rejects invalid calendar dates in the editor', async ({ page }) => {
@@ -719,12 +724,9 @@ test.describe('ScopeWeave Planner', () => {
 
     await page.locator('[data-testid="editor-planned-start"]').fill('2026-02-31');
 
-    const saveButton = page.getByRole('button', { name: '저장', exact: true });
-    await expect(saveButton).toBeDisabled();
+    await expectSaveBlockedWith(page, '계획시작일은 YYYY-MM-DD 형식의 실제 달력 날짜여야 합니다');
     await expect(page.locator('[data-testid="editor-planned-start"]')).toHaveAttribute('aria-invalid', 'true');
-    await expect(page.locator('#editor-errors')).toContainText('계획시작일은 YYYY-MM-DD 형식의 실제 달력 날짜여야 합니다');
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
-    await expect(page.locator('.editor-panel')).toBeVisible();
   });
 
   test('rejects HTML payloads from the UI editor', async ({ page }) => {
@@ -732,11 +734,9 @@ test.describe('ScopeWeave Planner', () => {
 
     await page.locator('[data-testid="editor-task"]').fill('<script>alert(1)</script>');
 
-    const saveButton = page.locator('.editor-panel').getByRole('button', { name: '저장' });
-    await expect(saveButton).toBeDisabled();
+    await expectSaveBlockedWith(page, 'HTML 태그 문자를 사용할 수 없습니다');
     await expect(page.locator('[data-testid="editor-task"]')).toHaveAttribute('aria-invalid', 'true');
-    await expect(page.locator('#editor-errors')).toContainText('HTML 태그 문자를 사용할 수 없습니다');
-    await expect(page.locator('.editor-panel')).toBeVisible();
+    await expect(page.locator('#task-table-body')).not.toContainText('<script>alert(1)</script>');
   });
 
   test('validateDraft pure function logic', async ({ page }) => {
@@ -1092,12 +1092,12 @@ test.describe('ScopeWeave Planner', () => {
 
   test('renders empty cells as independent DOM clones', async ({ page }) => {
     const result = await page.evaluate(() => {
-      const emptyCells = Array.from(document.querySelectorAll('.empty-cell'));
+      const emptyCells = [
+        window.createTextCellContent(''),
+        window.createTextCellContent('')
+      ];
+      document.body.append(...emptyCells);
       const [first, second] = emptyCells;
-
-      if (!first || !second) {
-        return { count: emptyCells.length, uniqueCount: new Set(emptyCells).size };
-      }
 
       first.querySelector('[aria-hidden="true"]').textContent = 'x';
       first.querySelector('.sr-only').textContent = 'mutated';
