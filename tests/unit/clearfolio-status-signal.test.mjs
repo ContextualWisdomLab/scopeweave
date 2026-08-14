@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+const HMAC_SECRET = 'clearfolio-shared-secret-32-bytes!!';
 process.env.CLEARFOLIO_URL = 'https://clearfolio.example';
+process.env.CLEARFOLIO_HMAC_SECRET = HMAC_SECRET;
 const originalFetch = globalThis.fetch;
 let observedUrl;
 let observedOptions;
@@ -40,6 +42,8 @@ async function expectSanitizedFailure(operation, expectedMessage, forbiddenPatte
 test.after(() => {
   globalThis.fetch = originalFetch;
   delete process.env.CLEARFOLIO_URL;
+  delete process.env.CLEARFOLIO_HMAC_SECRET;
+  delete process.env.SCOPEWEAVE_DEV;
 });
 
 test('jobStatus enforces endpoint, signal, transport, HTTP, and status contracts', async () => {
@@ -230,22 +234,26 @@ test('artifactUrl validates links and never exposes transport or response text',
   });
   assert.equal(
     await artifactUrl(4, 5, 'job-1'),
-    'https://clearfolio.example/viewer/job-1?artifactToken=token%20value',
+    'https://cdn.example/file.pdf?artifactToken=token%20value',
+    'a token from another origin is never transplanted into the trusted Clearfolio viewer',
   );
 });
 
-test('artifactUrl permits HTTP only when the configured Clearfolio endpoint is HTTP', async () => {
-  process.env.CLEARFOLIO_URL = 'http://clearfolio.local';
+test('artifactUrl permits HTTP only for explicit loopback development', async () => {
+  process.env.SCOPEWEAVE_DEV = '1';
+  process.env.CLEARFOLIO_URL = 'http://127.0.0.1:8080';
+  process.env.CLEARFOLIO_HMAC_SECRET = HMAC_SECRET;
   try {
     const { artifactUrl: httpArtifactUrl } = await import(
       '../../server/clearfolio.mjs?http-artifact-contract-test=1'
     );
-    setResponse({ json: async () => ({ artifactUrl: 'http://cdn.local/file.pdf' }) });
+    setResponse({ json: async () => ({ artifactUrl: 'http://127.0.0.1:8080/file.pdf' }) });
     assert.equal(
       await httpArtifactUrl(4, 5, 'job-http'),
-      'http://cdn.local/file.pdf',
+      'http://127.0.0.1:8080/file.pdf',
     );
   } finally {
     process.env.CLEARFOLIO_URL = 'https://clearfolio.example';
+    delete process.env.SCOPEWEAVE_DEV;
   }
 });
