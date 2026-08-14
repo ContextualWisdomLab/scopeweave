@@ -230,6 +230,11 @@ jobs:
         shell: bash
         run: npm ci --ignore-scripts --no-audit --no-fund
 
+      - name: Install pinned Playwright browser for allowlisted E2E checks
+        if: steps.gate.outputs.dispatch == 'true' && env.DRY_RUN != 'true'
+        shell: bash
+        run: npx --no-install playwright install --with-deps chromium
+
       - name: Materialize bounded untrusted repository metadata
         if: steps.gate.outputs.dispatch == 'true' && env.DRY_RUN != 'true'
         shell: bash
@@ -293,7 +298,7 @@ jobs:
           }
           case "\$1" in
             status) env -i HOME="\$HOME" PATH="$node_path" /usr/bin/git status --short ;;
-            diff) /usr/bin/git diff --check && /usr/bin/git diff --stat ;;
+            diff) run_clean /usr/bin/git diff --check && run_clean /usr/bin/git diff --stat ;;
             unit) run_clean "$npm_bin" run test:unit ;;
             api) run_clean "$npm_bin" run test:api ;;
             coverage) run_clean "$npm_bin" run coverage ;;
@@ -304,7 +309,7 @@ jobs:
               run_clean "$npm_bin" run test:api
               run_clean "$npm_bin" run coverage
               run_clean "$npm_bin" run check:python-docstrings
-              /usr/bin/git diff --check
+              run_clean /usr/bin/git diff --check
               ;;
             *) echo "unsupported verification command" >&2; exit 64 ;;
           esac
@@ -902,9 +907,13 @@ jobs:
             exit 0
           fi
 
-          git push \
-            "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-            "HEAD:refs/heads/${branch}"
+          auth_header="Authorization: Basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          GIT_CONFIG_COUNT=1 \
+          GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+          GIT_CONFIG_VALUE_0="$auth_header" \
+            git push \
+              "https://github.com/${GITHUB_REPOSITORY}.git" \
+              "HEAD:refs/heads/${branch}"
 
           if [ "$(
             gh pr list \
@@ -914,9 +923,12 @@ jobs:
               --json number \
               --jq 'length'
           )" -ne 0 ]; then
-            git push \
-              "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" \
-              ":refs/heads/${branch}"
+            GIT_CONFIG_COUNT=1 \
+            GIT_CONFIG_KEY_0=http.https://github.com/.extraheader \
+            GIT_CONFIG_VALUE_0="$auth_header" \
+              git push \
+                "https://github.com/${GITHUB_REPOSITORY}.git" \
+                ":refs/heads/${branch}"
             echo "A PR appeared after push; deleted the duplicate branch." \
               >>"$GITHUB_STEP_SUMMARY"
             exit 0
