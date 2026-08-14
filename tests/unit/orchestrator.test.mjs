@@ -105,6 +105,17 @@ try {
     (error) => error.code === 'orchestrator_response_invalid',
   );
 
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    choices: [{ message: { content: 'x'.repeat(1024 * 1024) } }],
+  }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+  await assert.rejects(
+    configured.chat([{ role: 'user', content: 'status' }]),
+    (error) => error.code === 'orchestrator_response_size_invalid',
+  );
+
   globalThis.fetch = async () => new Response(JSON.stringify({ error: {} }), {
     status: 503,
     headers: { 'content-type': 'application/json' },
