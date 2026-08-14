@@ -24,6 +24,24 @@ generation. Any missing table, old/new mixture, or duplicated generation is an
 invalid startup state and raises `SchemaMigrationStateError` before request
 handling begins.
 
+## Pre-bootstrap boundary
+
+The database catalog is inspected **before** the legacy `CREATE TABLE IF NOT
+EXISTS` and additive `ALTER TABLE` statements run. Only a genuinely empty
+database may initialize the legacy schema from scratch. An existing database
+must already be one complete known generation; mixed, incomplete, ledger-only,
+or otherwise ambiguous states fail closed before legacy bootstrap can mutate
+them.
+
+A complete canonical generation is deliberately identified and recorded, but
+this application version still uses legacy table names in its query layer.
+Therefore startup records/verifies `canonical_schema_v2` and then fails with a
+stable "canonical schema generation is not yet supported by this application
+version" error. It does **not** recreate legacy tables over the canonical
+schema. Serving a canonical database becomes valid only in the later issue #433
+slice that migrates the application query/data-access layer as part of the same
+reviewed cutover.
+
 ## Ledger contract
 
 `schema_migrations` contains a stable `migration_key`, a low-cardinality
@@ -58,11 +76,16 @@ recovery.
 - a distinct canonical-generation ledger record;
 - fail-closed mixed-generation detection;
 - incomplete schema rejection;
-- the complete ten-object legacy and canonical inventories.
+- the complete ten-object legacy and canonical inventories;
+- pre-bootstrap classification of pristine, legacy, canonical, and invalid
+  databases; and
+- a real `server/db.mjs` subprocess regression proving canonical startup fails
+  for the truthful query-layer reason without recreating any legacy table.
 
 The production module is registered in the Istanbul coverage command. The API
-and existing server tests exercise the startup integration through
-`server/db.mjs`, so the guard also protects normal in-memory test databases.
+and existing server tests exercise normal startup integration through
+`server/db.mjs`, while the canonical-database subprocess exercises the opposite
+fail-closed boundary against a persisted SQLite file.
 
 ## Rollback
 
