@@ -6,6 +6,7 @@ const OC_MODEL = process.env.ORCHESTRATOR_MODEL || 'contextual-orchestrator';
 const ORCHESTRATOR_TIMEOUT_MS = 120_000;
 const MAX_MESSAGE_COUNT = 256;
 const MAX_CONTENT_LENGTH = 100_000;
+const MAX_PROVIDER_RESPONSE_BYTES = 1024 * 1024;
 
 export const orchestratorMock = process.env.SCOPEWEAVE_DEV === '1' && !OC_URL;
 
@@ -105,14 +106,29 @@ function validatedMessages(messages) {
 }
 
 /**
- * Parse one provider response without returning raw provider payloads in failures.
+ * Parse one bounded provider response without returning raw provider payloads in failures.
  * @param {Response} response provider response
  * @returns {Promise<Record<string, unknown>>}
  */
 async function responseJson(response) {
+  let bytes;
+  try {
+    bytes = Buffer.from(await response.arrayBuffer());
+  } catch {
+    throw new OrchestratorConfigurationError(
+      'orchestrator_response_invalid',
+      'contextual-orchestrator response could not be read.',
+    );
+  }
+  if (bytes.length === 0 || bytes.length > MAX_PROVIDER_RESPONSE_BYTES) {
+    throw new OrchestratorConfigurationError(
+      'orchestrator_response_size_invalid',
+      'contextual-orchestrator response size is outside the accepted boundary.',
+    );
+  }
   let data;
   try {
-    data = await response.json();
+    data = JSON.parse(bytes.toString('utf8'));
   } catch {
     throw new OrchestratorConfigurationError(
       'orchestrator_response_invalid',
