@@ -115,3 +115,6 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+## 2026-08-11 - Restore focus precisely across editor state changes
+**Learning:** When opening and closing an inline editor, storing a direct DOM reference to the previously focused element fails because the DOM is fully re-rendered and the reference becomes stale or detached.
+**Action:** Store stable identifier attributes (like data-action and data-task-id) of the active element before triggering the re-render, and dynamically re-query the DOM using these attributes in a requestAnimationFrame block to restore focus after the update.

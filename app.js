@@ -1176,7 +1176,16 @@ function handleRowAction(action, taskId) {
 }
 
 function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertAfterId = null, draft = null }) {
-  state.previousFocus = document.activeElement;
+  const activeEl = document.activeElement;
+  state.previousFocus = null;
+  if (activeEl) {
+    const tr = activeEl.closest('tr');
+    state.previousFocus = {
+      id: activeEl.id,
+      action: activeEl.dataset.action,
+      taskId: tr ? tr.dataset.taskId : null
+    };
+  }
   if (mode === 'edit') {
     const task = findTask(targetId);
     if (!task) {
@@ -1227,7 +1236,19 @@ function closeEditor(force = false) {
   renderAll();
 
   if (state.previousFocus) {
-    state.previousFocus.focus();
+    const { id, action, taskId } = state.previousFocus;
+    requestAnimationFrame(() => {
+      let targetEl = null;
+      if (taskId && action) {
+        targetEl = document.querySelector(`tr[data-task-id="${taskId}"] button[data-action="${action}"]`);
+      } else if (id) {
+        targetEl = document.getElementById(id);
+      }
+
+      if (targetEl) {
+        targetEl.focus();
+      }
+    });
     state.previousFocus = null;
   }
 }
