@@ -12,6 +12,7 @@ import {
   SchemaMigrationStateError,
   classifySchemaMigrationState,
   ensureSchemaMigrationState,
+  inspectSchemaBootstrapState,
 } from '../../server/schema_migration.mjs';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -103,6 +104,32 @@ test('schema-state classifier rejects unusable inputs and names every expected o
   assert.throws(() => classifySchemaMigrationState(new Set()), /partial or mixed/);
   assert.equal(new Set(LEGACY_SCHEMA_OBJECTS).size, 10);
   assert.equal(new Set(CANONICAL_SCHEMA_OBJECTS).size, 10);
+});
+
+test('pre-bootstrap inspection permits only pristine or complete known generations', () => {
+  assert.throws(() => inspectSchemaBootstrapState(null), /provide prepare/);
+
+  const emptyDatabase = new DatabaseSync(':memory:');
+  assert.equal(inspectSchemaBootstrapState(emptyDatabase), 'uninitialized');
+  emptyDatabase.close();
+
+  const legacyDatabase = new DatabaseSync(':memory:');
+  createTables(legacyDatabase, LEGACY_SCHEMA_OBJECTS);
+  assert.equal(inspectSchemaBootstrapState(legacyDatabase), 'legacy_ready');
+  legacyDatabase.close();
+
+  const canonicalDatabase = new DatabaseSync(':memory:');
+  createTables(canonicalDatabase, CANONICAL_SCHEMA_OBJECTS);
+  assert.equal(inspectSchemaBootstrapState(canonicalDatabase), 'canonical_ready');
+  canonicalDatabase.close();
+
+  const ledgerOnlyDatabase = new DatabaseSync(':memory:');
+  ledgerOnlyDatabase.exec('CREATE TABLE schema_migrations (migration_key TEXT PRIMARY KEY)');
+  assert.throws(
+    () => inspectSchemaBootstrapState(ledgerOnlyDatabase),
+    /partial or mixed schema migration state/,
+  );
+  ledgerOnlyDatabase.close();
 });
 
 test('database bootstrap never recreates legacy tables over a canonical generation', () => {
