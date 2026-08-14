@@ -106,26 +106,98 @@ function validatedMessages(messages) {
 }
 
 /**
+ * Build the stable response-size failure used by declared and streamed limits.
+ * @returns {OrchestratorConfigurationError} Operator-safe size error.
+ */
+function responseSizeError() {
+  return new OrchestratorConfigurationError(
+    'orchestrator_response_size_invalid',
+    'contextual-orchestrator response size is outside the accepted boundary.',
+  );
+}
+
+/**
+ * Read one provider body without ever buffering more than the configured limit.
+ *
+ * A trustworthy numeric Content-Length can reject an oversized response before
+ * body allocation. The stream reader remains authoritative because providers
+ * may omit or misstate that header. The reader is cancelled as soon as the
+ * accumulated byte count exceeds the limit.
+ *
+ * @param {Response} response provider response
+ * @returns {Promise<Buffer>} Non-empty bounded response bytes.
+ */
+async function boundedResponseBytes(response) {
+  const declaredLength = response.headers?.get?.('content-length');
+  if (declaredLength !== null && declaredLength !== undefined && declaredLength !== '') {
+    const normalizedLength = String(declaredLength).trim();
+    if (!/^\d+$/.test(normalizedLength)) {
+      throw new OrchestratorConfigurationError(
+        'orchestrator_response_invalid',
+        'contextual-orchestrator returned an invalid response length.',
+      );
+    }
+    const length = Number(normalizedLength);
+    if (!Number.isSafeInteger(length)) throw responseSizeError();
+    if (length === 0 || length > MAX_PROVIDER_RESPONSE_BYTES) throw responseSizeError();
+  }
+
+  const reader = response.body?.getReader?.();
+  if (!reader || typeof reader.read !== 'function') {
+    throw new OrchestratorConfigurationError(
+      'orchestrator_response_invalid',
+      'contextual-orchestrator response body is not stream-readable.',
+    );
+  }
+
+  const chunks = [];
+  let totalBytes = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!(value instanceof Uint8Array)) {
+        throw new OrchestratorConfigurationError(
+          'orchestrator_response_invalid',
+          'contextual-orchestrator returned an invalid response chunk.',
+        );
+      }
+      totalBytes += value.byteLength;
+      if (totalBytes > MAX_PROVIDER_RESPONSE_BYTES) {
+        try {
+          await reader.cancel();
+        } catch {
+          // Cancellation is best effort after the byte budget has already failed closed.
+        }
+        throw responseSizeError();
+      }
+      chunks.push(Buffer.from(value));
+    }
+  } catch (error) {
+    if (error instanceof OrchestratorConfigurationError) throw error;
+    throw new OrchestratorConfigurationError(
+      'orchestrator_response_invalid',
+      'contextual-orchestrator response could not be read.',
+    );
+  } finally {
+    try {
+      reader.releaseLock?.();
+    } catch {
+      // Releasing a consumed/cancelled reader is cleanup only and cannot alter the result.
+    }
+  }
+
+  if (totalBytes === 0) throw responseSizeError();
+  return Buffer.concat(chunks, totalBytes);
+}
+
+/**
  * Parse one bounded provider response without returning raw provider payloads in failures.
  * @param {Response} response provider response
  * @returns {Promise<Record<string, unknown>>}
  */
 async function responseJson(response) {
-  let bytes;
-  try {
-    bytes = Buffer.from(await response.arrayBuffer());
-  } catch {
-    throw new OrchestratorConfigurationError(
-      'orchestrator_response_invalid',
-      'contextual-orchestrator response could not be read.',
-    );
-  }
-  if (bytes.length === 0 || bytes.length > MAX_PROVIDER_RESPONSE_BYTES) {
-    throw new OrchestratorConfigurationError(
-      'orchestrator_response_size_invalid',
-      'contextual-orchestrator response size is outside the accepted boundary.',
-    );
-  }
+  const bytes = await boundedResponseBytes(response);
   let data;
   try {
     data = JSON.parse(bytes.toString('utf8'));
