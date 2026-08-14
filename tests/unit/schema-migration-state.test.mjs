@@ -4,6 +4,7 @@ import { DatabaseSync } from 'node:sqlite';
 import {
   CANONICAL_SCHEMA_OBJECTS,
   LEGACY_SCHEMA_OBJECTS,
+  SchemaMigrationStateError,
   classifySchemaMigrationState,
   ensureSchemaMigrationState,
 } from '../../server/schema_migration.mjs';
@@ -14,6 +15,10 @@ function createTables(db, names) {
   }
 }
 
+function plainRows(rows) {
+  return rows.map((row) => ({ ...row }));
+}
+
 test('legacy schema gets an idempotent migration-ledger record', () => {
   const db = new DatabaseSync(':memory:');
   createTables(db, LEGACY_SCHEMA_OBJECTS);
@@ -21,9 +26,9 @@ test('legacy schema gets an idempotent migration-ledger record', () => {
   assert.equal(ensureSchemaMigrationState(db), 'legacy_ready');
   assert.equal(ensureSchemaMigrationState(db), 'legacy_ready');
 
-  const ledger = db.prepare(
+  const ledger = plainRows(db.prepare(
     'SELECT migration_key AS migrationKey, state_code AS stateCode FROM schema_migrations ORDER BY migration_key',
-  ).all();
+  ).all());
   assert.deepEqual(ledger, [
     { migrationKey: 'legacy_schema_v1', stateCode: 'legacy_ready' },
   ]);
@@ -35,9 +40,9 @@ test('canonical schema gets a distinct append-only migration-ledger record', () 
   createTables(db, CANONICAL_SCHEMA_OBJECTS);
 
   assert.equal(ensureSchemaMigrationState(db), 'canonical_ready');
-  const ledger = db.prepare(
+  const ledger = plainRows(db.prepare(
     'SELECT migration_key AS migrationKey, state_code AS stateCode FROM schema_migrations',
-  ).all();
+  ).all());
   assert.deepEqual(ledger, [
     { migrationKey: 'canonical_schema_v2', stateCode: 'canonical_ready' },
   ]);
@@ -51,9 +56,37 @@ test('mixed or incomplete schemas fail closed before service use', () => {
 
   assert.throws(
     () => ensureSchemaMigrationState(db),
-    /partial or mixed schema migration state/,
+    (error) => error instanceof SchemaMigrationStateError
+      && /partial or mixed schema migration state/.test(error.message),
   );
   db.close();
+});
+
+test('corrupted migration-ledger state cannot bless a verified schema', () => {
+  const db = new DatabaseSync(':memory:');
+  createTables(db, LEGACY_SCHEMA_OBJECTS);
+  db.exec(`
+    CREATE TABLE schema_migrations (
+      migration_key TEXT PRIMARY KEY,
+      state_code TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO schema_migrations(migration_key, state_code)
+    VALUES ('legacy_schema_v1', 'canonical_ready');
+  `);
+
+  assert.throws(
+    () => ensureSchemaMigrationState(db),
+    (error) => error instanceof SchemaMigrationStateError
+      && /ledger state does not match verified schema/.test(error.message),
+  );
+  db.close();
+});
+
+test('migration guard rejects adapters missing required database operations', () => {
+  assert.throws(() => ensureSchemaMigrationState(null), /exec and prepare/);
+  assert.throws(() => ensureSchemaMigrationState({ prepare() {} }), /exec and prepare/);
+  assert.throws(() => ensureSchemaMigrationState({ exec() {} }), /exec and prepare/);
 });
 
 test('schema-state classifier rejects unusable inputs and names every expected object', () => {
