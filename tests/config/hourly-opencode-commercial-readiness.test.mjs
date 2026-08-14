@@ -112,6 +112,21 @@ assert.doesNotMatch(
 );
 assert.match(workflow, /unit\) run_clean .* run test:unit/);
 assert.match(workflow, /api\) run_clean .* run test:api/);
+assert.match(
+  agentJob,
+  /Install reviewed dependencies before model execution[\s\S]*Install pinned Playwright browser for allowlisted E2E checks[\s\S]*npx --no-install playwright install --with-deps chromium/,
+  'the agent installs the pinned browser runtime before the allowlisted E2E command can run',
+);
+assert.match(
+  agentJob,
+  /diff\) run_clean \/usr\/bin\/git diff --check && run_clean \/usr\/bin\/git diff --stat/,
+  'the diff helper strips provider secrets from both git subprocesses',
+);
+assert.match(
+  agentJob,
+  /all\)[\s\S]*run_clean .* run check:python-docstrings[\s\S]*run_clean \/usr\/bin\/git diff --check/,
+  'the aggregate helper keeps git diff inside the secret-free environment',
+);
 
 assert.match(
   workflow,
@@ -193,6 +208,16 @@ assert.match(publishJob, /refusing duplicate publication/);
 assert.match(publishJob, /deleted the duplicate branch/);
 assert.match(publishJob, /A competing PR won after create; closed this duplicate/);
 assert.match(publishJob, /--base "\$DEFAULT_BRANCH"/);
+assert.doesNotMatch(
+  publishJob,
+  /https:\/\/x-access-token:\$\{?GH_TOKEN\}?@github\.com|x-access-token:\$GH_TOKEN@github\.com/,
+  'publisher authentication never embeds the GitHub token in a remote URL',
+);
+assert.match(
+  publishJob,
+  /GIT_CONFIG_KEY_0=http\.https:\/\/github\.com\/\.extraheader[\s\S]*GIT_CONFIG_VALUE_0="\$auth_header"[\s\S]*git push[\s\S]*https:\/\/github\.com\/\$\{GITHUB_REPOSITORY\}\.git/,
+  'publisher push authentication is supplied through a scoped Git extraheader environment',
+);
 assert.doesNotMatch(workflow, /gh pr merge|enablePullRequestAutoMerge/);
 assert.match(workflow, /Do not commit,[\s\S]*push,[\s\S]*merge/);
 assert.match(
