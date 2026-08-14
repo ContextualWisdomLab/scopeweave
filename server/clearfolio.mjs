@@ -96,7 +96,7 @@ function clearfolioConfiguration() {
       'Clearfolio production traffic requires HTTPS.',
     );
   }
-  if (!CF_SECRET.trim() || CF_SECRET.trim().length < MIN_HMAC_SECRET_LENGTH) {
+  if (CF_SECRET.replace(/\s/g, '').length < MIN_HMAC_SECRET_LENGTH) {
     throw new ClearfolioConfigurationError(
       'clearfolio_hmac_secret_invalid',
       `CLEARFOLIO_HMAC_SECRET must contain at least ${MIN_HMAC_SECRET_LENGTH} non-whitespace characters.`,
