@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 export const GITHUB_API_VERSION = '2026-03-10';
 export const WORKFLOW_DIRECTORY = '.github/workflows';
 const TRANSIENT_STATUS = new Set([500, 502, 503, 504]);
+const CANONICAL_WORKFLOW_PATH = /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/;
 
 /** Validate and return an exact `owner/repository` identifier. */
 export function validateRepository(value) {
@@ -30,9 +31,26 @@ export function parseLinkHeader(value) {
   return links;
 }
 
+/**
+ * Delay a bounded retry using the real runtime timer by default.
+ *
+ * The timer implementation is injectable only so unit tests can prove the
+ * delay contract without sleeping. Production callers use `globalThis.setTimeout`.
+ */
+export function sleepMilliseconds(delayMs, setTimeoutImpl = globalThis.setTimeout) {
+  if (!Number.isSafeInteger(delayMs) || delayMs < 0 || delayMs > 60_000) {
+    return Promise.reject(new RangeError('retry delay must be an integer from 0 through 60000 milliseconds'));
+  }
+  if (typeof setTimeoutImpl !== 'function') {
+    return Promise.reject(new TypeError('setTimeoutImpl must be a function'));
+  }
+  return new Promise((resolve) => setTimeoutImpl(resolve, delayMs));
+}
+
 /** Perform a bounded JSON GET with retry only for transient 5xx responses. */
-export async function requestJson({ fetchImpl, url, token = '', sleepImpl = async () => {}, maxAttempts = 3 }) {
+export async function requestJson({ fetchImpl, url, token = '', sleepImpl = sleepMilliseconds, maxAttempts = 3 }) {
   if (typeof fetchImpl !== 'function') throw new TypeError('fetchImpl must be a function');
+  if (typeof sleepImpl !== 'function') throw new TypeError('sleepImpl must be a function');
   if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 5) {
     throw new RangeError('maxAttempts must be an integer from 1 through 5');
   }
@@ -183,7 +201,9 @@ export function parseArgs(argv, environment = process.env) {
   validateRepository(repository);
   if (!branch) throw new Error('branch is required');
   for (const path of preservePaths) {
-    if (!path.startsWith(`${WORKFLOW_DIRECTORY}/`)) throw new Error(`preserved workflow path is outside ${WORKFLOW_DIRECTORY}`);
+    if (!CANONICAL_WORKFLOW_PATH.test(path)) {
+      throw new Error(`preserved path must be a canonical workflow file under ${WORKFLOW_DIRECTORY}`);
+    }
   }
   return { repository, branch, preservePaths };
 }
