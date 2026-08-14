@@ -83,6 +83,20 @@ try {
     'loopback ok',
   );
 
+  configure({ url: 'http://[::1]:8080/' });
+  globalThis.fetch = async (url) => {
+    assert.equal(url, 'http://[::1]:8080/v1/chat/completions');
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'ipv6 loopback ok' } }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  assert.equal(
+    await (await freshModule('ipv6-loopback-http')).chat([{ role: 'developer', content: 'status' }]),
+    'ipv6 loopback ok',
+    'WHATWG IPv6 loopback hostname serialization must remain accepted by the documented local transport boundary',
+  );
+
   configure();
   const configured = await freshModule('message-boundaries');
   globalThis.fetch = async () => new Response(JSON.stringify({
