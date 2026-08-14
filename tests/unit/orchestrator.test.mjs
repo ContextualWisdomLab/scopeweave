@@ -116,6 +116,54 @@ try {
     (error) => error.code === 'orchestrator_response_size_invalid',
   );
 
+  let knownLengthBodyRead = false;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    headers: new Headers({ 'content-length': String(1024 * 1024 + 1) }),
+    body: {
+      getReader() {
+        knownLengthBodyRead = true;
+        throw new Error('oversized declared body must not be read');
+      },
+    },
+  });
+  await assert.rejects(
+    configured.chat([{ role: 'user', content: 'status' }]),
+    (error) => error.code === 'orchestrator_response_size_invalid',
+  );
+  assert.equal(knownLengthBodyRead, false, 'oversized declared response is rejected before body allocation');
+
+  let streamedReads = 0;
+  let streamedCancelled = false;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    headers: new Headers(),
+    body: {
+      getReader() {
+        return {
+          async read() {
+            streamedReads += 1;
+            if (streamedReads === 1) {
+              return { done: false, value: new Uint8Array(1024 * 1024 + 1) };
+            }
+            throw new Error('reader must stop after the first oversized chunk');
+          },
+          async cancel() {
+            streamedCancelled = true;
+          },
+        };
+      },
+    },
+  });
+  await assert.rejects(
+    configured.chat([{ role: 'user', content: 'status' }]),
+    (error) => error.code === 'orchestrator_response_size_invalid',
+  );
+  assert.equal(streamedReads, 1, 'stream reader stops as soon as the response exceeds the byte budget');
+  assert.equal(streamedCancelled, true, 'oversized response stream is cancelled');
+
   globalThis.fetch = async () => new Response(JSON.stringify({ error: {} }), {
     status: 503,
     headers: { 'content-type': 'application/json' },
