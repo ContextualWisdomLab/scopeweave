@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a fail-closed hourly commercial-readiness loop that runs a
+  checksum-verified OpenCode 1.18.18 agent against NVIDIA hosted NIM models only
+  when the pull-request queue is empty. The workflow separates the
+  secret-bearing read-only coding agent, a secret-free read-only verifier, and a
+  fresh write-authorized publisher. A per-file SHA-256 bundle and full-index
+  patch must pass unit, API, coverage, docstring, cloud E2E, bounded-content,
+  stale-base, and duplicate-queue checks before one PR can enter central review.
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS
   estimation coverage, dependency risk, and procurement package section checks.
 - Preserved PM-analysis research papers, NASA WBS handbook, BCP 14, and JSON
@@ -49,6 +56,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added cross-device regression coverage proving that `logout-all` rejects stale
   tokens on bearer, calendar, SSE, and attachment-view transports while the
   replacement token continues through the same authentication boundary.
+- Prevented the product-development agent from receiving GitHub mutation or OIDC
+  credentials, using arbitrary shell or network tools, editing workflow or
+  governance files, adding scanner suppressions, symlinks, opaque binaries,
+  oversized changes, or credential-like literals, and from committing,
+  publishing, approving, releasing, or merging directly.
+- Prevented agent-edited tests from sharing a runner with trusted publication
+  authority by using separate fresh jobs, immutable-SHA-pinned artifact actions,
+  exact source and patch digests, per-file bundle verification, trusted
+  fixed-ref checkouts without shared caches, protected verification-command
+  definitions, and byte-for-byte patch reconstruction after tests.
+- Bounded three-model fallback to a three-hour aggregate budget within the agent
+  job, installed Playwright browser dependencies before secret-free E2E, and
+  centralized the protected-path contract across packaging and publication.
 
 ### Changed
 
