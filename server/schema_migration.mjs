@@ -11,10 +11,10 @@ const SCHEMA_OBJECT_RENAMES = Object.freeze({
   attachments: 'project_attachments',
 });
 
-const MIGRATION_LEDGER_STATES = Object.freeze({
+const MIGRATION_LEDGER_STATES = Object.freeze(Object.assign(Object.create(null), {
   legacy_schema_v1: 'legacy_ready',
   canonical_schema_v2: 'canonical_ready',
-});
+}));
 
 /** Legacy single-word tables that will be replaced by issue #433. */
 export const LEGACY_SCHEMA_OBJECTS = Object.freeze(Object.keys(SCHEMA_OBJECT_RENAMES));
