@@ -32,36 +32,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added regression coverage that prevents array-valued passwords from being
   coerced into valid credentials.
 - Updated Hono runtime dependencies to patched supported releases.
-- Sanitized Clearfolio submission, status, and artifact-link transport failures
-  so network details and downstream response text cannot reach browser or
-  diagnostic payloads; rejected unknown or whitespace-padded conversion states
-  and malformed, unsupported-scheme, or HTTPS-downgrade artifact links.
-- Centralized session JWT verification and database-backed `token_version`
-  revocation across bearer middleware, calendar feeds, server-sent events, and
-  attachment-view URL transports.
-- Made session-token minting fail closed unless the subject, token version, and
-  lifetime are bounded safe integers, and capped general session lifetime at
-  seven days so internal callers cannot mint excessive or numerically unsafe
-  credentials.
-- Rejected signed session JWTs with a non-HS256/JWT header, non-object claims,
-  missing or invalid subject/expiry, or a missing, Boolean, fractional,
-  negative, unsafe, or otherwise invalid token-version claim before user lookup.
-- Added cross-device regression coverage proving that `logout-all` rejects stale
-  tokens on bearer, calendar, SSE, and attachment-view transports while the
-  replacement token continues through the same authentication boundary.
 
 ### Changed
 
-- Restored keyboard focus to the invoking Add or Edit control after the inline
-  editor rerenders on save or cancel, including mobile/touch viewports, by
-  storing stable control identity rather than a detached DOM reference.
-- Attachment-list status refresh now removes the per-row database lookup,
-  uses a configurable bounded worker pool with per-item abortable timeouts and
-  a request-wide latency budget, preserves stale status after downstream,
-  timeout, malformed-response, and persistence failures, excludes internal
-  conversion identifiers from responses, reports attempted, changed, failed,
-  skipped-data, and deferred-budget counters separately, and exposes fixed
-  low-cardinality timeout, lookup, validation, and persistence failure counters.
 - 프로젝트 이름 입력 필드에 입력 예시(placeholder)를 추가하여 사용자 편의성을 개선했습니다.
 - 데이터 테이블의 반복되는 액션 버튼에 컨텍스트 정보(작업명)를 포함한 명시적인 ARIA 레이블을 추가하고, 유효성 검사 에러를 폼 필드에 연결하여 접근성을 개선했습니다.
 - `createGanttBarElement`, `renderGantt`, `buildWeekdayTimeline`에서 반복적으로 호출되던 `compareDateStrings`를 직접적인 문자열 비교 연산(`>=`, `<=`)으로 교체하여 O(N*D) 복잡도의 캐시 스레싱과 정규식 검사를 방지했습니다.

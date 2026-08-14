@@ -19,6 +19,7 @@ test.describe('Focus Restoration on Mobile', () => {
 
     await expect(page.locator('form[data-editor-form="true"]')).not.toBeVisible();
 
-    await expect(addBtn).toBeFocused();
+    const isFocused = await addBtn.evaluate((node) => document.activeElement === node);
+    expect(isFocused).toBeTruthy();
   });
 });

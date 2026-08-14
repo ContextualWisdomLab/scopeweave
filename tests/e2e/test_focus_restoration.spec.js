@@ -19,8 +19,9 @@ test.describe('Focus Restoration after Editor Close', () => {
     // Wait for editor to disappear
     await expect(page.locator('form[data-editor-form="true"]')).not.toBeVisible();
 
-    // Wait for retryable focus restoration
-    await expect(addBtn).toBeFocused();
+    // Evaluate active element
+    const isFocused = await addBtn.evaluate((node) => document.activeElement === node);
+    expect(isFocused).toBeTruthy();
   });
 
   test('restores focus to edit button when closing task editor', async ({ page }) => {
@@ -45,7 +46,8 @@ test.describe('Focus Restoration after Editor Close', () => {
     await page.locator('button[data-action="cancel-editor"]').click();
     await expect(page.locator('form[data-editor-form="true"]')).not.toBeVisible();
 
-    // Wait for retryable focus restoration on the edit button
-    await expect(editBtn).toBeFocused();
+    // Check focus on the edit button
+    const isFocused = await editBtn.evaluate((node) => document.activeElement === node);
+    expect(isFocused).toBeTruthy();
   });
 });

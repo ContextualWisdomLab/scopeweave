@@ -8,7 +8,6 @@ import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
-import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
@@ -74,20 +73,7 @@ function projectAccess(userId, projectId) {
 }
 
 // --- observability: in-process counters + structured request log.
-const metrics = {
-  startedAt: new Date().toISOString(),
-  requests: 0,
-  s2xx: 0,
-  s4xx: 0,
-  s5xx: 0,
-  signups: 0,
-  projectsCreated: 0,
-  webhookDeliveries: 0,
-  attachmentStatusRefreshAttempted: 0,
-  attachmentStatusRefreshChanged: 0,
-  attachmentStatusRefreshFailed: 0,
-  attachmentStatusRefreshDeferred: 0,
-};
+const metrics = { startedAt: new Date().toISOString(), requests: 0, s2xx: 0, s4xx: 0, s5xx: 0, signups: 0, projectsCreated: 0, webhookDeliveries: 0 };
 
 // Outbound webhooks: POST signed JSON to each active hook subscribed to `event`.
 // Fire-and-forget with a timeout, one retry on failure, and a recorded outcome
@@ -1007,31 +993,6 @@ app.post('/api/projects/:id/ai/brief', requireAuth, async (c) => {
 // 갱신), 서명 아티팩트 열람(302), 삭제. 테넌트 = 조직, 브라우저에는 Clearfolio
 // 자격이 절대 노출되지 않음.
 const ATTACH_MAX_BYTES = 10 * 1024 * 1024;
-
-const ATTACH_STATUS_CONCURRENCY = normalizeAttachmentStatusConcurrency(
-  process.env.SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY,
-);
-const ATTACH_STATUS_TIMEOUT_MS = normalizeAttachmentStatusTimeoutMs(
-  process.env.SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS,
-);
-const ATTACH_STATUS_BUDGET_MS = normalizeAttachmentStatusBudgetMs(
-  process.env.SCOPEWEAVE_ATTACHMENT_STATUS_BUDGET_MS,
-);
-const ATTACHMENT_LIST_COLUMNS = `a.id, a.task_id AS taskId, a.name, a.mime, a.size,
-  a.job_id AS jobId, a.status, a.created_at AS createdAt, u.email AS uploadedBy`;
-const ATTACHMENT_LIST_FROM =
-  'FROM attachments a LEFT JOIN users u ON u.id = a.created_by';
-const listAttachmentsStatement = db.prepare(
-  `SELECT ${ATTACHMENT_LIST_COLUMNS} ${ATTACHMENT_LIST_FROM}
-   WHERE a.project_id = ? ORDER BY a.id DESC`,
-);
-const listTaskAttachmentsStatement = db.prepare(
-  `SELECT ${ATTACHMENT_LIST_COLUMNS} ${ATTACHMENT_LIST_FROM}
-   WHERE a.project_id = ? AND a.task_id = ? ORDER BY a.id DESC`,
-);
-const updateAttachmentStatusStatement = db.prepare(
-  'UPDATE attachments SET status = ? WHERE id = ?',
-);
 app.post('/api/projects/:id/attachments', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
@@ -1054,31 +1015,35 @@ app.post('/api/projects/:id/attachments', requireAuth, async (c) => {
     'INSERT INTO attachments(project_id,task_id,name,mime,size,job_id,status,created_by) VALUES(?,?,?,?,?,?,?,?)'
   ).run(p.id, taskId, file.name || 'document', file.type || '', file.size, job.jobId, job.status, uid));
   logAudit(p.org_id, uid, 'attachment.upload', 'project', p.id, { attachmentId: aid, name: file.name, taskId: taskId || null });
-  return c.json({ id: aid, status: job.status });
+  return c.json({ id: aid, jobId: job.jobId, status: job.status });
 });
 
 app.get('/api/projects/:id/attachments', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
-
   const taskId = c.req.query('taskId');
-  const rows = taskId
-    ? listTaskAttachmentsStatement.all(p.id, taskId)
-    : listAttachmentsStatement.all(p.id);
-  await refreshAttachmentStatuses(rows, {
-    orgId: p.org_id,
-    userId: uid,
-    jobStatus,
-    updateStatus: (status, attachmentId) =>
-      updateAttachmentStatusStatement.run(status, attachmentId),
-    concurrency: ATTACH_STATUS_CONCURRENCY,
-    timeoutMs: ATTACH_STATUS_TIMEOUT_MS,
-    budgetMs: ATTACH_STATUS_BUDGET_MS,
-    metrics,
-  });
-  const attachments = rows.map(({ jobId: _internalJobId, ...publicRow }) => publicRow);
-  return c.json({ attachments });
+  const rows = (taskId
+    ? db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.status, a.created_at AS createdAt, u.email AS uploadedBy
+        FROM attachments a LEFT JOIN users u ON u.id = a.created_by
+        WHERE a.project_id = ? AND a.task_id = ? ORDER BY a.id DESC`).all(p.id, taskId)
+    : db.prepare(`SELECT a.id, a.task_id AS taskId, a.name, a.mime, a.size, a.status, a.created_at AS createdAt, u.email AS uploadedBy
+        FROM attachments a LEFT JOIN users u ON u.id = a.created_by
+        WHERE a.project_id = ? ORDER BY a.id DESC`).all(p.id));
+  // PENDING 잡 상태 갱신(최선 노력)
+  for (const r of rows) {
+    if (r.status === 'PENDING' || r.status === 'RUNNING') {
+      try {
+        const jid = db.prepare('SELECT job_id FROM attachments WHERE id = ?').get(r.id).job_id;
+        const st = await jobStatus(p.org_id, uid, jid);
+        if (st !== r.status) {
+          db.prepare('UPDATE attachments SET status = ? WHERE id = ?').run(st, r.id);
+          r.status = st;
+        }
+      } catch { /* keep stale status */ }
+    }
+  }
+  return c.json({ attachments: rows });
 });
 
 // 열람: 서명 아티팩트 URL로 302. 새 탭 열기용으로 ?token=도 허용(ics/stream 패턴).
