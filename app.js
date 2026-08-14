@@ -1098,9 +1098,10 @@ function handleInlineProgressChange(event) {
   persistState();
   renderAll();
 
-  // 🎨 Palette: Restore focus to the dropdown after full DOM re-render
+  // 🎨 Palette: Restore focus to the dropdown after full DOM re-render. Persisted
+  // task IDs are untrusted selector data, so escape them before interpolation.
   requestAnimationFrame(() => {
-    const dropdown = document.querySelector(`[data-inline-progress="${taskId}"]`);
+    const dropdown = document.querySelector(`[data-inline-progress="${CSS.escape(taskId)}"]`);
     if (dropdown) {
       dropdown.focus();
     }
@@ -1118,9 +1119,9 @@ function handleRowAction(action, taskId) {
     persistState();
     renderAll();
 
-    // 🎨 Palette: Restore focus to the toggle button after full DOM re-render
+    // 🎨 Palette: Restore focus to the toggle button after full DOM re-render.
     requestAnimationFrame(() => {
-      const toggleBtn = document.querySelector(`tr[data-task-id="${taskId}"] button[data-action="toggle"]`);
+      const toggleBtn = document.querySelector(`tr[data-task-id="${CSS.escape(taskId)}"] button[data-action="toggle"]`);
       if (toggleBtn) {
         toggleBtn.focus();
       }
@@ -1153,13 +1154,13 @@ function handleRowAction(action, taskId) {
       renderAll();
       showToast('작업을 삭제했습니다.');
 
-      // 🎨 Palette: Restore focus after deletion to keep keyboard flow
+      // 🎨 Palette: Restore focus after deletion to keep keyboard flow.
       requestAnimationFrame(() => {
         const visibleTasksAfter = getVisibleTasks();
         if (visibleTasksAfter.length > 0) {
           const nextTargetIndex = Math.min(currentIndex, visibleTasksAfter.length - 1);
           const nextTargetId = visibleTasksAfter[nextTargetIndex].id;
-          const nextTargetBtn = document.querySelector(`tr[data-task-id="${nextTargetId}"] button[data-action="delete"]`);
+          const nextTargetBtn = document.querySelector(`tr[data-task-id="${CSS.escape(nextTargetId)}"] button[data-action="delete"]`);
           if (nextTargetBtn) {
             nextTargetBtn.focus();
           }
@@ -1240,7 +1241,7 @@ function closeEditor(force = false) {
     requestAnimationFrame(() => {
       let targetEl = null;
       if (taskId && action) {
-        targetEl = document.querySelector(`tr[data-task-id="${taskId}"] button[data-action="${action}"]`);
+        targetEl = document.querySelector(`tr[data-task-id="${CSS.escape(taskId)}"] button[data-action="${CSS.escape(action)}"]`);
       } else if (id) {
         targetEl = document.getElementById(id);
       }
