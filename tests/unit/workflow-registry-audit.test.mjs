@@ -14,6 +14,9 @@ import {
 
 const SHA_A = 'a'.repeat(40);
 const SHA_B = 'b'.repeat(40);
+const ROOT_TREE_SHA = 'c'.repeat(40);
+const GITHUB_TREE_SHA = 'd'.repeat(40);
+const WORKFLOW_TREE_SHA = 'e'.repeat(40);
 const API = 'https://api.github.test';
 const REPO = 'ContextualWisdomLab/scopeweave';
 
@@ -31,6 +34,7 @@ const branchBody = (sha) => ({ name: 'develop', commit: { sha } });
 const directoryBody = (paths) => paths.map((path, index) => ({
   name: path.split('/').at(-1), path, sha: String(index).padStart(40, '0'), type: 'file',
 }));
+const treeBody = (tree, truncated = false) => ({ sha: ROOT_TREE_SHA, tree, truncated });
 const workflow = (id, path, state = 'active') => ({ id, path, state, name: path });
 
 test('repository and Link parsing reject ambiguity without normalizing paths', () => {
@@ -74,6 +78,7 @@ test('requestJson retries bounded transient 5xx responses but fails closed on pe
       () => requestJson({ fetchImpl: async () => response(status, { secret: 'private provider text' }), url: `${API}/probe` }),
       (error) => {
         assert.match(error.message, new RegExp(`status ${status}`));
+        assert.equal(error.status, status);
         assert.doesNotMatch(error.message, /private provider text|secret/);
         return true;
       },
@@ -127,23 +132,70 @@ test('workflow pagination must be complete, unique by ID, and unable to follow a
   );
 });
 
-test('missing protected workflow directory fails closed instead of becoming an empty tree', async () => {
+test('a genuine missing workflow directory is proven through immutable Git trees', async () => {
+  const contentsUrl = `${API}/repos/${REPO}/contents/.github/workflows?ref=${SHA_A}`;
+  const commitUrl = `${API}/repos/${REPO}/git/commits/${SHA_A}`;
+  const rootUrl = `${API}/repos/${REPO}/git/trees/${ROOT_TREE_SHA}`;
+  const githubUrl = `${API}/repos/${REPO}/git/trees/${GITHUB_TREE_SHA}`;
+  const fetchImpl = async (url) => {
+    if (url === contentsUrl) return response(404, { message: 'Not Found' });
+    if (url === commitUrl) return response(200, { tree: { sha: ROOT_TREE_SHA } });
+    if (url === rootUrl) return response(200, treeBody([{ path: '.github', type: 'tree', sha: GITHUB_TREE_SHA }]));
+    if (url === githubUrl) return response(200, treeBody([{ path: 'CODEOWNERS', type: 'blob', sha: 'f'.repeat(40) }]));
+    return response(404, {});
+  };
+  assert.deepEqual(
+    await listProtectedWorkflowPaths({ fetchImpl, apiBase: API, repository: REPO, sha: SHA_A }),
+    [],
+  );
+});
+
+test('tree fallback returns exact workflow files only after all required tree reads succeed', async () => {
+  const contentsUrl = `${API}/repos/${REPO}/contents/.github/workflows?ref=${SHA_A}`;
+  const commitUrl = `${API}/repos/${REPO}/git/commits/${SHA_A}`;
+  const rootUrl = `${API}/repos/${REPO}/git/trees/${ROOT_TREE_SHA}`;
+  const githubUrl = `${API}/repos/${REPO}/git/trees/${GITHUB_TREE_SHA}`;
+  const workflowsUrl = `${API}/repos/${REPO}/git/trees/${WORKFLOW_TREE_SHA}`;
+  const fetchImpl = async (url) => {
+    if (url === contentsUrl) return response(404, { message: 'Not Found' });
+    if (url === commitUrl) return response(200, { tree: { sha: ROOT_TREE_SHA } });
+    if (url === rootUrl) return response(200, treeBody([{ path: '.github', type: 'tree', sha: GITHUB_TREE_SHA }]));
+    if (url === githubUrl) return response(200, treeBody([{ path: 'workflows', type: 'tree', sha: WORKFLOW_TREE_SHA }]));
+    if (url === workflowsUrl) return response(200, treeBody([
+      { path: 'server-tests.yml', type: 'blob', sha: 'f'.repeat(40) },
+      { path: 'nested', type: 'tree', sha: '1'.repeat(40) },
+    ]));
+    return response(404, {});
+  };
+  assert.deepEqual(
+    await listProtectedWorkflowPaths({ fetchImpl, apiBase: API, repository: REPO, sha: SHA_A }),
+    ['.github/workflows/server-tests.yml'],
+  );
+});
+
+test('ambiguous Contents 404 remains an error when immutable Git evidence is unavailable', async () => {
+  const contentsUrl = `${API}/repos/${REPO}/contents/.github/workflows?ref=${SHA_A}`;
+  const commitUrl = `${API}/repos/${REPO}/git/commits/${SHA_A}`;
   await assert.rejects(
     () => listProtectedWorkflowPaths({
-      fetchImpl: async () => response(404, { message: 'not found but do not copy this body' }),
+      fetchImpl: async (url) => {
+        if (url === contentsUrl) return response(404, { message: 'hidden contents' });
+        if (url === commitUrl) return response(404, { message: 'hidden commit' });
+        return response(404, {});
+      },
       apiBase: API,
       repository: REPO,
       sha: SHA_A,
     }),
     (error) => {
       assert.match(error.message, /status 404/);
-      assert.doesNotMatch(error.message, /do not copy this body/);
+      assert.doesNotMatch(error.message, /hidden contents|hidden commit/);
       return true;
     },
   );
 });
 
-test('classification preserves exact case, known states, dynamic identities, exceptions, and reused paths', () => {
+test('classification preserves exact case, known states, dynamic identities, exceptions, reused paths, and unresolved states', () => {
   const repeatedPath = '.github/workflows/reused.yml';
   const classified = classifyWorkflows([
     workflow(8, '.github/workflows/Case.yml'),
@@ -152,7 +204,14 @@ test('classification preserves exact case, known states, dynamic identities, exc
     workflow(4, '.github/workflows/kept-by-active-pr.yml'),
     workflow(5, '.github/workflows/old-disabled.yml', 'disabled_manually'),
     workflow(6, repeatedPath), workflow(7, repeatedPath),
-  ], ['.github/workflows/current.yml', '.github/workflows/case.yml'], ['.github/workflows/kept-by-active-pr.yml']);
+    workflow(9, '.github/workflows/future-absent.yml', 'paused_by_future_api'),
+    workflow(10, '.github/workflows/future-present.yml', 'paused_by_future_api'),
+    workflow(11, 'dynamic/future-provider', 'paused_by_future_api'),
+  ], [
+    '.github/workflows/current.yml',
+    '.github/workflows/case.yml',
+    '.github/workflows/future-present.yml',
+  ], ['.github/workflows/kept-by-active-pr.yml']);
   const byId = new Map(classified.map((item) => [item.workflow_id, item]));
   assert.equal(byId.get(8).classification, 'active_orphan', 'path case is exact');
   assert.equal(byId.get(2).classification, 'present_active');
@@ -163,10 +222,9 @@ test('classification preserves exact case, known states, dynamic identities, exc
   assert.equal(byId.get(7).classification, 'active_orphan');
   assert.equal(byId.get(6).duplicate_path_identity, true);
   assert.equal(byId.get(7).duplicate_path_identity, true);
-  assert.throws(
-    () => classifyWorkflows([workflow(9, '.github/workflows/future.yml', 'paused_by_future_api')], []),
-    /unknown workflow state/,
-  );
+  assert.equal(byId.get(9).classification, 'unresolved');
+  assert.equal(byId.get(10).classification, 'unresolved');
+  assert.equal(byId.get(11).classification, 'unresolved');
 });
 
 test('a present one-shot-like workflow is preserved by tree evidence without name heuristics', () => {
@@ -185,9 +243,10 @@ test('full audit binds registry evidence to one unchanged protected SHA and emit
     assert.equal(init.redirect, 'error');
     assert.equal(init.headers['x-github-api-version'], '2026-03-10');
     if (url === branchUrl) { branchReads += 1; return response(200, branchBody(SHA_A)); }
-    if (url === workflowsUrl) return response(200, { total_count: 4, workflows: [
+    if (url === workflowsUrl) return response(200, { total_count: 5, workflows: [
       workflow(10, '.github/workflows/current.yml'), workflow(11, '.github/workflows/orphan.yml'),
       workflow(12, '.github/workflows/pr-owned.yml'), workflow(13, 'dynamic/github-code-scanning/codeql'),
+      workflow(14, '.github/workflows/future.yml', 'future_state'),
     ] });
     if (url === contentsUrl) return response(200, directoryBody(['.github/workflows/current.yml']));
     return response(404, {});
@@ -199,11 +258,13 @@ test('full audit binds registry evidence to one unchanged protected SHA and emit
   assert.equal(branchReads, 2);
   assert.equal(evidence.default_branch_sha, SHA_A);
   assert.equal(evidence.observed_at, '2026-08-15T00:00:00.000Z');
-  assert.equal(evidence.registry_total_count, 4);
+  assert.equal(evidence.registry_total_count, 5);
   assert.equal(evidence.pagination_receipts.length, 1);
   assert.equal(evidence.active_orphan_count, 1);
+  assert.equal(evidence.unresolved_count, 1);
   assert.deepEqual(evidence.protected_workflow_paths, ['.github/workflows/current.yml']);
   assert.equal(evidence.classifications.find((item) => item.workflow_id === 11).classification, 'active_orphan');
+  assert.equal(evidence.classifications.find((item) => item.workflow_id === 14).classification, 'unresolved');
 });
 
 test('branch movement invalidates the entire mixed-time observation', async () => {
