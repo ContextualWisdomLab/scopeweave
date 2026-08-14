@@ -20,8 +20,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   workflows stay inherited from `ContextualWisdomLab/.github`, not copied
   into this repository.
 - Added an append-only `schema_migrations` ledger and startup migration-state
-  guard that records the complete legacy/canonical table-name generation and
-  fails closed if a rename cutover leaves the database partial or mixed.
+  guard that records the complete legacy/canonical table-name generation,
+  rejects unknown/corrupt history and backward generation rollback, and fails
+  closed if a rename cutover leaves the database partial or mixed.
 
 ### Security
 
