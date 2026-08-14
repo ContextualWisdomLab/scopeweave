@@ -276,10 +276,9 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
 /**
  * Issue a viewable artifact URL for a completed Clearfolio job.
  *
- * The hosted path prefers Clearfolio's external PDF.js viewer when an
- * `artifactToken` is available and otherwise returns a validated HTTP(S) URL.
- * Downstream response text and transport errors are never exposed to callers.
- * An HTTPS Clearfolio deployment cannot downgrade an artifact link to HTTP.
+ * Same-origin `artifactToken` values may be translated into the local viewer
+ * route. A token returned on another origin remains bound to that origin and is
+ * never transplanted into the trusted Clearfolio viewer URL.
  *
  * @param {string|number} orgId - ScopeWeave organization identifier.
  * @param {string|number} userId - Requesting ScopeWeave user identifier.
@@ -320,10 +319,8 @@ export async function artifactUrl(orgId, userId, jobId) {
     throw new Error('clearfolio artifact-link response invalid');
   }
 
-  // PDF.js 뷰어 페이지 우선(clearfolio external artifactToken 모드): 토큰을
-  // 추출해 /viewer/{docId}?artifactToken=… 으로 보낸다. 없으면 검증한 URL.
   const token = url.searchParams.get('artifactToken');
-  if (token) {
+  if (token && url.origin === clearfolioUrl.origin) {
     return `${configuration.baseUrl}/viewer/${encodeURIComponent(jobId)}?artifactToken=${encodeURIComponent(token)}`;
   }
   return url.href;
