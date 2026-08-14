@@ -1,0 +1,76 @@
+import assert from 'node:assert/strict';
+
+process.env.SCOPEWEAVE_DEV = '';
+process.env.ORCHESTRATOR_URL = 'https://orchestrator.example';
+process.env.ORCHESTRATOR_TOKEN = 'secret-token';
+process.env.ORCHESTRATOR_MODEL = 'nvidia/nemotron-3-super-120b-a12b';
+
+const calls = [];
+globalThis.fetch = async (url, init) => {
+  calls.push({ url, init });
+  return new Response(JSON.stringify({
+    choices: [{ message: { content: 'Grounded production response' } }],
+  }), {
+    status: 200,
+    headers: { 'content-type': 'application/json' },
+  });
+};
+
+const { chat } = await import(
+  `../../server/orchestrator.mjs?attribution-test=${Date.now()}-${Math.random()}`
+);
+
+const messages = [{ role: 'user', content: 'status' }];
+
+assert.equal(
+  await chat(messages, {
+    service: 'scopeweave',
+    account: 42,
+    upstream_api: 'requested-upstream-label',
+    provider: 'requested-provider-label',
+    model_name: 'requested-model-label',
+    team: null,
+    group: '',
+    company: '   ',
+    unsupported_dimension: 'must-not-cross-boundary',
+  }),
+  'Grounded production response',
+);
+
+assert.equal(calls.length, 1);
+const attributedBody = JSON.parse(calls[0].init.body);
+assert.equal(attributedBody.model, 'nvidia/nemotron-3-super-120b-a12b');
+assert.equal(Object.hasOwn(attributedBody, 'provider'), false);
+assert.deepEqual(attributedBody.attribution, {
+  service: 'scopeweave',
+  account: '42',
+  upstream_api: 'requested-upstream-label',
+  provider: 'requested-provider-label',
+  model_name: 'requested-model-label',
+});
+assert.equal(
+  Object.hasOwn(attributedBody.attribution, 'unsupported_dimension'),
+  false,
+  'unknown attribution keys never cross the ScopeWeave boundary',
+);
+
+await chat(messages, { unsupported_dimension: 'x', account: '   ' });
+const emptyBody = JSON.parse(calls[1].init.body);
+assert.equal(
+  Object.hasOwn(emptyBody, 'attribution'),
+  false,
+  'an attribution field is omitted when no non-empty allowed dimensions remain',
+);
+
+await chat(messages);
+const legacyBody = JSON.parse(calls[2].init.body);
+assert.deepEqual(
+  legacyBody,
+  {
+    model: 'nvidia/nemotron-3-super-120b-a12b',
+    messages,
+  },
+  'omitting attribution preserves the hardened request shape exactly',
+);
+
+console.log('✓ orchestrator attribution boundary tests passed');
