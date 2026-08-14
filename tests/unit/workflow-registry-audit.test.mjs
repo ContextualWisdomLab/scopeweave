@@ -7,6 +7,7 @@ import {
   parseArgs,
   parseLinkHeader,
   requestJson,
+  sleepMilliseconds,
   validateRepository,
 } from '../../scripts/ci/workflow_registry_audit.mjs';
 
@@ -39,6 +40,20 @@ test('repository and Link parsing reject ambiguity without normalizing paths', (
   assert.equal(links.get('next'), 'https://api.github.test/page/2');
   assert.equal(links.get('last'), 'https://api.github.test/page/3');
   assert.equal(parseLinkHeader('garbage').size, 0);
+});
+
+test('production retry delay uses a real timer and exposes a deterministic test seam', async () => {
+  const scheduled = [];
+  let released = false;
+  const promise = sleepMilliseconds(125, (callback, delay) => {
+    scheduled.push(delay);
+    callback();
+    return 1;
+  }).then(() => { released = true; });
+  assert.deepEqual(scheduled, [125]);
+  await promise;
+  assert.equal(released, true);
+  await assert.rejects(() => sleepMilliseconds(-1), /delay/);
 });
 
 test('requestJson retries bounded transient 5xx responses but fails closed on permissions and malformed JSON', async () => {
@@ -176,11 +191,19 @@ test('branch movement invalidates the entire mixed-time observation', async () =
   await assert.rejects(() => auditWorkflowRegistry({ fetchImpl, apiBase: API, repository: REPO, branch: 'develop' }), /protected branch moved/);
 });
 
-test('CLI options require explicit workflow-directory exceptions and reject write-like arguments', () => {
+test('CLI options require canonical workflow-file exceptions and reject write-like arguments', () => {
   assert.deepEqual(
     parseArgs(['--repo', REPO, '--branch', 'develop', '--preserve-path', '.github/workflows/hourly.yml'], {}),
     { repository: REPO, branch: 'develop', preservePaths: ['.github/workflows/hourly.yml'] },
   );
-  assert.throws(() => parseArgs(['--repo', REPO, '--preserve-path', 'dynamic/agent'], {}), /outside \.github\/workflows/);
+  for (const invalidPath of [
+    'dynamic/agent',
+    '.github/workflows/../security.yml',
+    '.github/workflows/subdir/child.yml',
+    '.github/workflows/',
+    '.github\\workflows\\hourly.yml',
+  ]) {
+    assert.throws(() => parseArgs(['--repo', REPO, '--preserve-path', invalidPath], {}), /canonical workflow file/);
+  }
   assert.throws(() => parseArgs(['--repo', REPO, '--write'], {}), /unsupported argument/);
 });
