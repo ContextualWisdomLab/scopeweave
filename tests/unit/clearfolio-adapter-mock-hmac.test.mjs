@@ -66,6 +66,11 @@ test('production URL and HMAC configuration rejects ambiguous or unsafe input', 
     ['https://clearfolio.example#fragment', HMAC_SECRET, 'clearfolio_url_fragment_forbidden'],
     ['https://clearfolio.example/base', HMAC_SECRET, 'clearfolio_url_path_forbidden'],
     ['https://clearfolio.example', 'short-secret', 'clearfolio_hmac_secret_invalid'],
+    [
+      'https://clearfolio.example',
+      `${'a'.repeat(31)} ${' '.repeat(32)}`,
+      'clearfolio_hmac_secret_invalid',
+    ],
   ];
 
   for (const [url, secret, code] of cases) {
