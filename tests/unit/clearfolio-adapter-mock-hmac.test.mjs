@@ -68,7 +68,7 @@ test('production URL and HMAC configuration rejects ambiguous or unsafe input', 
     ['https://clearfolio.example', 'short-secret', 'clearfolio_hmac_secret_invalid'],
     [
       'https://clearfolio.example',
-      `${'a'.repeat(31)} ${' '.repeat(32)}`,
+      `${'a'.repeat(16)}${' '.repeat(40)}${'b'.repeat(15)}`,
       'clearfolio_hmac_secret_invalid',
     ],
   ];
