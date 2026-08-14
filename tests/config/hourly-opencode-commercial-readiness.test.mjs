@@ -9,6 +9,7 @@ const workflow = readFileSync(workflowPath, 'utf8');
 const agentJob = workflow.split('\n  agent:\n', 2)[1]?.split('\n  verify:\n', 1)[0] || '';
 const verifyJob = workflow.split('\n  verify:\n', 2)[1]?.split('\n  publish:\n', 1)[0] || '';
 const publishJob = workflow.split('\n  publish:\n', 2)[1] || '';
+assert.ok(agentJob && verifyJob && publishJob, 'all three trust-zone jobs exist');
 
 assert.match(
   workflow,
@@ -28,7 +29,6 @@ assert.match(agentJob, /timeout-minutes:\s*200/);
 assert.match(agentJob, /deadline=.*AGENT_EXECUTION_BUDGET_SECONDS/);
 assert.match(agentJob, /fair_share=.*remaining.*remaining_candidates/);
 assert.match(agentJob, /candidate_timeout=.*OPENCODE_RUN_TIMEOUT_SECONDS/);
-assert.ok(agentJob && verifyJob && publishJob, 'all three trust-zone jobs exist');
 
 assert.match(agentJob, /permissions:\n\s+contents:\s+read/);
 assert.doesNotMatch(agentJob, /contents:\s+write|pull-requests:\s+write/);
