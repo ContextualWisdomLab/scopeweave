@@ -221,6 +221,15 @@ test('artifactUrl validates links and never exposes transport or response text',
     'https://clearfolio.example/signed/file.pdf',
   );
 
+  setResponse({ json: async () => ({
+    signedUrl: 'https://clearfolio.example/file.pdf?artifactToken=same%20origin',
+  }) });
+  assert.equal(
+    await artifactUrl(4, 5, 'job-1'),
+    'https://clearfolio.example/viewer/job-1?artifactToken=same%20origin',
+    'same-origin artifact tokens may be translated into the trusted viewer route',
+  );
+
   setResponse({ json: async () => ({ url: 'https://cdn.example/file.pdf' }) });
   assert.equal(
     await artifactUrl(4, 5, 'job-1'),
