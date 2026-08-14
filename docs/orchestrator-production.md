@@ -17,6 +17,15 @@ message count and content size are validated, provider payloads are not exposed
 in errors, and an empty or malformed assistant response is never reported as a
 successful briefing.
 
+Provider response bodies have a hard 1 MiB caller-side byte budget **while they
+are being read**. An oversized numeric `Content-Length` is rejected before body
+allocation; when the header is absent or inaccurate, the stream reader counts
+bytes incrementally, cancels the body as soon as the budget is exceeded, and
+never buffers an unbounded provider payload before applying the limit. Empty,
+non-stream-readable, malformed-length, non-JSON, oversized, or structurally
+invalid responses fail with stable operator-safe errors rather than exposing
+provider payload details.
+
 The deterministic adapter is available only when `SCOPEWEAVE_DEV=1` and the
 endpoint is absent. That variable must never be set in staging or production.
 
