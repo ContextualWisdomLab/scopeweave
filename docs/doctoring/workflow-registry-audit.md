@@ -4,7 +4,7 @@
 
 ScopeWeave treats the GitHub Actions registry and the protected branch tree as separate control-plane authorities. Deleting workflow YAML does not prove that GitHub disabled the workflow identity. `scripts/ci/workflow_registry_audit.mjs` therefore performs a read-only reconciliation before any separately authorized workflow-disable operation.
 
-The detector has **no mutation mode**. It issues only `GET` requests, records exact workflow ID/path/state, verifies pagination completeness and workflow-ID uniqueness, reads `.github/workflows` at an exact protected commit SHA, and then re-reads the protected branch. Protected-branch movement invalidates the observation.
+The detector has **no mutation mode**. It issues only `GET` requests using GitHub REST API version `2026-03-10`, records exact workflow ID/path/state, verifies pagination completeness and workflow-ID uniqueness, reads `.github/workflows` at an exact protected commit SHA, and then re-reads the protected branch. Protected-branch movement invalidates the observation.
 
 ## Evidence model
 
@@ -53,20 +53,20 @@ The output is evidence, not disable authority. Immediately before a separately a
 
 Regression coverage includes complete multi-page enumeration; truncation detection; duplicate workflow-ID rejection; real timer-backed bounded 5xx retry with an injectable test seam; fail-closed 403/404 handling; immutable Git-tree proof of a genuinely absent workflow directory; ambiguous 404 preservation; malformed JSON; branch movement; off-origin pagination; exact case-sensitive paths; path reuse without ID collapse; documented inactive workflow states; unknown present/absent/dynamic states retained as `unresolved`; GitHub dynamic workflows; explicit active-PR preservation; canonical preserve-path validation; a legitimate present one-shot-like workflow; and CLI rejection of write-like arguments.
 
-The detector is repository control-plane tooling, not shipped ScopeWeave application runtime. Its behavior is exercised through the normal unit-suite contract rather than being added to the application-runtime c8 ownership set.
+The detector is repository control-plane production code, not shipped ScopeWeave application runtime. It is nevertheless included in the canonical `c8` owned-production coverage producer, and `tests/unit/workflow-registry-audit.test.mjs` runs inside `test:coverage:cases`. `tests/unit/coverage-script-contract.test.mjs` locks both registrations so CI cannot silently drop workflow-audit production coverage while still reporting application coverage.
 
 ## Rollback
 
-Remove the detector, unit regression, package registration, doctoring record, and CHANGELOG entry together. The detector itself changes no workflow state, product persistence, authentication, tenant data, or runtime application behavior.
+Remove the detector, unit regression, coverage-contract assertions, package registrations, doctoring record, and CHANGELOG entry together. The detector itself changes no workflow state, product persistence, authentication, tenant data, or runtime application behavior.
 
 ## References
 
-GitHub. (2026a). *REST API endpoints for workflows*. GitHub Docs. Retrieved August 15, 2026, from https://docs.github.com/en/rest/actions/workflows
+GitHub. (2026a). *REST API endpoints for workflows*. GitHub Docs. Retrieved August 15, 2026, from https://docs.github.com/en/rest/actions/workflows?apiVersion=2026-03-10
 
-GitHub. (2026b). *Using pagination in the REST API*. GitHub Docs. Retrieved August 15, 2026, from https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api
+GitHub. (2026b). *Using pagination in the REST API*. GitHub Docs. Retrieved August 15, 2026, from https://docs.github.com/en/rest/using-the-rest-api/using-pagination-in-the-rest-api?apiVersion=2026-03-10
 
 GitHub. (2026c). *Actions: WorkflowState*. GitHub Docs. Retrieved August 15, 2026, from https://docs.github.com/en/graphql/reference/actions#workflowstate
 
-GitHub. (2026d). *Git database: Commits and trees*. GitHub Docs. Retrieved August 15, 2026, from https://docs.github.com/en/rest/git/commits and https://docs.github.com/en/rest/git/trees
+GitHub. (2026d). *Git database: Commits and trees*. GitHub Docs. Retrieved August 15, 2026, from https://docs.github.com/en/rest/git/commits?apiVersion=2026-03-10 and https://docs.github.com/en/rest/git/trees?apiVersion=2026-03-10
 
 GitHub. (2026e). *Disabling and enabling a workflow*. GitHub Docs. Retrieved August 15, 2026, from https://docs.github.com/en/actions/how-tos/manage-workflow-runs/disable-and-enable-workflows
