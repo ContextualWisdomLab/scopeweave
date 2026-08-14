@@ -61,6 +61,21 @@ Keep credentials in the dedicated HMAC secret setting rather than URL userinfo,
 and do not configure a path, query string, or fragment. The adapter constructs
 its own versioned API paths from the validated origin.
 
+Every hosted Clearfolio request is non-redirecting and has a hard 15-second
+adapter budget; attachment status lookups compose that budget with the caller's
+own cancellation signal. Successful provider responses must be
+`application/json`, and both declared and streamed response bytes are capped at
+256 KiB before JSON parsing. Provider job identifiers are limited to 256
+characters, and upload metadata/bytes are validated before Blob/FormData
+allocation. The adapter's document ceiling is 10 MiB, matching the current
+ScopeWeave attachment API limit.
+
+These limits are code constants rather than operator-tunable environment
+settings. A deployment that needs larger provider responses, longer requests, or
+larger documents requires a reviewed application change with corresponding
+resource, latency, and security evidence; do not work around these bounds at the
+proxy layer.
+
 ## Attachment status refresh operations
 
 The attachment-list API reads `job_id` in its initial project-scoped query and
