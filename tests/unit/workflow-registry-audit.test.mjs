@@ -4,6 +4,7 @@ import {
   auditWorkflowRegistry,
   classifyWorkflows,
   listAllWorkflows,
+  listProtectedWorkflowPaths,
   parseArgs,
   parseLinkHeader,
   requestJson,
@@ -92,7 +93,7 @@ test('requestJson retries bounded transient 5xx responses but fails closed on pe
   );
 });
 
-test('workflow pagination must be complete and cannot follow an untrusted next endpoint', async () => {
+test('workflow pagination must be complete, unique by ID, and unable to follow an untrusted next endpoint', async () => {
   const firstUrl = `${API}/repos/${REPO}/actions/workflows?per_page=100`;
   const secondUrl = `${API}/repos/${REPO}/actions/workflows?page=2&per_page=100`;
   const pages = new Map([
@@ -108,6 +109,14 @@ test('workflow pagination must be complete and cannot follow an untrusted next e
     () => listAllWorkflows({ fetchImpl: async () => response(200, { total_count: 2, workflows: [workflow(1, '.github/workflows/a.yml')] }), apiBase: API, repository: REPO }),
     /pagination incomplete/,
   );
+  const duplicatePages = new Map([
+    [firstUrl, response(200, { total_count: 2, workflows: [workflow(1, '.github/workflows/a.yml')] }, { link: `<${secondUrl}>; rel="next"` })],
+    [secondUrl, response(200, { total_count: 2, workflows: [workflow(1, '.github/workflows/a-renamed.yml')] })],
+  ]);
+  await assert.rejects(
+    () => listAllWorkflows({ fetchImpl: async (url) => duplicatePages.get(url) || response(404, {}), apiBase: API, repository: REPO }),
+    /duplicate workflow id/,
+  );
   await assert.rejects(
     () => listAllWorkflows({
       fetchImpl: async () => response(200, { total_count: 1, workflows: [workflow(1, '.github/workflows/a.yml')] }, { link: '<https://evil.example/steal>; rel="next"' }),
@@ -118,7 +127,23 @@ test('workflow pagination must be complete and cannot follow an untrusted next e
   );
 });
 
-test('classification preserves exact case, dynamic identities, exceptions, inactive records, and reused paths', () => {
+test('missing protected workflow directory fails closed instead of becoming an empty tree', async () => {
+  await assert.rejects(
+    () => listProtectedWorkflowPaths({
+      fetchImpl: async () => response(404, { message: 'not found but do not copy this body' }),
+      apiBase: API,
+      repository: REPO,
+      sha: SHA_A,
+    }),
+    (error) => {
+      assert.match(error.message, /status 404/);
+      assert.doesNotMatch(error.message, /do not copy this body/);
+      return true;
+    },
+  );
+});
+
+test('classification preserves exact case, known states, dynamic identities, exceptions, and reused paths', () => {
   const repeatedPath = '.github/workflows/reused.yml';
   const classified = classifyWorkflows([
     workflow(8, '.github/workflows/Case.yml'),
@@ -138,6 +163,10 @@ test('classification preserves exact case, dynamic identities, exceptions, inact
   assert.equal(byId.get(7).classification, 'active_orphan');
   assert.equal(byId.get(6).duplicate_path_identity, true);
   assert.equal(byId.get(7).duplicate_path_identity, true);
+  assert.throws(
+    () => classifyWorkflows([workflow(9, '.github/workflows/future.yml', 'paused_by_future_api')], []),
+    /unknown workflow state/,
+  );
 });
 
 test('a present one-shot-like workflow is preserved by tree evidence without name heuristics', () => {
