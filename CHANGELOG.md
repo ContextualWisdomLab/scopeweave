@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added workflow ownership regression coverage so central review
   workflows stay inherited from `ContextualWisdomLab/.github`, not copied
   into this repository.
+- Added a reproducible 5,000-row production-browser rendering benchmark that
+  records median and p95 duration, long tasks, heap deltas, live DOM nodes,
+  element creation, and edit, drag, and inline-progress interaction evidence.
 
 ### Security
 
@@ -52,6 +55,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Reused bounded owner and status badge templates in the WBS table render path.
+  Cache entries are keyed by rendered semantics, evicted with a 256-entry LRU
+  bound, and cloned before use; owner colors are deterministic without retaining
+  an unbounded owner registry.
 - Attachment-list status refresh now removes the per-row database lookup,
   uses a configurable bounded worker pool with per-item abortable timeouts and
   a request-wide latency budget, preserves stale status after downstream,

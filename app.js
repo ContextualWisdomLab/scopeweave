@@ -971,36 +971,70 @@ function createWarningBadge(warning) {
   return badge;
 }
 
-const persistentOwnerColorMap = new Map();
+const BADGE_TEMPLATE_CACHE_LIMIT = 256;
+const ownerBadgeTemplateMap = new Map();
+const statusBadgeTemplateMap = new Map();
+
+function getCachedBadgeTemplate(cache, key, createTemplate) {
+  const cachedTemplate = cache.get(key);
+  if (cachedTemplate) {
+    cache.delete(key);
+    cache.set(key, cachedTemplate);
+    return cachedTemplate;
+  }
+
+  const template = createTemplate();
+  if (cache.size >= BADGE_TEMPLATE_CACHE_LIMIT) {
+    cache.delete(cache.keys().next().value);
+  }
+  cache.set(key, template);
+  return template;
+}
+
+function getOwnerColor(owner) {
+  let hash = 0;
+  for (let index = 0; index < owner.length; index += 1) {
+    hash = ((hash << 5) - hash + owner.charCodeAt(index)) | 0;
+  }
+  return OWNER_COLORS[Math.abs(hash) % OWNER_COLORS.length];
+}
 
 function createOwnerCellContent(owner) {
   if (!owner) {
     return createEmptyCell();
   }
 
-  if (!persistentOwnerColorMap.has(owner)) {
-    persistentOwnerColorMap.set(owner, OWNER_COLORS[persistentOwnerColorMap.size % OWNER_COLORS.length]);
-  }
-
-  const badge = document.createElement('span');
-  badge.className = 'owner-badge';
-  badge.style.background = persistentOwnerColorMap.get(owner);
-  badge.textContent = owner;
-  return badge;
+  const template = getCachedBadgeTemplate(ownerBadgeTemplateMap, owner, () => {
+    const badge = document.createElement('span');
+    badge.className = 'owner-badge';
+    badge.style.background = getOwnerColor(owner);
+    badge.textContent = owner;
+    return badge;
+  });
+  return template.cloneNode(true);
 }
 
 function createStatusCellContent(progressState) {
   if (!progressState.label) {
     return createEmptyCell();
   }
-  const badge = document.createElement('span');
-  badge.className = `status-badge ${progressState.className}`;
-  badge.textContent = progressState.label;
-  if (progressState.description) {
-    badge.title = progressState.description;
-    badge.setAttribute('aria-label', `${progressState.label} - ${progressState.description}`);
-  }
-  return badge;
+
+  const cacheKey = JSON.stringify([
+    progressState.label,
+    progressState.className,
+    progressState.description || ''
+  ]);
+  const template = getCachedBadgeTemplate(statusBadgeTemplateMap, cacheKey, () => {
+    const badge = document.createElement('span');
+    badge.className = `status-badge ${progressState.className}`;
+    badge.textContent = progressState.label;
+    if (progressState.description) {
+      badge.title = progressState.description;
+      badge.setAttribute('aria-label', `${progressState.label} - ${progressState.description}`);
+    }
+    return badge;
+  });
+  return template.cloneNode(true);
 }
 
 const metricTextTemplate = document.createElement('span');
