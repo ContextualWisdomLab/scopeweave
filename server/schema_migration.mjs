@@ -77,6 +77,30 @@ function readApplicationTableNames(database) {
 }
 
 /**
+ * Inspect schema generation before legacy bootstrap DDL is allowed to mutate it.
+ *
+ * A genuinely empty database is the only state allowed to initialize the legacy
+ * schema from scratch. Existing databases must already be one complete known
+ * generation; incomplete, mixed, ledger-only, or otherwise ambiguous databases
+ * fail closed before `CREATE TABLE IF NOT EXISTS users ...` can recreate legacy
+ * names over a canonical cutover.
+ *
+ * @param {{prepare: Function}} database - node:sqlite-compatible database.
+ * @returns {'uninitialized'|'legacy_ready'|'canonical_ready'} Pre-bootstrap state.
+ * @throws {TypeError} When the database adapter cannot query the catalog.
+ * @throws {SchemaMigrationStateError} When an existing database is incomplete or mixed.
+ */
+export function inspectSchemaBootstrapState(database) {
+  if (!database || typeof database.prepare !== 'function') {
+    throw new TypeError('database must provide prepare');
+  }
+
+  const objectNames = readApplicationTableNames(database);
+  if (objectNames.size === 0) return 'uninitialized';
+  return classifySchemaMigrationState(objectNames);
+}
+
+/**
  * Ensure an append-only schema ledger exists and record the complete generation.
  *
  * This is the first expand/verify slice of issue #433. It does not rename data
