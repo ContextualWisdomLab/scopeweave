@@ -91,6 +91,27 @@ test('corrupted migration-ledger state cannot bless a verified schema', () => {
   db.close();
 });
 
+test('legacy schema rejects a canonical ledger record from an impossible rollback', () => {
+  const db = new DatabaseSync(':memory:');
+  createTables(db, LEGACY_SCHEMA_OBJECTS);
+  db.exec(`
+    CREATE TABLE schema_migrations (
+      migration_key TEXT PRIMARY KEY,
+      state_code TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO schema_migrations(migration_key, state_code)
+    VALUES ('canonical_schema_v2', 'canonical_ready');
+  `);
+
+  assert.throws(
+    () => ensureSchemaMigrationState(db),
+    (error) => error instanceof SchemaMigrationStateError
+      && /ledger history conflicts with verified schema/.test(error.message),
+  );
+  db.close();
+});
+
 test('migration guard rejects adapters missing required database operations', () => {
   assert.throws(() => ensureSchemaMigrationState(null), /exec and prepare/);
   assert.throws(() => ensureSchemaMigrationState({ prepare() {} }), /exec and prepare/);
