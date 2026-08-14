@@ -7,6 +7,11 @@ async function freshModule(label) {
   return import(`../../server/clearfolio.mjs?${label}-${Date.now()}-${Math.random()}`);
 }
 
+const jsonResponse = (value) => new Response(JSON.stringify(value), {
+  status: 200,
+  headers: { 'content-type': 'application/json; charset=utf-8' },
+});
+
 test('unconfigured production fails closed instead of creating fake conversions', async () => {
   delete process.env.SCOPEWEAVE_DEV;
   delete process.env.CLEARFOLIO_URL;
@@ -89,11 +94,11 @@ test('production URL and HMAC configuration rejects ambiguous or unsafe input', 
   process.env.CLEARFOLIO_HMAC_SECRET = HMAC_SECRET;
   const loopback = await freshModule('development-loopback-http');
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => ({
-    ok: true,
-    status: 200,
-    json: async () => ({ status: 'RUNNING' }),
-  });
+  globalThis.fetch = async (_url, options) => {
+    assert.equal(options.redirect, 'error');
+    assert.ok(options.signal instanceof AbortSignal);
+    return jsonResponse({ status: 'RUNNING' });
+  };
   try {
     assert.equal(await loopback.jobStatus(1, 2, 'job-1'), 'RUNNING');
   } finally {
@@ -116,11 +121,7 @@ test('Clearfolio tenant claim headers use the documented HMAC contract', async (
   globalThis.fetch = async (url, options) => {
     observedUrl = String(url);
     observedOptions = options;
-    return {
-      ok: true,
-      status: 200,
-      json: async () => ({ status: 'RUNNING' }),
-    };
+    return jsonResponse({ status: 'RUNNING' });
   };
 
   try {
@@ -131,6 +132,8 @@ test('Clearfolio tenant claim headers use the documented HMAC contract', async (
       observedUrl,
       'https://clearfolio.example/api/v1/convert/jobs/signed-job',
     );
+    assert.equal(observedOptions.redirect, 'error');
+    assert.ok(observedOptions.signal instanceof AbortSignal);
 
     const issuedAt = '1750000000';
     assert.equal(observedOptions.headers['X-Clearfolio-Tenant-Id'], 'sw-org-21');
