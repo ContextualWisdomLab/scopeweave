@@ -4,13 +4,29 @@
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { ensureSchemaMigrationState } from './schema_migration.mjs';
+import {
+  ensureSchemaMigrationState,
+  inspectSchemaBootstrapState,
+  SchemaMigrationStateError,
+} from './schema_migration.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.SCOPEWEAVE_DB || join(__dirname, '..', 'data.db');
 export const db = new DatabaseSync(dbPath);
 db.exec("PRAGMA journal_mode = WAL");
 db.exec("PRAGMA foreign_keys = ON");
+
+// Inspect the existing generation before legacy CREATE/ALTER statements can
+// mutate it. The current application query layer still targets legacy names, so
+// a complete canonical database is identified in the ledger and then rejected
+// until the query cutover ships; mixed/incomplete databases fail even earlier.
+const initialSchemaState = inspectSchemaBootstrapState(db);
+if (initialSchemaState === 'canonical_ready') {
+  ensureSchemaMigrationState(db);
+  throw new SchemaMigrationStateError(
+    'canonical schema generation is not yet supported by this application version',
+  );
+}
 
 db.exec(`
 CREATE TABLE IF NOT EXISTS users (
