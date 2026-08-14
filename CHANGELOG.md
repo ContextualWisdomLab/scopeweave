@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Confined the in-memory Clearfolio adapter to explicit development mode,
+  required a canonical signed production origin, rejected ambiguous provider
+  URL components, and prevented cross-origin artifact tokens from being
+  transplanted into the trusted Clearfolio viewer URL.
 - Made `SCOPEWEAVE_JWT_SECRET` mandatory at startup and rejected weak or
   unexpanded placeholder values so production deployments fail closed.
 - Neutralized audit-log CSV formulas even when executable prefixes are hidden
