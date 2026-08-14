@@ -8,7 +8,8 @@ const CF_SECRET = String(process.env.CLEARFOLIO_HMAC_SECRET || '');
 const PERMISSIONS = 'job:create,job:read,viewer:read,artifact-link:create';
 const CLEARFOLIO_JOB_STATUSES = new Set(['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED']);
 const MIN_HMAC_SECRET_LENGTH = 32;
-const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
+// WHATWG URL serializes an IPv6 hostname with brackets (`[::1]`).
+const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 
 /** Whether the process uses the explicit in-memory Clearfolio development adapter. */
 export const clearfolioMock = process.env.SCOPEWEAVE_DEV === '1' && !CF_URL_INPUT;
