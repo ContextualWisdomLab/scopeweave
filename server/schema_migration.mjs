@@ -11,6 +11,11 @@ const SCHEMA_OBJECT_RENAMES = Object.freeze({
   attachments: 'project_attachments',
 });
 
+const MIGRATION_LEDGER_STATES = Object.freeze({
+  legacy_schema_v1: 'legacy_ready',
+  canonical_schema_v2: 'canonical_ready',
+});
+
 /** Legacy single-word tables that will be replaced by issue #433. */
 export const LEGACY_SCHEMA_OBJECTS = Object.freeze(Object.keys(SCHEMA_OBJECT_RENAMES));
 
@@ -77,6 +82,33 @@ function readApplicationTableNames(database) {
 }
 
 /**
+ * Validate persisted migration history against the currently verified schema.
+ *
+ * Known migration keys have one exact state code. A legacy schema may contain
+ * only legacy history: observing a canonical migration record while legacy
+ * tables are active proves a rollback or interrupted restore and must fail
+ * closed. Canonical schemas may retain the earlier legacy record because the
+ * ledger is append-only across a forward migration.
+ *
+ * @param {Array<{migrationKey: unknown, stateCode: unknown}>} rows - Persisted ledger rows.
+ * @param {'legacy_ready'|'canonical_ready'} state - Fresh schema classification.
+ * @returns {void}
+ * @throws {SchemaMigrationStateError} When ledger history is corrupt or moves backward.
+ */
+function validateMigrationLedgerHistory(rows, state) {
+  for (const row of rows) {
+    const migrationKey = String(row.migrationKey);
+    const stateCode = String(row.stateCode);
+    if (MIGRATION_LEDGER_STATES[migrationKey] !== stateCode) {
+      throw new SchemaMigrationStateError('schema migration ledger state does not match verified schema');
+    }
+    if (state === 'legacy_ready' && migrationKey === 'canonical_schema_v2') {
+      throw new SchemaMigrationStateError('schema migration ledger history conflicts with verified schema');
+    }
+  }
+}
+
+/**
  * Inspect schema generation before legacy bootstrap DDL is allowed to mutate it.
  *
  * A genuinely empty database is the only state allowed to initialize the legacy
@@ -106,7 +138,9 @@ export function inspectSchemaBootstrapState(database) {
  * This is the first expand/verify slice of issue #433. It does not rename data
  * tables. Instead it gives every database an explicit migration ledger and makes
  * startup fail closed if a later rename crashes or otherwise leaves old and new
- * object generations mixed. Repeated startup is idempotent.
+ * object generations mixed. Repeated startup is idempotent, and a database that
+ * has ever recorded the canonical generation cannot silently return to legacy
+ * tables while retaining canonical migration history.
  *
  * @param {{exec: Function, prepare: Function}} database - node:sqlite-compatible database.
  * @returns {'legacy_ready'|'canonical_ready'} Verified schema generation.
@@ -127,6 +161,11 @@ export function ensureSchemaMigrationState(database) {
   `);
 
   const state = classifySchemaMigrationState(readApplicationTableNames(database));
+  const existingRows = database.prepare(
+    'SELECT migration_key AS migrationKey, state_code AS stateCode FROM schema_migrations ORDER BY migration_key',
+  ).all();
+  validateMigrationLedgerHistory(existingRows, state);
+
   const migrationKey = state === 'legacy_ready' ? 'legacy_schema_v1' : 'canonical_schema_v2';
   database.prepare(
     'INSERT OR IGNORE INTO schema_migrations(migration_key, state_code) VALUES (?, ?)',
