@@ -57,6 +57,30 @@ test('canonical schema gets a distinct append-only migration-ledger record', () 
   db.close();
 });
 
+test('canonical schema preserves valid legacy history before appending its own record', () => {
+  const db = new DatabaseSync(':memory:');
+  createTables(db, CANONICAL_SCHEMA_OBJECTS);
+  db.exec(`
+    CREATE TABLE schema_migrations (
+      migration_key TEXT PRIMARY KEY,
+      state_code TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO schema_migrations(migration_key, state_code)
+    VALUES ('legacy_schema_v1', 'legacy_ready');
+  `);
+
+  assert.equal(ensureSchemaMigrationState(db), 'canonical_ready');
+  const ledger = plainRows(db.prepare(
+    'SELECT migration_key AS migrationKey, state_code AS stateCode FROM schema_migrations ORDER BY migration_key',
+  ).all());
+  assert.deepEqual(ledger, [
+    { migrationKey: 'canonical_schema_v2', stateCode: 'canonical_ready' },
+    { migrationKey: 'legacy_schema_v1', stateCode: 'legacy_ready' },
+  ]);
+  db.close();
+});
+
 test('mixed or incomplete schemas fail closed before service use', () => {
   const db = new DatabaseSync(':memory:');
   createTables(db, LEGACY_SCHEMA_OBJECTS);
@@ -81,6 +105,27 @@ test('corrupted migration-ledger state cannot bless a verified schema', () => {
     );
     INSERT INTO schema_migrations(migration_key, state_code)
     VALUES ('legacy_schema_v1', 'canonical_ready');
+  `);
+
+  assert.throws(
+    () => ensureSchemaMigrationState(db),
+    (error) => error instanceof SchemaMigrationStateError
+      && /ledger state does not match verified schema/.test(error.message),
+  );
+  db.close();
+});
+
+test('unknown migration-ledger identities fail closed', () => {
+  const db = new DatabaseSync(':memory:');
+  createTables(db, LEGACY_SCHEMA_OBJECTS);
+  db.exec(`
+    CREATE TABLE schema_migrations (
+      migration_key TEXT PRIMARY KEY,
+      state_code TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO schema_migrations(migration_key, state_code)
+    VALUES ('future_unknown_schema', 'legacy_ready');
   `);
 
   assert.throws(
