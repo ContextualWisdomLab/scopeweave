@@ -971,69 +971,47 @@ function createWarningBadge(warning) {
   return badge;
 }
 
-const BADGE_TEMPLATE_CACHE_LIMIT = 256;
+const persistentOwnerColorMap = new Map();
 const ownerBadgeTemplateMap = new Map();
-const statusBadgeTemplateMap = new Map();
-
-function getCachedBadgeTemplate(cache, key, createTemplate) {
-  const cachedTemplate = cache.get(key);
-  if (cachedTemplate) {
-    cache.delete(key);
-    cache.set(key, cachedTemplate);
-    return cachedTemplate;
-  }
-
-  const template = createTemplate();
-  if (cache.size >= BADGE_TEMPLATE_CACHE_LIMIT) {
-    cache.delete(cache.keys().next().value);
-  }
-  cache.set(key, template);
-  return template;
-}
-
-function getOwnerColor(owner) {
-  let hash = 0;
-  for (let index = 0; index < owner.length; index += 1) {
-    hash = ((hash << 5) - hash + owner.charCodeAt(index)) | 0;
-  }
-  return OWNER_COLORS[Math.abs(hash) % OWNER_COLORS.length];
-}
 
 function createOwnerCellContent(owner) {
   if (!owner) {
     return createEmptyCell();
   }
 
-  const template = getCachedBadgeTemplate(ownerBadgeTemplateMap, owner, () => {
-    const badge = document.createElement('span');
-    badge.className = 'owner-badge';
-    badge.style.background = getOwnerColor(owner);
-    badge.textContent = owner;
-    return badge;
-  });
+  if (!persistentOwnerColorMap.has(owner)) {
+    persistentOwnerColorMap.set(owner, OWNER_COLORS[persistentOwnerColorMap.size % OWNER_COLORS.length]);
+  }
+
+  let template = ownerBadgeTemplateMap.get(owner);
+  if (!template) {
+    template = document.createElement('span');
+    template.className = 'owner-badge';
+    template.style.background = persistentOwnerColorMap.get(owner);
+    template.textContent = owner;
+    ownerBadgeTemplateMap.set(owner, template);
+  }
   return template.cloneNode(true);
 }
+
+const statusBadgeTemplateMap = new Map();
 
 function createStatusCellContent(progressState) {
   if (!progressState.label) {
     return createEmptyCell();
   }
-
-  const cacheKey = JSON.stringify([
-    progressState.label,
-    progressState.className,
-    progressState.description || ''
-  ]);
-  const template = getCachedBadgeTemplate(statusBadgeTemplateMap, cacheKey, () => {
-    const badge = document.createElement('span');
-    badge.className = `status-badge ${progressState.className}`;
-    badge.textContent = progressState.label;
+  const cacheKey = `${progressState.label}::${progressState.className}`;
+  let template = statusBadgeTemplateMap.get(cacheKey);
+  if (!template) {
+    template = document.createElement('span');
+    template.className = `status-badge ${progressState.className}`;
+    template.textContent = progressState.label;
     if (progressState.description) {
-      badge.title = progressState.description;
-      badge.setAttribute('aria-label', `${progressState.label} - ${progressState.description}`);
+      template.title = progressState.description;
+      template.setAttribute('aria-label', `${progressState.label} - ${progressState.description}`);
     }
-    return badge;
-  });
+    statusBadgeTemplateMap.set(cacheKey, template);
+  }
   return template.cloneNode(true);
 }
 
@@ -2794,6 +2772,7 @@ if (typeof window !== 'undefined') {
   window.sanitizeCsvFormulaValue = sanitizeCsvFormulaValue;
   window.csvEscape = csvEscape;
   window.createTextCellContent = createTextCellContent;
+  window.createEmptyTaskDraft = createEmptyTaskDraft;
 }
 
 bootstrap();
