@@ -19,6 +19,18 @@ const KNOWN_WORKFLOW_STATES = new Set([
 ]);
 const CANONICAL_WORKFLOW_PATH = /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/;
 
+/** GitHub API failure that retains only the numeric status, never response text. */
+export class GitHubApiError extends Error {
+  /**
+   * @param {number|undefined} status - HTTP status if one was available.
+   */
+  constructor(status) {
+    super(`GitHub API request failed with status ${Number.isFinite(status) ? status : 'unknown'}`);
+    this.name = 'GitHubApiError';
+    this.status = Number.isFinite(status) ? status : undefined;
+  }
+}
+
 /** Validate and return an exact `owner/repository` identifier. */
 export function validateRepository(value) {
   const repository = String(value || '');
@@ -72,7 +84,7 @@ export async function requestJson({ fetchImpl, url, token = '', sleepImpl = slee
       return { data, linkHeader: response.headers?.get?.('link') ?? null, status };
     }
     if (!TRANSIENT_STATUS.has(status) || attempt === maxAttempts) {
-      throw new Error(`GitHub API request failed with status ${status || 'unknown'}`);
+      throw new GitHubApiError(status);
     }
     await sleepImpl(100 * attempt);
   }
@@ -128,14 +140,87 @@ export async function listAllWorkflows({ fetchImpl, apiBase, repository, token =
   return { workflows, receipts, totalCount };
 }
 
+/**
+ * Read and validate one non-recursive Git tree.
+ *
+ * @param {object} options - GitHub request dependencies and tree identity.
+ * @returns {Promise<Array<object>>} Exact non-recursive tree entries.
+ */
+async function readGitTree({ fetchImpl, apiBase, repository, treeSha, token = '', sleepImpl }) {
+  const url = `${apiBase}/repos/${repository}/git/trees/${treeSha}`;
+  const { data } = await requestJson({ fetchImpl, url, token, sleepImpl });
+  if (!data || !Array.isArray(data.tree) || data.truncated === true) {
+    throw new Error('GitHub tree response is incomplete or invalid');
+  }
+  return data.tree;
+}
+
+/** Resolve a commit SHA to its exact root tree SHA. */
+async function resolveCommitTreeSha({ fetchImpl, apiBase, repository, commitSha, token = '', sleepImpl }) {
+  const url = `${apiBase}/repos/${repository}/git/commits/${commitSha}`;
+  const { data } = await requestJson({ fetchImpl, url, token, sleepImpl });
+  const treeSha = data?.tree?.sha;
+  if (typeof treeSha !== 'string' || !/^[0-9a-f]{40}$/i.test(treeSha)) {
+    throw new Error('GitHub commit response is missing a valid tree SHA');
+  }
+  return treeSha.toLowerCase();
+}
+
+/** Select at most one exact path entry from a Git tree. */
+function exactTreeEntry(entries, path) {
+  const matches = entries.filter((entry) => entry?.path === path);
+  if (matches.length > 1) throw new Error(`GitHub tree contains duplicate path ${path}`);
+  return matches[0] || null;
+}
+
+/**
+ * Prove a genuinely absent workflow directory through immutable Git tree reads.
+ *
+ * This fallback is used only after the Contents API returns 404. Returning an
+ * empty list requires successful commit/root/.github tree lookups that prove the
+ * workflow directory entry does not exist. Any ambiguous Git Data failure stays
+ * fail-closed.
+ */
+async function listProtectedWorkflowPathsFromTree({ fetchImpl, apiBase, repository, sha, token = '', sleepImpl }) {
+  const rootTreeSha = await resolveCommitTreeSha({ fetchImpl, apiBase, repository, commitSha: sha, token, sleepImpl });
+  const rootEntries = await readGitTree({ fetchImpl, apiBase, repository, treeSha: rootTreeSha, token, sleepImpl });
+  const githubEntry = exactTreeEntry(rootEntries, '.github');
+  if (!githubEntry) return [];
+  if (githubEntry.type !== 'tree' || typeof githubEntry.sha !== 'string') {
+    throw new Error('GitHub .github entry is not a tree');
+  }
+
+  const githubEntries = await readGitTree({ fetchImpl, apiBase, repository, treeSha: githubEntry.sha, token, sleepImpl });
+  const workflowsEntry = exactTreeEntry(githubEntries, 'workflows');
+  if (!workflowsEntry) return [];
+  if (workflowsEntry.type !== 'tree' || typeof workflowsEntry.sha !== 'string') {
+    throw new Error('GitHub workflows entry is not a tree');
+  }
+
+  const workflowEntries = await readGitTree({ fetchImpl, apiBase, repository, treeSha: workflowsEntry.sha, token, sleepImpl });
+  const paths = workflowEntries
+    .filter((entry) => entry?.type === 'blob' && typeof entry.path === 'string')
+    .map((entry) => `${WORKFLOW_DIRECTORY}/${entry.path}`);
+  if (paths.some((path) => !CANONICAL_WORKFLOW_PATH.test(path))) {
+    throw new Error('GitHub workflow tree contains a non-canonical workflow file path');
+  }
+  return paths;
+}
+
 /** Read exact case-sensitive workflow file paths from one protected commit. */
 export async function listProtectedWorkflowPaths({ fetchImpl, apiBase, repository, sha, token = '', sleepImpl }) {
   const url = `${apiBase}/repos/${repository}/contents/${WORKFLOW_DIRECTORY}?ref=${sha}`;
-  const { data } = await requestJson({ fetchImpl, url, token, sleepImpl });
+  let data;
+  try {
+    ({ data } = await requestJson({ fetchImpl, url, token, sleepImpl }));
+  } catch (error) {
+    if (!(error instanceof GitHubApiError) || error.status !== 404) throw error;
+    return listProtectedWorkflowPathsFromTree({ fetchImpl, apiBase, repository, sha, token, sleepImpl });
+  }
   if (!Array.isArray(data)) throw new Error('GitHub workflow-directory response is not an array');
   const paths = data.filter((entry) => entry?.type === 'file').map((entry) => entry.path);
-  if (paths.some((path) => typeof path !== 'string' || !path.startsWith(`${WORKFLOW_DIRECTORY}/`))) {
-    throw new Error('GitHub workflow-directory response contains an invalid path');
+  if (paths.some((path) => typeof path !== 'string' || !CANONICAL_WORKFLOW_PATH.test(path))) {
+    throw new Error('GitHub workflow-directory response contains a non-canonical workflow file path');
   }
   return paths;
 }
@@ -154,11 +239,9 @@ export function classifyWorkflows(workflows, protectedPaths, preservePaths = [])
     if (!Number.isSafeInteger(id) || typeof path !== 'string' || typeof state !== 'string') {
       throw new Error('workflow registry contains an invalid identity');
     }
-    if (!KNOWN_WORKFLOW_STATES.has(state)) {
-      throw new Error(`workflow registry contains unknown workflow state ${state}`);
-    }
     let classification;
-    if (path.startsWith('dynamic/')) classification = 'github_dynamic';
+    if (!KNOWN_WORKFLOW_STATES.has(state)) classification = 'unresolved';
+    else if (path.startsWith('dynamic/')) classification = 'github_dynamic';
     else if (present.has(path)) classification = state === 'active' ? 'present_active' : 'present_inactive';
     else if (state !== 'active') classification = 'inactive_absent';
     else if (preserved.has(path)) classification = 'preserved_absent';
@@ -199,6 +282,7 @@ export async function auditWorkflowRegistry({
     protected_workflow_paths: [...protectedPaths].sort(),
     classifications,
     active_orphan_count: classifications.filter((item) => item.classification === 'active_orphan').length,
+    unresolved_count: classifications.filter((item) => item.classification === 'unresolved').length,
   };
 }
 
