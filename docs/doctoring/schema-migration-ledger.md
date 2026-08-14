@@ -46,9 +46,23 @@ reviewed cutover.
 
 `schema_migrations` contains a stable `migration_key`, a low-cardinality
 `state_code`, and an application timestamp. Repeated startup is idempotent via
-`INSERT OR IGNORE`, while the persisted state is read back and compared with the
-fresh schema-catalog classification so a corrupted ledger cannot silently
-bless the database.
+`INSERT OR IGNORE`. Every persisted row must be one of the known exact
+migration-key/state pairs before the current generation is recorded. Unknown
+keys or corrupted state codes fail closed rather than being treated as harmless
+history.
+
+The ledger is monotonic across the naming migration. A canonical database may
+retain the earlier `legacy_schema_v1` record and append `canonical_schema_v2`.
+The reverse is forbidden: if the schema catalog is legacy while the ledger says
+`canonical_schema_v2` has ever been reached, startup fails because that state is
+consistent with an unsupported reverse migration, stale restore, or incomplete
+recovery. Backup restoration must restore schema and migration history to one
+coherent point rather than silently moving the schema backward under newer
+ledger evidence.
+
+After insertion, the persisted state is read back and compared with the fresh
+schema-catalog classification so a corrupted current-generation record cannot
+silently bless the database.
 
 This slice deliberately does **not** rename application tables, create legacy
 compatibility views, or claim PostgreSQL adapter readiness. Those operations
@@ -66,7 +80,8 @@ The later rename executor must run with foreign keys enabled, modern SQLite
 rename propagation semantics, pre/post `PRAGMA integrity_check` and
 `PRAGMA foreign_key_check`, deterministic interruption tests, restart evidence,
 and a restore rehearsal. Reverse renames are not a substitute for backup
-recovery.
+recovery, and a restore that moves from canonical history back to legacy schema
+must restore the ledger from the same verified recovery point.
 
 ## Verification
 
@@ -74,6 +89,9 @@ recovery.
 
 - idempotent legacy ledger creation;
 - a distinct canonical-generation ledger record;
+- preservation of valid legacy history when the canonical record is appended;
+- rejection of unknown or corrupted migration-ledger identities/states;
+- rejection of a canonical ledger record paired with a legacy schema generation;
 - fail-closed mixed-generation detection;
 - incomplete schema rejection;
 - the complete ten-object legacy and canonical inventories;
