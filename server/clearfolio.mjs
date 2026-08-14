@@ -9,6 +9,17 @@ const PERMISSIONS = 'job:create,job:read,viewer:read,artifact-link:create';
 const CLEARFOLIO_JOB_STATUSES = new Set(['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED']);
 const MIN_HMAC_SECRET_LENGTH = 32;
 const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
+const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
+const MAX_DOCUMENT_NAME_LENGTH = 512;
+const MAX_MIME_LENGTH = 255;
+const MAX_JOB_ID_LENGTH = 256;
+const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/;
+
+/** Hard total-request budget for each Clearfolio provider call. */
+export const CLEARFOLIO_REQUEST_TIMEOUT_MS = 15_000;
+
+/** Maximum successful Clearfolio JSON response bytes read into memory. */
+export const CLEARFOLIO_MAX_RESPONSE_BYTES = 256 * 1024;
 
 /** Whether the process uses the explicit in-memory Clearfolio development adapter. */
 export const clearfolioMock = process.env.SCOPEWEAVE_DEV === '1' && !CF_URL_INPUT;
@@ -181,6 +192,148 @@ function isClearfolioJobStatus(value) {
   return typeof value === 'string' && CLEARFOLIO_JOB_STATUSES.has(value);
 }
 
+/**
+ * Validate document metadata and bytes before allocating Blob/FormData objects.
+ *
+ * ScopeWeave's browser/API attachment ceiling is 10 MiB, so the provider adapter
+ * never accepts a larger in-process document than the caller can legitimately
+ * upload. Empty MIME is preserved as the existing application/octet-stream
+ * fallback.
+ *
+ * @param {unknown} document - Untrusted adapter input.
+ * @returns {{name:string,mime:string,bytes:Uint8Array}} Validated document input.
+ * @throws {Error} If metadata or bytes are malformed or outside the bounded contract.
+ */
+function validateDocument(document) {
+  if (!isJsonRecord(document)) throw new Error('clearfolio document invalid');
+  const { name, mime, bytes } = document;
+  if (
+    typeof name !== 'string'
+    || name.trim().length === 0
+    || name.length > MAX_DOCUMENT_NAME_LENGTH
+    || CONTROL_CHARACTER_PATTERN.test(name)
+    || typeof mime !== 'string'
+    || mime.length > MAX_MIME_LENGTH
+    || CONTROL_CHARACTER_PATTERN.test(mime)
+    || !(bytes instanceof Uint8Array)
+    || bytes.byteLength > MAX_DOCUMENT_BYTES
+  ) {
+    throw new Error('clearfolio document invalid');
+  }
+  return { name, mime, bytes };
+}
+
+/**
+ * Canonicalize and bound a provider job identifier before it reaches a URL.
+ *
+ * @param {unknown} jobId - Persisted or provider-returned job identifier.
+ * @returns {string} Trimmed non-empty identifier no longer than 256 characters.
+ * @throws {Error} If the identifier is unusable.
+ */
+function validateJobId(jobId) {
+  if (typeof jobId !== 'string') throw new Error('clearfolio job id invalid');
+  const canonical = jobId.trim();
+  if (
+    canonical.length === 0
+    || canonical.length > MAX_JOB_ID_LENGTH
+    || CONTROL_CHARACTER_PATTERN.test(canonical)
+  ) {
+    throw new Error('clearfolio job id invalid');
+  }
+  return canonical;
+}
+
+/**
+ * Compose an optional caller cancellation signal with the hard provider budget.
+ *
+ * @param {AbortSignal|undefined} callerSignal - Optional upstream cancellation signal.
+ * @returns {AbortSignal} Signal that aborts on caller cancellation or total timeout.
+ */
+function providerSignal(callerSignal) {
+  const timeoutSignal = AbortSignal.timeout(CLEARFOLIO_REQUEST_TIMEOUT_MS);
+  if (callerSignal === undefined) return timeoutSignal;
+  if (!(callerSignal instanceof AbortSignal)) throw new TypeError('signal must be an AbortSignal');
+  return AbortSignal.any([callerSignal, timeoutSignal]);
+}
+
+/**
+ * Parse one successful provider JSON response with media-type and byte bounds.
+ *
+ * Content-Length is treated only as an early rejection hint; the body stream is
+ * independently counted so omitted or dishonest length headers cannot bypass the
+ * memory ceiling. Invalid UTF-8, JSON, stream errors, and cancellation are
+ * collapsed to one operation-level message.
+ *
+ * @param {Response} response - Successful fetch response.
+ * @param {string} invalidMessage - Fixed operation-level validation error.
+ * @returns {Promise<unknown>} Parsed JSON value.
+ * @throws {Error} If media type, declared/streamed size, UTF-8, or JSON is invalid.
+ */
+async function readBoundedJson(response, invalidMessage) {
+  const contentType = response?.headers?.get?.('content-type');
+  if (
+    typeof contentType !== 'string'
+    || contentType.split(';', 1)[0].trim().toLowerCase() !== 'application/json'
+  ) {
+    throw new Error(invalidMessage);
+  }
+
+  const contentLength = response.headers.get('content-length');
+  if (contentLength !== null) {
+    if (!/^\d+$/.test(contentLength)) throw new Error(invalidMessage);
+    const declaredBytes = Number(contentLength);
+    if (!Number.isSafeInteger(declaredBytes) || declaredBytes > CLEARFOLIO_MAX_RESPONSE_BYTES) {
+      throw new Error(invalidMessage);
+    }
+  }
+
+  if (!response.body || typeof response.body.getReader !== 'function') {
+    throw new Error(invalidMessage);
+  }
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!(value instanceof Uint8Array)) throw new Error(invalidMessage);
+      totalBytes += value.byteLength;
+      if (totalBytes > CLEARFOLIO_MAX_RESPONSE_BYTES) {
+        try { await reader.cancel(); } catch { /* validation remains authoritative */ }
+        throw new Error(invalidMessage);
+      }
+      chunks.push(value);
+    }
+  } catch (error) {
+    if (error?.message === invalidMessage) throw error;
+    throw new Error(invalidMessage);
+  } finally {
+    try { reader.releaseLock(); } catch { /* no observable effect */ }
+  }
+
+  if (totalBytes === 0) throw new Error(invalidMessage);
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  let text;
+  try {
+    text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+  } catch {
+    throw new Error(invalidMessage);
+  }
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new Error(invalidMessage);
+  }
+}
+
 // ---- explicit development-only mock store (restart discards it) ----
 const mockDocs = new Map(); // jobId -> { name, mime, bytes }
 let mockSeq = 0;
@@ -205,37 +358,46 @@ export const mockArtifact = (jobId) => (clearfolioMock ? mockDocs.get(jobId) || 
  * @returns {Promise<{jobId:string,status:string}>} Downstream job identity and initial status.
  * @throws {Error} If Clearfolio is unavailable, rejects the request, or returns a malformed response.
  */
-export async function submitJob(orgId, userId, { name, mime, bytes }) {
+export async function submitJob(orgId, userId, document) {
+  const validatedDocument = validateDocument(document);
   const configuration = clearfolioConfiguration();
   if (configuration.mock) {
     const jobId = `mockcf-${++mockSeq}`;
-    mockDocs.set(jobId, { name, mime, bytes });
+    mockDocs.set(jobId, validatedDocument);
     return { jobId, status: 'SUCCEEDED' };
   }
   const form = new FormData();
-  form.append('file', new Blob([bytes], { type: mime || 'application/octet-stream' }), name);
+  form.append(
+    'file',
+    new Blob([validatedDocument.bytes], { type: validatedDocument.mime || 'application/octet-stream' }),
+    validatedDocument.name,
+  );
   let res;
   try {
     res = await fetch(`${configuration.baseUrl}/api/v1/convert/jobs`, {
       method: 'POST',
       headers: tenantHeaders(orgId, userId, configuration.secret),
       body: form,
+      redirect: 'error',
+      signal: providerSignal(),
     });
   } catch {
     throw new Error('clearfolio submit unavailable');
   }
   if (!res.ok) throw new Error(`clearfolio submit failed (${res.status})`);
-  const data = await res.json().catch(() => null);
+  const data = await readBoundedJson(res, 'clearfolio submit response invalid');
   if (!isJsonRecord(data)) throw new Error('clearfolio submit response invalid');
   const status = data.status === undefined ? 'PENDING' : data.status;
-  if (
-    typeof data.jobId !== 'string'
-    || data.jobId.trim().length === 0
-    || !isClearfolioJobStatus(status)
-  ) {
+  if (typeof data.jobId !== 'string' || !isClearfolioJobStatus(status)) {
     throw new Error('clearfolio submit response invalid');
   }
-  return { jobId: data.jobId.trim(), status };
+  let jobId;
+  try {
+    jobId = validateJobId(data.jobId);
+  } catch {
+    throw new Error('clearfolio submit response invalid');
+  }
+  return { jobId, status };
 }
 
 /**
@@ -254,19 +416,21 @@ export async function submitJob(orgId, userId, { name, mime, bytes }) {
  * @throws {Error} If Clearfolio is unavailable, rejects the request, or returns a malformed status.
  */
 export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
+  const canonicalJobId = validateJobId(jobId);
   const configuration = clearfolioConfiguration();
-  if (configuration.mock) return mockDocs.has(jobId) ? 'SUCCEEDED' : 'FAILED';
+  if (configuration.mock) return mockDocs.has(canonicalJobId) ? 'SUCCEEDED' : 'FAILED';
   let res;
   try {
-    res = await fetch(`${configuration.baseUrl}/api/v1/convert/jobs/${encodeURIComponent(jobId)}`, {
+    res = await fetch(`${configuration.baseUrl}/api/v1/convert/jobs/${encodeURIComponent(canonicalJobId)}`, {
       headers: tenantHeaders(orgId, userId, configuration.secret),
-      signal,
+      signal: providerSignal(signal),
+      redirect: 'error',
     });
   } catch {
     throw new Error('clearfolio status unavailable');
   }
   if (!res.ok) throw new Error(`clearfolio status failed (${res.status})`);
-  const data = await res.json().catch(() => null);
+  const data = await readBoundedJson(res, 'clearfolio status response invalid');
   if (!isJsonRecord(data) || !isClearfolioJobStatus(data.status)) {
     throw new Error('clearfolio status response invalid');
   }
@@ -287,19 +451,22 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
  * @throws {Error} If Clearfolio is unavailable, rejects the request, or returns an invalid link.
  */
 export async function artifactUrl(orgId, userId, jobId) {
+  const canonicalJobId = validateJobId(jobId);
   const configuration = clearfolioConfiguration();
-  if (configuration.mock) return `/api/mock-clearfolio/${encodeURIComponent(jobId)}`;
+  if (configuration.mock) return `/api/mock-clearfolio/${encodeURIComponent(canonicalJobId)}`;
   let res;
   try {
-    res = await fetch(`${configuration.baseUrl}/api/v1/viewer/${encodeURIComponent(jobId)}/artifact-links`, {
+    res = await fetch(`${configuration.baseUrl}/api/v1/viewer/${encodeURIComponent(canonicalJobId)}/artifact-links`, {
       method: 'POST',
       headers: tenantHeaders(orgId, userId, configuration.secret),
+      redirect: 'error',
+      signal: providerSignal(),
     });
   } catch {
     throw new Error('clearfolio artifact-link unavailable');
   }
   if (!res.ok) throw new Error(`clearfolio artifact-link failed (${res.status})`);
-  const data = await res.json().catch(() => null);
+  const data = await readBoundedJson(res, 'clearfolio artifact-link response invalid');
   if (!isJsonRecord(data)) throw new Error('clearfolio artifact-link response invalid');
   const link = data.artifactUrl || data.url || data.signedUrl;
   if (typeof link !== 'string' || link.length === 0) {
@@ -321,7 +488,7 @@ export async function artifactUrl(orgId, userId, jobId) {
 
   const token = url.searchParams.get('artifactToken');
   if (token && url.origin === clearfolioUrl.origin) {
-    return `${configuration.baseUrl}/viewer/${encodeURIComponent(jobId)}?artifactToken=${encodeURIComponent(token)}`;
+    return `${configuration.baseUrl}/viewer/${encodeURIComponent(canonicalJobId)}?artifactToken=${encodeURIComponent(token)}`;
   }
   return url.href;
 }
