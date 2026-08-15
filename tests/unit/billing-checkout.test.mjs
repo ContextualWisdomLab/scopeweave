@@ -8,20 +8,23 @@ const mockConfiguration = { mode: 'mock', publicOrigin: 'http://127.0.0.1:8787' 
 const liveConfiguration = { mode: 'live', publicOrigin: 'https://planner.example.com' };
 
 test('unconfigured production checkout fails closed with actionable HTTP 503', async () => {
+  let rejectedError;
   await assert.rejects(
     createCheckout({ orgId: 42, configuration: disabledConfiguration }),
-    async (error) => {
+    (error) => {
+      rejectedError = error;
       assert.equal(error.status, 503);
       assert.equal(typeof error.getResponse, 'function');
-      const response = error.getResponse();
-      assert.equal(response.status, 503);
-      assert.equal(response.headers.get('content-type'), 'application/json; charset=UTF-8');
-      const payload = await response.json();
-      assert.equal(payload.error, 'billing_not_configured');
-      assert.match(payload.action, /Configure the complete Stripe billing settings/);
       return true;
     },
   );
+
+  const response = rejectedError.getResponse();
+  assert.equal(response.status, 503);
+  assert.equal(response.headers.get('content-type'), 'application/json; charset=UTF-8');
+  const payload = await response.json();
+  assert.equal(payload.error, 'billing_not_configured');
+  assert.match(payload.action, /Configure the complete Stripe billing settings/);
 });
 
 test('development mock uses only the operator-owned public origin', async () => {
