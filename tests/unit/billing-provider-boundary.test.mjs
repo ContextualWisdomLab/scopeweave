@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { createCheckout } from '../../server/billing.mjs';
 
 const liveConfiguration = { mode: 'live', publicOrigin: 'https://planner.example.com' };
+const hostedCheckoutUrl = 'https://checkout.stripe.com/c/pay/cs_test_boundary#fidkdWxOYHwnPyd1blpx';
 
 async function withStripeEnv(run) {
   const previousSecret = process.env.STRIPE_SECRET_KEY;
@@ -38,7 +39,7 @@ async function expectProviderError(run, expectedCode) {
   return JSON.stringify(payload);
 }
 
-test('live Checkout uses a bounded single-attempt Stripe request', async () => {
+test('live Checkout uses a bounded single-attempt Stripe request and preserves the hosted URL', async () => {
   await withStripeEnv(async () => {
     const observed = [];
     const stripeClientFactory = async (secretKey, clientOptions) => {
@@ -48,7 +49,7 @@ test('live Checkout uses a bounded single-attempt Stripe request', async () => {
           sessions: {
             async create(payload, requestOptions) {
               observed.push({ payload, requestOptions });
-              return { url: 'https://checkout.stripe.com/c/pay/cs_test_boundary' };
+              return { url: hostedCheckoutUrl };
             },
           },
         },
@@ -61,7 +62,7 @@ test('live Checkout uses a bounded single-attempt Stripe request', async () => {
       stripeClientFactory,
     });
 
-    assert.equal(result.url, 'https://checkout.stripe.com/c/pay/cs_test_boundary');
+    assert.equal(result.url, hostedCheckoutUrl, 'Stripe-hosted client fragment is preserved verbatim');
     assert.deepEqual(observed[0], {
       secretKey: 'sk_test_provider_boundary',
       clientOptions: { maxNetworkRetries: 0, timeout: 15000 },
@@ -70,7 +71,7 @@ test('live Checkout uses a bounded single-attempt Stripe request', async () => {
   });
 });
 
-test('live Checkout rejects malformed or untrusted provider destinations', async () => {
+test('live Checkout rejects malformed or untrusted provider authorities', async () => {
   const invalidUrls = [
     null,
     '',
@@ -79,7 +80,6 @@ test('live Checkout rejects malformed or untrusted provider destinations', async
     'https://user:pass@checkout.stripe.com/c/pay/cs_test_credentials',
     'https://checkout.stripe.com.evil.example/c/pay/cs_test_suffix',
     'https://checkout.stripe.com:444/c/pay/cs_test_port',
-    'https://checkout.stripe.com/c/pay/cs_test_fragment#credential',
   ];
 
   await withStripeEnv(async () => {
