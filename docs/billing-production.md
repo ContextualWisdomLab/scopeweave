@@ -50,17 +50,57 @@ For local integration tests, `SCOPEWEAVE_DEV=1` plus a valid loopback
 the configured origin and a percent-encoded organization identifier; a different
 request host cannot replace that origin.
 
-## Current slice boundary
+## Provider trust boundary
 
-This document describes only the trusted-configuration and redirect-authority
-slice of issue #488. It does **not** declare the Stripe lifecycle production
-complete. Before production billing can be release-approved, ScopeWeave still
-needs the remaining #488 controls, including durable checkout attempts and stable
-idempotency keys, a packaged/pinned provider SDK and bounded provider transport,
-validated returned Checkout destinations, raw-body webhook verification and
-size limits, durable event deduplication, out-of-order reconciliation, normalized
-subscription/payment/entitlement state, rollback/recovery procedures, and
-end-to-end operational acceptance evidence.
+> Active PR state: this section describes the stacked provider-boundary work in
+> PR #507. It is not protected-`develop` shipped truth until its parent PR #505
+> and this PR are independently approved and integrated.
+
+The live hosted-Checkout adapter applies one bounded provider attempt until a
+later lifecycle slice introduces durable checkout-attempt and idempotency state:
+
+- Stripe client and request timeout: 15,000 ms;
+- automatic network retries: `0`;
+- provider exceptions and provider-import failures: stable HTTP 502
+  `billing_provider_unavailable` with `Cache-Control: no-store`;
+- malformed or untrusted provider destinations: stable HTTP 502
+  `billing_provider_invalid_response` with `Cache-Control: no-store`;
+- browser destination: parsed with `URL` and accepted only for HTTPS, exact
+  hostname `checkout.stripe.com`, default HTTPS port, no URL credentials, and no
+  fragment.
+
+This exact-host check deliberately rejects suffix-confusion names such as
+`checkout.stripe.com.evil.example`. Stripe Checkout custom domains are not
+silently trusted. Supporting one requires a separate operator-owned allowlist or
+canonical-domain configuration contract and its own regression evidence.
+
+Provider exception text, network addresses, and credentials are never copied
+into the browser error payload. The customer receives a retry/diagnostic next
+action rather than downstream internals.
+
+The provider-boundary slice does **not** by itself make the Stripe SDK available
+on a clean deployment. A pinned official Stripe package plus its exact lockfile
+remains a release gate unless it is incorporated into the same reviewed stack
+before the billing lifecycle is enabled. Missing provider code therefore fails
+through the same sanitized 502 boundary; it is never treated as checkout
+success.
+
+## Current lifecycle boundary
+
+The trusted-configuration and provider-trust slices do **not** declare the Stripe
+subscription lifecycle production complete. Before production billing can be
+release-approved, ScopeWeave still needs the remaining #488 controls, including:
+
+a durable checkout-attempt UUID and stable idempotency key; a packaged and pinned
+official Stripe SDK; raw-body webhook signature verification and streaming size
+limits; durable event deduplication; out-of-order reconciliation; normalized
+customer/subscription/payment/entitlement state; transactional reversible
+entitlement changes; migration and restore evidence; privacy/incident runbooks;
+and provider smoke plus release acceptance.
+
+No automatic provider retry should be enabled before durable idempotency exists.
+No custom Checkout domain should be accepted before an operator-owned trust
+configuration exists.
 
 ## Operator verification
 
@@ -73,10 +113,20 @@ Before a billing-enabled rollout:
 3. Send a checkout request through the same reverse proxy used in production
    while varying the request authority; success/cancel URLs must still use only
    `SCOPEWEAVE_PUBLIC_ORIGIN`.
-4. Keep the rollout blocked until the remaining #488 lifecycle controls are
+4. Exercise provider timeout/failure handling and confirm callers receive only
+   the stable no-store 502 contract without network or credential detail.
+5. Reject null, malformed, plaintext, credential-bearing, non-standard-port,
+   fragmented, and hostname-confusion Checkout destinations; accept the standard
+   active `https://checkout.stripe.com/...` hosted destination.
+6. Verify the official Stripe SDK is packaged and lockfile-pinned before enabling
+   live billing in a clean deployment.
+7. Keep the rollout blocked until the remaining #488 lifecycle controls are
    implemented and their exact-head security, coverage, review, rollback, and
    recovery gates pass together.
 
-Rollback for this slice is configuration-neutral: revert the validation module,
-checkout authority change, and tests together. No database migration or
-persisted billing state is introduced here.
+Rollback for the trusted-configuration/provider-boundary stack is data-neutral:
+revert the validation and provider-boundary source, tests, documentation, and
+CHANGELOG entries together. No database migration or persisted billing state is
+introduced by these slices. If billing must be disabled while investigating a
+provider outage, remove the complete live provider tuple and restart; never
+substitute a production mock.

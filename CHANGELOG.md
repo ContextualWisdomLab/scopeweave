@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Bounded hosted Stripe Checkout provider calls to one 15-second, no-retry
+  attempt until durable idempotency exists; validated returned destinations as
+  exact HTTPS `checkout.stripe.com` URLs without credentials, fragments, or
+  non-standard ports; and mapped provider failures to sanitized no-store 502
+  responses.
 - Bound Stripe Checkout success/cancel redirects to an operator-configured
   canonical public origin instead of request authority, rejected partial or
   ambiguous billing configuration at startup, and confined successful mock
