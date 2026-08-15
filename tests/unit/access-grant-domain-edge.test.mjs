@@ -33,6 +33,22 @@ for (const randomBytes of [() => new Uint8Array(31), () => Array(32).fill(1)]) {
   }), /random source must return 32 bytes/);
 }
 
+{
+  let calls = 0;
+  const service = createAccessGrantService({
+    ...validPorts(),
+    randomSource: {
+      randomBytes(size) {
+        calls += 1;
+        return calls === 1 ? new Uint8Array(size).fill(9) : new Uint8Array(15).fill(9);
+      },
+    },
+  });
+  await assert.rejects(service.mint({
+    subjectId: 'u', projectId: 'p', purpose: 'stream', audience: 'scopeweave:stream', ttlSeconds: 10,
+  }), /random source must return 16 bytes for grant id/);
+}
+
 for (const nowMs of [() => Number.NaN, () => -1]) {
   const service = createAccessGrantService({ ...validPorts(), clock: { nowMs } });
   await assert.rejects(service.mint({
