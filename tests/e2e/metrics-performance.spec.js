@@ -1,0 +1,204 @@
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+
+import { test, expect } from '@playwright/test';
+
+const TASK_COUNT = 10_000;
+const SAMPLE_COUNT = 7;
+const WARMUP_COUNT = 3;
+const TARGET_IMPROVEMENT_PERCENT = 15;
+const BASE_DATE = '2026-02-15';
+
+const DATE_WINDOWS = Object.freeze([
+  ['2026-01-01', '2026-01-02'],
+  ['2026-01-02', '2026-01-12'],
+  ['2026-02-01', '2026-03-01'],
+  ['2026-02-15', '2026-02-15'],
+]);
+
+function protectedBaseSha() {
+  const override = String(process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA || '').trim();
+  if (override) return override;
+
+  const eventPath = process.env.GITHUB_EVENT_PATH;
+  if (!eventPath) return null;
+  const event = JSON.parse(readFileSync(eventPath, 'utf8'));
+  return event.pull_request?.base?.sha || null;
+}
+
+function readGitFile(commitSha, path) {
+  const normalizedCommitSha = String(commitSha || '');
+  if (!/^[a-f0-9]{40}$/.test(normalizedCommitSha)) {
+    throw new Error(`Invalid benchmark base SHA: ${normalizedCommitSha || '<missing>'}`);
+  }
+
+  const spec = `${normalizedCommitSha}:${path}`;
+  try {
+    return execFileSync('git', ['show', spec], { encoding: 'utf8' });
+  } catch {
+    execFileSync('git', ['fetch', '--depth=1', 'origin', normalizedCommitSha], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return execFileSync('git', ['show', spec], { encoding: 'utf8' });
+  }
+}
+
+function createTask(index) {
+  const [plannedStartDate, plannedEndDate] = DATE_WINDOWS[index % DATE_WINDOWS.length];
+  return {
+    id: `metrics-performance-${index}`,
+    parentId: null,
+    depth: 1,
+    expanded: true,
+    pendingDelete: false,
+    isSynthetic: false,
+    phase: `Phase ${index}`,
+    activity: '',
+    task: '',
+    categoryLarge: '',
+    categoryMedium: '',
+    documentName: '',
+    owner: `owner-${index % 17}`,
+    supportTeam: '',
+    plannedStartDate,
+    plannedEndDate,
+    actualProgressStatus: '미착수(0%)',
+    actualStartDate: '',
+    actualEndDate: '',
+    predecessors: '',
+    budget: '',
+    actualCost: '',
+    sprint: '',
+    storyPoints: '',
+  };
+}
+
+function median(values) {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+async function measureMetrics(browser, { appSource = null, label }) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+
+  if (appSource !== null) {
+    await page.route('**/app.js', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/javascript; charset=utf-8',
+        body: appSource,
+      });
+    });
+  }
+
+  await page.goto('/');
+  const tasks = Array.from({ length: TASK_COUNT }, (_, index) => createTask(index));
+
+  const result = await page.evaluate(async ({ seededTasks, baseDate, sampleCount, warmupCount }) => {
+    state.tasks = seededTasks;
+    state.baseDate = baseDate;
+
+    for (let warmup = 0; warmup < warmupCount; warmup += 1) {
+      computeTaskMetrics();
+    }
+
+    const samples = [];
+    for (let sample = 0; sample < sampleCount; sample += 1) {
+      const startedAt = performance.now();
+      computeTaskMetrics();
+      samples.push(performance.now() - startedAt);
+    }
+
+    const metrics = computeTaskMetrics();
+    const entries = Array.from(metrics.byTask, ([taskId, taskMetrics]) => [
+      taskId,
+      taskMetrics.durationDays,
+      taskMetrics.weightRatio,
+      taskMetrics.plannedProgressRatio,
+      taskMetrics.actualProgressRatio,
+      taskMetrics.weightedPlannedRatio,
+      taskMetrics.weightedActualRatio,
+      taskMetrics.progressState.label,
+      taskMetrics.progressState.className,
+      taskMetrics.plannedDateWarning,
+      taskMetrics.actualDateWarning,
+    ]);
+    const snapshot = JSON.stringify({
+      totalDays: metrics.totalDays,
+      totalWeightedPlannedRatio: metrics.totalWeightedPlannedRatio,
+      totalWeightedActualRatio: metrics.totalWeightedActualRatio,
+      entries,
+    });
+    const digestBytes = new Uint8Array(await crypto.subtle.digest(
+      'SHA-256',
+      new TextEncoder().encode(snapshot),
+    ));
+    const digest = Array.from(digestBytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+
+    return {
+      samples,
+      digest,
+      totalDays: metrics.totalDays,
+      byTaskSize: metrics.byTask.size,
+      totalWeightedPlannedRatio: metrics.totalWeightedPlannedRatio,
+      totalWeightedActualRatio: metrics.totalWeightedActualRatio,
+    };
+  }, {
+    seededTasks: tasks,
+    baseDate: BASE_DATE,
+    sampleCount: SAMPLE_COUNT,
+    warmupCount: WARMUP_COUNT,
+  });
+
+  await context.close();
+  return {
+    label,
+    ...result,
+    medianDurationMs: median(result.samples),
+  };
+}
+
+test('10,000-task metric computation preserves exact semantics and beats the protected base', async ({ browser }) => {
+  test.setTimeout(120_000);
+
+  const baseSha = protectedBaseSha();
+  const baselineSource = baseSha ? readGitFile(baseSha, 'app.js') : null;
+  const baseline = baselineSource === null
+    ? null
+    : await measureMetrics(browser, { appSource: baselineSource, label: 'protected-base' });
+  const optimized = await measureMetrics(browser, { label: 'candidate' });
+
+  expect(optimized.byTaskSize).toBe(TASK_COUNT);
+  expect(optimized.samples).toHaveLength(SAMPLE_COUNT);
+  expect(optimized.medianDurationMs).toBeGreaterThan(0);
+
+  let optimizationDeltaPercent = null;
+  if (baseline !== null) {
+    expect(baseline.byTaskSize).toBe(TASK_COUNT);
+    expect(optimized.digest).toBe(baseline.digest);
+    expect(optimized.totalDays).toBe(baseline.totalDays);
+    expect(optimized.totalWeightedPlannedRatio).toBe(baseline.totalWeightedPlannedRatio);
+    expect(optimized.totalWeightedActualRatio).toBe(baseline.totalWeightedActualRatio);
+
+    optimizationDeltaPercent = ((baseline.medianDurationMs - optimized.medianDurationMs)
+      / baseline.medianDurationMs) * 100;
+    expect(
+      optimizationDeltaPercent,
+      `expected >=${TARGET_IMPROVEMENT_PERCENT}% median computeTaskMetrics improvement over ${baseSha}, got ${optimizationDeltaPercent.toFixed(2)}%`,
+    ).toBeGreaterThanOrEqual(TARGET_IMPROVEMENT_PERCENT);
+  }
+
+  console.log(`SCOPEWEAVE_METRICS_BENCHMARK ${JSON.stringify({
+    taskCount: TASK_COUNT,
+    sampleCount: SAMPLE_COUNT,
+    warmupCount: WARMUP_COUNT,
+    protectedBaseSha: baseSha,
+    protectedBaselineAvailable: baseline !== null,
+    targetImprovementPercent: TARGET_IMPROVEMENT_PERCENT,
+    optimizationDeltaPercent,
+    baseline,
+    optimized,
+  })}`);
+});
