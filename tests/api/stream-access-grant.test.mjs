@@ -54,16 +54,30 @@ async function issueStreamGrant(token, projectId) {
   return issued;
 }
 
-async function readConnectedPreamble(response) {
+async function readWithTimeout(reader, label, timeoutMs = 500) {
+  let timeout;
+  try {
+    return await Promise.race([
+      reader.read(),
+      new Promise((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+async function openConnectedStream(response) {
   assert.equal(response.status, 200);
   assert.match(response.headers.get('content-type') || '', /^text\/event-stream\b/);
   assert.equal(response.headers.get('cache-control'), 'private, no-store');
   assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
   assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
   const reader = response.body.getReader();
-  const first = await reader.read();
+  const first = await readWithTimeout(reader, 'SSE connected preamble');
   assert.equal(new TextDecoder().decode(first.value), ': connected\n\n');
-  await reader.cancel();
+  return reader;
 }
 
 const ownerToken = await signup('stream-owner@example.com');
@@ -86,7 +100,25 @@ assert.equal(response.status, 401, 'stream grant is bound to its exact project')
 assert.equal(response.headers.get('cache-control'), 'private, no-store');
 
 response = await app.request(issued.url);
-await readConnectedPreamble(response);
+const grantReader = await openConnectedStream(response);
+
+// The security gateway must preserve the existing buyer-visible realtime
+// behavior rather than merely replacing the credential transport. A normal
+// project write on the delegated core route has to fan out on this secured SSE
+// channel with the exact resulting optimistic-concurrency version.
+const update = await jsonRequest(`/api/projects/${project.id}`, {
+  method: 'PUT',
+  headers: { authorization: `Bearer ${ownerToken}` },
+  body: jsonBody({ name: 'Stream grant project updated', version: project.version }),
+});
+assert.equal(update.status, 200, 'project update succeeds while secure SSE is connected');
+const updated = await update.json();
+const pushed = await readWithTimeout(grantReader, 'secure SSE project update');
+const pushedText = new TextDecoder().decode(pushed.value);
+assert.match(pushedText, /^data: /);
+const pushedPayload = JSON.parse(pushedText.slice('data: '.length).trim());
+assert.deepEqual(pushedPayload, { type: 'update', version: updated.version }, 'secure gateway preserves update fanout without exposing actor credentials');
+await grantReader.cancel();
 
 response = await app.request(issued.url);
 assert.equal(response.status, 401, 'consumed stream grant cannot be replayed');
@@ -98,7 +130,8 @@ assert.equal(response.headers.get('cache-control'), 'private, no-store');
 response = await app.request(`/api/projects/${project.id}/stream`, {
   headers: { authorization: `Bearer ${ownerToken}` },
 });
-await readConnectedPreamble(response);
+const headerReader = await openConnectedStream(response);
+await headerReader.cancel();
 
 // The access-grant exchange remains tenant-nondisclosing.
 const outsiderToken = await signup('stream-outsider@example.com');
