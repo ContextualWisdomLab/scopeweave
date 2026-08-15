@@ -7,6 +7,7 @@ import { validateBillingStartupConfiguration } from './billing_configuration.mjs
 const billingConfiguration = validateBillingStartupConfiguration();
 const STRIPE_CHECKOUT_ENDPOINT = 'https://api.stripe.com/v1/checkout/sessions';
 const STRIPE_REQUEST_TIMEOUT_MS = 15_000;
+const STRIPE_RESPONSE_MAX_BYTES = 1024 * 1024;
 
 export const PLANS = {
   free: { name: 'Free', limits: { projects: 2, members: 3 }, priceKrw: 0 },
@@ -82,6 +83,63 @@ function stripeCheckoutForm(payload) {
   ]);
 }
 
+async function readBoundedProviderJson(response) {
+  const declaredLengthHeader = response.headers.get('content-length');
+  if (declaredLengthHeader !== null) {
+    const declaredLength = Number(declaredLengthHeader);
+    if (!Number.isSafeInteger(declaredLength)
+      || declaredLength < 0
+      || declaredLength > STRIPE_RESPONSE_MAX_BYTES) {
+      try {
+        await response.body?.cancel();
+      } finally {
+        throw providerInvalidResponseFailure();
+      }
+    }
+  }
+
+  if (!response.body) {
+    throw providerInvalidResponseFailure();
+  }
+
+  const reader = response.body.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+
+  while (true) {
+    let readResult;
+    try {
+      readResult = await reader.read();
+    } catch {
+      throw providerInvalidResponseFailure();
+    }
+    if (readResult.done) break;
+
+    totalBytes += readResult.value.byteLength;
+    if (totalBytes > STRIPE_RESPONSE_MAX_BYTES) {
+      try {
+        await reader.cancel();
+      } finally {
+        throw providerInvalidResponseFailure();
+      }
+    }
+    chunks.push(readResult.value);
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw providerInvalidResponseFailure();
+  }
+}
+
 async function createStripeSessionWithFetch(secretKey, payload) {
   let response;
   try {
@@ -108,11 +166,7 @@ async function createStripeSessionWithFetch(secretKey, payload) {
     throw providerInvalidResponseFailure();
   }
 
-  try {
-    return await response.json();
-  } catch {
-    throw providerInvalidResponseFailure();
-  }
+  return readBoundedProviderJson(response);
 }
 
 function validateHostedCheckoutUrl(rawUrl) {
@@ -150,9 +204,9 @@ function validateHostedCheckoutUrl(rawUrl) {
  * successful mock exists only in explicit development mode; an unconfigured
  * production capability returns HTTP 503 instead of pretending checkout worked.
  * Live provider calls use one direct HTTPS attempt with a 15-second total budget
- * until durable checkout-attempt idempotency state exists. The hosted destination
- * must use Stripe's standard HTTPS authority; provider-issued client fragments
- * are preserved verbatim.
+ * and a 1 MiB response-body ceiling until durable checkout-attempt idempotency
+ * state exists. The hosted destination must use Stripe's standard HTTPS authority;
+ * provider-issued client fragments are preserved verbatim.
  *
  * @param {object} options - Checkout inputs and optional deterministic test seams.
  * @param {string|number} options.orgId - Organization that owns the checkout.
