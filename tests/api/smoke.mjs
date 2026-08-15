@@ -156,13 +156,17 @@ assert.equal(r.status, 403, 'cannot remove owner');
 r = await req(`/api/orgs/${orgAId}/members/${vmember.id}`, { method: 'DELETE', headers: auth });
 assert.equal(r.status, 200, 'remove member ok');
 
-// SSE stream: query-token auth (EventSource can't send headers)
+// SSE stream: broad session JWTs are never accepted in browser URLs.
 r = await req(`/api/projects/${proj.id}/stream?token=${encodeURIComponent(token)}`);
-assert.equal(r.status, 200, 'SSE with valid query token → 200');
+assert.equal(r.status, 401, 'SSE with legacy query token → 401');
+await r.body?.cancel?.();
+// Capable API clients retain direct Authorization-header access.
+r = await req(`/api/projects/${proj.id}/stream`, { headers: auth });
+assert.equal(r.status, 200, 'SSE with Authorization header → 200');
 assert.match(r.headers.get('content-type') || '', /text\/event-stream/, 'SSE content-type');
 await r.body?.cancel();
 r = await req(`/api/projects/${proj.id}/stream`);
-assert.equal(r.status, 401, 'SSE without token → 401');
+assert.equal(r.status, 401, 'SSE without credential → 401');
 await r.body?.cancel?.();
 
 // Static allowlist — client files served, source/db never exposed
