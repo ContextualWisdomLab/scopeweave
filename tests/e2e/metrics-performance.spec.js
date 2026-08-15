@@ -8,6 +8,7 @@ const SAMPLE_COUNT = 7;
 const WARMUP_COUNT = 3;
 const TARGET_IMPROVEMENT_PERCENT = 15;
 const BASE_DATE = '2026-02-15';
+const CANDIDATE_APP_SOURCE = readFileSync(new URL('../../app.js', import.meta.url), 'utf8');
 
 const DATE_WINDOWS = Object.freeze([
   ['2026-01-01', '2026-01-02'],
@@ -42,6 +43,17 @@ function readGitFile(commitSha, path) {
     });
     return execFileSync('git', ['show', spec], { encoding: 'utf8' });
   }
+}
+
+function instrumentMetricsSource(source) {
+  const bootstrapCall = '\nbootstrap();';
+  const bootstrapIndex = source.lastIndexOf(bootstrapCall);
+  if (bootstrapIndex === -1) {
+    throw new Error('Benchmark app source is missing the expected bootstrap call');
+  }
+
+  const withoutBootstrap = `${source.slice(0, bootstrapIndex)}${source.slice(bootstrapIndex + bootstrapCall.length)}`;
+  return `${withoutBootstrap}\n\nwindow.__scopeweaveMetricsBenchmark = Object.freeze({\n  seed(tasks, baseDate) {\n    state.tasks = tasks;\n    state.baseDate = baseDate;\n  },\n  compute() {\n    return computeTaskMetrics();\n  },\n});\n`;
 }
 
 function createTask(index) {
@@ -79,39 +91,39 @@ function median(values) {
   return sorted[Math.floor(sorted.length / 2)];
 }
 
-async function measureMetrics(browser, { appSource = null, label }) {
+async function measureMetrics(browser, { appSource, label }) {
   const context = await browser.newContext();
   const page = await context.newPage();
+  const instrumentedSource = instrumentMetricsSource(appSource);
 
-  if (appSource !== null) {
-    await page.route('**/app.js', async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: 'application/javascript; charset=utf-8',
-        body: appSource,
-      });
+  await page.route('**/app.js', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/javascript; charset=utf-8',
+      body: instrumentedSource,
     });
-  }
+  });
 
   await page.goto('/');
   const tasks = Array.from({ length: TASK_COUNT }, (_, index) => createTask(index));
 
   const result = await page.evaluate(async ({ seededTasks, baseDate, sampleCount, warmupCount }) => {
-    state.tasks = seededTasks;
-    state.baseDate = baseDate;
+    const benchmark = window.__scopeweaveMetricsBenchmark;
+    if (!benchmark) throw new Error('metrics benchmark bridge did not initialize');
+    benchmark.seed(seededTasks, baseDate);
 
     for (let warmup = 0; warmup < warmupCount; warmup += 1) {
-      computeTaskMetrics();
+      benchmark.compute();
     }
 
     const samples = [];
     for (let sample = 0; sample < sampleCount; sample += 1) {
       const startedAt = performance.now();
-      computeTaskMetrics();
+      benchmark.compute();
       samples.push(performance.now() - startedAt);
     }
 
-    const metrics = computeTaskMetrics();
+    const metrics = benchmark.compute();
     const entries = Array.from(metrics.byTask, ([taskId, taskMetrics]) => [
       taskId,
       taskMetrics.durationDays,
@@ -168,7 +180,7 @@ test('10,000-task metric computation preserves exact semantics and beats the pro
   const baseline = baselineSource === null
     ? null
     : await measureMetrics(browser, { appSource: baselineSource, label: 'protected-base' });
-  const optimized = await measureMetrics(browser, { label: 'candidate' });
+  const optimized = await measureMetrics(browser, { appSource: CANDIDATE_APP_SOURCE, label: 'candidate' });
 
   expect(optimized.byTaskSize).toBe(TASK_COUNT);
   expect(optimized.samples).toHaveLength(SAMPLE_COUNT);
