@@ -19,6 +19,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added workflow ownership regression coverage so central review
   workflows stay inherited from `ContextualWisdomLab/.github`, not copied
   into this repository.
+- Added a framework-neutral short-lived access-grant domain for the bounded
+  `stream` and `attachment_view` purposes, with injectable authorization,
+  membership-revocation, random-source, clock, audit, and atomic repository
+  ports. Route, database, calendar-subscription, and client migration remain
+  follow-up work under issue #413.
 
 ### Security
 
@@ -49,6 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added cross-device regression coverage proving that `logout-all` rejects stale
   tokens on bearer, calendar, SSE, and attachment-view transports while the
   replacement token continues through the same authentication boundary.
+- Bound short-lived access grants to one project, purpose, audience and, for
+  attachment views, one attachment; capped their TTL at five minutes, persisted
+  only SHA-256 token hashes through the repository port, rechecked membership on
+  redemption, and required the repository to perform one-time consumption as an
+  atomic transition.
 
 ### Changed
 
