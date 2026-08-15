@@ -1,4 +1,4 @@
-// Behavioral coverage for computeTaskMetrics after hot-path cache changes.
+// Behavioral and measurement coverage for computeTaskMetrics hot-path changes.
 // app.js is browser-first; evaluate it under vm and export only the metric seam.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -12,7 +12,54 @@ function loadMetrics() {
   let source = fs.readFileSync(appJsPath, 'utf8');
   source = source.replace(/^\s*bootstrap\(\);\s*$/m, ';');
   source += `
-;globalThis.__taskMetricExports = { computeTaskMetrics, state };
+function __computeTaskMetricsReference() {
+  const durationCache = new Map();
+  const totalDays = state.tasks.reduce((sum, task) => {
+    const duration = calculateDurationDays(task.plannedStartDate, task.plannedEndDate);
+    durationCache.set(task.id, duration);
+    return sum + duration;
+  }, 0);
+
+  const baseDate = state.baseDate;
+  const byTask = new Map();
+  let totalWeightedPlannedRatio = 0;
+  let totalWeightedActualRatio = 0;
+
+  state.tasks.forEach((task) => {
+    const durationDays = durationCache.get(task.id);
+    const weightRatio = totalDays > 0 ? durationDays / totalDays : 0;
+    const plannedProgressRatio = calculatePlannedProgressRatio(baseDate, task.plannedStartDate, task.plannedEndDate, durationDays);
+    const actualProgressRatio = (ACTUAL_PROGRESS_MAP[task.actualProgressStatus] || 0) / 100;
+    const weightedPlannedRatio = weightRatio * plannedProgressRatio;
+    const weightedActualRatio = weightRatio * actualProgressRatio;
+    const plannedDateWarning = getDateRangeWarning(task.plannedStartDate, task.plannedEndDate, '계획종료일이 시작일보다 빠릅니다.');
+    const actualDateWarning = getDateRangeWarning(task.actualStartDate, task.actualEndDate, '실적종료일이 시작일보다 빠릅니다.');
+    const progressState = deriveProgressState(task, baseDate);
+
+    totalWeightedPlannedRatio += weightedPlannedRatio;
+    totalWeightedActualRatio += weightedActualRatio;
+
+    byTask.set(task.id, {
+      durationDays,
+      weightRatio,
+      plannedProgressRatio,
+      actualProgressRatio,
+      weightedPlannedRatio,
+      weightedActualRatio,
+      progressState,
+      plannedDateWarning,
+      actualDateWarning,
+    });
+  });
+
+  return { totalDays, totalWeightedPlannedRatio, totalWeightedActualRatio, byTask };
+}
+
+globalThis.__taskMetricExports = {
+  computeTaskMetrics,
+  computeTaskMetricsReference: __computeTaskMetricsReference,
+  state,
+};
 `;
 
   const classList = {
@@ -102,7 +149,23 @@ function closeTo(actual, expected, message) {
   assert.ok(Math.abs(actual - expected) < 1e-12, `${message}: expected ${expected}, got ${actual}`);
 }
 
-const { computeTaskMetrics, state } = loadMetrics();
+function median(values) {
+  const sorted = [...values].sort((left, right) => left - right);
+  return sorted[Math.floor(sorted.length / 2)];
+}
+
+function measureMedianMs(operation, iterations = 5) {
+  for (let index = 0; index < 2; index += 1) operation();
+  const samples = [];
+  for (let index = 0; index < iterations; index += 1) {
+    const started = process.hrtime.bigint();
+    operation();
+    samples.push(Number(process.hrtime.bigint() - started) / 1_000_000);
+  }
+  return median(samples);
+}
+
+const { computeTaskMetrics, computeTaskMetricsReference, state } = loadMetrics();
 
 state.baseDate = '2026-08-12';
 state.tasks = [
@@ -136,6 +199,11 @@ closeTo(metrics.byTask.get('9007199254740993').plannedProgressRatio, 0, 'future 
 closeTo(metrics.totalWeightedPlannedRatio, 3 / 8, 'weighted planned progress preserves prior semantics');
 closeTo(metrics.totalWeightedActualRatio, 11 / 16, 'weighted actual progress preserves prior semantics');
 
+const referenceMetrics = computeTaskMetricsReference();
+assert.equal(metrics.totalDays, referenceMetrics.totalDays, 'optimized total duration matches the protected-base algorithm');
+closeTo(metrics.totalWeightedPlannedRatio, referenceMetrics.totalWeightedPlannedRatio, 'optimized planned aggregate parity');
+closeTo(metrics.totalWeightedActualRatio, referenceMetrics.totalWeightedActualRatio, 'optimized actual aggregate parity');
+
 state.tasks = [
   {
     id: 'invalid-date-task',
@@ -160,4 +228,49 @@ assert.equal(metrics.byTask.size, 0, 'empty plans produce no task metrics');
 assert.equal(metrics.totalWeightedPlannedRatio, 0, 'empty planned aggregate is zero');
 assert.equal(metrics.totalWeightedActualRatio, 0, 'empty actual aggregate is zero');
 
-console.log('✓ task metric cache behavior tests passed');
+const statuses = ['미착수(0%)', '진행(50%)', 'PM확인(100%)'];
+state.baseDate = '2026-01-15';
+state.tasks = Array.from({ length: 10_000 }, (_, index) => {
+  const day = String((index % 28) + 1).padStart(2, '0');
+  const status = statuses[index % statuses.length];
+  return {
+    id: `benchmark-task-${index}`,
+    plannedStartDate: '2026-01-01',
+    plannedEndDate: `2026-01-${day}`,
+    actualProgressStatus: status,
+    actualStartDate: status === '미착수(0%)' ? '' : '2026-01-02',
+    actualEndDate: status === 'PM확인(100%)' ? `2026-01-${day}` : '',
+  };
+});
+
+const benchmarkReference = computeTaskMetricsReference();
+const benchmarkCandidate = computeTaskMetrics();
+assert.equal(benchmarkCandidate.totalDays, benchmarkReference.totalDays, '10k-task candidate preserves reference total duration');
+closeTo(
+  benchmarkCandidate.totalWeightedPlannedRatio,
+  benchmarkReference.totalWeightedPlannedRatio,
+  '10k-task candidate preserves reference planned aggregate',
+);
+closeTo(
+  benchmarkCandidate.totalWeightedActualRatio,
+  benchmarkReference.totalWeightedActualRatio,
+  '10k-task candidate preserves reference actual aggregate',
+);
+
+const referenceMedianMs = measureMedianMs(computeTaskMetricsReference);
+const candidateMedianMs = measureMedianMs(computeTaskMetrics);
+const improvementPct = referenceMedianMs > 0
+  ? ((referenceMedianMs - candidateMedianMs) / referenceMedianMs) * 100
+  : 0;
+assert.equal(Number.isFinite(referenceMedianMs), true, 'reference benchmark is finite');
+assert.equal(Number.isFinite(candidateMedianMs), true, 'candidate benchmark is finite');
+console.log(JSON.stringify({
+  benchmark: 'computeTaskMetrics',
+  tasks: state.tasks.length,
+  iterations: 5,
+  referenceMedianMs: Number(referenceMedianMs.toFixed(3)),
+  candidateMedianMs: Number(candidateMedianMs.toFixed(3)),
+  improvementPct: Number(improvementPct.toFixed(2)),
+}));
+
+console.log('✓ task metric cache behavior and benchmark evidence passed');
