@@ -101,6 +101,14 @@ test('production URL and HMAC configuration rejects ambiguous or unsafe input', 
   };
   try {
     assert.equal(await loopback.jobStatus(1, 2, 'job-1'), 'RUNNING');
+
+    process.env.CLEARFOLIO_URL = 'http://[::1]:8080';
+    const ipv6Loopback = await freshModule('development-ipv6-loopback-http');
+    assert.equal(
+      await ipv6Loopback.jobStatus(1, 2, 'job-1'),
+      'RUNNING',
+      'explicit development mode accepts the WHATWG-serialized IPv6 loopback origin',
+    );
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.SCOPEWEAVE_DEV;
