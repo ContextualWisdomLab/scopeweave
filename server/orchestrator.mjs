@@ -288,14 +288,14 @@ export async function chat(messages) {
       'contextual-orchestrator could not be reached.',
     );
   }
-  const data = await responseJson(response);
-  const content = data?.choices?.[0]?.message?.content;
   if (!response.ok) {
     throw new OrchestratorConfigurationError(
       'orchestrator_provider_rejected',
       `contextual-orchestrator rejected the request with HTTP ${response.status}.`,
     );
   }
+  const data = await responseJson(response);
+  const content = data?.choices?.[0]?.message?.content;
   if (typeof content !== 'string' || !content.trim()) {
     throw new OrchestratorConfigurationError(
       'orchestrator_response_invalid',
