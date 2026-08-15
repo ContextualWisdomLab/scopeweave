@@ -5,10 +5,8 @@ import { HTTPException } from 'hono/http-exception';
 import { validateBillingStartupConfiguration } from './billing_configuration.mjs';
 
 const billingConfiguration = validateBillingStartupConfiguration();
-const STRIPE_PROVIDER_REQUEST_OPTIONS = Object.freeze({
-  maxNetworkRetries: 0,
-  timeout: 15000,
-});
+const STRIPE_CHECKOUT_ENDPOINT = 'https://api.stripe.com/v1/checkout/sessions';
+const STRIPE_REQUEST_TIMEOUT_MS = 15_000;
 
 export const PLANS = {
   free: { name: 'Free', limits: { projects: 2, members: 3 }, priceKrw: 0 },
@@ -58,22 +56,86 @@ function providerFailure(code, action) {
   });
 }
 
+function providerUnavailableFailure() {
+  return providerFailure(
+    'billing_provider_unavailable',
+    'Retry checkout. If the problem persists, verify Stripe connectivity and service health before retrying.',
+  );
+}
+
+function providerInvalidResponseFailure() {
+  return providerFailure(
+    'billing_provider_invalid_response',
+    'Retry checkout. If the problem persists, verify the Stripe Checkout provider configuration and service health.',
+  );
+}
+
+function stripeCheckoutForm(payload) {
+  return new URLSearchParams([
+    ['mode', payload.mode],
+    ['line_items[0][price]', payload.line_items[0].price],
+    ['line_items[0][quantity]', String(payload.line_items[0].quantity)],
+    ['success_url', payload.success_url],
+    ['cancel_url', payload.cancel_url],
+    ['client_reference_id', payload.client_reference_id],
+    ['metadata[orgId]', payload.metadata.orgId],
+  ]);
+}
+
+async function discardResponseBody(response) {
+  if (!response.body) return;
+  try {
+    await response.body.cancel();
+  } catch {
+    // Cleanup failure is intentionally private; the stable provider category wins.
+  }
+}
+
+async function createStripeSessionWithFetch(secretKey, payload) {
+  let response;
+  try {
+    response = await fetch(STRIPE_CHECKOUT_ENDPOINT, {
+      method: 'POST',
+      redirect: 'error',
+      signal: AbortSignal.timeout(STRIPE_REQUEST_TIMEOUT_MS),
+      headers: {
+        authorization: `Bearer ${secretKey}`,
+        'content-type': 'application/x-www-form-urlencoded',
+      },
+      body: stripeCheckoutForm(payload).toString(),
+    });
+  } catch {
+    throw providerUnavailableFailure();
+  }
+
+  if (!response.ok) {
+    await discardResponseBody(response);
+    throw providerUnavailableFailure();
+  }
+
+  const mediaType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+  if (mediaType !== 'application/json') {
+    await discardResponseBody(response);
+    throw providerInvalidResponseFailure();
+  }
+
+  try {
+    return await response.json();
+  } catch {
+    throw providerInvalidResponseFailure();
+  }
+}
+
 function validateHostedCheckoutUrl(rawUrl) {
   if (typeof rawUrl !== 'string' || rawUrl.length === 0) {
-    throw providerFailure(
-      'billing_provider_invalid_response',
-      'Retry checkout. If the problem persists, verify the Stripe Checkout provider configuration and service health.',
-    );
+    throw providerInvalidResponseFailure();
   }
 
   let checkoutUrl;
   try {
     checkoutUrl = new URL(rawUrl);
   } catch {
-    throw providerFailure(
-      'billing_provider_invalid_response',
-      'Retry checkout. If the problem persists, verify the Stripe Checkout provider configuration and service health.',
-    );
+    throw providerInvalidResponseFailure();
   }
 
   const untrustedDestination = checkoutUrl.protocol !== 'https:'
@@ -82,21 +144,13 @@ function validateHostedCheckoutUrl(rawUrl) {
     || checkoutUrl.username !== ''
     || checkoutUrl.password !== '';
   if (untrustedDestination) {
-    throw providerFailure(
-      'billing_provider_invalid_response',
-      'Retry checkout. If the problem persists, verify the Stripe Checkout provider configuration and service health.',
-    );
+    throw providerInvalidResponseFailure();
   }
 
   // Stripe's documented hosted Checkout URLs can include an opaque client-side
   // fragment. It does not participate in HTTPS authority selection and must be
   // preserved verbatim so the browser receives the provider-issued URL intact.
   return rawUrl;
-}
-
-async function defaultStripeClientFactory(secretKey, clientOptions) {
-  const { default: Stripe } = await import('stripe');
-  return new Stripe(secretKey, clientOptions);
 }
 
 /**
@@ -106,16 +160,17 @@ async function defaultStripeClientFactory(secretKey, clientOptions) {
  * URLs always derive from the canonical operator-configured public origin. The
  * successful mock exists only in explicit development mode; an unconfigured
  * production capability returns HTTP 503 instead of pretending checkout worked.
- * Live provider calls use one bounded attempt until durable checkout-attempt
- * idempotency state exists. The hosted destination must use Stripe's standard
- * HTTPS authority; provider-issued client fragments are preserved verbatim.
+ * Live provider calls use one direct HTTPS attempt with a 15-second total budget
+ * until durable checkout-attempt idempotency state exists. The hosted destination
+ * must use Stripe's standard HTTPS authority; provider-issued client fragments
+ * are preserved verbatim.
  *
  * @param {object} options - Checkout inputs and optional deterministic test seams.
  * @param {string|number} options.orgId - Organization that owns the checkout.
  * @param {{mode: 'disabled'|'mock'|'live', publicOrigin: string|null}} [options.configuration]
  *   Validated billing capability; defaults to startup configuration.
- * @param {(secretKey: string, clientOptions: {maxNetworkRetries: number, timeout: number}) => Promise<object>} [options.stripeClientFactory]
- *   Stripe client factory; injectable for deterministic provider-contract tests.
+ * @param {(secretKey: string) => Promise<object>} [options.stripeClientFactory]
+ *   Optional Stripe-compatible test seam. Production uses the direct HTTPS transport.
  * @returns {Promise<{url: string, live: boolean, mock?: boolean}>} Checkout target.
  * @throws {HTTPException} HTTP 503 when production billing is not configured;
  *   HTTP 502 when the provider call fails or returns an untrusted destination.
@@ -123,7 +178,7 @@ async function defaultStripeClientFactory(secretKey, clientOptions) {
 export async function createCheckout({
   orgId,
   configuration = billingConfiguration,
-  stripeClientFactory = defaultStripeClientFactory,
+  stripeClientFactory,
 }) {
   const { mode, publicOrigin } = configuration;
   if (mode === 'disabled' || !publicOrigin) {
@@ -131,25 +186,25 @@ export async function createCheckout({
   }
 
   if (mode === 'live') {
+    const payload = {
+      mode: 'subscription',
+      line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
+      success_url: `${publicOrigin}/?billing=success`,
+      cancel_url: `${publicOrigin}/?billing=cancel`,
+      client_reference_id: String(orgId),
+      metadata: { orgId: String(orgId) },
+    };
+
     let session;
-    try {
-      const stripe = await stripeClientFactory(
-        process.env.STRIPE_SECRET_KEY,
-        STRIPE_PROVIDER_REQUEST_OPTIONS,
-      );
-      session = await stripe.checkout.sessions.create({
-        mode: 'subscription',
-        line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
-        success_url: `${publicOrigin}/?billing=success`,
-        cancel_url: `${publicOrigin}/?billing=cancel`,
-        client_reference_id: String(orgId),
-        metadata: { orgId: String(orgId) },
-      }, STRIPE_PROVIDER_REQUEST_OPTIONS);
-    } catch {
-      throw providerFailure(
-        'billing_provider_unavailable',
-        'Retry checkout. If the problem persists, verify Stripe connectivity and service health before retrying.',
-      );
+    if (stripeClientFactory) {
+      try {
+        const stripe = await stripeClientFactory(process.env.STRIPE_SECRET_KEY);
+        session = await stripe.checkout.sessions.create(payload);
+      } catch {
+        throw providerUnavailableFailure();
+      }
+    } else {
+      session = await createStripeSessionWithFetch(process.env.STRIPE_SECRET_KEY, payload);
     }
 
     return {
