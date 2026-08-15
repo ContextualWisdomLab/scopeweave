@@ -135,6 +135,23 @@ test('share link: anonymous visitor gets a read-only view; revoke kills it', asy
   await anon.close();
 });
 
+test('share link drops stale authenticated project authority', async ({ page }) => {
+  await loginAndOpen(page);
+  const sharedProject = await api('/api/projects', {
+    method: 'POST',
+    body: { name: '공유 전용 프로젝트' },
+    tok: token,
+  });
+  const share = await api(`/api/projects/${sharedProject.id}/shares`, { method: 'POST', tok: token });
+
+  expect(await page.evaluate(() => localStorage.getItem('scopeweave:project'))).toBe('1');
+  await page.goto(`${BASE}/?share=${share.token}`);
+  await page.waitForSelector('#cloud-auth .team-role-tag');
+
+  expect(await page.evaluate(() => localStorage.getItem('scopeweave:project'))).toBeNull();
+  expect(await page.locator('#cloud-auth button').count()).toBe(0);
+});
+
 test('MSP import: XML file populates the tree and saves to the cloud', async ({ page }) => {
   await loginAndOpen(page);
   page.on('dialog', (d) => d.accept());
