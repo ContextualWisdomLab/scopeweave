@@ -189,12 +189,19 @@ test('attachment deletion cascades outstanding grants and schema objects follow 
 
   const objects = db.prepare(`
     SELECT name, type FROM sqlite_master
-    WHERE name = 'access_grants' OR name LIKE 'access_grant_%_index'
+    WHERE name IN ('access_grants', 'access_grant_audit_outbox')
+       OR name LIKE 'access_grant_%_index'
     ORDER BY name
   `).all();
   assert.deepEqual(
     objects.map(({ name }) => name),
-    ['access_grant_subject_resource_index', 'access_grant_token_hash_index', 'access_grants'],
+    [
+      'access_grant_audit_delivery_index',
+      'access_grant_audit_outbox',
+      'access_grant_subject_resource_index',
+      'access_grant_token_hash_index',
+      'access_grants',
+    ],
   );
   assert.ok(objects.every(({ name }) => name.includes('_')), 'owned DB object names contain multiple lexical words');
   db.close();
