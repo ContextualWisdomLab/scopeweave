@@ -35,6 +35,14 @@ function deterministicIds() {
   };
 }
 
+function expectReconciliationRequired(run) {
+  assert.throws(run, (error) => {
+    assert.equal(error.code, 'billing_checkout_reconciliation_required');
+    assert.match(error.message, /reconcil/i);
+    return true;
+  });
+}
+
 test('checkout-attempt bootstrap owns only compliant normalized objects', () => {
   const database = createDatabase();
   installBillingCheckoutAttemptSchema(database);
@@ -44,13 +52,13 @@ test('checkout-attempt bootstrap owns only compliant normalized objects', () => 
     "SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name = 'billing_checkout_attempts'",
   ).get();
   assert.equal(table.name, 'billing_checkout_attempts');
-  assert.match(table.sql, /CHECK\s*\(attempt_state IN \('pending','provider_succeeded','provider_failed','expired'\)\)/);
+  assert.match(table.sql, /CHECK\s*\(attempt_state IN \('pending','provider_succeeded','provider_failed','reconciliation_required'\)\)/);
 
   const index = database.prepare(
-    "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND name = 'billing_checkout_pending_attempts'",
+    "SELECT name, sql FROM sqlite_master WHERE type = 'index' AND name = 'billing_checkout_unresolved_attempts'",
   ).get();
-  assert.equal(index.name, 'billing_checkout_pending_attempts');
-  assert.match(index.sql, /WHERE attempt_state = 'pending'/);
+  assert.equal(index.name, 'billing_checkout_unresolved_attempts');
+  assert.match(index.sql, /WHERE attempt_state IN \('pending','reconciliation_required'\)/);
 
   const columns = database.prepare("PRAGMA table_info('billing_checkout_attempts')").all().map((row) => row.name);
   assert.deepEqual(columns, [
@@ -157,7 +165,7 @@ test('terminal provider outcomes close the retry identity and a later checkout g
   assert.notEqual(afterFailure.idempotencyKey, afterSuccess.idempotencyKey);
 });
 
-test('pending identities are never reused at or beyond the Stripe retention safety window', () => {
+test('stale uncertain attempts fail closed for reconciliation instead of minting a duplicate key', () => {
   const database = createDatabase();
   installBillingCheckoutAttemptSchema(database);
   let nowMs = 3_000_000;
@@ -168,17 +176,33 @@ test('pending identities are never reused at or beyond the Stripe retention safe
 
   const oldAttempt = repository.startAttempt({ organizationId: 7, priceId: 'price_pro' });
   nowMs += BILLING_CHECKOUT_REUSE_WINDOW_MS;
-  const replacement = repository.startAttempt({ organizationId: 7, priceId: 'price_pro' });
+  expectReconciliationRequired(
+    () => repository.startAttempt({ organizationId: 7, priceId: 'price_pro' }),
+  );
 
-  assert.notEqual(replacement.attemptId, oldAttempt.attemptId);
-  assert.notEqual(replacement.idempotencyKey, oldAttempt.idempotencyKey);
-  const oldRow = database.prepare(
-    'SELECT attempt_state FROM billing_checkout_attempts WHERE attempt_id = ?',
-  ).get(oldAttempt.attemptId);
-  assert.equal(oldRow.attempt_state, 'expired');
+  const rows = database.prepare(`
+    SELECT attempt_id, idempotency_key, attempt_state
+    FROM billing_checkout_attempts
+    WHERE organization_id = ? AND price_id = ?
+  `).all(7, 'price_pro');
+  assert.deepEqual(rows.map((row) => ({ ...row })), [{
+    attempt_id: oldAttempt.attemptId,
+    idempotency_key: oldAttempt.idempotencyKey,
+    attempt_state: 'reconciliation_required',
+  }]);
+
+  nowMs += 1;
+  expectReconciliationRequired(
+    () => repository.startAttempt({ organizationId: 7, priceId: 'price_pro' }),
+  );
+  assert.equal(
+    database.prepare('SELECT COUNT(*) AS n FROM billing_checkout_attempts WHERE organization_id = ?').get(7).n,
+    1,
+    'retries cannot create a second attempt until authoritative reconciliation resolves the first',
+  );
 });
 
-test('clock rollback expires an unresolved identity instead of replaying it', () => {
+test('clock rollback requires reconciliation instead of guessing the provider retention age', () => {
   const database = createDatabase();
   installBillingCheckoutAttemptSchema(database);
   let nowMs = 5_000_000;
@@ -189,13 +213,18 @@ test('clock rollback expires an unresolved identity instead of replaying it', ()
 
   const first = repository.startAttempt({ organizationId: 7, priceId: 'price_pro' });
   nowMs -= 1_000;
-  const replacement = repository.startAttempt({ organizationId: 7, priceId: 'price_pro' });
-
-  assert.notEqual(replacement.idempotencyKey, first.idempotencyKey);
-  assert.equal(
-    database.prepare('SELECT attempt_state FROM billing_checkout_attempts WHERE attempt_id = ?').get(first.attemptId).attempt_state,
-    'expired',
+  expectReconciliationRequired(
+    () => repository.startAttempt({ organizationId: 7, priceId: 'price_pro' }),
   );
+
+  const row = database.prepare(
+    'SELECT attempt_id, idempotency_key, attempt_state FROM billing_checkout_attempts WHERE attempt_id = ?',
+  ).get(first.attemptId);
+  assert.deepEqual({ ...row }, {
+    attempt_id: first.attemptId,
+    idempotency_key: first.idempotencyKey,
+    attempt_state: 'reconciliation_required',
+  });
 });
 
 test('repository rejects malformed identifiers and impossible terminal transitions', () => {
