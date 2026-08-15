@@ -121,6 +121,7 @@ try {
   );
 
   let rejectedBodyRead = false;
+  let rejectedBodyCancelled = false;
   globalThis.fetch = async () => ({
     ok: false,
     status: 502,
@@ -130,6 +131,9 @@ try {
         rejectedBodyRead = true;
         throw new Error('rejected provider body must not be parsed');
       },
+      async cancel() {
+        rejectedBodyCancelled = true;
+      },
     },
   });
   await assert.rejects(
@@ -137,6 +141,37 @@ try {
     (error) => error.code === 'orchestrator_provider_rejected',
   );
   assert.equal(rejectedBodyRead, false, 'non-success provider responses are classified before body parsing');
+  assert.equal(rejectedBodyCancelled, true, 'non-success provider response bodies are explicitly cancelled');
+
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 429,
+    headers: new Headers(),
+    body: {
+      async cancel() {
+        throw new Error('private cancel failure');
+      },
+    },
+  });
+  await assert.rejects(
+    configured.chat([{ role: 'user', content: 'status' }]),
+    (error) => {
+      assert.equal(error.code, 'orchestrator_provider_rejected');
+      assert.doesNotMatch(error.message, /private cancel failure/);
+      return true;
+    },
+  );
+
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 503,
+    headers: new Headers(),
+    body: null,
+  });
+  await assert.rejects(
+    configured.chat([{ role: 'user', content: 'status' }]),
+    (error) => error.code === 'orchestrator_provider_rejected',
+  );
 
   globalThis.fetch = async () => new Response(JSON.stringify({
     choices: [{ message: { content: 'x'.repeat(1024 * 1024) } }],
