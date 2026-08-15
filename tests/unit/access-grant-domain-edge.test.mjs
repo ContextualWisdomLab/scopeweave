@@ -8,13 +8,32 @@ class MemoryRepository {
   async consumeGrantAtomically() { return null; }
 }
 
+class ConsumableRepository extends MemoryRepository {
+  constructor() {
+    super();
+    this.liveMembershipVersion = 1;
+  }
+
+  async consumeGrantAtomically(hash, expected) {
+    const record = this.records.get(hash);
+    if (!record || record.used_at_ms !== null || record.revoked_at_ms !== null) return null;
+    if (expected.now_ms >= record.expires_at_ms) return null;
+    if (record.purpose !== expected.purpose || record.audience !== expected.audience) return null;
+    if (record.project_id !== expected.project_id) return null;
+    if ((record.attachment_id ?? null) !== (expected.attachment_id ?? null)) return null;
+    if (expected.membership_version !== undefined && expected.membership_version !== this.liveMembershipVersion) return null;
+    record.used_at_ms = expected.now_ms;
+    return structuredClone(record);
+  }
+}
+
 const validPorts = () => ({
   repository: new MemoryRepository(),
   clock: { nowMs: () => 1_000 },
   randomSource: { randomBytes: (size) => new Uint8Array(size).fill(7) },
   auditSink: { record: async () => {} },
   projectAuthorization: { assertCanIssue: async () => {} },
-  membershipRevocation: { assertActive: async () => {} },
+  membershipRevocation: { assertActive: async () => 1 },
 });
 
 {
@@ -74,6 +93,48 @@ for (const nowMs of [() => Number.NaN, () => -1]) {
   await assert.rejects(service.redeem({
     secret: 'A'.repeat(43), purpose: 'stream', audience: 'scopeweave:stream', projectId: 'p',
   }), (error) => error.code === 'access_grant_unauthorized');
+}
+
+{
+  const repository = new ConsumableRepository();
+  let rejectAudit = true;
+  const service = createAccessGrantService({
+    ...validPorts(),
+    repository,
+    auditSink: { async record() { if (rejectAudit) throw new Error('audit unavailable'); } },
+  });
+  const grant = await service.mint({
+    subjectId: 'audit-user', projectId: 'audit-project', purpose: 'stream', audience: 'scopeweave:stream', ttlSeconds: 10,
+  });
+  assert.ok([...repository.records.values()].some(({ grant_id }) => grant_id === grant.grantId));
+  rejectAudit = true;
+  const redeemed = await service.redeem({
+    secret: grant.secret, purpose: 'stream', audience: 'scopeweave:stream', projectId: 'audit-project',
+  });
+  assert.equal(redeemed.grantId, grant.grantId, 'audit delivery failure cannot turn durable consumption into a client-visible failure');
+}
+
+{
+  const repository = new ConsumableRepository();
+  let revokeDuringCheck = false;
+  const service = createAccessGrantService({
+    ...validPorts(),
+    repository,
+    membershipRevocation: {
+      async assertActive() {
+        const capturedVersion = repository.liveMembershipVersion;
+        if (revokeDuringCheck) repository.liveMembershipVersion += 1;
+        return capturedVersion;
+      },
+    },
+  });
+  const grant = await service.mint({
+    subjectId: 'race-user', projectId: 'race-project', purpose: 'stream', audience: 'scopeweave:stream', ttlSeconds: 10,
+  });
+  revokeDuringCheck = true;
+  await assert.rejects(service.redeem({
+    secret: grant.secret, purpose: 'stream', audience: 'scopeweave:stream', projectId: 'race-project',
+  }), (error) => error.code === 'access_grant_unauthorized' && error.status === 401);
 }
 
 console.log('✓ access-grant domain edge coverage passed');
