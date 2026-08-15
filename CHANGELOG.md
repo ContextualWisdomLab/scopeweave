@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Bound Stripe Checkout success/cancel redirects to an operator-configured
+  canonical public origin instead of request authority, rejected partial or
+  ambiguous billing configuration at startup, and confined successful mock
+  checkout to explicit development mode.
 - Made `SCOPEWEAVE_JWT_SECRET` mandatory at startup and rejected weak or
   unexpanded placeholder values so production deployments fail closed.
 - Neutralized audit-log CSV formulas even when executable prefixes are hidden
