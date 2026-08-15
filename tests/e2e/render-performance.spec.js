@@ -54,15 +54,16 @@ function protectedBaseSha() {
 }
 
 function readGitFile(commitSha, path) {
-  if (!/^[a-f0-9]{40}$/.test(String(commitSha || ''))) {
-    throw new Error(`Invalid benchmark base SHA: ${commitSha || '<missing>'}`);
+  const normalizedCommitSha = String(commitSha || '');
+  if (!/^[a-f0-9]{40}$/.test(normalizedCommitSha)) {
+    throw new Error(`Invalid benchmark base SHA: ${normalizedCommitSha || '<missing>'}`);
   }
 
-  const spec = `${commitSha}:${path}`;
+  const spec = `${normalizedCommitSha}:${path}`;
   try {
     return execFileSync('git', ['show', spec], { encoding: 'utf8' });
   } catch {
-    execFileSync('git', ['fetch', '--depth=1', 'origin', commitSha], {
+    execFileSync('git', ['fetch', '--depth=1', 'origin', normalizedCommitSha], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
     });
@@ -124,6 +125,7 @@ async function measureRenderer(browser, { appSource = null, label }) {
     const samples = [];
 
     for (let sampleIndex = 0; sampleIndex < sampleCount; sampleIndex += 1) {
+      const firstRowBeforeMetadataEdit = document.querySelector('tr[data-task-id="performance-0"]');
       const createElementsBefore = window.__scopeweaveCreateElementCalls();
       const heapBefore = performance.memory?.usedJSHeapSize ?? null;
       const startedAt = performance.now();
@@ -137,6 +139,7 @@ async function measureRenderer(browser, { appSource = null, label }) {
         createElementCalls: window.__scopeweaveCreateElementCalls() - createElementsBefore,
         heapDeltaBytes: heapBefore === null ? null : performance.memory.usedJSHeapSize - heapBefore,
         liveDomNodes: document.getElementsByTagName('*').length,
+        taskGridReused: firstRowBeforeMetadataEdit === document.querySelector('tr[data-task-id="performance-0"]'),
       });
     }
 
@@ -198,6 +201,7 @@ function summarizeMeasurement(measurement) {
     medianDurationMs: percentile(durations, 0.5),
     p95DurationMs: percentile(durations, 0.95),
     medianCreateElementCalls: percentile(createElementCalls, 0.5),
+    metadataTaskGridReused: measurement.evidence.samples.every((sample) => sample.taskGridReused),
     longTaskCount: measurement.evidence.longTasks.length,
     longestTaskMs: measurement.evidence.longTasks.length
       ? Math.max(...measurement.evidence.longTasks)
@@ -250,6 +254,7 @@ test('5,000-row production rendering beats the exact protected-base median by at
 
   expect(optimizedMeasurement.evidence.samples).toHaveLength(SAMPLE_COUNT);
   expect(optimizedMeasurement.evidence.renderedRows).toBe(ROW_COUNT);
+  expect(optimized.metadataTaskGridReused).toBe(true);
   expect(optimized.medianDurationMs).toBeGreaterThan(0);
   expect(optimized.p95DurationMs).toBeGreaterThanOrEqual(optimized.medianDurationMs);
   expect(optimized.editOpened).toBe(true);
