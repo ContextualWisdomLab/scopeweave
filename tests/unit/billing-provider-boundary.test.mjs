@@ -177,18 +177,34 @@ test('uncertain transport failures stay pending and remain sanitized', async () 
   });
 });
 
-test('known provider HTTP and malformed-success outcomes close their retry identity', async () => {
+test('Stripe server errors remain indeterminate while 4xx and malformed successes close retry identity', async () => {
   await withStripeEnv(async () => {
     let attemptRepository = createAttemptRepository();
-    globalThis.fetch = async () => new Response('provider secret body', {
+    globalThis.fetch = async () => new Response('provider incident body', {
       status: 503,
       headers: { 'content-type': 'text/plain' },
     });
-    const unavailablePayload = await expectProviderError(
+    const serverErrorPayload = await expectProviderError(
       () => liveCheckout(attemptRepository),
       'billing_provider_unavailable',
     );
-    assert.doesNotMatch(unavailablePayload, /provider secret body/);
+    assert.doesNotMatch(serverErrorPayload, /provider incident body/);
+    assert.deepEqual(
+      attemptRepository.events.map((event) => event.type),
+      ['start'],
+      '5xx is indeterminate and must preserve the same retry identity',
+    );
+
+    attemptRepository = createAttemptRepository();
+    globalThis.fetch = async () => new Response('invalid request body detail', {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    });
+    const clientErrorPayload = await expectProviderError(
+      () => liveCheckout(attemptRepository),
+      'billing_provider_unavailable',
+    );
+    assert.doesNotMatch(clientErrorPayload, /invalid request body detail/);
     assert.equal(attemptRepository.events.at(-1).type, 'failure');
 
     attemptRepository = createAttemptRepository();
@@ -299,8 +315,8 @@ test('a known provider failure that cannot be durably closed fails as state unav
   await withStripeEnv(async () => {
     const attemptRepository = createAttemptRepository({ failureError: new Error('disk full') });
     globalThis.fetch = async () => new Response('known failure', {
-      status: 500,
-      headers: { 'content-type': 'text/plain' },
+      status: 400,
+      headers: { 'content-type': 'application/json' },
     });
 
     let rejected;
