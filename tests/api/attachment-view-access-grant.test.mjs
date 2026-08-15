@@ -5,7 +5,7 @@ process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 process.env.CLEARFOLIO_URL = '';
 
-const { app } = await import('../../server/app.mjs');
+const { app } = await import('../../server/runtime_access_grant_app.mjs');
 const { db } = await import('../../server/db.mjs');
 
 function jsonRequest(path, { method = 'GET', token, body } = {}) {
