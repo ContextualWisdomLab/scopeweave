@@ -47,9 +47,13 @@ test('live Checkout uses one bounded direct Stripe HTTPS request and preserves t
     const observed = [];
     globalThis.fetch = async (url, options) => {
       observed.push({ url, options });
-      return new Response(JSON.stringify({ url: hostedCheckoutUrl }), {
+      const payload = JSON.stringify({ url: hostedCheckoutUrl });
+      return new Response(payload, {
         status: 200,
-        headers: { 'content-type': 'application/json; charset=utf-8' },
+        headers: {
+          'content-type': 'application/json; charset=utf-8',
+          'content-length': String(Buffer.byteLength(payload)),
+        },
       });
     };
 
@@ -146,22 +150,33 @@ test('provider HTTP and malformed-success responses fail with stable categories'
       () => createCheckout({ orgId: 73, configuration: liveConfiguration }),
       'billing_provider_invalid_response',
     );
-  });
-});
 
-test('provider response bytes are bounded before JSON parsing', async () => {
-  await withStripeEnv(async () => {
-    globalThis.fetch = async () => new Response(JSON.stringify({ url: hostedCheckoutUrl }), {
+    globalThis.fetch = async () => new Response(null, {
       status: 200,
-      headers: {
-        'content-type': 'application/json',
-        'content-length': String(providerResponseLimitBytes + 1),
-      },
+      headers: { 'content-type': 'application/json' },
     });
     await expectProviderError(
       () => createCheckout({ orgId: 73, configuration: liveConfiguration }),
       'billing_provider_invalid_response',
     );
+  });
+});
+
+test('provider response declarations and streamed bytes are bounded before JSON parsing', async () => {
+  await withStripeEnv(async () => {
+    for (const declaredLength of ['not-a-number', '-1', String(providerResponseLimitBytes + 1)]) {
+      globalThis.fetch = async () => new Response(JSON.stringify({ url: hostedCheckoutUrl }), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          'content-length': declaredLength,
+        },
+      });
+      await expectProviderError(
+        () => createCheckout({ orgId: 73, configuration: liveConfiguration }),
+        'billing_provider_invalid_response',
+      );
+    }
 
     let cancelled = false;
     const oversizedBody = new ReadableStream({
@@ -183,5 +198,25 @@ test('provider response bytes are bounded before JSON parsing', async () => {
       'billing_provider_invalid_response',
     );
     assert.equal(cancelled, true, 'oversized streamed provider bodies are cancelled at the byte boundary');
+  });
+});
+
+test('provider stream read failures remain sanitized invalid responses', async () => {
+  await withStripeEnv(async () => {
+    const failingBody = new ReadableStream({
+      pull(controller) {
+        controller.error(new Error('provider stream secret 10.9.0.7'));
+      },
+    });
+    globalThis.fetch = async () => new Response(failingBody, {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const payload = await expectProviderError(
+      () => createCheckout({ orgId: 73, configuration: liveConfiguration }),
+      'billing_provider_invalid_response',
+    );
+    assert.doesNotMatch(payload, /provider stream secret|10\.9\.0\.7/);
   });
 });
