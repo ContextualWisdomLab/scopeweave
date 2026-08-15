@@ -62,6 +62,16 @@ function checkoutStateFailure() {
   });
 }
 
+function checkoutReconciliationRequiredFailure() {
+  return new HTTPException(503, {
+    res: jsonErrorResponse(
+      503,
+      'billing_checkout_reconciliation_required',
+      'Reconcile the existing Checkout attempt with authoritative Stripe or webhook state before starting or retrying Checkout.',
+    ),
+  });
+}
+
 function providerFailure(code, action, { outcomeKnown = false } = {}) {
   const error = new HTTPException(502, {
     res: jsonErrorResponse(502, code, action),
@@ -307,7 +317,10 @@ export async function createCheckout({
     let attempt;
     try {
       attempt = repository.startAttempt({ organizationId: orgId, priceId });
-    } catch {
+    } catch (error) {
+      if (error?.code === 'billing_checkout_reconciliation_required') {
+        throw checkoutReconciliationRequiredFailure();
+      }
       throw checkoutStateFailure();
     }
 
