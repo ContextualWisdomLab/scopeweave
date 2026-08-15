@@ -766,7 +766,9 @@ export function parseMsProjectXml(xml) {
     const opening = findTagBoundary(block, name, 0);
     if (!opening) return '';
     const closing = findTagBoundary(block, name, opening.end, true);
-    return closing ? block.slice(opening.end, closing.start).trim() : '';
+    const nextOpening = findTagBoundary(block, name, opening.end);
+    if (!closing || (nextOpening && nextOpening.start < closing.start)) return '';
+    return block.slice(opening.end, closing.start).trim();
   };
   const collectBlocks = (source, name) => {
     const out = [];
