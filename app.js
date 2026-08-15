@@ -263,7 +263,11 @@ async function bootstrap() {
 }
 
 function bindEvents() {
-  const persistAndRenderMetadata = debounce(() => {
+  const persistProjectMetadata = debounce(() => {
+    persistState();
+    renderProjectMetadata();
+  }, 150);
+  const persistAndRenderPlan = debounce(() => {
     persistState();
     renderAll();
   }, 150);
@@ -277,13 +281,13 @@ function bindEvents() {
     return true;
   };
 
-  bindHeaderEvents(persistAndRenderMetadata);
+  bindHeaderEvents(persistProjectMetadata, persistAndRenderPlan);
   bindModalEvents();
   bindGlobalEvents();
   bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent);
 }
 
-function bindHeaderEvents(persistAndRenderMetadata) {
+function bindHeaderEvents(persistProjectMetadata, persistAndRenderPlan) {
   elements.projectNameInput.addEventListener('input', (event) => {
     const sanitized = String(event.target.value).slice(0, MAX_PROJECT_NAME_LENGTH);
     if (event.target.value !== sanitized) {
@@ -292,15 +296,15 @@ function bindHeaderEvents(persistAndRenderMetadata) {
       event.target.setSelectionRange(cursor, cursor);
     }
     state.projectName = sanitized.trim() || DEFAULT_PROJECT_NAME;
-    persistAndRenderMetadata();
+    persistProjectMetadata();
   });
-  elements.projectNameInput.addEventListener('blur', persistAndRenderMetadata.flush);
+  elements.projectNameInput.addEventListener('blur', persistProjectMetadata.flush);
 
   elements.baseDateInput.addEventListener('input', (event) => {
     state.baseDate = String(event.target.value).trim().slice(0, MAX_BASE_DATE_LENGTH) || formatLocalDateInput(new Date());
-    persistAndRenderMetadata();
+    persistAndRenderPlan();
   });
-  elements.baseDateInput.addEventListener('blur', persistAndRenderMetadata.flush);
+  elements.baseDateInput.addEventListener('blur', persistAndRenderPlan.flush);
 
   elements.addRootButton.addEventListener('click', () => openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() }));
   elements.exportCsvButton.addEventListener('click', (e) => {
@@ -502,17 +506,21 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
   });
 }
 
+function renderProjectMetadata() {
+  elements.projectNameInput.value = state.projectName;
+  document.title = state.projectName === DEFAULT_PROJECT_NAME ? DEFAULT_PROJECT_NAME : `${state.projectName} - ${DEFAULT_PROJECT_NAME}`;
+  elements.baseDateInput.value = state.baseDate;
+  elements.syncStatus.textContent = state.jsonSyncHandle ? '연결된 wbs.json 파일에 자동저장 중' : '브라우저 로컬 자동저장 사용 중';
+}
+
 const cachedHasChildrenSet = new Set();
 function renderAll() {
   const metrics = computeTaskMetrics();
 
-  elements.projectNameInput.value = state.projectName;
-  document.title = state.projectName === DEFAULT_PROJECT_NAME ? DEFAULT_PROJECT_NAME : `${state.projectName} - ${DEFAULT_PROJECT_NAME}`;
-  elements.baseDateInput.value = state.baseDate;
+  renderProjectMetadata();
   elements.totalDays.textContent = `${formatNumber(metrics.totalDays)}일`;
   elements.plannedProgress.textContent = formatPercent(metrics.totalWeightedPlannedRatio * 100, 2);
   elements.actualProgress.textContent = formatPercent(metrics.totalWeightedActualRatio * 100, 2);
-  elements.syncStatus.textContent = state.jsonSyncHandle ? '연결된 wbs.json 파일에 자동저장 중' : '브라우저 로컬 자동저장 사용 중';
 
   if (typeof window !== 'undefined') {
     window.ScopeWeaveAnalytics?.render?.({
