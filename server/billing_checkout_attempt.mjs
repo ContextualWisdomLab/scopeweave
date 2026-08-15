@@ -165,12 +165,13 @@ export function createSqliteBillingCheckoutAttemptRepository(
       `),
       succeedAttempt: database.prepare(`
         UPDATE billing_checkout_attempts
-        SET attempt_state = 'provider_succeeded', provider_session_id = ?, updated_at_ms = ?
+        SET attempt_state = 'provider_succeeded', provider_session_id = ?,
+            updated_at_ms = MAX(?, created_at_ms)
         WHERE attempt_id = ? AND attempt_state = 'pending'
       `),
       failAttempt: database.prepare(`
         UPDATE billing_checkout_attempts
-        SET attempt_state = 'provider_failed', updated_at_ms = ?
+        SET attempt_state = 'provider_failed', updated_at_ms = MAX(?, created_at_ms)
         WHERE attempt_id = ? AND attempt_state = 'pending'
       `),
     };

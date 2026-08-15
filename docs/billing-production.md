@@ -105,16 +105,19 @@ does not depend on a hidden `stripe` package merely to create the hosted Session
 
 Before the live POST, ScopeWeave persists a `billing_checkout_attempts` row with
 an opaque local attempt ID, tenant/price scope, and an opaque Stripe idempotency
-key. A partial unique index permits at most one `pending` attempt for the same
-organization and price. The generated key is sent as the Stripe
-`Idempotency-Key` header; no secret key, bearer token, or webhook secret is stored
-in this ledger.
+key. A partial unique index permits at most one unresolved attempt (`pending` or
+`reconciliation_required`) for the same organization and price. The generated
+key is sent as the Stripe `Idempotency-Key` header; no secret key, bearer token,
+or webhook secret is stored in this ledger.
 
 An unresolved attempt is reused only while its age is non-negative and strictly
 less than 23 hours. The 23-hour local ceiling is intentionally shorter than
 Stripe's documented 24-hour safe-retry horizon / at-least-24-hour key-retention
 boundary. At or beyond that local ceiling, or after a local clock rollback, the
-old unresolved attempt becomes `expired` before a fresh key can be created.
+old unresolved attempt becomes `reconciliation_required`; checkout then fails
+closed until authoritative provider/webhook reconciliation resolves that held
+identity. ScopeWeave does not mint a fresh key merely because local time is stale
+or contradictory.
 
 Provider outcomes are intentionally asymmetric:
 
@@ -128,8 +131,10 @@ Provider outcomes are intentionally asymmetric:
 - **validated 2xx Checkout Session** — validate provider session ID and hosted
   destination, persist `provider_succeeded` plus the provider session ID, then
   return the hosted URL;
-- **2xx with malformed, over-budget, or untrusted content** — close as
-  `provider_failed` and return only the stable sanitized error contract;
+- **2xx with malformed, over-budget, unreadable, or untrusted content** — the
+  provider may already have committed the mutation, so keep the attempt `pending`
+  and return only the stable sanitized error contract; a later retry must reuse
+  the same idempotency key rather than create a speculative second Session;
 - **provider success followed by local persistence failure** — return
   `billing_checkout_state_unavailable` and leave the attempt pending. A later
   checkout can replay the same key instead of creating a second provider object.
@@ -152,7 +157,8 @@ controls, including raw-body webhook signature verification and streaming size
 limits; durable event deduplication; out-of-order reconciliation; normalized
 customer/subscription/payment/entitlement state; transactional reversible
 entitlement changes; migration and restore evidence; retention/privacy/incident
-runbooks; and provider smoke plus release acceptance.
+runbooks; provider smoke plus release acceptance; and operator-visible alerting,
+inspection, and audited resolution for `reconciliation_required` attempts.
 
 No custom Checkout domain should be accepted before an operator-owned trust
 configuration exists. No unresolved attempt record should be deleted merely to
@@ -182,9 +188,9 @@ Before a billing-enabled rollout:
 7. Exercise non-JSON success, malformed JSON, bodyless success,
    invalid/oversized declared response length, streamed response overflow,
    stream-read failure, and provider timeout handling. Confirm response bodies
-   above 1 MiB are not buffered/parsed and callers receive only the stable
-   no-store error contract without provider body, network, stream, or credential
-   detail.
+   above 1 MiB are not buffered/parsed, callers receive only the stable no-store
+   error contract without provider body/network/credential detail, and every
+   malformed 2xx case remains pending for same-key retry/reconciliation.
 8. Reject null, malformed, plaintext, credential-bearing, non-standard-port,
    and hostname-confusion Checkout destinations; accept and preserve the exact
    standard `https://checkout.stripe.com/...#...` hosted destination, including
@@ -199,6 +205,7 @@ Before a billing-enabled rollout:
 
 Rollback is no longer data-neutral once PR #511 exists. Disable the complete live
 Stripe configuration and restart before reverting request-path code. Preserve
-`pending` and `provider_succeeded` attempt rows for reconciliation. Do not drop
-or truncate the ledger during a provider incident; any eventual schema removal
-must be a reviewed reversible migration with export/restore evidence.
+`pending`, `reconciliation_required`, and `provider_succeeded` attempt rows for
+reconciliation. Do not drop or truncate the ledger during a provider incident;
+any eventual schema removal must be a reviewed reversible migration with
+export/restore evidence.

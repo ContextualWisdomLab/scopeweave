@@ -74,6 +74,14 @@ async function expectProviderError(run, expectedCode) {
   return JSON.stringify(payload);
 }
 
+function expectUnresolved(attemptRepository, message) {
+  assert.deepEqual(
+    attemptRepository.events.map((event) => event.type),
+    ['start'],
+    message,
+  );
+}
+
 test('live Checkout uses one bounded direct Stripe HTTPS request and preserves the hosted URL', async () => {
   await withStripeEnv(async () => {
     const observed = [];
@@ -121,7 +129,7 @@ test('live Checkout uses one bounded direct Stripe HTTPS request and preserves t
   });
 });
 
-test('live Checkout rejects malformed provider identities or untrusted browser authorities', async () => {
+test('live Checkout rejects malformed provider identities or untrusted browser authorities without closing retry identity', async () => {
   const invalidUrls = [
     null,
     '',
@@ -143,7 +151,7 @@ test('live Checkout rejects malformed provider identities or untrusted browser a
         () => liveCheckout(attemptRepository),
         'billing_provider_invalid_response',
       );
-      assert.equal(attemptRepository.events.at(-1).type, 'failure');
+      expectUnresolved(attemptRepository, 'untrusted 2xx destination remains unresolved');
     }
 
     for (const id of [null, '', 'x'.repeat(256)]) {
@@ -156,7 +164,7 @@ test('live Checkout rejects malformed provider identities or untrusted browser a
         () => liveCheckout(attemptRepository),
         'billing_provider_invalid_response',
       );
-      assert.equal(attemptRepository.events.at(-1).type, 'failure');
+      expectUnresolved(attemptRepository, 'malformed 2xx provider identity remains unresolved');
     }
   });
 });
@@ -173,11 +181,11 @@ test('uncertain transport failures stay pending and remain sanitized', async () 
       'billing_provider_unavailable',
     );
     assert.doesNotMatch(payload, /10\.7\.0\.12|sk_live_should_not_escape/);
-    assert.deepEqual(attemptRepository.events.map((event) => event.type), ['start']);
+    expectUnresolved(attemptRepository, 'transport failure remains unresolved');
   });
 });
 
-test('Stripe server errors remain indeterminate while 4xx and malformed successes close retry identity', async () => {
+test('Stripe server and malformed-success outcomes remain indeterminate while 4xx closes retry identity', async () => {
   await withStripeEnv(async () => {
     let attemptRepository = createAttemptRepository();
     globalThis.fetch = async () => new Response('provider incident body', {
@@ -189,11 +197,7 @@ test('Stripe server errors remain indeterminate while 4xx and malformed successe
       'billing_provider_unavailable',
     );
     assert.doesNotMatch(serverErrorPayload, /provider incident body/);
-    assert.deepEqual(
-      attemptRepository.events.map((event) => event.type),
-      ['start'],
-      '5xx is indeterminate and must preserve the same retry identity',
-    );
+    expectUnresolved(attemptRepository, '5xx is indeterminate and must preserve the same retry identity');
 
     attemptRepository = createAttemptRepository();
     globalThis.fetch = async () => new Response('invalid request body detail', {
@@ -216,7 +220,7 @@ test('Stripe server errors remain indeterminate while 4xx and malformed successe
       () => liveCheckout(attemptRepository),
       'billing_provider_invalid_response',
     );
-    assert.equal(attemptRepository.events.at(-1).type, 'failure');
+    expectUnresolved(attemptRepository, 'non-JSON 2xx remains unresolved');
 
     attemptRepository = createAttemptRepository();
     globalThis.fetch = async () => new Response('{malformed', {
@@ -227,7 +231,7 @@ test('Stripe server errors remain indeterminate while 4xx and malformed successe
       () => liveCheckout(attemptRepository),
       'billing_provider_invalid_response',
     );
-    assert.equal(attemptRepository.events.at(-1).type, 'failure');
+    expectUnresolved(attemptRepository, 'malformed JSON 2xx remains unresolved');
 
     attemptRepository = createAttemptRepository();
     globalThis.fetch = async () => new Response(null, {
@@ -238,7 +242,7 @@ test('Stripe server errors remain indeterminate while 4xx and malformed successe
       () => liveCheckout(attemptRepository),
       'billing_provider_invalid_response',
     );
-    assert.equal(attemptRepository.events.at(-1).type, 'failure');
+    expectUnresolved(attemptRepository, 'bodyless 2xx remains unresolved');
   });
 });
 
@@ -257,7 +261,7 @@ test('provider response declarations and streamed bytes are bounded before JSON 
         () => liveCheckout(attemptRepository),
         'billing_provider_invalid_response',
       );
-      assert.equal(attemptRepository.events.at(-1).type, 'failure');
+      expectUnresolved(attemptRepository, 'invalid successful response declaration remains unresolved');
     }
 
     let cancelled = false;
@@ -285,11 +289,11 @@ test('provider response declarations and streamed bytes are bounded before JSON 
       'billing_provider_invalid_response',
     );
     assert.equal(cancelled, true, 'oversized streamed provider bodies are cancelled at the byte boundary');
-    assert.equal(attemptRepository.events.at(-1).type, 'failure');
+    expectUnresolved(attemptRepository, 'oversized successful response remains unresolved');
   });
 });
 
-test('provider stream read failures remain sanitized invalid responses', async () => {
+test('provider stream read failures remain sanitized invalid responses without closing retry identity', async () => {
   await withStripeEnv(async () => {
     const failingBody = new ReadableStream({
       pull(controller) {
@@ -307,7 +311,7 @@ test('provider stream read failures remain sanitized invalid responses', async (
       'billing_provider_invalid_response',
     );
     assert.doesNotMatch(payload, /provider stream secret|10\.9\.0\.7/);
-    assert.equal(attemptRepository.events.at(-1).type, 'failure');
+    expectUnresolved(attemptRepository, 'unreadable successful response remains unresolved');
   });
 });
 

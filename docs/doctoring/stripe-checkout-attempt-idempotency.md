@@ -27,6 +27,7 @@ local ceiling, not a claim that Stripe purges every key at exactly 24 hours.
 | Stripe records POST results by idempotency key and compares parameters on reuse. | Persist one organization/price attempt identity and reuse the same key only while that exact attempt is unresolved. | repository reuse/terminal-state tests plus transport header tests |
 | A network failure can leave the client unable to know whether Stripe executed the mutation. | Network/abort failures leave the attempt `pending`; the next caller reuses the same key. | `tests/unit/billing-provider-boundary.test.mjs` |
 | Stripe documents server errors, especially HTTP 500, as indeterminate and warns that a fresh key can duplicate side effects. | All Stripe 5xx responses keep the attempt `pending`; no fresh key is issued merely because a server-error response arrived. | regression commit `35571be0c0e81359dff09238f5815ed13dcf0440` followed by the production fix |
+| A successful HTTP response can still be unusable locally after the provider has performed the mutation. | Malformed, unreadable, over-budget, or untrusted 2xx responses remain unresolved and reuse the same idempotency key instead of closing the attempt. | `tests/unit/billing-checkout-review-regressions.test.mjs` and provider-boundary regressions |
 | Stripe's safest documented strategy for 4xx errors is a fresh idempotency key after correcting/retrying the request. | A received 4xx closes the current local attempt as `provider_failed`; a later deliberate Checkout obtains fresh authority. | provider-boundary 4xx regression |
 | Checkout Sessions expose `client_reference_id` for reconciliation with internal systems. | Send organization identity as `client_reference_id` and metadata while retaining a separate opaque local attempt ID. | transport form assertions |
 
@@ -41,16 +42,19 @@ owned names are descriptive multi-word `snake_case` identifiers.
 - `price_id`: server-owned Stripe price identity used for the request.
 - `idempotency_key`: unique opaque Stripe POST identity.
 - `attempt_state`: `pending`, `provider_succeeded`, `provider_failed`, or
-  `expired`.
+  `reconciliation_required`.
 - `provider_session_id`: populated only after a validated successful provider
   response.
 - `created_at_ms` / `updated_at_ms`: bounded local lifecycle timestamps.
 
-A partial unique index on `(organization_id, price_id)` while `pending` prevents
-two unresolved retry identities for the same tenant/price. The repository uses a
-savepoint around each synchronous state mutation. Clock rollback is fail-safe:
-a pending attempt whose calculated age is negative is expired rather than
-silently replayed.
+A partial unique index on `(organization_id, price_id)` while the state is
+`pending` or `reconciliation_required` prevents two unresolved retry identities
+for the same tenant/price. The repository uses a savepoint around each synchronous
+state mutation. Clock rollback is fail-safe: a pending attempt whose calculated
+age is negative is moved to `reconciliation_required` rather than silently
+replayed, and terminal writes clamp `updated_at_ms` to at least `created_at_ms`
+so a provider outcome can still be recorded without violating the timestamp
+constraint.
 
 The table is installed only during database bootstrap after the referenced
 organization table exists. Repository construction and request handling do not
@@ -67,8 +71,9 @@ must converge before billing release approval.
 3. **Stripe 4xx** — customer receives sanitized 502; the local attempt becomes
    `provider_failed` so a later corrected Checkout can use a fresh key.
 4. **Successful HTTP response with malformed/unbounded/untrusted content** — the
-   local attempt becomes `provider_failed`; no provider body, network address, or
-   credential is reflected to the caller.
+   provider may already have committed the mutation, so the local attempt remains
+   pending; no provider body, network address, or credential is reflected to the
+   caller, and a later retry reuses the same idempotency key.
 5. **Validated provider success** — persist `provider_session_id` and
    `provider_succeeded` before returning the hosted URL.
 6. **Provider success but local success-state commit fails** — fail closed with
@@ -78,6 +83,9 @@ must converge before billing release approval.
 7. **Known provider failure but local failure-state commit fails** — fail closed
    with `billing_checkout_state_unavailable`; do not pretend the local ledger is
    authoritative.
+8. **Stale or clock-ambiguous unresolved attempt** — move it to
+   `reconciliation_required` and fail closed. No fresh key is issued until an
+   authoritative reconciliation path resolves that held identity.
 
 ## TDD chronology
 
@@ -92,34 +100,46 @@ being treated as a known terminal failure. Regression commit
 `35571be0c0e81359dff09238f5815ed13dcf0440` changed the test contract first so a
 503 must keep the attempt pending while a 400 closes it. Production commit
 `fee01e7dd3055f1aedc0ef12e094536d7af05d13` then made all 5xx responses
-indeterminate. Exact-head Server Tests, Dependency Review, and OSV Scanner all
-completed successfully for that implementation head; later documentation heads
-must obtain their own exact-head evidence before integration.
+indeterminate.
+
+A later current-head review exposed two additional causal defects and one
+defensive configuration diagnostic: malformed 2xx outcomes were being closed as
+known failures, and terminal ledger writes failed the timestamp CHECK after wall-
+clock rollback. Regression file `tests/unit/billing-checkout-review-regressions.test.mjs`
+was registered in the real unit/coverage gates before the production fix. The
+exact merge checkout for head `e8abdf9bddb609aa5504a5c680e104772408d5d3`
+failed all four targeted assertions, including both SQLite CHECK violations and
+the missing-price diagnostic mismatch. The production fix must obtain its own
+exact-head GREEN evidence before integration; predecessor success is not reused.
 
 ## Security, privacy, and operability boundaries
 
 The ledger stores operational identifiers, not Stripe credentials. Tenant scope
-is explicit in every lookup and the pending uniqueness constraint. Error payloads
-remain no-store and sanitized. The new local attempt ID is suitable for audit and
-support correlation, but customer-facing workflows should not treat it as an
-authorization credential.
+is explicit in every lookup and the unresolved uniqueness constraint. Error
+payloads remain no-store and sanitized. The new local attempt ID is suitable for
+audit and support correlation, but customer-facing workflows should not treat it
+as an authorization credential.
 
 This slice still does **not** provide raw-body webhook verification, durable event
 deduplication, out-of-order subscription reconciliation, normalized
 customer/subscription/payment/entitlement state, retention cleanup policy,
-operator-visible attempt inspection, formal schema migrations, restore proof, or
-release acceptance. In particular, webhook reconciliation is required to resolve
-Stripe 5xx cases that later produce provider-side objects.
+operator-visible attempt inspection/alerting/audited resolution, formal schema
+migrations, restore proof, or release acceptance. In particular, webhook or
+another authoritative provider reconciliation path is required to resolve Stripe
+5xx and malformed-2xx cases that may have produced provider-side objects, and
+`reconciliation_required` remains intentionally blocking until that follow-up
+slice exists.
 
 ## Rollback
 
 Do not drop the table as an emergency rollback step. First disable the complete
 live Stripe configuration and restart so no new live attempts are created. Revert
-the live-route/idempotency code only after preserving any `pending` or
-`provider_succeeded` rows needed for incident reconciliation. Schema removal, if
-ever required, belongs in a reviewed reversible migration with export/restore
-proof; deleting the ledger during an unresolved provider incident would destroy
-the evidence needed to avoid duplicate Checkout Sessions.
+the live-route/idempotency code only after preserving any `pending`,
+`reconciliation_required`, or `provider_succeeded` rows needed for incident
+reconciliation. Schema removal, if ever required, belongs in a reviewed reversible
+migration with export/restore proof; deleting the ledger during an unresolved
+provider incident would destroy the evidence needed to avoid duplicate Checkout
+Sessions.
 
 ## References
 

@@ -92,10 +92,15 @@ function providerUnavailableFailure(outcomeKnown = false) {
 }
 
 function providerInvalidResponseFailure() {
+  // This error is raised only after Stripe has returned a successful HTTP status
+  // or an SDK-style call has returned a session-like value. The provider may
+  // already have committed the mutation, so the outcome is not known merely
+  // because the response representation is unusable. Preserve the durable
+  // idempotency identity for an authoritative replay/reconciliation path.
   return providerFailure(
     'billing_provider_invalid_response',
     'Retry checkout. If the problem persists, verify the Stripe Checkout provider configuration and service health.',
-    { outcomeKnown: true },
+    { outcomeKnown: false },
   );
 }
 
@@ -281,11 +286,11 @@ function markKnownProviderFailure(repository, attemptId, error) {
  * production capability returns HTTP 503 instead of pretending checkout worked.
  * Live provider calls use one direct HTTPS attempt with a 15-second total budget,
  * a 1 MiB response-body ceiling, and a durable per-attempt idempotency key.
- * Network/abort and Stripe 5xx failures keep the attempt pending so a later call
- * reuses the same key; known 4xx and validated malformed-success outcomes close
- * the attempt so a deliberate later checkout gets fresh provider authority. The
- * hosted destination must use Stripe's standard HTTPS authority; provider-issued
- * client fragments are preserved verbatim.
+ * Network/abort, Stripe 5xx, and malformed/untrusted 2xx response outcomes keep
+ * the attempt pending so a later call reuses the same key; known 4xx responses
+ * close the attempt so a deliberate later checkout gets fresh provider authority.
+ * The hosted destination must use Stripe's standard HTTPS authority; provider-
+ * issued client fragments are preserved verbatim.
  *
  * @param {object} options - Checkout inputs and optional deterministic test seams.
  * @param {string|number} options.orgId - Organization that owns the checkout.
@@ -314,6 +319,9 @@ export async function createCheckout({
   if (mode === 'live') {
     const repository = await resolveAttemptRepository(attemptRepository);
     const priceId = process.env.STRIPE_PRICE_ID;
+    if (typeof priceId !== 'string' || priceId.trim().length === 0) {
+      throw new HTTPException(503, { res: billingUnavailableResponse() });
+    }
     let attempt;
     try {
       attempt = repository.startAttempt({ organizationId: orgId, priceId });
