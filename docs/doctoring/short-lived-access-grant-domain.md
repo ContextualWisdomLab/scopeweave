@@ -92,8 +92,9 @@ The implementation enforces these invariants before route integration:
     but never the plaintext secret or token hash.
 
 The generated `grant_id` is an operational correlation identifier, not a bearer
-credential. It is derived from a prefix of the token hash and cannot substitute
-for the secret at the redemption boundary.
+credential. It uses an independent 16 random bytes and is never derived from the
+secret or its token hash, so audit correlation does not disclose token-hash
+material.
 
 ## Persistence contract for follow-up adapters
 
@@ -120,6 +121,7 @@ Focused contract tests cover:
 
 - dependency-port validation;
 - 32-byte opaque-token generation and hash-only persistence;
+- independently random non-secret grant identifiers;
 - secret/hash exclusion from audit events;
 - fixed purpose/audience/resource binding;
 - maximum and exact TTL boundaries;
@@ -133,8 +135,8 @@ Focused contract tests cover:
 The production source is registered explicitly in the repository `c8` producer,
 and the coverage-registration contract prevents it from silently dropping out.
 A focused Node V8 coverage run on the implementation source produced 100%
-statement/line, branch, and function coverage. Hosted current-head CI remains
-authoritative before merge.
+statement/line, branch, and function coverage before the independent-ID hardening;
+hosted current-head coverage is authoritative for the resulting head.
 
 ## Rollback and compatibility
 
