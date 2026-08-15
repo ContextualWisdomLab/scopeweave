@@ -236,6 +236,19 @@ function requireAttemptRepository(repository) {
   return repository;
 }
 
+async function resolveAttemptRepository(repository) {
+  if (repository !== undefined) return requireAttemptRepository(repository);
+  try {
+    // The app already owns the database singleton. Dynamic resolution keeps the
+    // billing domain directly testable without opening a database at import time,
+    // while the real live route still uses the bootstrap-installed durable port.
+    const { billingCheckoutAttempts } = await import('./db.mjs');
+    return requireAttemptRepository(billingCheckoutAttempts);
+  } catch {
+    throw checkoutStateFailure();
+  }
+}
+
 function markKnownProviderFailure(repository, attemptId, error) {
   if (error?.providerOutcomeKnown !== true) return;
   try {
@@ -265,7 +278,8 @@ function markKnownProviderFailure(repository, attemptId, error) {
  * @param {{mode: 'disabled'|'mock'|'live', publicOrigin: string|null}} [options.configuration]
  *   Validated billing capability; defaults to startup configuration.
  * @param {{startAttempt: Function, markProviderSucceeded: Function, markProviderFailed: Function}} [options.attemptRepository]
- *   Durable live-mode Checkout-attempt persistence port.
+ *   Durable live-mode Checkout-attempt persistence port. Production resolves the
+ *   bootstrap-installed database port when omitted; tests should inject a seam.
  * @param {(secretKey: string) => Promise<object>} [options.stripeClientFactory]
  *   Optional Stripe-compatible test seam. Production uses the direct HTTPS transport.
  * @returns {Promise<{url: string, live: boolean, mock?: boolean, checkoutAttemptId?: string}>} Checkout target.
@@ -284,7 +298,7 @@ export async function createCheckout({
   }
 
   if (mode === 'live') {
-    const repository = requireAttemptRepository(attemptRepository);
+    const repository = await resolveAttemptRepository(attemptRepository);
     const priceId = process.env.STRIPE_PRICE_ID;
     let attempt;
     try {
@@ -305,10 +319,16 @@ export async function createCheckout({
     let session;
     try {
       if (stripeClientFactory) {
-        const stripe = await stripeClientFactory(process.env.STRIPE_SECRET_KEY);
-        session = await stripe.checkout.sessions.create(payload, {
-          idempotencyKey: attempt.idempotencyKey,
-        });
+        try {
+          const stripe = await stripeClientFactory(process.env.STRIPE_SECRET_KEY);
+          session = await stripe.checkout.sessions.create(payload, {
+            idempotencyKey: attempt.idempotencyKey,
+          });
+        } catch {
+          // The injected seam models an SDK/network boundary. Without a concrete
+          // provider response, its outcome is uncertain and must remain retryable.
+          throw providerUnavailableFailure(false);
+        }
       } else {
         session = await createStripeSessionWithFetch(
           process.env.STRIPE_SECRET_KEY,
