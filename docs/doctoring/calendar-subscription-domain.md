@@ -10,7 +10,25 @@ Protected `develop` still accepts the general ScopeWeave session credential in t
 
 The IETF's OAuth bearer-token guidance is not a specification for ScopeWeave calendar subscriptions. It is relevant threat evidence: RFC 6750 warns against URI-query bearer-token transport because URLs are likely to be logged, while the current OAuth 2.0 Security BCP (RFC 9700, January 2025) further restricts token exposure and recommends limiting token privilege and audience. RFC 8725 provides current BCP guidance for JWT validation. ScopeWeave therefore treats the existing session-JWT calendar URL as a legacy authority boundary to retire, not as the target reusable-subscription design.
 
-This bounded slice introduces only a framework-neutral lifecycle domain. It does **not** change the protected calendar route, create database tables, migrate stored data, add HTTP endpoints, or implement the management UI. Issue #413 requires the UI interaction to be designed in Figma before UI implementation; that requirement remains outstanding and is not bypassed by this backend-only prerequisite.
+This bounded slice introduces only a framework-neutral lifecycle domain. It does **not** change the protected calendar route, create database tables, migrate stored data, add HTTP endpoints, or implement the management UI. The product-interaction prerequisite from issue #413 is now captured in the Figma design described below; future UI implementation must conform to that reviewed interaction contract and the eventual API semantics rather than inventing an independent credential lifecycle.
+
+## Figma interaction design
+
+The editable product contract is `ScopeWeave Calendar Subscription Management — Issue 413`: <https://www.figma.com/design/EwcePYFQ85DjBLhFfMXLvI>.
+
+The design is active-PR evidence, not shipped-product evidence. It uses the current protected ScopeWeave visual tokens and reusable button/status components and covers seven explicit states:
+
+1. interaction/security contract;
+2. subscription management list;
+3. creation dialog;
+4. one-time secret reveal;
+5. rotation confirmation;
+6. revocation confirmation; and
+7. empty state.
+
+The interaction contract requires a recognizable subscription name and explicit expiry, read-only/current-project purpose copy, one-time secret display on create or rotate, an explicit copy/save acknowledgement, lifecycle metadata without stored secret material, immediate old-secret invalidation on rotation, named destructive consequences on revocation, and next-action-oriented failure/recovery copy. Active, expired, and revoked states use text in addition to color.
+
+Accessibility acceptance is part of the design rather than a later visual-polish step: the dialog title is the accessible name, helper/error content is associated with its control, focus enters the dialog and returns to its invoker, Escape never silently commits, primary actions retain visible focus, and copy/status feedback is announced without moving focus. UI implementation must add executable browser acceptance for these interactions before the Figma design can be represented as shipped behavior.
 
 ## Domain contract
 
