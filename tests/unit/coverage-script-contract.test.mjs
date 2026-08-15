@@ -66,6 +66,11 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage:cases'],
+  /tests\/unit\/access-grant-audit-outbox\.test\.mjs/,
+  'the transactional access-grant audit evidence contract executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
 );
