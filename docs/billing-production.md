@@ -67,10 +67,14 @@ idempotency state:
 - total request budget: 15,000 ms using an abort signal;
 - redirect policy: provider HTTP redirects are rejected;
 - automatic application retries: none;
+- successful response budget: at most 1 MiB before UTF-8 decoding and JSON
+  parsing; invalid, negative, or oversized `Content-Length` declarations are
+  rejected, and a streamed body that crosses the ceiling is cancelled;
 - network, abort, or non-2xx provider failures: stable HTTP 502
   `billing_provider_unavailable` with `Cache-Control: no-store`;
-- successful non-JSON or malformed JSON responses: stable HTTP 502
-  `billing_provider_invalid_response` with `Cache-Control: no-store`;
+- successful non-JSON, bodyless, unreadable, malformed JSON, or oversized
+  responses: stable HTTP 502 `billing_provider_invalid_response` with
+  `Cache-Control: no-store`;
 - malformed or untrusted Checkout destinations: stable HTTP 502
   `billing_provider_invalid_response` with `Cache-Control: no-store`;
 - browser destination: parsed with `URL` and accepted only for HTTPS, exact
@@ -87,9 +91,9 @@ Stripe Checkout custom domains are not silently trusted. Supporting one requires
 a separate operator-owned allowlist or canonical-domain configuration contract
 and its own regression evidence.
 
-Provider exception text, network addresses, non-2xx response bodies, and
-credentials are never copied into the browser error payload. The customer
-receives a retry/diagnostic next action rather than downstream internals.
+Provider exception text, network addresses, non-2xx response bodies, stream-read
+errors, and credentials are never copied into the browser error payload. The
+customer receives a retry/diagnostic next action rather than downstream internals.
 
 The provider boundary intentionally uses the documented Stripe HTTPS API instead
 of dynamically importing an undeclared runtime SDK. A clean deployment therefore
@@ -103,12 +107,11 @@ The trusted-configuration and provider-trust slices do **not** declare the Strip
 subscription lifecycle production complete. Before production billing can be
 release-approved, ScopeWeave still needs the remaining #488 controls, including:
 
-a durable checkout-attempt UUID and stable idempotency key; bounded provider
-response bytes before JSON parsing; raw-body webhook signature verification and
-streaming size limits; durable event deduplication; out-of-order reconciliation;
-normalized customer/subscription/payment/entitlement state; transactional
-reversible entitlement changes; migration and restore evidence; privacy/incident
-runbooks; and provider smoke plus release acceptance.
+a durable checkout-attempt UUID and stable idempotency key; raw-body webhook
+signature verification and streaming size limits; durable event deduplication;
+out-of-order reconciliation; normalized customer/subscription/payment/entitlement
+state; transactional reversible entitlement changes; migration and restore
+evidence; privacy/incident runbooks; and provider smoke plus release acceptance.
 
 No automatic provider retry should be enabled before durable idempotency exists.
 No custom Checkout domain should be accepted before an operator-owned trust
@@ -129,8 +132,11 @@ Before a billing-enabled rollout:
    goes to `api.stripe.com/v1/checkout/sessions`, redirects are not followed, and
    the request aborts within the configured 15-second total budget.
 5. Exercise network failure, non-2xx response, non-JSON success, malformed JSON,
-   and provider timeout handling. Confirm callers receive only the stable
-   no-store 502 contract without provider body, network, or credential detail.
+   bodyless success, invalid/oversized declared response length, streamed
+   response overflow, stream-read failure, and provider timeout handling.
+   Confirm response bodies above 1 MiB are not buffered/parsed and callers
+   receive only the stable no-store 502 contract without provider body, network,
+   stream, or credential detail.
 6. Reject null, malformed, plaintext, credential-bearing, non-standard-port,
    and hostname-confusion Checkout destinations; accept and preserve the exact
    standard `https://checkout.stripe.com/...#...` hosted destination, including
