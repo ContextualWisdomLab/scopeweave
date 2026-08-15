@@ -123,6 +123,58 @@ function clearfolioConfiguration() {
 }
 
 /**
+ * Build the exact set of origins trusted to host Clearfolio artifacts.
+ *
+ * The configured Clearfolio origin is always trusted. Additional origins are
+ * optional and must be comma-separated HTTPS origins with no credentials,
+ * path, query, or fragment. Canonical URL origins preserve exact scheme, host,
+ * and effective port identity while preventing string-prefix allowlist bypasses.
+ *
+ * @param {string} baseUrl - Validated Clearfolio provider origin.
+ * @returns {Set<string>} Canonical origins accepted for artifact redirects.
+ * @throws {ClearfolioConfigurationError} If the optional allowlist is malformed or unsafe.
+ */
+function clearfolioArtifactOrigins(baseUrl) {
+  const trustedOrigins = new Set([new URL(baseUrl).origin]);
+  const configuredOrigins = process.env.CLEARFOLIO_ARTIFACT_ORIGINS;
+  if (configuredOrigins === undefined) return trustedOrigins;
+
+  const entries = String(configuredOrigins).split(',');
+  if (entries.some((entry) => entry.trim().length === 0)) {
+    throw new ClearfolioConfigurationError(
+      'clearfolio_artifact_origins_invalid',
+      'CLEARFOLIO_ARTIFACT_ORIGINS must contain only comma-separated HTTPS origins.',
+    );
+  }
+
+  for (const entry of entries) {
+    let url;
+    try {
+      url = new URL(entry.trim());
+    } catch {
+      throw new ClearfolioConfigurationError(
+        'clearfolio_artifact_origins_invalid',
+        'CLEARFOLIO_ARTIFACT_ORIGINS must contain only comma-separated HTTPS origins.',
+      );
+    }
+    if (
+      url.protocol !== 'https:'
+      || Boolean(url.username + url.password)
+      || url.pathname !== '/'
+      || Boolean(url.search)
+      || Boolean(url.hash)
+    ) {
+      throw new ClearfolioConfigurationError(
+        'clearfolio_artifact_origins_invalid',
+        'CLEARFOLIO_ARTIFACT_ORIGINS must contain only comma-separated HTTPS origins.',
+      );
+    }
+    trustedOrigins.add(url.origin);
+  }
+  return trustedOrigins;
+}
+
+/**
  * Sign tenant claims using the Clearfolio HMAC interoperability contract.
  *
  * The payload is the newline-delimited tenant ID, subject ID, permissions, and
@@ -455,6 +507,7 @@ export async function artifactUrl(orgId, userId, jobId) {
   const canonicalJobId = validateJobId(jobId);
   const configuration = clearfolioConfiguration();
   if (configuration.mock) return `/api/mock-clearfolio/${encodeURIComponent(canonicalJobId)}`;
+  const trustedArtifactOrigins = clearfolioArtifactOrigins(configuration.baseUrl);
   let res;
   try {
     res = await fetch(`${configuration.baseUrl}/api/v1/viewer/${encodeURIComponent(canonicalJobId)}/artifact-links`, {
@@ -484,6 +537,13 @@ export async function artifactUrl(orgId, userId, jobId) {
   }
   const allowsHttp = clearfolioUrl.protocol === 'http:' && url.protocol === 'http:';
   if (url.protocol !== 'https:' && !allowsHttp) {
+    throw new Error('clearfolio artifact-link response invalid');
+  }
+  if (
+    Boolean(url.username + url.password)
+    || Boolean(url.hash)
+    || !trustedArtifactOrigins.has(url.origin)
+  ) {
     throw new Error('clearfolio artifact-link response invalid');
   }
 
