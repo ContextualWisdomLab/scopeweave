@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Added a version-bound schedule reason-event authorization and audit contract
+  for skipped, cancelled, and not-performed decisions; cancellation approval
+  must be independently verified, stale authority is rejected before mutation,
+  and persistence must atomically return the exact event and audit receipt.
 - Made `SCOPEWEAVE_JWT_SECRET` mandatory at startup and rejected weak or
   unexpanded placeholder values so production deployments fail closed.
 - Neutralized audit-log CSV formulas even when executable prefixes are hidden
