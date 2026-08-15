@@ -25,7 +25,6 @@ export function validateWorkItemHierarchy(records) {
 
   const errors = [];
   const recordById = new Map();
-  const sourceIndexById = new Map();
 
   for (let sourceIndex = 0; sourceIndex < records.length; sourceIndex += 1) {
     const record = records[sourceIndex];
@@ -46,7 +45,6 @@ export function validateWorkItemHierarchy(records) {
     }
 
     recordById.set(id, record);
-    sourceIndexById.set(id, sourceIndex);
   }
 
   for (const [id, record] of recordById) {

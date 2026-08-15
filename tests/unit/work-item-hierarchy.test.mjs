@@ -52,6 +52,14 @@ test('validates hierarchy relationships without depending on source ordering', (
   assert.deepEqual(validateWorkItemHierarchy(reordered), { valid: true, errors: [] });
 });
 
+test('normalizes only absent root parents and accepts an empty plan', () => {
+  const rootWithoutParentProperty = [{ id: 'phase-root', depth: 1 }];
+  assert.deepEqual(validateWorkItemHierarchy([]), { valid: true, errors: [] });
+  assert.deepEqual(projectWorkItemHierarchy([]), []);
+  assert.equal(projectWorkItemHierarchy(rootWithoutParentProperty)[0].parentId, null);
+  assert.equal(projectWorkItemHierarchy([{ id: 'phase-root', parentId: '', depth: 1 }])[0].parentId, null);
+});
+
 test('rejects duplicate public identifiers', () => {
   const source = validFourLevelPlan();
   source.push({ id: 'task-analysis', parentId: 'activity-research', depth: 3 });
@@ -63,16 +71,27 @@ test('rejects duplicate public identifiers', () => {
   assert.throws(() => projectWorkItemHierarchy(source), /duplicate_id/);
 });
 
-test('rejects orphaned parents, depth jumps, cycles, and depth outside 1..4', () => {
+test('rejects orphaned parents, root parents, depth jumps, cycles, and depth outside 1..4', () => {
   const cases = [
     {
       source: [{ id: 'activity-a', parentId: 'missing-phase', depth: 2 }],
       code: 'missing_parent',
     },
     {
+      source: [{ id: 'phase-a', parentId: 'another-root', depth: 1 }],
+      code: 'invalid_parent_depth',
+    },
+    {
       source: [
         { id: 'phase-a', parentId: null, depth: 1 },
         { id: 'task-a', parentId: 'phase-a', depth: 3 },
+      ],
+      code: 'invalid_parent_depth',
+    },
+    {
+      source: [
+        { id: 'bad-parent', parentId: null, depth: '2' },
+        { id: 'task-a', parentId: 'bad-parent', depth: 3 },
       ],
       code: 'invalid_parent_depth',
     },
@@ -102,6 +121,10 @@ test('rejects blank, numeric, and unsafe public identifiers instead of coercing 
     assert.equal(result.valid, false);
     assert.equal(result.errors[0]?.code, 'invalid_id');
   }
+  assert.equal(
+    validateWorkItemHierarchy([{ id: 'activity-a', parentId: '__proto__', depth: 2 }]).errors[0]?.code,
+    'missing_parent',
+  );
 });
 
 test('returns deterministic validation errors for malformed record containers', () => {
@@ -113,4 +136,28 @@ test('returns deterministic validation errors for malformed record containers', 
     valid: false,
     errors: [{ code: 'invalid_record', sourceIndex: 0 }],
   });
+  assert.deepEqual(validateWorkItemHierarchy([[]]), {
+    valid: false,
+    errors: [{ code: 'invalid_record', sourceIndex: 0 }],
+  });
+});
+
+test('handles a realistic 10,000-item portfolio hierarchy without changing IDs', () => {
+  const source = [];
+  for (let root = 0; root < 2500; root += 1) {
+    const phaseId = `phase-${root}`;
+    const activityId = `activity-${root}`;
+    const taskId = `task-${root}`;
+    source.push(
+      { id: phaseId, parentId: null, depth: 1 },
+      { id: activityId, parentId: phaseId, depth: 2 },
+      { id: taskId, parentId: activityId, depth: 3 },
+      { id: `duty-${root}`, parentId: taskId, depth: 4 },
+    );
+  }
+
+  const projected = projectWorkItemHierarchy(source);
+  assert.equal(projected.length, 10_000);
+  assert.equal(projected[0].id, 'phase-0');
+  assert.equal(projected.at(-1).id, 'duty-2499');
 });
