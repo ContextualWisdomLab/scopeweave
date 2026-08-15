@@ -27,7 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added durable SQLite persistence for short-lived access grants, including
   restart-safe hash-only state, foreign-key lifecycle revocation, atomic
   one-time consumption tied to the current membership identity and session
-  token version, and tenant/resource authorization ports. Runtime browser
+  token version, tenant/resource authorization ports, and an immutable
+  transactional audit outbox for mint/consume evidence. Runtime browser
   transport migration remains a follow-up under #413.
 
 ### Security
@@ -69,6 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the same conditional write that marks a grant used; subject/project/attachment
   deletion cascades revoke outstanding grants without restoring broad URL
   credentials.
+- Coupled each successful SQLite grant mint/consume transition to secret-free
+  durable audit evidence under the same savepoint; an audit-outbox failure now
+  rolls back the corresponding usable-grant transition instead of creating an
+  unaudited security state, while historical evidence survives resource deletion.
 
 ### Changed
 
@@ -101,8 +106,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wbs.json` seed loading plus browser autosave and optional file sync.
 - Playwright E2E coverage for add/edit hierarchy flows, delete
   confirmation, subtree drag-and-drop, and JSON sync shape.
-- GitHub Pages deployment workflow and operator documentation.
 
 ## [1.0.1] - 2026-06-25
 ### 성능 개선 (Performance)
-- 드래그 앤 드롭 동작 중 `dragover` 이벤트에서 발생하는 O(N) 작업 리스트 검색 성능 병목 문제를, O(1) 해시맵(Map) 기반의 캐싱 조회 로직으로 개선하여 큰 크기의 WBS 리스트에서의 버벅임 현상을 해결했습니다.
+- 드래그 앤 드롭 동작 중 `dragover` 이벤트에서 발생하던 O(N) 작업 리스트 검색 성능 병목 문제를 O(1) 해시맵(Map) 기반 캐시 조회로 개선하여 큰 WBS에서의 버벅임을 줄였습니다.
