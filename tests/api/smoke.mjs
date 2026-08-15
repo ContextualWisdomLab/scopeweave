@@ -639,8 +639,8 @@ assert.equal(r.status, 404, 'non-member ai brief → 404');
   r = await req(`/api/projects/${proj.id}/attachments?taskId=s1`, { headers: auth });
   const list = (await r.json()).attachments;
   assert.ok(list.some((x) => x.id === att.id && x.name === '요구사항정의서.pdf' && x.uploadedBy), 'listed with meta');
-  // 열람: 302 → mock 아티팩트 → 바이트 왕복
-  r = await req(`/api/projects/${proj.id}/attachments/${att.id}/view?token=${encodeURIComponent(token)}`);
+  // 열람: Authorization 헤더 → 302 → mock 아티팩트 → 바이트 왕복
+  r = await req(`/api/projects/${proj.id}/attachments/${att.id}/view`, { headers: auth });
   assert.equal(r.status, 302, 'view redirects');
   const loc = r.headers.get('location');
   assert.ok(loc.includes('/api/mock-clearfolio/'), 'redirect to signed artifact');
