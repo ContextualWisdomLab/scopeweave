@@ -28,8 +28,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   with one-time secret display on create/rotate, hash-only persistence ports,
   project-scoped management, reusable feed authorization, membership-version
   rechecks, safe lifecycle metadata, rotation, revocation, and usage evidence.
-  Runtime route, database adapter/migration, Figma interaction design, and UI
-  remain follow-up work under issue #413.
+  Runtime route, database adapter/migration, and UI implementation remain
+  follow-up work under issue #413; the required calendar-management interaction
+  contract is captured in Figma and traced in the doctoring record.
 
 ### Security
 
