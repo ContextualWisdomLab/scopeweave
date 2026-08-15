@@ -1,4 +1,6 @@
 const ATTACHMENT_VIEW_PURPOSE = 'attachment_view';
+const INSERT_SAVEPOINT = 'access_grant_insert_state';
+const CONSUME_SAVEPOINT = 'access_grant_consume_state';
 
 function requireDatabase(db) {
   if (!db || typeof db.exec !== 'function' || typeof db.prepare !== 'function') {
@@ -17,13 +19,27 @@ function normalizeGrantRow(row) {
   };
 }
 
+function withSavepoint(db, name, operation) {
+  db.exec(`SAVEPOINT ${name}`);
+  try {
+    const result = operation();
+    db.exec(`RELEASE ${name}`);
+    return result;
+  } catch (error) {
+    db.exec(`ROLLBACK TO ${name}`);
+    db.exec(`RELEASE ${name}`);
+    throw error;
+  }
+}
+
 /**
  * Install the durable access-grant schema during database bootstrap.
  *
- * The schema stores only SHA-256 token hashes and resource bindings. It is
- * intentionally installed at process/database bootstrap, never from a request
- * handler. Project, subject, and attachment foreign keys make deletion an
- * immediate revocation boundary for outstanding grants.
+ * The usable-grant relation stores only SHA-256 token hashes and resource
+ * bindings. A separate immutable audit-outbox relation records each successful
+ * security transition in the same SQLite transaction while deliberately
+ * retaining evidence after subject/project/attachment deletion. Schema DDL is
+ * installed at process/database bootstrap, never from a request handler.
  *
  * @param {object} database Node SQLite-compatible database handle.
  * @returns {void}
@@ -50,16 +66,36 @@ export function installAccessGrantSchema(database) {
       ON access_grants(token_hash);
     CREATE INDEX IF NOT EXISTS access_grant_subject_resource_index
       ON access_grants(subject_id, project_id, purpose, attachment_id);
+
+    CREATE TABLE IF NOT EXISTS access_grant_audit_outbox (
+      event_id INTEGER PRIMARY KEY,
+      grant_id TEXT NOT NULL,
+      event_type TEXT NOT NULL CHECK(event_type IN ('minted', 'consumed')),
+      subject_id INTEGER NOT NULL,
+      project_id INTEGER NOT NULL,
+      purpose TEXT NOT NULL,
+      audience TEXT NOT NULL,
+      attachment_id INTEGER,
+      occurred_at_ms INTEGER NOT NULL CHECK(occurred_at_ms >= 0),
+      delivered_at_ms INTEGER
+    );
+    CREATE INDEX IF NOT EXISTS access_grant_audit_delivery_index
+      ON access_grant_audit_outbox(delivered_at_ms, event_id);
   `);
 }
 
 /**
  * Create the SQLite implementation of the AccessGrantRepository port.
  *
- * One-time redemption is one conditional UPDATE. The condition binds purpose,
- * audience, resource, expiry, unused/unrevoked state, and the exact current
- * membership identity plus session token version. Concurrent consumers cannot
- * both move the row from unused to used.
+ * Mint persistence and its immutable audit evidence commit under one savepoint.
+ * One-time redemption is one conditional UPDATE plus its immutable consume
+ * evidence under one savepoint. The consume condition binds purpose, audience,
+ * resource, expiry, unused/unrevoked state, and the exact current membership
+ * identity plus session token version. Concurrent consumers cannot both move
+ * the row from unused to used.
+ *
+ * Savepoints make this adapter safe both as a top-level transaction boundary
+ * and when a future caller already owns a wider SQLite transaction.
  *
  * @param {object} database Node SQLite-compatible database handle.
  * @returns {{insertGrant: Function, findGrantByHash: Function, consumeGrantAtomically: Function}}
@@ -73,6 +109,12 @@ export function createSqliteAccessGrantRepository(database) {
     ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
   `);
   const find = db.prepare('SELECT * FROM access_grants WHERE token_hash = ?');
+  const insertAudit = db.prepare(`
+    INSERT INTO access_grant_audit_outbox(
+      grant_id, event_type, subject_id, project_id, purpose, audience,
+      attachment_id, occurred_at_ms, delivered_at_ms
+    ) VALUES(?,?,?,?,?,?,?,?,NULL)
+  `);
   const consume = db.prepare(`
     UPDATE access_grants
        SET used_at_ms = ?
@@ -96,21 +138,36 @@ export function createSqliteAccessGrantRepository(database) {
   `);
 
   return Object.freeze({
-    /** Persist one already-validated hash-only grant record. */
+    /**
+     * Persist one already-validated hash-only grant and its durable mint event.
+     * Either both rows commit or neither row does.
+     */
     async insertGrant(record) {
-      insert.run(
-        record.grant_id,
-        record.token_hash,
-        record.subject_id,
-        record.project_id,
-        record.purpose,
-        record.audience,
-        record.attachment_id,
-        record.issued_at_ms,
-        record.expires_at_ms,
-        record.used_at_ms,
-        record.revoked_at_ms,
-      );
+      withSavepoint(db, INSERT_SAVEPOINT, () => {
+        insert.run(
+          record.grant_id,
+          record.token_hash,
+          record.subject_id,
+          record.project_id,
+          record.purpose,
+          record.audience,
+          record.attachment_id,
+          record.issued_at_ms,
+          record.expires_at_ms,
+          record.used_at_ms,
+          record.revoked_at_ms,
+        );
+        insertAudit.run(
+          record.grant_id,
+          'minted',
+          record.subject_id,
+          record.project_id,
+          record.purpose,
+          record.audience,
+          record.attachment_id,
+          record.issued_at_ms,
+        );
+      });
     },
 
     /** Resolve a grant by its one-way token hash without exposing a secret. */
@@ -120,22 +177,36 @@ export function createSqliteAccessGrantRepository(database) {
 
     /**
      * Consume a grant exactly once while revalidating the captured membership
-     * version inside the same conditional state transition.
+     * version inside the same conditional state transition and transactionally
+     * retaining immutable consume evidence.
      */
     async consumeGrantAtomically(tokenHash, binding) {
-      const result = consume.run(
-        binding.now_ms,
-        tokenHash,
-        binding.purpose,
-        binding.audience,
-        binding.project_id,
-        binding.attachment_id,
-        binding.attachment_id,
-        binding.now_ms,
-        String(binding.membership_version),
-      );
-      if (Number(result.changes) !== 1) return null;
-      return normalizeGrantRow(find.get(tokenHash));
+      return withSavepoint(db, CONSUME_SAVEPOINT, () => {
+        const result = consume.run(
+          binding.now_ms,
+          tokenHash,
+          binding.purpose,
+          binding.audience,
+          binding.project_id,
+          binding.attachment_id,
+          binding.attachment_id,
+          binding.now_ms,
+          String(binding.membership_version),
+        );
+        if (Number(result.changes) !== 1) return null;
+        const consumed = find.get(tokenHash);
+        insertAudit.run(
+          consumed.grant_id,
+          'consumed',
+          consumed.subject_id,
+          consumed.project_id,
+          consumed.purpose,
+          consumed.audience,
+          consumed.attachment_id,
+          binding.now_ms,
+        );
+        return normalizeGrantRow(consumed);
+      });
     },
   });
 }
