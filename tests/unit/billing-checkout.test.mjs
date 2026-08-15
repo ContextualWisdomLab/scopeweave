@@ -257,3 +257,31 @@ test('live checkout fails closed when the durable attempt port cannot start or c
     else process.env.STRIPE_PRICE_ID = previousPrice;
   }
 });
+
+test('stale uncertain Checkout state tells the customer not to mint a speculative retry', async () => {
+  const previousPrice = process.env.STRIPE_PRICE_ID;
+  process.env.STRIPE_PRICE_ID = 'price_reconciliation_required';
+  const reconciliationError = new Error('provider outcome must be reconciled');
+  reconciliationError.code = 'billing_checkout_reconciliation_required';
+  const attemptRepository = createAttemptRepository({ startError: reconciliationError });
+
+  try {
+    let rejected;
+    await assert.rejects(
+      createCheckout({ orgId: 73, configuration: liveConfiguration, attemptRepository }),
+      (error) => {
+        rejected = error;
+        assert.equal(error.status, 503);
+        return true;
+      },
+    );
+    const payload = await responsePayloadFrom(rejected);
+    assert.equal(payload.error, 'billing_checkout_reconciliation_required');
+    assert.match(payload.action, /reconcil/i);
+    assert.match(payload.action, /do not start|do not retry|before/i);
+    assert.deepEqual(attemptRepository.events.map((event) => event.type), ['start']);
+  } finally {
+    if (previousPrice === undefined) delete process.env.STRIPE_PRICE_ID;
+    else process.env.STRIPE_PRICE_ID = previousPrice;
+  }
+});
