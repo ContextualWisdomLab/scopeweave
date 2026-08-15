@@ -9,11 +9,13 @@ const hostedCheckoutUrl = 'https://checkout.stripe.com/c/pay/cs_test_boundary#fi
 async function withStripeEnv(run) {
   const previousSecret = process.env.STRIPE_SECRET_KEY;
   const previousPrice = process.env.STRIPE_PRICE_ID;
+  const previousFetch = globalThis.fetch;
   process.env.STRIPE_SECRET_KEY = 'sk_test_provider_boundary';
   process.env.STRIPE_PRICE_ID = 'price_provider_boundary';
   try {
     await run();
   } finally {
+    globalThis.fetch = previousFetch;
     if (previousSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
     else process.env.STRIPE_SECRET_KEY = previousSecret;
     if (previousPrice === undefined) delete process.env.STRIPE_PRICE_ID;
@@ -39,35 +41,39 @@ async function expectProviderError(run, expectedCode) {
   return JSON.stringify(payload);
 }
 
-test('live Checkout uses a bounded single-attempt Stripe request and preserves the hosted URL', async () => {
+test('live Checkout uses one bounded direct Stripe HTTPS request and preserves the hosted URL', async () => {
   await withStripeEnv(async () => {
     const observed = [];
-    const stripeClientFactory = async (secretKey, clientOptions) => {
-      observed.push({ secretKey, clientOptions });
-      return {
-        checkout: {
-          sessions: {
-            async create(payload, requestOptions) {
-              observed.push({ payload, requestOptions });
-              return { url: hostedCheckoutUrl };
-            },
-          },
-        },
-      };
+    globalThis.fetch = async (url, options) => {
+      observed.push({ url, options });
+      return new Response(JSON.stringify({ url: hostedCheckoutUrl }), {
+        status: 200,
+        headers: { 'content-type': 'application/json; charset=utf-8' },
+      });
     };
 
     const result = await createCheckout({
       orgId: 73,
       configuration: liveConfiguration,
-      stripeClientFactory,
     });
 
     assert.equal(result.url, hostedCheckoutUrl, 'Stripe-hosted client fragment is preserved verbatim');
-    assert.deepEqual(observed[0], {
-      secretKey: 'sk_test_provider_boundary',
-      clientOptions: { maxNetworkRetries: 0, timeout: 15000 },
-    });
-    assert.deepEqual(observed[1].requestOptions, { maxNetworkRetries: 0, timeout: 15000 });
+    assert.equal(observed.length, 1, 'checkout transport performs exactly one provider attempt');
+    assert.equal(observed[0].url, 'https://api.stripe.com/v1/checkout/sessions');
+    assert.equal(observed[0].options.method, 'POST');
+    assert.equal(observed[0].options.redirect, 'error');
+    assert.ok(observed[0].options.signal instanceof AbortSignal);
+    assert.equal(observed[0].options.headers.authorization, 'Bearer sk_test_provider_boundary');
+    assert.equal(observed[0].options.headers['content-type'], 'application/x-www-form-urlencoded');
+
+    const form = new URLSearchParams(observed[0].options.body);
+    assert.equal(form.get('mode'), 'subscription');
+    assert.equal(form.get('line_items[0][price]'), 'price_provider_boundary');
+    assert.equal(form.get('line_items[0][quantity]'), '1');
+    assert.equal(form.get('success_url'), 'https://planner.example.com/?billing=success');
+    assert.equal(form.get('cancel_url'), 'https://planner.example.com/?billing=cancel');
+    assert.equal(form.get('client_reference_id'), '73');
+    assert.equal(form.get('metadata[orgId]'), '73');
   });
 });
 
@@ -84,33 +90,60 @@ test('live Checkout rejects malformed or untrusted provider authorities', async 
 
   await withStripeEnv(async () => {
     for (const url of invalidUrls) {
-      const stripeClientFactory = async () => ({
-        checkout: { sessions: { async create() { return { url }; } } },
+      globalThis.fetch = async () => new Response(JSON.stringify({ url }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
       });
       await expectProviderError(
-        () => createCheckout({ orgId: 73, configuration: liveConfiguration, stripeClientFactory }),
+        () => createCheckout({ orgId: 73, configuration: liveConfiguration }),
         'billing_provider_invalid_response',
       );
     }
   });
 });
 
-test('provider failures become a stable sanitized buyer-facing error', async () => {
+test('provider transport failures become a stable sanitized buyer-facing error', async () => {
   await withStripeEnv(async () => {
-    const stripeClientFactory = async () => ({
-      checkout: {
-        sessions: {
-          async create() {
-            throw new Error('dial tcp 10.7.0.12:443 with sk_live_should_not_escape');
-          },
-        },
-      },
-    });
+    globalThis.fetch = async () => {
+      throw new Error('dial tcp 10.7.0.12:443 with sk_live_should_not_escape');
+    };
 
     const payload = await expectProviderError(
-      () => createCheckout({ orgId: 73, configuration: liveConfiguration, stripeClientFactory }),
+      () => createCheckout({ orgId: 73, configuration: liveConfiguration }),
       'billing_provider_unavailable',
     );
     assert.doesNotMatch(payload, /10\.7\.0\.12|sk_live_should_not_escape/);
+  });
+});
+
+test('provider HTTP and malformed-success responses fail with stable categories', async () => {
+  await withStripeEnv(async () => {
+    globalThis.fetch = async () => new Response('provider secret body', {
+      status: 503,
+      headers: { 'content-type': 'text/plain' },
+    });
+    const unavailablePayload = await expectProviderError(
+      () => createCheckout({ orgId: 73, configuration: liveConfiguration }),
+      'billing_provider_unavailable',
+    );
+    assert.doesNotMatch(unavailablePayload, /provider secret body/);
+
+    globalThis.fetch = async () => new Response('<html>not json</html>', {
+      status: 200,
+      headers: { 'content-type': 'text/html' },
+    });
+    await expectProviderError(
+      () => createCheckout({ orgId: 73, configuration: liveConfiguration }),
+      'billing_provider_invalid_response',
+    );
+
+    globalThis.fetch = async () => new Response('{malformed', {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
+    await expectProviderError(
+      () => createCheckout({ orgId: 73, configuration: liveConfiguration }),
+      'billing_provider_invalid_response',
+    );
   });
 });
