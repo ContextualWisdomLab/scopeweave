@@ -98,8 +98,9 @@ export function installBillingCheckoutAttemptSchema(database) {
  *
  * This constructor never creates database objects. Call
  * {@link installBillingCheckoutAttemptSchema} exactly from bootstrap/migration
- * code before serving requests. The returned operations are synchronous because
- * `node:sqlite` is synchronous and each mutation is protected by a savepoint.
+ * code before serving requests. SQL statements are prepared lazily so merely
+ * constructing the port cannot accidentally turn missing bootstrap into schema
+ * creation or another hidden startup side effect.
  *
  * @param {import('node:sqlite').DatabaseSync} database - Bootstrapped database.
  * @param {object} [dependencies] - Deterministic seams for tests.
@@ -121,33 +122,40 @@ export function createSqliteBillingCheckoutAttemptRepository(
   if (typeof randomUUID !== 'function') throw new TypeError('randomUUID must be a function');
   if (typeof now !== 'function') throw new TypeError('now must be a function');
 
-  const selectPending = database.prepare(`
-    SELECT attempt_id, idempotency_key, created_at_ms
-    FROM billing_checkout_attempts
-    WHERE organization_id = ? AND price_id = ? AND attempt_state = 'pending'
-    LIMIT 1
-  `);
-  const expirePending = database.prepare(`
-    UPDATE billing_checkout_attempts
-    SET attempt_state = 'expired', updated_at_ms = ?
-    WHERE attempt_id = ? AND attempt_state = 'pending'
-  `);
-  const insertAttempt = database.prepare(`
-    INSERT INTO billing_checkout_attempts(
-      attempt_id, organization_id, price_id, idempotency_key,
-      attempt_state, provider_session_id, created_at_ms, updated_at_ms
-    ) VALUES(?,?,?,?, 'pending', NULL, ?, ?)
-  `);
-  const succeedAttempt = database.prepare(`
-    UPDATE billing_checkout_attempts
-    SET attempt_state = 'provider_succeeded', provider_session_id = ?, updated_at_ms = ?
-    WHERE attempt_id = ? AND attempt_state = 'pending'
-  `);
-  const failAttempt = database.prepare(`
-    UPDATE billing_checkout_attempts
-    SET attempt_state = 'provider_failed', updated_at_ms = ?
-    WHERE attempt_id = ? AND attempt_state = 'pending'
-  `);
+  let preparedStatements;
+  const statements = () => {
+    if (preparedStatements) return preparedStatements;
+    preparedStatements = {
+      selectPending: database.prepare(`
+        SELECT attempt_id, idempotency_key, created_at_ms
+        FROM billing_checkout_attempts
+        WHERE organization_id = ? AND price_id = ? AND attempt_state = 'pending'
+        LIMIT 1
+      `),
+      expirePending: database.prepare(`
+        UPDATE billing_checkout_attempts
+        SET attempt_state = 'expired', updated_at_ms = ?
+        WHERE attempt_id = ? AND attempt_state = 'pending'
+      `),
+      insertAttempt: database.prepare(`
+        INSERT INTO billing_checkout_attempts(
+          attempt_id, organization_id, price_id, idempotency_key,
+          attempt_state, provider_session_id, created_at_ms, updated_at_ms
+        ) VALUES(?,?,?,?, 'pending', NULL, ?, ?)
+      `),
+      succeedAttempt: database.prepare(`
+        UPDATE billing_checkout_attempts
+        SET attempt_state = 'provider_succeeded', provider_session_id = ?, updated_at_ms = ?
+        WHERE attempt_id = ? AND attempt_state = 'pending'
+      `),
+      failAttempt: database.prepare(`
+        UPDATE billing_checkout_attempts
+        SET attempt_state = 'provider_failed', updated_at_ms = ?
+        WHERE attempt_id = ? AND attempt_state = 'pending'
+      `),
+    };
+    return preparedStatements;
+  };
 
   return {
     /**
@@ -158,11 +166,13 @@ export function createSqliteBillingCheckoutAttemptRepository(
       const organization = positiveOrganizationId(organizationId);
       const price = boundedRequiredString(priceId, 'priceId', MAX_PRICE_ID_LENGTH);
       const nowMs = safeNow(now);
+      const sql = statements();
 
       return withSavepoint(database, () => {
-        const pending = selectPending.get(organization, price);
+        const pending = sql.selectPending.get(organization, price);
         if (pending) {
-          const ageMs = nowMs - Number(pending.created_at_ms);
+          const createdAtMs = Number(pending.created_at_ms);
+          const ageMs = nowMs - createdAtMs;
           if (ageMs >= 0 && ageMs < BILLING_CHECKOUT_REUSE_WINDOW_MS) {
             return {
               attemptId: pending.attempt_id,
@@ -171,12 +181,12 @@ export function createSqliteBillingCheckoutAttemptRepository(
               reused: true,
             };
           }
-          expirePending.run(Math.max(nowMs, Number(pending.created_at_ms)), pending.attempt_id);
+          sql.expirePending.run(Math.max(nowMs, createdAtMs), pending.attempt_id);
         }
 
         const attemptId = opaqueIdentifier(randomUUID, 'attemptId');
         const idempotencyKey = opaqueIdentifier(randomUUID, 'idempotencyKey');
-        insertAttempt.run(attemptId, organization, price, idempotencyKey, nowMs, nowMs);
+        sql.insertAttempt.run(attemptId, organization, price, idempotencyKey, nowMs, nowMs);
         return { attemptId, idempotencyKey, state: 'pending', reused: false };
       });
     },
@@ -190,7 +200,10 @@ export function createSqliteBillingCheckoutAttemptRepository(
         MAX_PROVIDER_SESSION_ID_LENGTH,
       );
       const nowMs = safeNow(now);
-      const result = withSavepoint(database, () => succeedAttempt.run(sessionId, nowMs, id));
+      const result = withSavepoint(
+        database,
+        () => statements().succeedAttempt.run(sessionId, nowMs, id),
+      );
       if (Number(result.changes) !== 1) {
         throw new Error('expected one pending checkout attempt for provider success');
       }
@@ -200,7 +213,10 @@ export function createSqliteBillingCheckoutAttemptRepository(
     markProviderFailed({ attemptId }) {
       const id = boundedRequiredString(attemptId, 'attemptId', MAX_IDENTIFIER_LENGTH);
       const nowMs = safeNow(now);
-      const result = withSavepoint(database, () => failAttempt.run(nowMs, id));
+      const result = withSavepoint(
+        database,
+        () => statements().failAttempt.run(nowMs, id),
+      );
       if (Number(result.changes) !== 1) {
         throw new Error('expected one pending checkout attempt for provider failure');
       }
