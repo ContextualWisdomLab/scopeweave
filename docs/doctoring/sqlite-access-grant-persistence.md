@@ -17,11 +17,11 @@ A second requirement is evidentiary: a successful mint or one-time consume must 
 `server/access_grant_sqlite.mjs` owns three explicit SQLite ports and one bootstrap function:
 
 - `installAccessGrantSchema(database)` installs the schema during database/process bootstrap, never inside an HTTP request path.
-- `createSqliteAccessGrantRepository(database)` persists hash-only grants, persists the matching immutable audit event, and consumes grants with one conditional `UPDATE` plus matching consume evidence under one savepoint.
+- `createSqliteAccessGrantRepository(database)` persists hash-only grants, captures the mint-time `membership_id:token_version` snapshot, persists the matching immutable audit event, and consumes grants with one conditional `UPDATE` plus matching consume evidence under one savepoint.
 - `createSqliteAccessGrantAuthorizationPort(database)` verifies project membership and, for `attachment_view`, the exact ready attachment before minting.
-- `createSqliteAccessGrantMembershipPort(database)` returns an opaque `membership_id:token_version` value that is rechecked inside the atomic consume statement.
+- `createSqliteAccessGrantMembershipPort(database)` returns the current opaque `membership_id:token_version` value that is rechecked inside the atomic consume statement.
 
-The persisted `access_grants` relation is in third normal form for this bounded domain: one row represents one grant, non-key attributes describe only that grant, and user/project/attachment facts remain referenced by foreign keys rather than copied into repeated descriptive columns.
+The persisted `access_grants` relation is in third normal form for this bounded domain: one row represents one grant, non-key attributes describe only that grant, and user/project/attachment facts remain referenced by foreign keys rather than copied into repeated descriptive columns. `membership_version` is grant issuance state: it is the revocation epoch to which that credential was bound when it became durable, not a denormalized mutable membership attribute.
 
 `access_grant_audit_outbox` is an immutable event relation: each row represents one security transition, and its subject/project/resource identifiers are event-time evidence rather than mutable resource attributes. It intentionally does not carry foreign keys to live resources because deleting a user, project, or attachment must revoke the usable grant without erasing historical access-control evidence.
 
@@ -37,13 +37,15 @@ All newly owned objects use descriptive multi-word snake_case names. Existing le
 
 ## Secret and lifecycle boundaries
 
-The database stores `token_hash` but never the plaintext grant secret. Each usable-grant row binds the subject, project, purpose, audience, optional attachment, issue/expiry timestamps, and use/revocation timestamps. `ON DELETE CASCADE` makes deletion of a subject, project, or bound attachment an immediate lifecycle revocation for dependent usable grants.
+The database stores `token_hash` but never the plaintext grant secret. Each usable-grant row binds the subject, project, purpose, audience, optional attachment, mint-time `membership_version`, issue/expiry timestamps, and use/revocation timestamps. `ON DELETE CASCADE` makes deletion of a subject, project, or bound attachment an immediate lifecycle revocation for dependent usable grants.
 
 Audit-outbox rows store only the grant correlation ID and non-secret authorization/event facts. The plaintext secret and its hash are both absent from the outbox. Audit evidence deliberately survives lifecycle deletion of the underlying attachment or usable grant.
 
 SQLite foreign-key enforcement is explicitly enabled by the existing data bootstrap. The adapter relies on SQLite's documented foreign-key action semantics for resource deletion and on its transactional isolation/serialized writes for one-winner state transitions.
 
 ## Atomic one-time consumption
+
+The mint savepoint reads the current membership row identity and user `token_version` immediately before inserting the usable grant. If no active membership exists at that point, no grant row or mint audit event is committed. If membership state changes after this snapshot, the resulting grant can remain stored but cannot be redeemed against the new revocation epoch.
 
 The consume operation is a single conditional `UPDATE access_grants SET used_at_ms = ? ...` statement. A row can move from unused to used only when all conditions hold together:
 
@@ -52,12 +54,12 @@ The consume operation is a single conditional `UPDATE access_grants SET used_at_
 3. project and optional attachment binding match;
 4. `used_at_ms` and `revoked_at_ms` are still null;
 5. current time is strictly before expiry;
-6. the subject is still a member of the project's organization; and
-7. current `membership_id:token_version` equals the value observed immediately before consumption.
+6. the current `membership_id:token_version` equals the grant's persisted mint-time `membership_version`; and
+7. the same current version still matches live project membership and user `token_version` inside the conditional write.
 
-Because the unused-state predicate and membership-version predicate participate in the same write statement, two concurrent consumers cannot both perform the unused→used transition. A membership removal/re-add changes the durable membership identity; logout-all/session-version invalidation changes `token_version`. Either change makes an already minted but unused grant fail closed.
+Because the unused-state predicate, persisted mint snapshot, and live membership predicate participate in the same write statement, two concurrent consumers cannot both perform the unused→used transition, and a version change between mint and redemption cannot silently authorize the older credential. A membership removal/re-add changes the durable membership identity; logout-all/password-style session invalidation changes `token_version`. Either change makes an already minted but unused grant fail closed.
 
-The consume `UPDATE` and the corresponding `consumed` audit-outbox insert execute under one SQLite savepoint. If durable audit evidence cannot be inserted, the savepoint rolls the consume transition back, leaving the grant unused and safely retryable after the durable boundary recovers. Mint uses the same pattern: the secret is not returned from a successful repository call unless both the hash-only usable-grant row and `minted` audit evidence commit.
+The consume `UPDATE` and the corresponding `consumed` audit-outbox insert execute under one SQLite savepoint. If durable audit evidence cannot be inserted, the savepoint rolls the consume transition back, leaving the grant unused and safely retryable after the durable boundary recovers. Mint uses the same pattern: the secret is not returned from a successful repository call unless the hash-only usable-grant row, mint-time membership snapshot, and `minted` audit evidence commit.
 
 Savepoints are used rather than assuming ownership of the whole database transaction, so the adapter can remain atomic when called standalone or inside a future wider SQLite transaction.
 
@@ -81,7 +83,15 @@ The parent domain's best-effort injected audit sink may still emit immediate ope
 
 Attachment-view mint authorization requires all of the following in one database lookup: current project membership, exact project/attachment ownership, and `SUCCEEDED` attachment readiness. Failure is deliberately thrown through the domain port so the domain maps inaccessible resources to the same not-authorized/not-found response class instead of revealing another tenant's attachment existence.
 
-Project-only purposes such as `stream` require current project membership and carry no attachment binding.
+Project-only purposes such as `stream` require current project membership and carry no attachment binding. The repository repeats the membership lookup while persisting the grant so a membership loss after the authorization-port check cannot produce a redeemable credential.
+
+## Failure evidence and root-cause correction
+
+Exact-head Server Tests run `31894406313` checked out merge preview `d3ccc89ad32009cacd1275a661bc08b0e102c49e`, combining parent `28908e95ffa3c11676c99124fa1e95b49486098b` with child head `d638476c51966a5909557ee28ea730e7f3271d5b`. Its `unit-and-api` job `95035352256` failed the realistic regression `SQLite adapter atomically binds membership version to redemption`: incrementing `users.token_version` after mint did not invalidate the unconsumed grant.
+
+The defect was causal rather than test infrastructure. The previous adapter obtained `membership_id:token_version` only during redemption and compared that newly read value with the same live database state. It never persisted the revocation epoch present when the grant was issued, so a version change between mint and redeem was invisible. The correction adds a mint-time `membership_version` snapshot and requires the current value to equal both that snapshot and live membership state in the one-time consume `UPDATE`. No check, protection rule, or assertion was weakened.
+
+The existing failing regression is retained, renamed to make its mint-time invariant explicit, and the persistence test now directly asserts the stored snapshot (`100:0`) before redemption. Hosted exact-current-head evidence after the correction remains authoritative; queued, cancelled, predecessor-head, or merge-preview evidence for an older head is not promoted to passing.
 
 ## TDD evidence
 
@@ -89,9 +99,12 @@ The first two commits on the stacked branch were intentionally RED: `tests/unit/
 
 The audit-durability hardening was also test-first. `tests/unit/access-grant-audit-outbox.test.mjs` first required a not-yet-existing outbox and transactional rollback semantics. The implementation then added the immutable outbox relation and savepoint-coupled mint/consume transitions; the pre-existing schema-name regression was updated only because the new compliant outbox/index became intentionally owned database objects.
 
+The later exact-head Server Tests failure described above supplied a second RED regression for the revocation-epoch gap. The correction preserves that regression rather than replacing it with an assertion-only surrogate.
+
 Current tests cover:
 
 - hash-only persistence and absence of a plaintext-secret column;
+- persisted mint-time membership/version binding;
 - successful single redemption followed by replay rejection;
 - token-version invalidation;
 - membership removal/re-add invalidation;
@@ -110,13 +123,13 @@ Current tests cover:
 - audit-evidence retention after attachment lifecycle deletion; and
 - canonical `c8` registration for all adapter/audit behavior files and the production adapter.
 
-A local Node 22 direct adapter probe on the earlier persistence implementation exercised schema installation, authorization, membership versioning, insert/find, successful conditional consume, and replay rejection. That probe predates the transactional-audit hardening and is not promoted to current-head evidence. Hosted exact-current-head CI remains authoritative for merge decisions.
+A local Node 22 direct adapter probe on the earlier persistence implementation exercised schema installation, authorization, membership versioning, insert/find, successful conditional consume, and replay rejection. That probe predates the transactional-audit and mint-snapshot hardening and is not promoted to current-head evidence. Hosted exact-current-head CI remains authoritative for merge decisions.
 
 ## Migration, rollback, and compatibility
 
-The schema is installed only after referenced core tables exist. `CREATE TABLE/INDEX IF NOT EXISTS` makes bootstrap idempotent for existing self-hosted databases. This slice adds no destructive migration and does not rename legacy objects.
+The schema is installed only after referenced core tables exist. `CREATE TABLE/INDEX IF NOT EXISTS` makes bootstrap idempotent for databases created by this unshipped slice. This active branch adds the `membership_version` column before any protected runtime route consumes `access_grants`; no protected `develop` release has shipped the earlier branch-only schema, so no customer migration is claimed or required by this slice. The eventual protected integration must ship this schema as one coherent versioned change and must not treat a locally persisted pre-integration development database as release evidence.
 
-Rollback removes the adapter import/bootstrap call, `access_grants` and `access_grant_audit_outbox` tables/indexes, adapter/audit tests, and this record together. Because no protected runtime route consumes the table in this slice, rollback does not strand a browser contract. Once a runtime route begins issuing grants, rollback planning must account for in-flight one-time grants and retained audit evidence and must default to revoking grants rather than restoring broad URL credentials.
+This slice adds no destructive migration and does not rename legacy objects. Rollback removes the adapter import/bootstrap call, `access_grants` and `access_grant_audit_outbox` tables/indexes, adapter/audit tests, and this record together. Because no protected runtime route consumes the table in this slice, rollback does not strand a browser contract. Once a runtime route begins issuing grants, rollback planning must account for in-flight one-time grants and retained audit evidence and must default to revoking grants rather than restoring broad URL credentials.
 
 ## Traceability
 
