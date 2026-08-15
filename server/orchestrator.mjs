@@ -7,6 +7,8 @@ const ORCHESTRATOR_TIMEOUT_MS = 120_000;
 const MAX_MESSAGE_COUNT = 256;
 const MAX_CONTENT_LENGTH = 100_000;
 const MAX_PROVIDER_RESPONSE_BYTES = 1024 * 1024;
+// WHATWG URL serializes an IPv6 hostname with brackets (`[::1]`).
+const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 const MAX_ATTRIBUTION_VALUE_LENGTH = 256;
 const ATTRIBUTION_DIMENSIONS = new Set([
   'account',
@@ -62,7 +64,7 @@ function orchestratorConfiguration() {
       'ORCHESTRATOR_URL must use HTTP or HTTPS.',
     );
   }
-  if (url.protocol !== 'https:' && !['localhost', '127.0.0.1', '::1'].includes(url.hostname)) {
+  if (url.protocol !== 'https:' && !LOOPBACK_HOSTNAMES.has(url.hostname)) {
     throw new OrchestratorConfigurationError(
       'orchestrator_transport_insecure',
       'contextual-orchestrator production traffic requires HTTPS.',
