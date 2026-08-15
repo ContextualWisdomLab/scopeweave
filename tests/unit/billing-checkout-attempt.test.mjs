@@ -178,6 +178,26 @@ test('pending identities are never reused at or beyond the Stripe retention safe
   assert.equal(oldRow.attempt_state, 'expired');
 });
 
+test('clock rollback expires an unresolved identity instead of replaying it', () => {
+  const database = createDatabase();
+  installBillingCheckoutAttemptSchema(database);
+  let nowMs = 5_000_000;
+  const repository = createSqliteBillingCheckoutAttemptRepository(database, {
+    randomUUID: deterministicIds(),
+    now: () => nowMs,
+  });
+
+  const first = repository.startAttempt({ organizationId: 7, priceId: 'price_pro' });
+  nowMs -= 1_000;
+  const replacement = repository.startAttempt({ organizationId: 7, priceId: 'price_pro' });
+
+  assert.notEqual(replacement.idempotencyKey, first.idempotencyKey);
+  assert.equal(
+    database.prepare('SELECT attempt_state FROM billing_checkout_attempts WHERE attempt_id = ?').get(first.attemptId).attempt_state,
+    'expired',
+  );
+});
+
 test('repository rejects malformed identifiers and impossible terminal transitions', () => {
   const database = createDatabase();
   installBillingCheckoutAttemptSchema(database);
@@ -186,16 +206,26 @@ test('repository rejects malformed identifiers and impossible terminal transitio
     now: () => 4_000_000,
   });
 
-  assert.throws(
-    () => repository.startAttempt({ organizationId: 0, priceId: 'price_pro' }),
-    /organizationId/,
-  );
-  assert.throws(
-    () => repository.startAttempt({ organizationId: 7, priceId: '   ' }),
-    /priceId/,
-  );
+  for (const organizationId of [0, -1, 1.5, 'not-an-id']) {
+    assert.throws(
+      () => repository.startAttempt({ organizationId, priceId: 'price_pro' }),
+      /organizationId/,
+    );
+  }
+  for (const priceId of [null, '   ', 'x'.repeat(256)]) {
+    assert.throws(
+      () => repository.startAttempt({ organizationId: 7, priceId }),
+      /priceId/,
+    );
+  }
 
   const attempt = repository.startAttempt({ organizationId: 7, priceId: 'price_pro' });
+  for (const providerSessionId of [null, '', 'x'.repeat(256)]) {
+    assert.throws(
+      () => repository.markProviderSucceeded({ attemptId: attempt.attemptId, providerSessionId }),
+      /providerSessionId/,
+    );
+  }
   repository.markProviderFailed({ attemptId: attempt.attemptId });
   assert.throws(
     () => repository.markProviderSucceeded({ attemptId: attempt.attemptId, providerSessionId: 'cs_too_late' }),
@@ -204,5 +234,76 @@ test('repository rejects malformed identifiers and impossible terminal transitio
   assert.throws(
     () => repository.markProviderFailed({ attemptId: 'not-an-attempt' }),
     /pending checkout attempt/,
+  );
+  assert.throws(
+    () => repository.markProviderFailed({ attemptId: '' }),
+    /attemptId/,
+  );
+});
+
+test('dependency seams fail closed and default UUID/clock dependencies are usable', () => {
+  const database = createDatabase();
+  installBillingCheckoutAttemptSchema(database);
+
+  assert.throws(
+    () => createSqliteBillingCheckoutAttemptRepository(null),
+    /database/,
+  );
+  assert.throws(
+    () => createSqliteBillingCheckoutAttemptRepository(database, { randomUUID: 'not-a-function' }),
+    /randomUUID/,
+  );
+  assert.throws(
+    () => createSqliteBillingCheckoutAttemptRepository(database, { now: 'not-a-function' }),
+    /now/,
+  );
+
+  const repository = createSqliteBillingCheckoutAttemptRepository(database);
+  const attempt = repository.startAttempt({ organizationId: 7, priceId: 'price_default' });
+  assert.match(attempt.attemptId, /^[0-9a-f-]{36}$/i);
+  assert.match(attempt.idempotencyKey, /^[0-9a-f-]{36}$/i);
+  repository.markProviderFailed({ attemptId: attempt.attemptId });
+});
+
+test('invalid clock and identifier sources roll back without leaving a pending row', () => {
+  let database = createDatabase();
+  installBillingCheckoutAttemptSchema(database);
+  let repository = createSqliteBillingCheckoutAttemptRepository(database, {
+    randomUUID: deterministicIds(),
+    now: () => -1,
+  });
+  assert.throws(
+    () => repository.startAttempt({ organizationId: 7, priceId: 'price_bad_clock' }),
+    /clock/,
+  );
+
+  database = createDatabase();
+  installBillingCheckoutAttemptSchema(database);
+  repository = createSqliteBillingCheckoutAttemptRepository(database, {
+    randomUUID: () => '',
+    now: () => 6_000_000,
+  });
+  assert.throws(
+    () => repository.startAttempt({ organizationId: 7, priceId: 'price_bad_uuid' }),
+    /attemptId/,
+  );
+  assert.equal(
+    database.prepare('SELECT COUNT(*) AS n FROM billing_checkout_attempts').get().n,
+    0,
+  );
+
+  database = createDatabase();
+  installBillingCheckoutAttemptSchema(database);
+  repository = createSqliteBillingCheckoutAttemptRepository(database, {
+    randomUUID: deterministicIds(),
+    now: () => 7_000_000,
+  });
+  assert.throws(
+    () => repository.startAttempt({ organizationId: 999, priceId: 'price_missing_org' }),
+    /FOREIGN KEY|constraint/i,
+  );
+  assert.equal(
+    database.prepare('SELECT COUNT(*) AS n FROM billing_checkout_attempts').get().n,
+    0,
   );
 });
