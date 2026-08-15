@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const indexHtml = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
-const stylesCss = readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
+const toastStateCss = readFileSync(new URL('../../toast-state.css', import.meta.url), 'utf8');
 const cloudSyncJs = readFileSync(new URL('../../cloud-sync.js', import.meta.url), 'utf8');
 
 function toastElementMarkup(html) {
@@ -20,15 +20,20 @@ test('toast container exposes advisory status updates without taking focus', () 
   assert.doesNotMatch(toast, /\btabindex\s*=/i, 'status updates do not move keyboard focus');
 });
 
-test('cloud toast state is covered by the production visible-state selector', () => {
+test('cloud toast state is visibly rendered by a shipped stylesheet', () => {
   assert.match(
     cloudSyncJs,
     /classList\.add\(["']visible["']\)/,
     'cloud status messages activate the visible toast state',
   );
   assert.match(
-    stylesCss,
-    /\.toast\.visible\s*(?:,\s*\.toast\.show\s*)?\{/,
-    'the production stylesheet must render the visible state used by cloud-sync.js',
+    indexHtml,
+    /<link\s+[^>]*\brel=["']stylesheet["'][^>]*\bhref=["']toast-state\.css["'][^>]*>/i,
+    'the production document loads the cloud toast state stylesheet',
+  );
+  assert.match(
+    toastStateCss,
+    /\.toast\.visible\s*\{[^}]*\bopacity\s*:\s*1\s*;[^}]*\btransform\s*:\s*translateY\(0\)\s*;/s,
+    'the shipped cloud toast state becomes visually observable',
   );
 });
