@@ -120,11 +120,23 @@ try {
     (error) => error.code === 'orchestrator_provider_unavailable',
   );
 
-  globalThis.fetch = async () => new Response('not-json', { status: 502 });
+  let rejectedBodyRead = false;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 502,
+    headers: new Headers({ 'content-type': 'text/plain' }),
+    body: {
+      getReader() {
+        rejectedBodyRead = true;
+        throw new Error('rejected provider body must not be parsed');
+      },
+    },
+  });
   await assert.rejects(
     configured.chat([{ role: 'user', content: 'status' }]),
-    (error) => error.code === 'orchestrator_response_invalid',
+    (error) => error.code === 'orchestrator_provider_rejected',
   );
+  assert.equal(rejectedBodyRead, false, 'non-success provider responses are classified before body parsing');
 
   globalThis.fetch = async () => new Response(JSON.stringify({
     choices: [{ message: { content: 'x'.repeat(1024 * 1024) } }],
