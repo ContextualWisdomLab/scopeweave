@@ -4,6 +4,8 @@ const TOKEN_BYTES = 32;
 const GRANT_ID_BYTES = 16;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const MAX_TTL_SECONDS = 300;
+const MEMBERSHIP_VERSION_MAX_LENGTH = 128;
+const MEMBERSHIP_VERSION_CONTROL_PATTERN = /[\u0000-\u001F\u007F-\u009F]/u;
 
 /** Supported short-lived grant purposes in this bounded domain slice. */
 export const ACCESS_GRANT_PURPOSES = Object.freeze({
@@ -91,6 +93,20 @@ function unauthorizedGrant() {
   return new AccessGrantError('access_grant_unauthorized', 401);
 }
 
+function normalizeMembershipVersion(value) {
+  if (Number.isSafeInteger(value) && value >= 0) return value;
+  if (
+    typeof value === 'string'
+    && value.length > 0
+    && value.length <= MEMBERSHIP_VERSION_MAX_LENGTH
+    && value === value.trim()
+    && !MEMBERSHIP_VERSION_CONTROL_PATTERN.test(value)
+  ) {
+    return value;
+  }
+  throw unauthorizedGrant();
+}
+
 function hashSecret(secret) {
   return createHash('sha256').update(secret, 'utf8').digest('hex');
 }
@@ -138,11 +154,13 @@ async function recordAuditBestEffort(auditSink, event) {
  * require a separate rotation/revocation lifecycle.
  *
  * MembershipRevocationPort.assertActive() returns an opaque membership version
- * captured during the active-state check. AccessGrantRepository must compare
- * that version against live membership state inside consumeGrantAtomically(),
- * closing the revoke-between-check-and-consume race. Adapters without a shared
- * transaction boundary must atomically revoke affected grants when membership
- * changes instead.
+ * captured during the active-state check. The version must be either a
+ * non-negative safe integer or a trimmed, control-free string of at most 128
+ * characters. AccessGrantRepository must compare that version against live
+ * membership state inside consumeGrantAtomically(), closing the
+ * revoke-between-check-and-consume race. Adapters without a shared transaction
+ * boundary must atomically revoke affected grants when membership changes
+ * instead.
  *
  * Audit delivery is post-commit and best-effort at this domain boundary so a
  * sink outage never changes the result of an already durable grant operation.
@@ -247,10 +265,10 @@ export function createAccessGrantService({
     if (!existing) throw unauthorizedGrant();
     let membershipVersion;
     try {
-      membershipVersion = await membershipRevocation.assertActive({
+      membershipVersion = normalizeMembershipVersion(await membershipRevocation.assertActive({
         subjectId: existing.subject_id,
         projectId: existing.project_id,
-      });
+      }));
     } catch {
       throw unauthorizedGrant();
     }
