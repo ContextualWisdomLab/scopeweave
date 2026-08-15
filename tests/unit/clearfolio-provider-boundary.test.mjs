@@ -142,3 +142,49 @@ test('valid submit response remains compatible with the bounded transport', asyn
   assert.ok(options.signal instanceof AbortSignal);
   assert.ok(options.body instanceof FormData);
 });
+
+test('non-success provider responses cancel unread bodies without parsing downstream payloads', async () => {
+  let cancelledBodies = 0;
+  const privatePayload = 'private downstream payload that must remain unread';
+  responder = async () => new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode(privatePayload));
+      },
+      cancel() {
+        cancelledBodies += 1;
+      },
+    }),
+    {
+      status: 503,
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+    },
+  );
+
+  const operations = [
+    {
+      run: () => submitJob(1, 2, { name: 'x.txt', mime: 'text/plain', bytes: Buffer.from('x') }),
+      expected: 'clearfolio submit failed (503)',
+    },
+    {
+      run: () => jobStatus(1, 2, 'job-1'),
+      expected: 'clearfolio status failed (503)',
+    },
+    {
+      run: () => artifactUrl(1, 2, 'job-1'),
+      expected: 'clearfolio artifact-link failed (503)',
+    },
+  ];
+
+  for (const [index, operation] of operations.entries()) {
+    await assert.rejects(
+      operation.run,
+      (error) => {
+        assert.equal(error.message, operation.expected);
+        assert.doesNotMatch(error.message, /private downstream payload/);
+        return true;
+      },
+    );
+    assert.equal(cancelledBodies, index + 1, 'each rejected response body is explicitly cancelled');
+  }
+});
