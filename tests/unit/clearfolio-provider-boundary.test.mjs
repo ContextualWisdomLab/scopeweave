@@ -187,4 +187,28 @@ test('non-success provider responses cancel unread bodies without parsing downst
     );
     assert.equal(cancelledBodies, index + 1, 'each rejected response body is explicitly cancelled');
   }
+
+  responder = async () => new Response(null, { status: 503 });
+  await assert.rejects(
+    () => jobStatus(1, 2, 'job-1'),
+    /clearfolio status failed \(503\)/,
+  );
+  assert.equal(cancelledBodies, 3, 'a response without a body needs no cancellation');
+
+  responder = async () => new Response(
+    new ReadableStream({
+      cancel() {
+        throw new Error('private cancel failure');
+      },
+    }),
+    { status: 503 },
+  );
+  await assert.rejects(
+    () => artifactUrl(1, 2, 'job-1'),
+    (error) => {
+      assert.equal(error.message, 'clearfolio artifact-link failed (503)');
+      assert.doesNotMatch(error.message, /private cancel failure/);
+      return true;
+    },
+  );
 });
