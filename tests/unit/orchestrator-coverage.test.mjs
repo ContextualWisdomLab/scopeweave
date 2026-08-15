@@ -210,6 +210,13 @@ try {
   );
   assert.equal(released, true);
 
+  globalThis.fetch = async () => new Response('{not-json', { status: 200 });
+  await expectCode(
+    configured,
+    [{ role: 'user', content: 'non-json response' }],
+    'orchestrator_response_invalid',
+  );
+
   for (const [label, body] of [
     ['null-json', 'null'],
     ['primitive-json', '"string"'],
