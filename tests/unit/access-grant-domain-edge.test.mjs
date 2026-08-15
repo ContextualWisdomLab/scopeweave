@@ -95,6 +95,69 @@ for (const nowMs of [() => Number.NaN, () => -1]) {
   }), (error) => error.code === 'access_grant_unauthorized');
 }
 
+for (const membershipVersion of [
+  undefined,
+  null,
+  -1,
+  Number.NaN,
+  '',
+  '   ',
+  'membership\nversion',
+  'm'.repeat(129),
+  {},
+]) {
+  const repository = new ConsumableRepository();
+  let consumeCalls = 0;
+  const consume = repository.consumeGrantAtomically.bind(repository);
+  repository.consumeGrantAtomically = async (...args) => {
+    consumeCalls += 1;
+    return consume(...args);
+  };
+  const service = createAccessGrantService({
+    ...validPorts(),
+    repository,
+    membershipRevocation: { assertActive: async () => membershipVersion },
+  });
+  const grant = await service.mint({
+    subjectId: 'invalid-version-user',
+    projectId: 'invalid-version-project',
+    purpose: 'stream',
+    audience: 'scopeweave:stream',
+    ttlSeconds: 10,
+  });
+  await assert.rejects(service.redeem({
+    secret: grant.secret,
+    purpose: 'stream',
+    audience: 'scopeweave:stream',
+    projectId: 'invalid-version-project',
+  }), (error) => error.code === 'access_grant_unauthorized' && error.status === 401);
+  assert.equal(consumeCalls, 0, 'invalid membership versions must fail before the atomic consume boundary');
+}
+
+{
+  const repository = new ConsumableRepository();
+  repository.liveMembershipVersion = 'membership-v2';
+  const service = createAccessGrantService({
+    ...validPorts(),
+    repository,
+    membershipRevocation: { assertActive: async () => 'membership-v2' },
+  });
+  const grant = await service.mint({
+    subjectId: 'string-version-user',
+    projectId: 'string-version-project',
+    purpose: 'stream',
+    audience: 'scopeweave:stream',
+    ttlSeconds: 10,
+  });
+  const redeemed = await service.redeem({
+    secret: grant.secret,
+    purpose: 'stream',
+    audience: 'scopeweave:stream',
+    projectId: 'string-version-project',
+  });
+  assert.equal(redeemed.subjectId, 'string-version-user');
+}
+
 {
   const repository = new ConsumableRepository();
   let rejectAudit = true;
