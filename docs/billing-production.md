@@ -66,13 +66,18 @@ later lifecycle slice introduces durable checkout-attempt and idempotency state:
 - malformed or untrusted provider destinations: stable HTTP 502
   `billing_provider_invalid_response` with `Cache-Control: no-store`;
 - browser destination: parsed with `URL` and accepted only for HTTPS, exact
-  hostname `checkout.stripe.com`, default HTTPS port, no URL credentials, and no
-  fragment.
+  hostname `checkout.stripe.com`, default HTTPS port, and no URL credentials.
 
 This exact-host check deliberately rejects suffix-confusion names such as
-`checkout.stripe.com.evil.example`. Stripe Checkout custom domains are not
-silently trusted. Supporting one requires a separate operator-owned allowlist or
-canonical-domain configuration contract and its own regression evidence.
+`checkout.stripe.com.evil.example`. Stripe's current Checkout Session API
+reference shows a standard hosted `checkout.stripe.com` URL containing an opaque
+`#fidk...` fragment. ScopeWeave therefore preserves provider-issued fragments
+verbatim after the authority checks instead of treating a fragment as an origin
+or hostname decision.
+
+Stripe Checkout custom domains are not silently trusted. Supporting one requires
+a separate operator-owned allowlist or canonical-domain configuration contract
+and its own regression evidence.
 
 Provider exception text, network addresses, and credentials are never copied
 into the browser error payload. The customer receives a retry/diagnostic next
@@ -116,8 +121,9 @@ Before a billing-enabled rollout:
 4. Exercise provider timeout/failure handling and confirm callers receive only
    the stable no-store 502 contract without network or credential detail.
 5. Reject null, malformed, plaintext, credential-bearing, non-standard-port,
-   fragmented, and hostname-confusion Checkout destinations; accept the standard
-   active `https://checkout.stripe.com/...` hosted destination.
+   and hostname-confusion Checkout destinations; accept and preserve the exact
+   standard `https://checkout.stripe.com/...#...` hosted destination, including
+   its provider-issued fragment.
 6. Verify the official Stripe SDK is packaged and lockfile-pinned before enabling
    live billing in a clean deployment.
 7. Keep the rollout blocked until the remaining #488 lifecycle controls are

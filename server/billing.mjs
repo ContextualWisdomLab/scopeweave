@@ -80,8 +80,7 @@ function validateHostedCheckoutUrl(rawUrl) {
     || checkoutUrl.hostname !== 'checkout.stripe.com'
     || checkoutUrl.port !== ''
     || checkoutUrl.username !== ''
-    || checkoutUrl.password !== ''
-    || checkoutUrl.hash !== '';
+    || checkoutUrl.password !== '';
   if (untrustedDestination) {
     throw providerFailure(
       'billing_provider_invalid_response',
@@ -89,6 +88,9 @@ function validateHostedCheckoutUrl(rawUrl) {
     );
   }
 
+  // Stripe's documented hosted Checkout URLs can include an opaque client-side
+  // fragment. It does not participate in HTTPS authority selection and must be
+  // preserved verbatim so the browser receives the provider-issued URL intact.
   return rawUrl;
 }
 
@@ -105,8 +107,8 @@ async function defaultStripeClientFactory(secretKey, clientOptions) {
  * successful mock exists only in explicit development mode; an unconfigured
  * production capability returns HTTP 503 instead of pretending checkout worked.
  * Live provider calls use one bounded attempt until durable checkout-attempt
- * idempotency state exists, and the returned hosted destination is accepted only
- * from Stripe's standard HTTPS Checkout authority.
+ * idempotency state exists. The hosted destination must use Stripe's standard
+ * HTTPS authority; provider-issued client fragments are preserved verbatim.
  *
  * @param {object} options - Checkout inputs and optional deterministic test seams.
  * @param {string|number} options.orgId - Organization that owns the checkout.

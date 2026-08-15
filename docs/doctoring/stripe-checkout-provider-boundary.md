@@ -28,7 +28,9 @@ For hosted Stripe Checkout, this slice applies four narrow controls:
 3. The returned Checkout Session `url` is parsed with the platform `URL` parser
    and accepted only when it uses HTTPS, has exact hostname
    `checkout.stripe.com`, uses the default HTTPS port, and contains no URL
-   credentials or fragment.
+   credentials. Provider-issued fragments are preserved verbatim because Stripe's
+   primary Checkout Session examples include an opaque `#fidk...` client
+   fragment; fragments do not participate in HTTPS authority selection.
 4. Provider transport/import failures and invalid provider responses become
    stable, `Cache-Control: no-store` HTTP 502 responses. Internal network text,
    provider exception detail, and credentials are not reflected to callers.
@@ -41,6 +43,12 @@ suffix matching, so `checkout.stripe.com.evil.example` is not trusted.
 Stripe documents hosted Checkout Session URLs as nullable and present only while
 the Session is active. Without a configured Checkout custom domain, Stripe uses
 `checkout.stripe.com`; configured custom domains use the merchant's subdomain.
+The current Stripe API reference returns an example hosted Checkout URL with an
+opaque fragment after the session path, so rejecting all fragments would reject
+a documented provider response. ScopeWeave therefore validates the URL authority
+and preserves the provider-issued URL, including its fragment, without parsing
+or rewriting that fragment.
+
 ScopeWeave does **not** silently trust arbitrary custom domains in this slice.
 Supporting one requires a future operator-owned allowlist/configuration contract
 and tests proving the configured authority cannot be replaced by provider or
@@ -55,14 +63,24 @@ an exact lockfile change before this PR leaves Draft.
 ## TDD evidence
 
 Test-only commit `9373ac2719600d0e159b22557733a4c75def8744` added the provider
-contract before production changes. Reproducing that exact parent billing source
-under Node.js 22.16.0 failed as expected because `checkout.sessions.create`
-received no request options: expected `{ maxNetworkRetries: 0, timeout: 15000 }`,
-actual `undefined`.
+transport/authority contract before production changes. Reproducing that exact
+parent billing source under Node.js 22.16.0 failed as expected because
+`checkout.sessions.create` received no request options: expected
+`{ maxNetworkRetries: 0, timeout: 15000 }`, actual `undefined`.
 
-The same regression suite also specifies invalid destination rejection and
-sanitized provider failures. Those tests remain under the canonical c8 coverage
-producer; no test or gate is removed to obtain GREEN.
+After the first implementation, a fresh primary-source compatibility audit found
+that Stripe's current Checkout Session API example contains an opaque fragment in
+its hosted `url`. Regression-only commit
+`2abef790585c5c62f5451624d887df3f9fa14227` changed the successful fixture to a
+Stripe-shaped `#fidk...` URL while leaving production code unchanged. The exact
+pre-fix implementation then reproduced RED locally as HTTP 502 because it
+blanket-rejected `URL.hash`.
+
+The causal repair removes only fragment rejection; HTTPS scheme, exact hostname,
+default port, and no-credential checks remain intact. The focused suite also
+specifies invalid destination rejection and sanitized provider failures. Those
+tests remain under the canonical c8 coverage producer; no test or gate is removed
+to obtain GREEN.
 
 ## Rollback
 
