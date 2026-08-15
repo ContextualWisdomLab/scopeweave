@@ -1,0 +1,180 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+
+import {
+  ACCESS_GRANT_AUDIENCES,
+  ACCESS_GRANT_PURPOSES,
+  createAccessGrantService,
+} from '../../server/access_grant_domain.mjs';
+import {
+  createSqliteAccessGrantAuthorizationPort,
+  createSqliteAccessGrantMembershipPort,
+  createSqliteAccessGrantRepository,
+  installAccessGrantSchema,
+} from '../../server/access_grant_sqlite.mjs';
+
+function fixture() {
+  const db = new DatabaseSync(':memory:');
+  db.exec(`
+    PRAGMA foreign_keys = ON;
+    CREATE TABLE users (id INTEGER PRIMARY KEY, token_version INTEGER NOT NULL DEFAULT 0);
+    CREATE TABLE orgs (id INTEGER PRIMARY KEY);
+    CREATE TABLE memberships (
+      id INTEGER PRIMARY KEY,
+      org_id INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      UNIQUE(org_id, user_id)
+    );
+    CREATE TABLE projects (
+      id INTEGER PRIMARY KEY,
+      org_id INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE
+    );
+    CREATE TABLE attachments (
+      id INTEGER PRIMARY KEY,
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      status TEXT NOT NULL
+    );
+    INSERT INTO users(id, token_version) VALUES (1, 0), (2, 0);
+    INSERT INTO orgs(id) VALUES (10), (20);
+    INSERT INTO memberships(id, org_id, user_id) VALUES (100, 10, 1), (200, 20, 2);
+    INSERT INTO projects(id, org_id) VALUES (1000, 10), (2000, 20);
+    INSERT INTO attachments(id, project_id, status) VALUES (5000, 1000, 'SUCCEEDED');
+  `);
+  installAccessGrantSchema(db);
+  return db;
+}
+
+function deterministicRandom() {
+  let value = 9;
+  return {
+    randomBytes(length) {
+      value += 1;
+      return new Uint8Array(length).fill(value);
+    },
+  };
+}
+
+function createService(db, nowMs = 5_000) {
+  return createAccessGrantService({
+    repository: createSqliteAccessGrantRepository(db),
+    clock: { nowMs: () => nowMs },
+    randomSource: deterministicRandom(),
+    auditSink: { record: async () => {} },
+    projectAuthorization: createSqliteAccessGrantAuthorizationPort(db),
+    membershipRevocation: createSqliteAccessGrantMembershipPort(db),
+  });
+}
+
+test('adapter factories reject missing database capabilities and schema install is idempotent', () => {
+  assert.throws(() => installAccessGrantSchema(), /requires a database/);
+  assert.throws(() => createSqliteAccessGrantRepository({ exec() {} }), /requires a database/);
+  assert.throws(() => createSqliteAccessGrantAuthorizationPort({ prepare() {} }), /requires a database/);
+  assert.throws(() => createSqliteAccessGrantMembershipPort(null), /requires a database/);
+
+  const db = fixture();
+  assert.doesNotThrow(() => installAccessGrantSchema(db), 'bootstrap may be repeated safely');
+  db.close();
+});
+
+test('repository returns null for unknown hashes and rejects a mismatched binding without consuming', async () => {
+  const db = fixture();
+  const repository = createSqliteAccessGrantRepository(db);
+  assert.equal(await repository.findGrantByHash('0'.repeat(64)), null);
+
+  const service = createService(db);
+  const minted = await service.mint({
+    subjectId: '1',
+    projectId: '1000',
+    purpose: ACCESS_GRANT_PURPOSES.ATTACHMENT_VIEW,
+    audience: ACCESS_GRANT_AUDIENCES.ATTACHMENT_VIEW,
+    attachmentId: '5000',
+    ttlSeconds: 60,
+  });
+
+  await assert.rejects(
+    service.redeem({
+      secret: minted.secret,
+      purpose: ACCESS_GRANT_PURPOSES.ATTACHMENT_VIEW,
+      audience: ACCESS_GRANT_AUDIENCES.ATTACHMENT_VIEW,
+      projectId: '1000',
+      attachmentId: '5001',
+    }),
+    (error) => error?.code === 'access_grant_unauthorized',
+  );
+  assert.equal(
+    db.prepare('SELECT used_at_ms FROM access_grants WHERE grant_id = ?').get(minted.grantId).used_at_ms,
+    null,
+    'wrong resource binding does not burn the correct grant',
+  );
+  db.close();
+});
+
+test('stream grants exercise null-resource persistence and project-only authorization', async () => {
+  const db = fixture();
+  const service = createService(db);
+  const minted = await service.mint({
+    subjectId: '1',
+    projectId: '1000',
+    purpose: ACCESS_GRANT_PURPOSES.STREAM,
+    audience: ACCESS_GRANT_AUDIENCES.STREAM,
+    ttlSeconds: 15,
+  });
+  const stored = db.prepare('SELECT attachment_id FROM access_grants WHERE grant_id = ?').get(minted.grantId);
+  assert.equal(stored.attachment_id, null);
+
+  const redeemed = await service.redeem({
+    secret: minted.secret,
+    purpose: ACCESS_GRANT_PURPOSES.STREAM,
+    audience: ACCESS_GRANT_AUDIENCES.STREAM,
+    projectId: '1000',
+  });
+  assert.equal(redeemed.attachmentId, null);
+
+  await assert.rejects(
+    service.mint({
+      subjectId: '1',
+      projectId: '2000',
+      purpose: ACCESS_GRANT_PURPOSES.STREAM,
+      audience: ACCESS_GRANT_AUDIENCES.STREAM,
+      ttlSeconds: 15,
+    }),
+    (error) => error?.code === 'access_grant_not_authorized',
+    'project-only authorization still enforces tenant membership',
+  );
+  db.close();
+});
+
+test('membership port fails closed after membership removal', async () => {
+  const db = fixture();
+  const membership = createSqliteAccessGrantMembershipPort(db);
+  assert.equal(await membership.assertActive({ subjectId: '1', projectId: '1000' }), '100:0');
+  db.prepare('DELETE FROM memberships WHERE id = 100').run();
+  await assert.rejects(
+    membership.assertActive({ subjectId: '1', projectId: '1000' }),
+    /membership_inactive/,
+  );
+  db.close();
+});
+
+test('database constraints reject impossible grant lifetimes', async () => {
+  const db = fixture();
+  const repository = createSqliteAccessGrantRepository(db);
+  await assert.rejects(
+    repository.insertGrant({
+      grant_id: 'agr_invalid',
+      token_hash: '1'.repeat(64),
+      subject_id: '1',
+      project_id: '1000',
+      purpose: ACCESS_GRANT_PURPOSES.STREAM,
+      audience: ACCESS_GRANT_AUDIENCES.STREAM,
+      attachment_id: null,
+      issued_at_ms: 10,
+      expires_at_ms: 10,
+      used_at_ms: null,
+      revoked_at_ms: null,
+    }),
+    /CHECK constraint failed/,
+  );
+  db.close();
+});
