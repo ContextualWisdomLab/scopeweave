@@ -39,6 +39,12 @@ export class OrchestratorConfigurationError extends Error {
 
 /**
  * Resolve explicit development mode or a complete authenticated production endpoint.
+ *
+ * The provider setting is an origin, not an arbitrary request URL. Rejecting
+ * credentials and additional URL components keeps endpoint authority separate
+ * from the bearer token and prevents operator-supplied path/query/fragment data
+ * from changing the fixed OpenAI-compatible request path.
+ *
  * @returns {{mock: true} | {mock: false, baseUrl: string, token: string}}
  */
 function orchestratorConfiguration() {
@@ -64,6 +70,30 @@ function orchestratorConfiguration() {
       'ORCHESTRATOR_URL must use HTTP or HTTPS.',
     );
   }
+  if (url.username || url.password) {
+    throw new OrchestratorConfigurationError(
+      'orchestrator_url_credentials_forbidden',
+      'ORCHESTRATOR_URL must not contain credentials.',
+    );
+  }
+  if (url.pathname !== '/') {
+    throw new OrchestratorConfigurationError(
+      'orchestrator_url_path_forbidden',
+      'ORCHESTRATOR_URL must identify the provider origin without a path.',
+    );
+  }
+  if (url.search) {
+    throw new OrchestratorConfigurationError(
+      'orchestrator_url_query_forbidden',
+      'ORCHESTRATOR_URL must not contain a query string.',
+    );
+  }
+  if (url.hash) {
+    throw new OrchestratorConfigurationError(
+      'orchestrator_url_fragment_forbidden',
+      'ORCHESTRATOR_URL must not contain a fragment.',
+    );
+  }
   if (url.protocol !== 'https:' && !LOOPBACK_HOSTNAMES.has(url.hostname)) {
     throw new OrchestratorConfigurationError(
       'orchestrator_transport_insecure',
@@ -76,7 +106,7 @@ function orchestratorConfiguration() {
       'ORCHESTRATOR_TOKEN is required for production requests.',
     );
   }
-  return { mock: false, baseUrl: url.toString().replace(/\/$/, ''), token: OC_TOKEN };
+  return { mock: false, baseUrl: url.origin, token: OC_TOKEN };
 }
 
 /**
@@ -312,14 +342,14 @@ export async function chat(messages, attribution) {
       'contextual-orchestrator could not be reached.',
     );
   }
-  const data = await responseJson(response);
-  const content = data?.choices?.[0]?.message?.content;
   if (!response.ok) {
     throw new OrchestratorConfigurationError(
       'orchestrator_provider_rejected',
       `contextual-orchestrator rejected the request with HTTP ${response.status}.`,
     );
   }
+  const data = await responseJson(response);
+  const content = data?.choices?.[0]?.message?.content;
   if (typeof content !== 'string' || !content.trim()) {
     throw new OrchestratorConfigurationError(
       'orchestrator_response_invalid',

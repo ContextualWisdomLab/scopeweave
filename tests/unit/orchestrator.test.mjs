@@ -54,6 +54,27 @@ try {
     (error) => error.code === 'orchestrator_transport_insecure',
   );
 
+  const invalidEndpointConfigurations = [
+    ['credentials', 'https://user:pass@orchestrator.example', 'orchestrator_url_credentials_forbidden'],
+    ['path', 'https://orchestrator.example/api', 'orchestrator_url_path_forbidden'],
+    ['query', 'https://orchestrator.example?tenant=scopeweave', 'orchestrator_url_query_forbidden'],
+    ['fragment', 'https://orchestrator.example#tenant', 'orchestrator_url_fragment_forbidden'],
+  ];
+  const transportBeforeEndpointChecks = globalThis.fetch;
+  globalThis.fetch = async () => {
+    throw new Error('invalid endpoint configuration must fail before transport');
+  };
+  for (const [label, url, expectedCode] of invalidEndpointConfigurations) {
+    process.env.ORCHESTRATOR_URL = url;
+    const invalidEndpoint = await freshModule(`invalid-endpoint-${label}`);
+    await assert.rejects(
+      invalidEndpoint.chat([{ role: 'user', content: 'status' }]),
+      (error) => error.code === expectedCode,
+      `${label} endpoint configuration fails before provider transport`,
+    );
+  }
+  globalThis.fetch = transportBeforeEndpointChecks;
+
   process.env.ORCHESTRATOR_URL = 'https://orchestrator.example';
   process.env.ORCHESTRATOR_MODEL = 'nvidia/nemotron-3-super-120b-a12b';
   const configured = await freshModule('configured');
@@ -99,11 +120,23 @@ try {
     (error) => error.code === 'orchestrator_provider_unavailable',
   );
 
-  globalThis.fetch = async () => new Response('not-json', { status: 502 });
+  let rejectedBodyRead = false;
+  globalThis.fetch = async () => ({
+    ok: false,
+    status: 502,
+    headers: new Headers({ 'content-type': 'text/plain' }),
+    body: {
+      getReader() {
+        rejectedBodyRead = true;
+        throw new Error('rejected provider body must not be parsed');
+      },
+    },
+  });
   await assert.rejects(
     configured.chat([{ role: 'user', content: 'status' }]),
-    (error) => error.code === 'orchestrator_response_invalid',
+    (error) => error.code === 'orchestrator_provider_rejected',
   );
+  assert.equal(rejectedBodyRead, false, 'non-success provider responses are classified before body parsing');
 
   globalThis.fetch = async () => new Response(JSON.stringify({
     choices: [{ message: { content: 'x'.repeat(1024 * 1024) } }],
