@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 
 const TOKEN_BYTES = 32;
+const GRANT_ID_BYTES = 16;
 const TOKEN_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const MAX_TTL_SECONDS = 300;
 
@@ -101,6 +102,13 @@ function encodeSecret(bytes) {
   return Buffer.from(bytes).toString('base64url');
 }
 
+function encodeGrantId(bytes) {
+  if (!(bytes instanceof Uint8Array) || bytes.byteLength !== GRANT_ID_BYTES) {
+    throw new TypeError(`access-grant random source must return ${GRANT_ID_BYTES} bytes for grant id`);
+  }
+  return `agr_${Buffer.from(bytes).toString('hex')}`;
+}
+
 function readNow(clock) {
   const nowMs = clock.nowMs();
   if (!Number.isSafeInteger(nowMs) || nowMs < 0) {
@@ -171,7 +179,7 @@ export function createAccessGrantService({
     }
     const secret = encodeSecret(randomSource.randomBytes(TOKEN_BYTES));
     const tokenHash = hashSecret(secret);
-    const grantId = `agr_${tokenHash.slice(0, 16)}`;
+    const grantId = encodeGrantId(randomSource.randomBytes(GRANT_ID_BYTES));
     const record = {
       grant_id: grantId,
       token_hash: tokenHash,
