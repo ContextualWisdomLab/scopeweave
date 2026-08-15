@@ -51,6 +51,11 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage:cases'],
+  /tests\/unit\/billing-checkout-reconciliation\.test\.mjs/,
+  'the Checkout reconciliation operator regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
   /tests\/unit\/billing-provider-boundary\.test\.mjs/,
   'the Stripe provider trust and transport regression executes under c8',
 );
