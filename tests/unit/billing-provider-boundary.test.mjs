@@ -179,11 +179,15 @@ test('provider response declarations and streamed bytes are bounded before JSON 
     }
 
     let cancelled = false;
+    let pullCount = 0;
     const oversizedBody = new ReadableStream({
-      start(controller) {
-        controller.enqueue(new Uint8Array(providerResponseLimitBytes));
-        controller.enqueue(Uint8Array.of(0x20));
-        controller.close();
+      pull(controller) {
+        pullCount += 1;
+        if (pullCount === 1) {
+          controller.enqueue(new Uint8Array(providerResponseLimitBytes));
+        } else {
+          controller.enqueue(Uint8Array.of(0x20));
+        }
       },
       cancel() {
         cancelled = true;
