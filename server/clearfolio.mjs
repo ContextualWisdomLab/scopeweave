@@ -8,7 +8,8 @@ const CF_SECRET = String(process.env.CLEARFOLIO_HMAC_SECRET || '');
 const PERMISSIONS = 'job:create,job:read,viewer:read,artifact-link:create';
 const CLEARFOLIO_JOB_STATUSES = new Set(['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED']);
 const MIN_HMAC_SECRET_LENGTH = 32;
-const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '::1']);
+// WHATWG URL serializes an IPv6 hostname with brackets (`[::1]`).
+const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
 const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
 const MAX_DOCUMENT_NAME_LENGTH = 512;
 const MAX_MIME_LENGTH = 255;
