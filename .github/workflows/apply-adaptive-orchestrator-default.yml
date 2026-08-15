@@ -1,0 +1,60 @@
+name: Apply adaptive contextual-orchestrator default
+
+on:
+  push:
+    branches:
+      - agent/adaptive-orchestrator-default
+    paths:
+      - scripts/apply_adaptive_orchestrator_default.mjs
+      - .github/workflows/apply-adaptive-orchestrator-default.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-adaptive-orchestrator-default-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  apply-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Apply bounded source transformation
+        run: node scripts/apply_adaptive_orchestrator_default.mjs
+
+      - name: Run adaptive-mode regression
+        run: node tests/unit/orchestrator-adaptive-mode.test.mjs
+
+      - name: Run full unit suite
+        run: npm run test:unit
+
+      - name: Inspect patch
+        run: git diff --check
+
+      - name: Publish verified implementation commit
+        env:
+          TARGET_BRANCH: agent/adaptive-orchestrator-default
+        run: |
+          rm scripts/apply_adaptive_orchestrator_default.mjs
+          rm .github/workflows/apply-adaptive-orchestrator-default.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          git diff --cached --check
+          git commit -m "fix(ai): default to adaptive contextual orchestration"
+          git push origin "HEAD:${TARGET_BRANCH}"
