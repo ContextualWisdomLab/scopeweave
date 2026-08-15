@@ -36,10 +36,12 @@ function withSavepoint(db, name, operation) {
  * Install the durable access-grant schema during database bootstrap.
  *
  * The usable-grant relation stores only SHA-256 token hashes and resource
- * bindings. A separate immutable audit-outbox relation records each successful
- * security transition in the same SQLite transaction while deliberately
- * retaining evidence after subject/project/attachment deletion. Schema DDL is
- * installed at process/database bootstrap, never from a request handler.
+ * bindings, including the opaque membership identity/session version captured
+ * when the grant becomes durable. A separate immutable audit-outbox relation
+ * records each successful security transition in the same SQLite transaction
+ * while deliberately retaining evidence after subject/project/attachment
+ * deletion. Schema DDL is installed at process/database bootstrap, never from
+ * a request handler.
  *
  * @param {object} database Node SQLite-compatible database handle.
  * @returns {void}
@@ -55,6 +57,7 @@ export function installAccessGrantSchema(database) {
       purpose TEXT NOT NULL,
       audience TEXT NOT NULL,
       attachment_id INTEGER REFERENCES attachments(id) ON DELETE CASCADE,
+      membership_version TEXT NOT NULL,
       issued_at_ms INTEGER NOT NULL CHECK(issued_at_ms >= 0),
       expires_at_ms INTEGER NOT NULL CHECK(expires_at_ms > issued_at_ms),
       used_at_ms INTEGER,
@@ -87,12 +90,15 @@ export function installAccessGrantSchema(database) {
 /**
  * Create the SQLite implementation of the AccessGrantRepository port.
  *
- * Mint persistence and its immutable audit evidence commit under one savepoint.
- * One-time redemption is one conditional UPDATE plus its immutable consume
- * evidence under one savepoint. The consume condition binds purpose, audience,
- * resource, expiry, unused/unrevoked state, and the exact current membership
- * identity plus session token version. Concurrent consumers cannot both move
- * the row from unused to used.
+ * Mint persistence captures the current membership-row identity plus session
+ * token version and commits that snapshot with the grant and immutable audit
+ * evidence under one savepoint. One-time redemption is one conditional UPDATE
+ * plus its immutable consume evidence under one savepoint. The consume condition
+ * binds purpose, audience, resource, expiry, unused/unrevoked state, the
+ * mint-time membership version, and the exact live membership version.
+ * Concurrent consumers cannot both move the row from unused to used, and a
+ * logout-all/password change or membership remove/re-add after mint invalidates
+ * the outstanding grant.
  *
  * Savepoints make this adapter safe both as a top-level transaction boundary
  * and when a future caller already owns a wider SQLite transaction.
@@ -102,11 +108,19 @@ export function installAccessGrantSchema(database) {
  */
 export function createSqliteAccessGrantRepository(database) {
   const db = requireDatabase(database);
+  const membershipAtMint = db.prepare(`
+    SELECT CAST(m.id AS TEXT) || ':' || CAST(u.token_version AS TEXT) AS membership_version
+      FROM projects p
+      JOIN memberships m ON m.org_id = p.org_id
+      JOIN users u ON u.id = m.user_id
+     WHERE p.id = ? AND m.user_id = ?
+  `);
   const insert = db.prepare(`
     INSERT INTO access_grants(
       grant_id, token_hash, subject_id, project_id, purpose, audience,
-      attachment_id, issued_at_ms, expires_at_ms, used_at_ms, revoked_at_ms
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?)
+      attachment_id, membership_version, issued_at_ms, expires_at_ms,
+      used_at_ms, revoked_at_ms
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
   `);
   const find = db.prepare('SELECT * FROM access_grants WHERE token_hash = ?');
   const insertAudit = db.prepare(`
@@ -126,6 +140,7 @@ export function createSqliteAccessGrantRepository(database) {
        AND used_at_ms IS NULL
        AND revoked_at_ms IS NULL
        AND ? < expires_at_ms
+       AND membership_version = ?
        AND EXISTS (
          SELECT 1
            FROM projects p
@@ -140,10 +155,16 @@ export function createSqliteAccessGrantRepository(database) {
   return Object.freeze({
     /**
      * Persist one already-validated hash-only grant and its durable mint event.
-     * Either both rows commit or neither row does.
+     * The current membership identity/session version is captured inside the
+     * same savepoint. Either grant, snapshot, and audit evidence all commit or
+     * none of them do.
      */
     async insertGrant(record) {
       withSavepoint(db, INSERT_SAVEPOINT, () => {
+        const membership = membershipAtMint.get(record.project_id, record.subject_id);
+        if (!membership?.membership_version) {
+          throw new Error('access_grant_membership_inactive');
+        }
         insert.run(
           record.grant_id,
           record.token_hash,
@@ -152,6 +173,7 @@ export function createSqliteAccessGrantRepository(database) {
           record.purpose,
           record.audience,
           record.attachment_id,
+          String(membership.membership_version),
           record.issued_at_ms,
           record.expires_at_ms,
           record.used_at_ms,
@@ -176,12 +198,13 @@ export function createSqliteAccessGrantRepository(database) {
     },
 
     /**
-     * Consume a grant exactly once while revalidating the captured membership
-     * version inside the same conditional state transition and transactionally
-     * retaining immutable consume evidence.
+     * Consume a grant exactly once while requiring the current membership
+     * version to match both the mint-time snapshot and the live database state
+     * inside the same conditional transition, with immutable consume evidence.
      */
     async consumeGrantAtomically(tokenHash, binding) {
       return withSavepoint(db, CONSUME_SAVEPOINT, () => {
+        const currentMembershipVersion = String(binding.membership_version);
         const result = consume.run(
           binding.now_ms,
           tokenHash,
@@ -191,7 +214,8 @@ export function createSqliteAccessGrantRepository(database) {
           binding.attachment_id,
           binding.attachment_id,
           binding.now_ms,
-          String(binding.membership_version),
+          currentMembershipVersion,
+          currentMembershipVersion,
         );
         if (Number(result.changes) !== 1) return null;
         const consumed = find.get(tokenHash);
@@ -258,7 +282,8 @@ export function createSqliteAccessGrantAuthorizationPort(database) {
  * The version combines the durable membership-row identity with the user's
  * session token version. Membership removal/re-addition changes the former;
  * logout-all/password-style session invalidation changes the latter. The
- * repository rechecks this exact value inside its atomic consume statement.
+ * repository compares this current version with both its mint-time snapshot
+ * and live membership state inside the atomic consume statement.
  *
  * @param {object} database Node SQLite-compatible database handle.
  * @returns {{assertActive: Function}}
