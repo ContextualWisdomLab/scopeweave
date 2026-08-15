@@ -109,6 +109,7 @@ test('SQLite adapter persists only a hash and consumes one attachment grant once
   assert.equal(stored.subject_id, 1);
   assert.equal(stored.project_id, 1000);
   assert.equal(stored.attachment_id, 5000);
+  assert.equal(stored.membership_version, '100:0', 'mint snapshots membership identity and token version');
   assert.notEqual(stored.token_hash, minted.secret);
   assert.equal(stored.token_hash.length, 64, 'SHA-256 hash is persisted');
   assert.equal(Object.hasOwn(stored, 'secret'), false, 'plaintext secret is not a schema field');
@@ -128,7 +129,7 @@ test('SQLite adapter persists only a hash and consumes one attachment grant once
   db.close();
 });
 
-test('SQLite adapter atomically binds membership version to redemption', async () => {
+test('SQLite adapter atomically binds mint-time membership version to redemption', async () => {
   const db = new DatabaseSync(':memory:');
   installCoreSchema(db);
   seed(db);
