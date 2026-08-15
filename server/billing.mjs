@@ -5,6 +5,8 @@ import { HTTPException } from 'hono/http-exception';
 import { validateBillingStartupConfiguration } from './billing_configuration.mjs';
 
 const billingConfiguration = validateBillingStartupConfiguration();
+const STRIPE_CHECKOUT_ENDPOINT = 'https://api.stripe.com/v1/checkout/sessions';
+const STRIPE_REQUEST_TIMEOUT_MS = 15_000;
 
 export const PLANS = {
   free: { name: 'Free', limits: { projects: 2, members: 3 }, priceKrw: 0 },
@@ -40,9 +42,38 @@ function billingUnavailableResponse() {
   });
 }
 
+function stripeCheckoutForm(payload) {
+  return new URLSearchParams([
+    ['mode', payload.mode],
+    ['line_items[0][price]', payload.line_items[0].price],
+    ['line_items[0][quantity]', String(payload.line_items[0].quantity)],
+    ['success_url', payload.success_url],
+    ['cancel_url', payload.cancel_url],
+    ['client_reference_id', payload.client_reference_id],
+    ['metadata[orgId]', payload.metadata.orgId],
+  ]);
+}
+
 async function defaultStripeClientFactory(secretKey) {
-  const { default: Stripe } = await import('stripe');
-  return new Stripe(secretKey);
+  return {
+    checkout: {
+      sessions: {
+        async create(payload) {
+          const response = await fetch(STRIPE_CHECKOUT_ENDPOINT, {
+            method: 'POST',
+            redirect: 'error',
+            signal: AbortSignal.timeout(STRIPE_REQUEST_TIMEOUT_MS),
+            headers: {
+              authorization: `Bearer ${secretKey}`,
+              'content-type': 'application/x-www-form-urlencoded',
+            },
+            body: stripeCheckoutForm(payload).toString(),
+          });
+          return response.json();
+        },
+      },
+    },
+  };
 }
 
 /**
@@ -58,7 +89,7 @@ async function defaultStripeClientFactory(secretKey) {
  * @param {{mode: 'disabled'|'mock'|'live', publicOrigin: string|null}} [options.configuration]
  *   Validated billing capability; defaults to startup configuration.
  * @param {(secretKey: string) => Promise<object>} [options.stripeClientFactory]
- *   Stripe client factory; injectable for deterministic provider-contract tests.
+ *   Stripe-compatible provider factory; injectable for deterministic contract tests.
  * @returns {Promise<{url: string, live: boolean, mock?: boolean}>} Checkout target.
  * @throws {HTTPException} HTTP 503 when production billing is not configured.
  */
