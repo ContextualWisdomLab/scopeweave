@@ -119,10 +119,15 @@ for (const missing of [
   assert.equal(grant.audience, 'scopeweave:stream');
   assert.equal(grant.attachmentId, null);
   assert.equal(grant.expiresAtMs, Date.UTC(2026, 7, 15, 10, 5, 0));
-  assert.match(grant.grantId, /^agr_[a-f0-9]{16}$/);
+  assert.match(grant.grantId, /^agr_[a-f0-9]{32}$/);
   assert.deepEqual(authorizationCalls, [{ subjectId: 'user-7', projectId: 'project-42', purpose: 'stream', attachmentId: null }]);
 
   const tokenHash = createHash('sha256').update(grant.secret, 'utf8').digest('hex');
+  assert.notEqual(
+    grant.grantId.slice(4),
+    tokenHash.slice(0, 32),
+    'audit correlation identifiers are independently random, not secret-hash prefixes',
+  );
   const stored = repository.records.get(tokenHash);
   assert.ok(stored, 'the repository is keyed by the SHA-256 token hash');
   assert.equal(stored.token_hash, tokenHash);
