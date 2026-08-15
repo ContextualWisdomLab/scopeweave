@@ -82,15 +82,6 @@ function stripeCheckoutForm(payload) {
   ]);
 }
 
-async function discardResponseBody(response) {
-  if (!response.body) return;
-  try {
-    await response.body.cancel();
-  } catch {
-    // Cleanup failure is intentionally private; the stable provider category wins.
-  }
-}
-
 async function createStripeSessionWithFetch(secretKey, payload) {
   let response;
   try {
@@ -109,13 +100,11 @@ async function createStripeSessionWithFetch(secretKey, payload) {
   }
 
   if (!response.ok) {
-    await discardResponseBody(response);
     throw providerUnavailableFailure();
   }
 
   const mediaType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
   if (mediaType !== 'application/json') {
-    await discardResponseBody(response);
     throw providerInvalidResponseFailure();
   }
 
