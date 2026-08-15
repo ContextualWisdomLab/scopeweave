@@ -22,7 +22,10 @@ test('projects Phase → Activity → Task → Duty without changing source reco
   const projected = projectWorkItemHierarchy(source);
 
   assert.deepEqual(source, before, 'projection must not mutate persisted plan input');
-  assert.deepEqual(WORK_ITEM_LEVELS, Object.freeze(['phase', 'activity', 'task', 'duty']));
+  assert.deepEqual(WORK_ITEM_LEVELS, ['phase', 'activity', 'task', 'duty']);
+  assert.equal(Object.isFrozen(WORK_ITEM_LEVELS), true, 'canonical level vocabulary is immutable');
+  assert.equal(projected.every((item) => Object.isFrozen(item)), true, 'projection wrappers are immutable');
+  assert.equal(projected.every((item) => Object.isFrozen(item.record)), true, 'projected record copies are immutable');
   assert.deepEqual(projected.map(({ record, kind }) => ({
     id: record.id,
     parentId: record.parentId,
