@@ -297,6 +297,30 @@ async function responseJson(response) {
 }
 
 /**
+ * Cancel an unread non-success provider response before returning a fixed rejection.
+ *
+ * Undici-backed fetch bodies must be consumed or cancelled for predictable
+ * connection reuse. Cancellation failures remain private cleanup details and
+ * never replace the stable provider-rejection classification.
+ *
+ * @param {Response} response rejected provider response
+ * @returns {Promise<never>}
+ */
+async function rejectProviderResponse(response) {
+  try {
+    if (response?.body && typeof response.body.cancel === 'function') {
+      await response.body.cancel();
+    }
+  } catch {
+    // Provider rejection remains authoritative even if cleanup fails.
+  }
+  throw new OrchestratorConfigurationError(
+    'orchestrator_provider_rejected',
+    `contextual-orchestrator rejected the request with HTTP ${response.status}.`,
+  );
+}
+
+/**
  * Generate one AI briefing through contextual-orchestrator.
  * @param {unknown} messages OpenAI-compatible messages
  * @param {unknown} [attribution] optional bounded business cost-attribution labels
@@ -342,12 +366,7 @@ export async function chat(messages, attribution) {
       'contextual-orchestrator could not be reached.',
     );
   }
-  if (!response.ok) {
-    throw new OrchestratorConfigurationError(
-      'orchestrator_provider_rejected',
-      `contextual-orchestrator rejected the request with HTTP ${response.status}.`,
-    );
-  }
+  if (!response.ok) return rejectProviderResponse(response);
   const data = await responseJson(response);
   const content = data?.choices?.[0]?.message?.content;
   if (typeof content !== 'string' || !content.trim()) {
