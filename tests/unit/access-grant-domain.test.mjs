@@ -10,6 +10,7 @@ import {
 class MemoryGrantRepository {
   constructor() {
     this.records = new Map();
+    this.liveMembershipVersion = 1;
   }
 
   async insertGrant(record) {
@@ -30,6 +31,7 @@ class MemoryGrantRepository {
     if (record.purpose !== expected.purpose || record.audience !== expected.audience) return null;
     if (record.project_id !== expected.project_id) return null;
     if ((record.attachment_id ?? null) !== (expected.attachment_id ?? null)) return null;
+    if (expected.membership_version !== this.liveMembershipVersion) return null;
     record.used_at_ms = expected.now_ms;
     return structuredClone(record);
   }
@@ -61,6 +63,7 @@ function makeHarness() {
     async assertActive(input) {
       membershipCalls.push(structuredClone(input));
       if (input.subjectId === 'removed-user') throw new Error('membership revoked');
+      return repository.liveMembershipVersion;
     },
   };
   const auditSink = { async record(event) { auditEvents.push(structuredClone(event)); } };
@@ -99,7 +102,7 @@ for (const missing of [
     randomSource: deterministicRandomSource(),
     auditSink: { record: async () => {} },
     projectAuthorization: { assertCanIssue: async () => {} },
-    membershipRevocation: { assertActive: async () => {} },
+    membershipRevocation: { assertActive: async () => 1 },
   };
   delete dependencies[missing];
   assert.throws(() => createAccessGrantService(dependencies), /access-grant dependency/);
