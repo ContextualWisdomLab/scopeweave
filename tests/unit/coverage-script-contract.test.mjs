@@ -59,6 +59,11 @@ assert.match(
   /tests\/unit\/schedule-outcome-domain\.test\.mjs/,
   'the schedule-outcome behavior contract executes under c8',
 );
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/schedule-outcome-domain-edge\.test\.mjs/,
+  'the schedule-outcome failure-boundary contract executes under c8',
+);
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
   /npm run (?:coverage|test:coverage)(?:\s|$)/,
