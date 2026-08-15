@@ -23,7 +23,12 @@ test('projects Phase → Activity → Task → Duty without changing source reco
 
   assert.deepEqual(source, before, 'projection must not mutate persisted plan input');
   assert.deepEqual(WORK_ITEM_LEVELS, Object.freeze(['phase', 'activity', 'task', 'duty']));
-  assert.deepEqual(projected.map(({ id, parentId, depth, kind }) => ({ id, parentId, depth, kind })), [
+  assert.deepEqual(projected.map(({ record, kind }) => ({
+    id: record.id,
+    parentId: record.parentId,
+    depth: record.depth,
+    kind,
+  })), [
     { id: 'phase-alpha', parentId: null, depth: 1, kind: 'phase' },
     { id: 'activity-research', parentId: 'phase-alpha', depth: 2, kind: 'activity' },
     { id: 'task-interviews', parentId: 'activity-research', depth: 3, kind: 'task' },
@@ -33,13 +38,31 @@ test('projects Phase → Activity → Task → Duty without changing source reco
   assert.deepEqual(projected.map((item) => item.sourceIndex), [0, 1, 2, 3, 4]);
 });
 
+test('preserves persisted fields even when their names overlap projection metadata', () => {
+  const source = [{
+    id: 'phase-root',
+    parentId: null,
+    depth: 1,
+    kind: 'customer-defined-kind',
+    sourceIndex: 'external-source-position',
+  }];
+
+  const [projected] = projectWorkItemHierarchy(source);
+
+  assert.equal(projected.kind, 'phase');
+  assert.equal(projected.sourceIndex, 0);
+  assert.deepEqual(projected.record, source[0]);
+  assert.equal(projected.record.kind, 'customer-defined-kind');
+  assert.equal(projected.record.sourceIndex, 'external-source-position');
+});
+
 test('preserves existing three-level plans exactly and never synthesizes duties', () => {
   const legacy = validFourLevelPlan().filter((item) => item.depth <= 3);
   const projected = projectWorkItemHierarchy(legacy);
 
   assert.equal(projected.length, legacy.length);
   assert.deepEqual(
-    projected.map(({ id, parentId, depth }) => ({ id, parentId, depth })),
+    projected.map(({ record }) => ({ id: record.id, parentId: record.parentId, depth: record.depth })),
     legacy.map(({ id, parentId, depth }) => ({ id, parentId, depth })),
   );
   assert.equal(projected.some((item) => item.kind === 'duty'), false);
@@ -56,8 +79,8 @@ test('normalizes only absent root parents and accepts an empty plan', () => {
   const rootWithoutParentProperty = [{ id: 'phase-root', depth: 1 }];
   assert.deepEqual(validateWorkItemHierarchy([]), { valid: true, errors: [] });
   assert.deepEqual(projectWorkItemHierarchy([]), []);
-  assert.equal(projectWorkItemHierarchy(rootWithoutParentProperty)[0].parentId, null);
-  assert.equal(projectWorkItemHierarchy([{ id: 'phase-root', parentId: '', depth: 1 }])[0].parentId, null);
+  assert.equal(projectWorkItemHierarchy(rootWithoutParentProperty)[0].record.parentId, null);
+  assert.equal(projectWorkItemHierarchy([{ id: 'phase-root', parentId: '', depth: 1 }])[0].record.parentId, null);
 });
 
 test('rejects duplicate public identifiers', () => {
@@ -158,6 +181,6 @@ test('handles a realistic 10,000-item portfolio hierarchy without changing IDs',
 
   const projected = projectWorkItemHierarchy(source);
   assert.equal(projected.length, 10_000);
-  assert.equal(projected[0].id, 'phase-0');
-  assert.equal(projected.at(-1).id, 'duty-2499');
+  assert.equal(projected[0].record.id, 'phase-0');
+  assert.equal(projected.at(-1).record.id, 'duty-2499');
 });
