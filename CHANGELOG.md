@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added an order-independent four-level Phase → Activity → Task → Duty domain
   validator/projection that preserves legacy three-level IDs and never
-  synthesizes customer work during migration.
+  synthesizes customer work during projection.
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS
   estimation coverage, dependency risk, and procurement package section checks.
 - Preserved PM-analysis research papers, NASA WBS handbook, BCP 14, and JSON
