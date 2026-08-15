@@ -63,7 +63,6 @@ test.describe('summary metric explanations', () => {
   for (const valueTestId of ['summary-planned-progress', 'summary-actual-progress']) {
     test(`${valueTestId} explanation keeps WCAG AA text contrast across its gradient`, async ({ page }) => {
       const card = page.getByTestId(valueTestId).locator('..');
-      const description = card.locator('.meta-description');
       const styles = await card.evaluate((element) => {
         const descriptionElement = element.querySelector('.meta-description');
         return {
