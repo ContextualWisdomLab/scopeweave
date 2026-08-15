@@ -1,11 +1,12 @@
 import { randomUUID as systemRandomUUID } from 'node:crypto';
 
 /**
- * Maximum age for reusing an unresolved Stripe idempotency identity.
+ * Maximum age for automatically replaying an unresolved Stripe idempotency key.
  *
- * Stripe documents that idempotency keys may be pruned after at least 24 hours.
- * ScopeWeave therefore uses a 23-hour ceiling so a locally reusable attempt never
- * intentionally crosses the provider's documented retention boundary.
+ * Stripe documents a 24-hour safe-retry horizon for POST idempotency. ScopeWeave
+ * stops automatic replay one hour earlier. Crossing this local ceiling never
+ * authorizes a fresh key: the attempt moves to `reconciliation_required` so a
+ * potentially side-effectful provider outcome cannot be duplicated by guesswork.
  */
 export const BILLING_CHECKOUT_REUSE_WINDOW_MS = 23 * 60 * 60 * 1000;
 
@@ -13,6 +14,23 @@ const MAX_PRICE_ID_LENGTH = 255;
 const MAX_PROVIDER_SESSION_ID_LENGTH = 255;
 const MAX_IDENTIFIER_LENGTH = 255;
 const SAVEPOINT_NAME = 'billing_checkout_attempt_write';
+
+/**
+ * Signals that a stale or temporally ambiguous provider attempt must be resolved
+ * from authoritative provider/webhook state before another Checkout can begin.
+ */
+export class BillingCheckoutReconciliationRequiredError extends Error {
+  /** @param {string} attemptId - Opaque local attempt requiring reconciliation. */
+  constructor(attemptId) {
+    super('checkout attempt requires authoritative reconciliation before retry');
+    this.name = 'BillingCheckoutReconciliationRequiredError';
+    this.code = 'billing_checkout_reconciliation_required';
+    Object.defineProperty(this, 'attemptId', {
+      value: attemptId,
+      enumerable: false,
+    });
+  }
+}
 
 function positiveOrganizationId(value) {
   const parsed = Number(value);
@@ -65,8 +83,8 @@ function withSavepoint(database, operation) {
  * The schema is intentionally separate from request handling. One row represents
  * one provider-attempt identity; organization and price facts are referenced or
  * recorded once, while provider outcome is a state of that same attempt. The
- * partial unique index guarantees at most one unresolved retry identity for an
- * organization/price pair.
+ * partial unique index guarantees at most one unresolved or reconciliation-held
+ * identity for an organization/price pair.
  *
  * @param {import('node:sqlite').DatabaseSync} database - Open SQLite database.
  * @returns {void}
@@ -78,7 +96,7 @@ export function installBillingCheckoutAttemptSchema(database) {
       organization_id INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
       price_id TEXT NOT NULL CHECK(length(price_id) BETWEEN 1 AND ${MAX_PRICE_ID_LENGTH}),
       idempotency_key TEXT NOT NULL UNIQUE CHECK(length(idempotency_key) BETWEEN 1 AND ${MAX_IDENTIFIER_LENGTH}),
-      attempt_state TEXT NOT NULL CHECK(attempt_state IN ('pending','provider_succeeded','provider_failed','expired')),
+      attempt_state TEXT NOT NULL CHECK(attempt_state IN ('pending','provider_succeeded','provider_failed','reconciliation_required')),
       provider_session_id TEXT CHECK(provider_session_id IS NULL OR length(provider_session_id) BETWEEN 1 AND ${MAX_PROVIDER_SESSION_ID_LENGTH}),
       created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
       updated_at_ms INTEGER NOT NULL CHECK(updated_at_ms >= created_at_ms),
@@ -87,9 +105,9 @@ export function installBillingCheckoutAttemptSchema(database) {
         OR (attempt_state <> 'provider_succeeded' AND provider_session_id IS NULL)
       )
     );
-    CREATE UNIQUE INDEX IF NOT EXISTS billing_checkout_pending_attempts
+    CREATE UNIQUE INDEX IF NOT EXISTS billing_checkout_unresolved_attempts
       ON billing_checkout_attempts(organization_id, price_id)
-      WHERE attempt_state = 'pending';
+      WHERE attempt_state IN ('pending','reconciliation_required');
   `);
 }
 
@@ -126,15 +144,17 @@ export function createSqliteBillingCheckoutAttemptRepository(
   const statements = () => {
     if (preparedStatements) return preparedStatements;
     preparedStatements = {
-      selectPending: database.prepare(`
-        SELECT attempt_id, idempotency_key, created_at_ms
+      selectUnresolved: database.prepare(`
+        SELECT attempt_id, idempotency_key, attempt_state, created_at_ms
         FROM billing_checkout_attempts
-        WHERE organization_id = ? AND price_id = ? AND attempt_state = 'pending'
+        WHERE organization_id = ?
+          AND price_id = ?
+          AND attempt_state IN ('pending','reconciliation_required')
         LIMIT 1
       `),
-      expirePending: database.prepare(`
+      requireReconciliation: database.prepare(`
         UPDATE billing_checkout_attempts
-        SET attempt_state = 'expired', updated_at_ms = ?
+        SET attempt_state = 'reconciliation_required', updated_at_ms = ?
         WHERE attempt_id = ? AND attempt_state = 'pending'
       `),
       insertAttempt: database.prepare(`
@@ -159,8 +179,9 @@ export function createSqliteBillingCheckoutAttemptRepository(
 
   return {
     /**
-     * Reuse only a still-pending, same-tenant/same-price identity inside the
-     * provider retention safety window; otherwise create fresh opaque authority.
+     * Reuse a still-pending same-tenant/same-price identity only inside the safe
+     * replay window. Stale, clock-ambiguous, or already-held attempts fail closed
+     * for authoritative reconciliation and never mint a speculative fresh key.
      */
     startAttempt({ organizationId, priceId }) {
       const organization = positiveOrganizationId(organizationId);
@@ -168,20 +189,29 @@ export function createSqliteBillingCheckoutAttemptRepository(
       const nowMs = safeNow(now);
       const sql = statements();
 
-      return withSavepoint(database, () => {
-        const pending = sql.selectPending.get(organization, price);
-        if (pending) {
-          const createdAtMs = Number(pending.created_at_ms);
+      const result = withSavepoint(database, () => {
+        const unresolved = sql.selectUnresolved.get(organization, price);
+        if (unresolved) {
+          if (unresolved.attempt_state === 'reconciliation_required') {
+            return { reconciliationRequiredAttemptId: unresolved.attempt_id };
+          }
+
+          const createdAtMs = Number(unresolved.created_at_ms);
           const ageMs = nowMs - createdAtMs;
           if (ageMs >= 0 && ageMs < BILLING_CHECKOUT_REUSE_WINDOW_MS) {
             return {
-              attemptId: pending.attempt_id,
-              idempotencyKey: pending.idempotency_key,
+              attemptId: unresolved.attempt_id,
+              idempotencyKey: unresolved.idempotency_key,
               state: 'pending',
               reused: true,
             };
           }
-          sql.expirePending.run(Math.max(nowMs, createdAtMs), pending.attempt_id);
+
+          sql.requireReconciliation.run(
+            Math.max(nowMs, createdAtMs),
+            unresolved.attempt_id,
+          );
+          return { reconciliationRequiredAttemptId: unresolved.attempt_id };
         }
 
         const attemptId = opaqueIdentifier(randomUUID, 'attemptId');
@@ -189,6 +219,13 @@ export function createSqliteBillingCheckoutAttemptRepository(
         sql.insertAttempt.run(attemptId, organization, price, idempotencyKey, nowMs, nowMs);
         return { attemptId, idempotencyKey, state: 'pending', reused: false };
       });
+
+      if (result.reconciliationRequiredAttemptId) {
+        throw new BillingCheckoutReconciliationRequiredError(
+          result.reconciliationRequiredAttemptId,
+        );
+      }
+      return result;
     },
 
     /** Mark one unresolved attempt successful and bind its provider session ID. */
