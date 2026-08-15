@@ -11,6 +11,13 @@ ORCHESTRATOR_TOKEN=<secret>
 ORCHESTRATOR_MODEL=contextual-orchestrator
 ```
 
+`ORCHESTRATOR_URL` is a provider **origin**, not an arbitrary request URL. It
+must not contain user-info credentials, a non-root path, a query string, or a
+fragment. ScopeWeave owns the fixed `/v1/chat/completions` request path and keeps
+bearer credentials in `ORCHESTRATOR_TOKEN`; operator URL text therefore cannot
+silently alter request routing or mix endpoint authority with credentials.
+Custom ports remain valid because they are part of the origin.
+
 Production requests fail closed when the endpoint or bearer token is absent.
 Non-loopback HTTP endpoints are rejected, requests are bounded to 120 seconds,
 message count and content size are validated, provider payloads are not exposed
