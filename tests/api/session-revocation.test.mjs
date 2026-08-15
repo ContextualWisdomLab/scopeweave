@@ -64,7 +64,7 @@ async function expectCalendarStatus(projectId, token, status, message) {
 
 async function expectAttachmentViewStatus(projectId, token, status, message) {
   const response = await req(
-    `/api/projects/${projectId}/attachments/missing/view`,
+    `/api/projects/${projectId}/attachments/999999/view`,
     { headers: { authorization: `Bearer ${token}` } },
   );
   assert.equal(response.status, status, message);
