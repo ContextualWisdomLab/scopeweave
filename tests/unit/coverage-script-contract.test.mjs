@@ -35,6 +35,16 @@ assert.match(
   'the abortable Clearfolio adapter is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/access_grant_domain\.mjs/,
+  'the short-lived access-grant domain is instrumented',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/access-grant-domain\.test\.mjs/,
+  'the access-grant behavior contract executes under c8',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
