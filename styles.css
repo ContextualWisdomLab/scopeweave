@@ -170,13 +170,20 @@ button {
   letter-spacing: -0.02em;
 }
 
+.meta-description {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
 .accent-card {
   color: #fff;
   border: none;
 }
 
-.accent-card .meta-label {
-  color: rgba(255, 255, 255, 0.9);
+.accent-card .meta-label,
+.accent-card .meta-description {
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .accent-card strong {
@@ -360,8 +367,7 @@ button {
 .secondary-button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-.gantt-bar:focus-visible,
-.meta-value-card:focus-visible {
+.gantt-bar:focus-visible {
   outline: 3px solid rgba(37, 99, 235, 0.5);
   outline-offset: 2px;
 }
