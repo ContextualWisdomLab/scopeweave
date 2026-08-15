@@ -45,6 +45,11 @@ assert.match(
   'the schedule-outcome domain is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/schedule_reason_event_domain\.mjs/,
+  'the schedule reason-event authorization domain is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
@@ -63,6 +68,11 @@ assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/schedule-outcome-domain-edge\.test\.mjs/,
   'the schedule-outcome failure-boundary contract executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/schedule-reason-event-domain\.test\.mjs/,
+  'the schedule reason-event authority and audit contract executes under c8',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
