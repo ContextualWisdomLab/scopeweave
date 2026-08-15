@@ -1,8 +1,12 @@
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+
 import { test, expect } from '@playwright/test';
 
 const ROW_COUNT = 5_000;
 const SAMPLE_COUNT = 5;
 const STORAGE_KEY = 'scopeweave:planner-state:v1';
+const TARGET_IMPROVEMENT_PERCENT = 15;
 
 function percentile(values, probability) {
   const sorted = [...values].sort((left, right) => left - right);
@@ -39,8 +43,36 @@ function createTask(index) {
   };
 }
 
-test('5,000-row production rendering remains measurable and interactive', async ({ page }) => {
-  test.setTimeout(120_000);
+function protectedBaseSha() {
+  const override = String(process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA || '').trim();
+  if (override) return override;
+
+  const eventPath = process.env.GITHUB_EVENT_PATH;
+  if (!eventPath) return null;
+  const event = JSON.parse(readFileSync(eventPath, 'utf8'));
+  return event.pull_request?.base?.sha || null;
+}
+
+function readGitFile(commitSha, path) {
+  if (!/^[a-f0-9]{40}$/.test(String(commitSha || ''))) {
+    throw new Error(`Invalid benchmark base SHA: ${commitSha || '<missing>'}`);
+  }
+
+  const spec = `${commitSha}:${path}`;
+  try {
+    return execFileSync('git', ['show', spec], { encoding: 'utf8' });
+  } catch {
+    execFileSync('git', ['fetch', '--depth=1', 'origin', commitSha], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return execFileSync('git', ['show', spec], { encoding: 'utf8' });
+  }
+}
+
+async function measureRenderer(browser, { appSource = null, label }) {
+  const context = await browser.newContext();
+  const page = await context.newPage();
 
   await page.addInitScript(() => {
     const originalCreateElement = Document.prototype.createElement;
@@ -61,22 +93,32 @@ test('5,000-row production rendering remains measurable and interactive', async 
     }
   });
 
+  if (appSource !== null) {
+    await page.route('**/app.js', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/javascript; charset=utf-8',
+        body: appSource,
+      });
+    });
+  }
+
   await page.goto('/');
   const tasks = Array.from({ length: ROW_COUNT }, (_, index) => createTask(index));
-  await page.evaluate(({ storageKey, seededTasks }) => {
+  await page.evaluate(({ storageKey, seededTasks, benchmarkLabel }) => {
     localStorage.setItem(storageKey, JSON.stringify({
-      projectName: 'ScopeWeave benchmark',
+      projectName: `ScopeWeave ${benchmarkLabel} benchmark`,
       baseDate: '2026-01-01',
       tasks: seededTasks,
     }));
-  }, { storageKey: STORAGE_KEY, seededTasks: tasks });
+  }, { storageKey: STORAGE_KEY, seededTasks: tasks, benchmarkLabel: label });
 
   const coldStartedAt = Date.now();
   await page.reload();
   await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(ROW_COUNT);
   const coldLoadDurationMs = Date.now() - coldStartedAt;
 
-  const evidence = await page.evaluate(async ({ sampleCount }) => {
+  const evidence = await page.evaluate(async ({ sampleCount, benchmarkLabel }) => {
     const nextFrame = () => new Promise((resolve) => requestAnimationFrame(resolve));
     const projectName = document.getElementById('project-name');
     const samples = [];
@@ -86,7 +128,7 @@ test('5,000-row production rendering remains measurable and interactive', async 
       const heapBefore = performance.memory?.usedJSHeapSize ?? null;
       const startedAt = performance.now();
       projectName.focus();
-      projectName.value = `ScopeWeave benchmark ${sampleIndex}`;
+      projectName.value = `ScopeWeave ${benchmarkLabel} benchmark ${sampleIndex}`;
       projectName.dispatchEvent(new Event('input', { bubbles: true }));
       projectName.blur();
       await nextFrame();
@@ -141,37 +183,88 @@ test('5,000-row production rendering remains measurable and interactive', async 
       inlineProgressChanged,
       dragReordered: orderBeforeDrag.join(',') !== orderAfterDrag.join(','),
     };
-  }, { sampleCount: SAMPLE_COUNT });
+  }, { sampleCount: SAMPLE_COUNT, benchmarkLabel: label });
 
-  const durations = evidence.samples.map((sample) => sample.durationMs);
-  const report = {
-    rowCount: ROW_COUNT,
-    sampleCount: SAMPLE_COUNT,
-    coldLoadDurationMs,
+  await context.close();
+  return { coldLoadDurationMs, evidence };
+}
+
+function summarizeMeasurement(measurement) {
+  const durations = measurement.evidence.samples.map((sample) => sample.durationMs);
+  const createElementCalls = measurement.evidence.samples.map((sample) => sample.createElementCalls);
+  return {
+    coldLoadDurationMs: measurement.coldLoadDurationMs,
     sampleDurationsMs: durations,
     medianDurationMs: percentile(durations, 0.5),
     p95DurationMs: percentile(durations, 0.95),
-    protectedBaselineAvailable: false,
-    targetPercent: 15,
-    targetMet: null,
-    optimizationDeltaPercent: null,
-    comparisonNote: 'No protected-base browser A/B was run; do not interpret cold-load versus warm-render timings as an optimization delta.',
-    longTaskCount: evidence.longTasks.length,
-    longestTaskMs: evidence.longTasks.length ? Math.max(...evidence.longTasks) : null,
-    heapDeltaBytes: evidence.samples.map((sample) => sample.heapDeltaBytes),
-    liveDomNodes: evidence.samples.map((sample) => sample.liveDomNodes),
-    createElementCalls: evidence.samples.map((sample) => sample.createElementCalls),
-    editOpened: evidence.editOpened,
-    inlineProgressChanged: evidence.inlineProgressChanged,
-    dragReordered: evidence.dragReordered,
+    medianCreateElementCalls: percentile(createElementCalls, 0.5),
+    longTaskCount: measurement.evidence.longTasks.length,
+    longestTaskMs: measurement.evidence.longTasks.length
+      ? Math.max(...measurement.evidence.longTasks)
+      : null,
+    heapDeltaBytes: measurement.evidence.samples.map((sample) => sample.heapDeltaBytes),
+    liveDomNodes: measurement.evidence.samples.map((sample) => sample.liveDomNodes),
+    createElementCalls,
+    editOpened: measurement.evidence.editOpened,
+    inlineProgressChanged: measurement.evidence.inlineProgressChanged,
+    dragReordered: measurement.evidence.dragReordered,
+  };
+}
+
+test('5,000-row production rendering beats the exact protected-base median by at least 15%', async ({ browser }) => {
+  test.setTimeout(180_000);
+
+  const baseSha = protectedBaseSha();
+  const baselineSource = baseSha ? readGitFile(baseSha, 'app.js') : null;
+  const optimizedMeasurement = await measureRenderer(browser, { label: 'optimized' });
+  const optimized = summarizeMeasurement(optimizedMeasurement);
+
+  let baseline = null;
+  let optimizationDeltaPercent = null;
+  let targetMet = null;
+  if (baselineSource !== null) {
+    baseline = summarizeMeasurement(await measureRenderer(browser, {
+      appSource: baselineSource,
+      label: 'protected-base',
+    }));
+    optimizationDeltaPercent = ((baseline.medianDurationMs - optimized.medianDurationMs)
+      / baseline.medianDurationMs) * 100;
+    targetMet = optimizationDeltaPercent >= TARGET_IMPROVEMENT_PERCENT;
+  }
+
+  const report = {
+    rowCount: ROW_COUNT,
+    sampleCount: SAMPLE_COUNT,
+    protectedBaseSha: baseSha,
+    protectedBaselineAvailable: baseline !== null,
+    targetPercent: TARGET_IMPROVEMENT_PERCENT,
+    targetMet,
+    optimizationDeltaPercent,
+    baseline,
+    optimized,
+    comparisonNote: baseline === null
+      ? 'Set SCOPEWEAVE_BENCHMARK_BASE_SHA outside pull-request CI to enable exact-base A/B evidence.'
+      : 'Both variants use the same browser, current static shell, 5,000-row state, and render trigger; only app.js is replaced with the immutable PR base source for the baseline.',
   };
   console.log(`SCOPEWEAVE_RENDER_BENCHMARK ${JSON.stringify(report)}`);
 
-  expect(evidence.samples).toHaveLength(SAMPLE_COUNT);
-  expect(evidence.renderedRows).toBe(ROW_COUNT);
-  expect(report.medianDurationMs).toBeGreaterThan(0);
-  expect(report.p95DurationMs).toBeGreaterThanOrEqual(report.medianDurationMs);
-  expect(evidence.editOpened).toBe(true);
-  expect(evidence.inlineProgressChanged).toBe(true);
-  expect(evidence.dragReordered).toBe(true);
+  expect(optimizedMeasurement.evidence.samples).toHaveLength(SAMPLE_COUNT);
+  expect(optimizedMeasurement.evidence.renderedRows).toBe(ROW_COUNT);
+  expect(optimized.medianDurationMs).toBeGreaterThan(0);
+  expect(optimized.p95DurationMs).toBeGreaterThanOrEqual(optimized.medianDurationMs);
+  expect(optimized.editOpened).toBe(true);
+  expect(optimized.inlineProgressChanged).toBe(true);
+  expect(optimized.dragReordered).toBe(true);
+
+  if (baseline !== null) {
+    expect(baseline.medianDurationMs).toBeGreaterThan(0);
+    expect(baseline.editOpened).toBe(true);
+    expect(baseline.inlineProgressChanged).toBe(true);
+    expect(baseline.dragReordered).toBe(true);
+    expect(optimized.medianCreateElementCalls).toBeLessThan(baseline.medianCreateElementCalls);
+    expect(
+      optimizationDeltaPercent,
+      `expected >=${TARGET_IMPROVEMENT_PERCENT}% median render improvement over ${baseSha}, got ${optimizationDeltaPercent.toFixed(2)}%`,
+    ).toBeGreaterThanOrEqual(TARGET_IMPROVEMENT_PERCENT);
+  }
 });
