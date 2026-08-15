@@ -8,6 +8,7 @@ const billingConfiguration = validateBillingStartupConfiguration();
 const STRIPE_CHECKOUT_ENDPOINT = 'https://api.stripe.com/v1/checkout/sessions';
 const STRIPE_REQUEST_TIMEOUT_MS = 15_000;
 const STRIPE_RESPONSE_MAX_BYTES = 1024 * 1024;
+const STRIPE_PROVIDER_ID_MAX_LENGTH = 255;
 
 export const PLANS = {
   free: { name: 'Free', limits: { projects: 2, members: 3 }, priceKrw: 0 },
@@ -51,16 +52,32 @@ function billingUnavailableResponse() {
   );
 }
 
-function providerFailure(code, action) {
-  return new HTTPException(502, {
-    res: jsonErrorResponse(502, code, action),
+function checkoutStateFailure() {
+  return new HTTPException(503, {
+    res: jsonErrorResponse(
+      503,
+      'billing_checkout_state_unavailable',
+      'Retry checkout after durable billing state is healthy; do not bypass the checkout-attempt ledger.',
+    ),
   });
 }
 
-function providerUnavailableFailure() {
+function providerFailure(code, action, { outcomeKnown = false } = {}) {
+  const error = new HTTPException(502, {
+    res: jsonErrorResponse(502, code, action),
+  });
+  Object.defineProperty(error, 'providerOutcomeKnown', {
+    value: outcomeKnown,
+    enumerable: false,
+  });
+  return error;
+}
+
+function providerUnavailableFailure(outcomeKnown = false) {
   return providerFailure(
     'billing_provider_unavailable',
     'Retry checkout. If the problem persists, verify Stripe connectivity and service health before retrying.',
+    { outcomeKnown },
   );
 }
 
@@ -68,6 +85,7 @@ function providerInvalidResponseFailure() {
   return providerFailure(
     'billing_provider_invalid_response',
     'Retry checkout. If the problem persists, verify the Stripe Checkout provider configuration and service health.',
+    { outcomeKnown: true },
   );
 }
 
@@ -140,7 +158,7 @@ async function readBoundedProviderJson(response) {
   }
 }
 
-async function createStripeSessionWithFetch(secretKey, payload) {
+async function createStripeSessionWithFetch(secretKey, payload, idempotencyKey) {
   let response;
   try {
     response = await fetch(STRIPE_CHECKOUT_ENDPOINT, {
@@ -150,15 +168,20 @@ async function createStripeSessionWithFetch(secretKey, payload) {
       headers: {
         authorization: `Bearer ${secretKey}`,
         'content-type': 'application/x-www-form-urlencoded',
+        'idempotency-key': idempotencyKey,
       },
       body: stripeCheckoutForm(payload).toString(),
     });
   } catch {
-    throw providerUnavailableFailure();
+    // No HTTP response means the provider outcome is uncertain. Keep the durable
+    // pending attempt so the next caller reuses this exact idempotency key.
+    throw providerUnavailableFailure(false);
   }
 
   if (!response.ok) {
-    throw providerUnavailableFailure();
+    // A received provider response is a known outcome for this attempt. The
+    // caller can close this retry identity before surfacing the stable error.
+    throw providerUnavailableFailure(true);
   }
 
   const mediaType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
@@ -196,6 +219,32 @@ function validateHostedCheckoutUrl(rawUrl) {
   return rawUrl;
 }
 
+function validateProviderSessionId(value) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > STRIPE_PROVIDER_ID_MAX_LENGTH) {
+    throw providerInvalidResponseFailure();
+  }
+  return value;
+}
+
+function requireAttemptRepository(repository) {
+  if (!repository
+    || typeof repository.startAttempt !== 'function'
+    || typeof repository.markProviderSucceeded !== 'function'
+    || typeof repository.markProviderFailed !== 'function') {
+    throw checkoutStateFailure();
+  }
+  return repository;
+}
+
+function markKnownProviderFailure(repository, attemptId, error) {
+  if (error?.providerOutcomeKnown !== true) return;
+  try {
+    repository.markProviderFailed({ attemptId });
+  } catch {
+    throw checkoutStateFailure();
+  }
+}
+
 /**
  * Create one hosted checkout session from trusted server-owned configuration.
  *
@@ -203,24 +252,30 @@ function validateHostedCheckoutUrl(rawUrl) {
  * URLs always derive from the canonical operator-configured public origin. The
  * successful mock exists only in explicit development mode; an unconfigured
  * production capability returns HTTP 503 instead of pretending checkout worked.
- * Live provider calls use one direct HTTPS attempt with a 15-second total budget
- * and a 1 MiB response-body ceiling until durable checkout-attempt idempotency
- * state exists. The hosted destination must use Stripe's standard HTTPS authority;
- * provider-issued client fragments are preserved verbatim.
+ * Live provider calls use one direct HTTPS attempt with a 15-second total budget,
+ * a 1 MiB response-body ceiling, and a durable per-attempt idempotency key. A
+ * network/abort failure keeps that attempt pending so a later call safely reuses
+ * the same key; a received provider failure closes it so a deliberate later
+ * checkout gets fresh provider authority. The hosted destination must use
+ * Stripe's standard HTTPS authority; provider-issued client fragments are
+ * preserved verbatim.
  *
  * @param {object} options - Checkout inputs and optional deterministic test seams.
  * @param {string|number} options.orgId - Organization that owns the checkout.
  * @param {{mode: 'disabled'|'mock'|'live', publicOrigin: string|null}} [options.configuration]
  *   Validated billing capability; defaults to startup configuration.
+ * @param {{startAttempt: Function, markProviderSucceeded: Function, markProviderFailed: Function}} [options.attemptRepository]
+ *   Durable live-mode Checkout-attempt persistence port.
  * @param {(secretKey: string) => Promise<object>} [options.stripeClientFactory]
  *   Optional Stripe-compatible test seam. Production uses the direct HTTPS transport.
- * @returns {Promise<{url: string, live: boolean, mock?: boolean}>} Checkout target.
- * @throws {HTTPException} HTTP 503 when production billing is not configured;
+ * @returns {Promise<{url: string, live: boolean, mock?: boolean, checkoutAttemptId?: string}>} Checkout target.
+ * @throws {HTTPException} HTTP 503 when production billing/state is unavailable;
  *   HTTP 502 when the provider call fails or returns an untrusted destination.
  */
 export async function createCheckout({
   orgId,
   configuration = billingConfiguration,
+  attemptRepository,
   stripeClientFactory,
 }) {
   const { mode, publicOrigin } = configuration;
@@ -229,9 +284,18 @@ export async function createCheckout({
   }
 
   if (mode === 'live') {
+    const repository = requireAttemptRepository(attemptRepository);
+    const priceId = process.env.STRIPE_PRICE_ID;
+    let attempt;
+    try {
+      attempt = repository.startAttempt({ organizationId: orgId, priceId });
+    } catch {
+      throw checkoutStateFailure();
+    }
+
     const payload = {
       mode: 'subscription',
-      line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${publicOrigin}/?billing=success`,
       cancel_url: `${publicOrigin}/?billing=cancel`,
       client_reference_id: String(orgId),
@@ -239,21 +303,40 @@ export async function createCheckout({
     };
 
     let session;
-    if (stripeClientFactory) {
-      try {
+    try {
+      if (stripeClientFactory) {
         const stripe = await stripeClientFactory(process.env.STRIPE_SECRET_KEY);
-        session = await stripe.checkout.sessions.create(payload);
-      } catch {
-        throw providerUnavailableFailure();
+        session = await stripe.checkout.sessions.create(payload, {
+          idempotencyKey: attempt.idempotencyKey,
+        });
+      } else {
+        session = await createStripeSessionWithFetch(
+          process.env.STRIPE_SECRET_KEY,
+          payload,
+          attempt.idempotencyKey,
+        );
       }
-    } else {
-      session = await createStripeSessionWithFetch(process.env.STRIPE_SECRET_KEY, payload);
-    }
 
-    return {
-      url: validateHostedCheckoutUrl(session?.url),
-      live: true,
-    };
+      const providerSessionId = validateProviderSessionId(session?.id);
+      const hostedUrl = validateHostedCheckoutUrl(session?.url);
+      try {
+        repository.markProviderSucceeded({
+          attemptId: attempt.attemptId,
+          providerSessionId,
+        });
+      } catch {
+        throw checkoutStateFailure();
+      }
+
+      return {
+        url: hostedUrl,
+        live: true,
+        checkoutAttemptId: attempt.attemptId,
+      };
+    } catch (error) {
+      markKnownProviderFailure(repository, attempt.attemptId, error);
+      throw error;
+    }
   }
 
   return { url: `${publicOrigin}/?billing=mock&org=${encodeURIComponent(String(orgId))}`, live: false, mock: true };
