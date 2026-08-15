@@ -80,7 +80,6 @@ assert.deepEqual(
   'an unmatched outer Task cannot consume a nested Task closing tag',
 );
 
-
 const whitespaceTags = parseMsProjectXml(`
 <Project><Tasks><Task \t>
   <UID\t>8</UID \r\n>
@@ -113,6 +112,13 @@ assert.deepEqual(
   parseMsProjectXml('<Project><Tasks><Task \t><UID >10</UID ><Name >truncated</Name >'),
   [],
   'truncated whitespace-delimited Task stops safely',
+);
+assert.deepEqual(
+  parseMsProjectXml(
+    '<Project><Tasks><Task><UID>13</UID><Name>outer<Name>inner</Name><OutlineLevel>1</OutlineLevel></Task></Tasks></Project>',
+  ),
+  [],
+  'a nested scalar opening cannot consume the inner closing delimiter',
 );
 
 console.log('✓ MS Project import tests passed');
