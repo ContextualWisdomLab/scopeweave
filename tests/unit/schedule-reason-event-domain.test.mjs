@@ -281,6 +281,7 @@ test('validates input, canonical timestamps, opaque generated IDs, and port cont
     baseInput({ expectedWorkItemVersion: '' }),
     baseInput({ type: 'blocked' }),
     baseInput({ reasonCode: '' }),
+    baseInput({ occurredAt: 1777 }),
     baseInput({ occurredAt: '2026-08-15 22:00:00Z' }),
     baseInput({ occurredAt: '2026-08-16T00:00:00.000Z' }),
   ];
