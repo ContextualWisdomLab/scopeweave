@@ -179,9 +179,13 @@ async function createStripeSessionWithFetch(secretKey, payload, idempotencyKey) 
   }
 
   if (!response.ok) {
-    // A received provider response is a known outcome for this attempt. The
-    // caller can close this retry identity before surfacing the stable error.
-    throw providerUnavailableFailure(true);
+    // Stripe explicitly treats 5xx mutations, especially 500, as indeterminate:
+    // the original request can have produced side effects even though the client
+    // received an error. Preserve the pending identity for every server error so
+    // no later caller silently creates a second Checkout Session with a fresh key.
+    // Stripe's documented safest strategy for 4xx is a fresh idempotency key.
+    const outcomeKnown = response.status < 500;
+    throw providerUnavailableFailure(outcomeKnown);
   }
 
   const mediaType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
@@ -266,12 +270,12 @@ function markKnownProviderFailure(repository, attemptId, error) {
  * successful mock exists only in explicit development mode; an unconfigured
  * production capability returns HTTP 503 instead of pretending checkout worked.
  * Live provider calls use one direct HTTPS attempt with a 15-second total budget,
- * a 1 MiB response-body ceiling, and a durable per-attempt idempotency key. A
- * network/abort failure keeps that attempt pending so a later call safely reuses
- * the same key; a received provider failure closes it so a deliberate later
- * checkout gets fresh provider authority. The hosted destination must use
- * Stripe's standard HTTPS authority; provider-issued client fragments are
- * preserved verbatim.
+ * a 1 MiB response-body ceiling, and a durable per-attempt idempotency key.
+ * Network/abort and Stripe 5xx failures keep the attempt pending so a later call
+ * reuses the same key; known 4xx and validated malformed-success outcomes close
+ * the attempt so a deliberate later checkout gets fresh provider authority. The
+ * hosted destination must use Stripe's standard HTTPS authority; provider-issued
+ * client fragments are preserved verbatim.
  *
  * @param {object} options - Checkout inputs and optional deterministic test seams.
  * @param {string|number} options.orgId - Organization that owns the checkout.
