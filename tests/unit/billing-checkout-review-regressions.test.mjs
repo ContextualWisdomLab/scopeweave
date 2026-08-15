@@ -108,6 +108,7 @@ test('malformed successful Stripe responses keep the durable retry identity unre
 function createCheckoutAttemptFixture(startTimeMs) {
   const database = new DatabaseSync(':memory:');
   database.exec('PRAGMA foreign_keys = ON');
+  database.exec('CREATE TABLE users (id INTEGER PRIMARY KEY)');
   database.exec('CREATE TABLE orgs (id INTEGER PRIMARY KEY)');
   database.prepare('INSERT INTO orgs(id) VALUES(?)').run(7);
   installBillingCheckoutAttemptSchema(database);
