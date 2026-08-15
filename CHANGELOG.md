@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   membership-revocation, random-source, clock, audit, and atomic repository
   ports. Route, database, calendar-subscription, and client migration remain
   follow-up work under issue #413.
+- Added durable SQLite persistence for short-lived access grants, including
+  restart-safe hash-only state, foreign-key lifecycle revocation, atomic
+  one-time consumption tied to the current membership identity and session
+  token version, and tenant/resource authorization ports. Runtime browser
+  transport migration remains a follow-up under #413.
 
 ### Security
 
@@ -59,6 +64,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only SHA-256 token hashes through the repository port, rechecked membership on
   redemption, and required the repository to perform one-time consumption as an
   atomic transition.
+- Added SQLite persistence enforcement for grant replay, expiry, current
+  membership identity/session version, and exact project/resource bindings in
+  the same conditional write that marks a grant used; subject/project/attachment
+  deletion cascades revoke outstanding grants without restoring broad URL
+  credentials.
 
 ### Changed
 
