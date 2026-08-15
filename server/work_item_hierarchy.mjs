@@ -82,15 +82,16 @@ export function validateWorkItemHierarchy(records) {
 }
 
 /**
- * Create an immutable, source-position-preserving projection of a valid plan.
+ * Create immutable, source-position-preserving projection wrappers for a valid plan.
  *
- * Existing three-level plans stay three-level and retain every public ID,
- * parent relationship, and persisted field. A fourth-level Duty is represented
- * only when a source record already exists; this function never synthesizes
- * work or destructively converts customer data.
+ * Existing three-level plans stay three-level. Every persisted field remains in
+ * the nested `record`, including customer fields named `kind` or `sourceIndex`.
+ * Canonical hierarchy metadata is stored only on the wrapper, so projection
+ * cannot silently overwrite persisted values. A fourth-level Duty is represented
+ * only when a source record already exists; this function never synthesizes work.
  *
  * @param {unknown} records persisted ScopeWeave work-item records
- * @returns {Array<Readonly<Record<string, unknown>>>} canonical projected records
+ * @returns {Array<Readonly<{record: Readonly<Record<string, unknown>>, kind: string, sourceIndex: number}>>} canonical projected records
  * @throws {Error} when the hierarchy is malformed
  */
 export function projectWorkItemHierarchy(records) {
@@ -100,12 +101,17 @@ export function projectWorkItemHierarchy(records) {
     throw new Error(`Invalid work-item hierarchy: ${codes}`);
   }
 
-  return records.map((record, sourceIndex) => Object.freeze({
-    ...record,
-    parentId: normalizeParentId(record.parentId),
-    kind: WORK_ITEM_LEVELS[record.depth - 1],
-    sourceIndex,
-  }));
+  return records.map((record, sourceIndex) => {
+    const projectedRecord = Object.freeze({
+      ...record,
+      parentId: normalizeParentId(record.parentId),
+    });
+    return Object.freeze({
+      record: projectedRecord,
+      kind: WORK_ITEM_LEVELS[record.depth - 1],
+      sourceIndex,
+    });
+  });
 }
 
 /** @param {unknown} id candidate opaque identifier @returns {id is string} */
