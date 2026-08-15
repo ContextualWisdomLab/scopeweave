@@ -41,6 +41,7 @@ persists the database in the `scopeweave-data` volume.
 | `ORCHESTRATOR_TOKEN` | with URL | orchestrator Bearer 토큰 (`CONTEXTUAL_ORCHESTRATOR_TOKEN`). |
 | `CLEARFOLIO_URL` | for production 산출물 viewer | Root Clearfolio service origin. Production requires HTTPS and rejects credentials, paths, query strings, and fragments. When absent in production, document conversion/viewing is unavailable rather than simulated. |
 | `CLEARFOLIO_HMAC_SECRET` | with URL | Required tenant-claim HMAC secret; must contain at least 32 non-whitespace characters and match Clearfolio's configured verifier secret. |
+| `CLEARFOLIO_ARTIFACT_ORIGINS` | only for reviewed cross-origin artifact hosts | Optional comma-separated HTTPS origins for approved CDN/object-storage artifact redirects. Do not include credentials, paths, query strings, fragments, or empty entries. Unset keeps artifact trust same-origin only. |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY` | no (default 8, maximum 32) | Maximum concurrent Clearfolio status lookups during one attachment-list request. Invalid values fall back to 8; values above 32 are clamped. |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS` | no (default 3000, maximum 30000) | Hard caller-side timeout for each Clearfolio status lookup. The AbortSignal is also forwarded downstream. |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_BUDGET_MS` | no (default 5000, maximum 60000) | Wall-clock budget for the entire best-effort refresh pass. Work not started before the deadline is deferred to a later list request. |
@@ -55,6 +56,28 @@ ScopeWeave planning capabilities remain available. For local integration work,
 `SCOPEWEAVE_DEV=1` permits the in-memory adapter when the URL is absent and also
 permits HTTP only for `localhost`, `127.0.0.1`, or `::1`; remote HTTP endpoints
 are rejected.
+
+At process startup ScopeWeave emits one structured, non-secret readiness record:
+
+```json
+{"event":"capability.readiness","capability":"clearfolio","ready":false,"mode":"unavailable","reason":"clearfolio_not_configured","action":"Set CLEARFOLIO_URL and CLEARFOLIO_HMAC_SECRET, or use SCOPEWEAVE_DEV=1 only for local development."}
+```
+
+Use `ready`, `mode`, `reason`, and `action` to decide the next operator step. The
+record validates local provider and artifact-origin configuration only; it does
+**not** make a DNS or HTTP call and therefore does not claim that Clearfolio is
+reachable. `mode=development_mock` is deliberately distinct from
+`mode=provider`. Invalid provider transport, weak HMAC configuration, and an
+invalid artifact-origin allowlist report `ready=false` with a stable reason and
+a safe remediation instruction.
+
+`GET /api/health` remains liveness-only and returns `{"ok":true}` even when the
+optional Clearfolio capability is unavailable. This separation prevents an
+optional document-viewer dependency from causing the planner process to be
+restarted or removed from service. Kubernetes documents liveness as the signal
+for restarting unhealthy containers and readiness as the signal for whether a
+container should receive traffic; ScopeWeave keeps the whole application live
+while reporting the optional capability independently.
 
 Provider URLs are treated as service origins, not arbitrary request prefixes.
 Keep credentials in the dedicated HMAC secret setting rather than URL userinfo,
@@ -175,4 +198,6 @@ stays focused on the container + compose path.)
 ## Health
 
 `GET /api/health` → `{"ok":true}`. Wired as the container `HEALTHCHECK` and the
-compose healthcheck.
+compose healthcheck. Optional dependency readiness is reported separately in the
+startup `capability.readiness` record so Clearfolio configuration never makes
+whole-process liveness fail.
