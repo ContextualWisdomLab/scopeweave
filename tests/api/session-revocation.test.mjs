@@ -1,7 +1,10 @@
 // Security invariant: logout-all revocation and strict session-claim validation
-// must apply uniformly to every JWT transport. Calendar clients and EventSource
-// cannot reliably send Authorization headers, so query-token routes must share
-// the same fail-closed verifier as bearer middleware.
+// must apply uniformly to every supported JWT transport. Calendar clients and
+// EventSource cannot reliably send Authorization headers, so their query-token
+// routes share the same fail-closed verifier as bearer middleware. Attachment
+// views no longer accept broad session JWTs in query parameters; their direct
+// session path is Authorization-header only and scoped grants are covered by
+// the dedicated attachment-view access-grant regression.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
@@ -61,7 +64,8 @@ async function expectCalendarStatus(projectId, token, status, message) {
 
 async function expectAttachmentViewStatus(projectId, token, status, message) {
   const response = await req(
-    `/api/projects/${projectId}/attachments/missing/view?token=${encodeURIComponent(token)}`,
+    `/api/projects/${projectId}/attachments/missing/view`,
+    { headers: { authorization: `Bearer ${token}` } },
   );
   assert.equal(response.status, status, message);
 }
