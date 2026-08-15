@@ -363,6 +363,29 @@ function providerSignal(callerSignal) {
 }
 
 /**
+ * Cancel an unread provider response body before returning a fixed rejection.
+ *
+ * Undici-backed fetch responses must be consumed or cancelled so rejected
+ * downstream bodies cannot strand connection-pool resources. Cancellation
+ * failures are deliberately hidden because the operation-level error remains
+ * the authoritative, non-secret client and operator signal.
+ *
+ * @param {Response} response - Provider response whose payload must remain unread.
+ * @param {string} errorMessage - Fixed non-secret error to throw after cancellation.
+ * @returns {Promise<never>} Promise that always rejects with the fixed error.
+ */
+async function rejectProviderResponse(response, errorMessage) {
+  try {
+    if (response?.body && typeof response.body.cancel === 'function') {
+      await response.body.cancel();
+    }
+  } catch {
+    // The fixed operation-level rejection remains authoritative.
+  }
+  throw new Error(errorMessage);
+}
+
+/**
  * Parse one successful provider JSON response with media-type and byte bounds.
  *
  * Content-Length is treated only as an early rejection hint; the body stream is
@@ -381,20 +404,20 @@ async function readBoundedJson(response, invalidMessage) {
     typeof contentType !== 'string'
     || contentType.split(';', 1)[0].trim().toLowerCase() !== 'application/json'
   ) {
-    throw new Error(invalidMessage);
+    return rejectProviderResponse(response, invalidMessage);
   }
 
   const contentLength = response.headers.get('content-length');
   if (contentLength !== null) {
-    if (!/^\d+$/.test(contentLength)) throw new Error(invalidMessage);
+    if (!/^\d+$/.test(contentLength)) return rejectProviderResponse(response, invalidMessage);
     const declaredBytes = Number(contentLength);
     if (!Number.isSafeInteger(declaredBytes) || declaredBytes > CLEARFOLIO_MAX_RESPONSE_BYTES) {
-      throw new Error(invalidMessage);
+      return rejectProviderResponse(response, invalidMessage);
     }
   }
 
   if (!response.body || typeof response.body.getReader !== 'function') {
-    throw new Error(invalidMessage);
+    return rejectProviderResponse(response, invalidMessage);
   }
 
   const reader = response.body.getReader();
@@ -490,7 +513,7 @@ export async function submitJob(orgId, userId, document) {
   } catch {
     throw new Error('clearfolio submit unavailable');
   }
-  if (!res.ok) throw new Error(`clearfolio submit failed (${res.status})`);
+  if (!res.ok) return rejectProviderResponse(res, `clearfolio submit failed (${res.status})`);
   const data = await readBoundedJson(res, 'clearfolio submit response invalid');
   if (!isJsonRecord(data)) throw new Error('clearfolio submit response invalid');
   const status = data.status === undefined ? 'PENDING' : data.status;
@@ -535,7 +558,7 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
   } catch {
     throw new Error('clearfolio status unavailable');
   }
-  if (!res.ok) throw new Error(`clearfolio status failed (${res.status})`);
+  if (!res.ok) return rejectProviderResponse(res, `clearfolio status failed (${res.status})`);
   const data = await readBoundedJson(res, 'clearfolio status response invalid');
   if (!isJsonRecord(data) || !isClearfolioJobStatus(data.status)) {
     throw new Error('clearfolio status response invalid');
@@ -572,7 +595,7 @@ export async function artifactUrl(orgId, userId, jobId) {
   } catch {
     throw new Error('clearfolio artifact-link unavailable');
   }
-  if (!res.ok) throw new Error(`clearfolio artifact-link failed (${res.status})`);
+  if (!res.ok) return rejectProviderResponse(res, `clearfolio artifact-link failed (${res.status})`);
   const data = await readBoundedJson(res, 'clearfolio artifact-link response invalid');
   if (!isJsonRecord(data)) throw new Error('clearfolio artifact-link response invalid');
   const link = data.artifactUrl || data.url || data.signedUrl;
