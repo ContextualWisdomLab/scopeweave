@@ -117,6 +117,17 @@ function readNow(clock) {
   return nowMs;
 }
 
+async function recordAuditBestEffort(auditSink, event) {
+  try {
+    await auditSink.record(event);
+  } catch {
+    // Durable grant state is authoritative once its repository transition
+    // commits. Production adapters should pair that transition with a durable
+    // audit outbox; a downstream audit-delivery outage must not make clients
+    // retry a mint or already-consumed one-time grant.
+  }
+}
+
 /**
  * Build a framework-neutral short-lived access-grant service.
  *
@@ -125,6 +136,18 @@ function readNow(clock) {
  * hash-only persistence, membership re-checks, and secret-free audit events.
  * Calendar subscription secrets intentionally remain out of scope because they
  * require a separate rotation/revocation lifecycle.
+ *
+ * MembershipRevocationPort.assertActive() returns an opaque membership version
+ * captured during the active-state check. AccessGrantRepository must compare
+ * that version against live membership state inside consumeGrantAtomically(),
+ * closing the revoke-between-check-and-consume race. Adapters without a shared
+ * transaction boundary must atomically revoke affected grants when membership
+ * changes instead.
+ *
+ * Audit delivery is post-commit and best-effort at this domain boundary so a
+ * sink outage never changes the result of an already durable grant operation.
+ * Production persistence adapters should use a transactional audit outbox when
+ * durable audit evidence is required.
  *
  * @param {object} ports Injected infrastructure and authorization ports.
  * @param {object} ports.repository AccessGrantRepository implementation.
@@ -194,7 +217,7 @@ export function createAccessGrantService({
       revoked_at_ms: null,
     };
     await repository.insertGrant(record);
-    await auditSink.record({
+    await recordAuditBestEffort(auditSink, {
       event: 'access_grant.minted',
       grant_id: grantId,
       subject_id: subjectId,
@@ -222,8 +245,9 @@ export function createAccessGrantService({
     const tokenHash = hashSecret(secret);
     const existing = await repository.findGrantByHash(tokenHash);
     if (!existing) throw unauthorizedGrant();
+    let membershipVersion;
     try {
-      await membershipRevocation.assertActive({
+      membershipVersion = await membershipRevocation.assertActive({
         subjectId: existing.subject_id,
         projectId: existing.project_id,
       });
@@ -236,9 +260,10 @@ export function createAccessGrantService({
       audience,
       project_id: projectId,
       attachment_id: normalizedAttachmentId,
+      membership_version: membershipVersion,
     });
     if (!consumed) throw unauthorizedGrant();
-    await auditSink.record({
+    await recordAuditBestEffort(auditSink, {
       event: 'access_grant.consumed',
       grant_id: consumed.grant_id,
       subject_id: consumed.subject_id,
