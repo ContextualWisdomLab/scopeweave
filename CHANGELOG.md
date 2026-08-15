@@ -26,6 +26,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   required a canonical signed production origin, rejected ambiguous provider
   URL components, and prevented cross-origin artifact tokens from being
   transplanted into the trusted Clearfolio viewer URL.
+- Restricted hosted Clearfolio artifact redirects to the provider origin by
+  default; optional `CLEARFOLIO_ARTIFACT_ORIGINS` entries must be exact HTTPS
+  origins, so scheme/host/port changes, credentials, fragments, and unapproved
+  cross-origin links fail closed while approved cross-origin tokens remain bound
+  to the origin that issued them.
 - Bounded hosted Clearfolio calls to non-redirecting 15-second requests and
   256 KiB streamed JSON responses, composed caller cancellation with the
   provider budget, and validated document metadata/bytes and provider job IDs
