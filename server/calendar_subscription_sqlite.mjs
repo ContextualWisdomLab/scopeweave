@@ -132,8 +132,10 @@ export function installCalendarSubscriptionSchema(database) {
  * by the domain with live database membership inside that transaction. Usage
  * additionally requires the stored snapshot to match the live version in the
  * same conditional UPDATE, closing membership-removal and session-revocation
- * races. Rotation replaces the sole current hash; no historical credential hash
- * is copied into history relations.
+ * races. Management list and revoke queries independently require live project
+ * membership, so authorization loss between domain preflight and persistence
+ * cannot disclose metadata or mutate state. Rotation replaces the sole current
+ * hash; no historical credential hash is copied into history relations.
  *
  * @param {object} database Node SQLite-compatible database handle.
  * @returns {{insertSubscription: Function, listSubscriptions: Function, findSubscriptionByHash: Function, recordUsageAtomically: Function, rotateSubscriptionAtomically: Function, revokeSubscriptionAtomically: Function}} Repository adapter.
@@ -151,7 +153,15 @@ export function createSqliteCalendarSubscriptionRepository(database) {
   const listSubscriptions = db.prepare(`
     SELECT *
       FROM calendar_subscriptions
-     WHERE subject_id = ? AND project_id = ?
+     WHERE subject_id = ?
+       AND project_id = ?
+       AND EXISTS (
+         SELECT 1
+           FROM projects p
+           JOIN memberships m ON m.org_id = p.org_id
+          WHERE p.id = calendar_subscriptions.project_id
+            AND m.user_id = calendar_subscriptions.subject_id
+       )
      ORDER BY created_at_ms DESC, subscription_id ASC
   `);
   const findByHash = db.prepare('SELECT * FROM calendar_subscriptions WHERE secret_hash = ?');
@@ -159,6 +169,20 @@ export function createSqliteCalendarSubscriptionRepository(database) {
     SELECT *
       FROM calendar_subscriptions
      WHERE subscription_id = ? AND subject_id = ? AND project_id = ?
+  `);
+  const findManageableScopedById = db.prepare(`
+    SELECT *
+      FROM calendar_subscriptions
+     WHERE subscription_id = ?
+       AND subject_id = ?
+       AND project_id = ?
+       AND EXISTS (
+         SELECT 1
+           FROM projects p
+           JOIN memberships m ON m.org_id = p.org_id
+          WHERE p.id = calendar_subscriptions.project_id
+            AND m.user_id = calendar_subscriptions.subject_id
+       )
   `);
   const recordUsage = db.prepare(`
     UPDATE calendar_subscriptions
@@ -212,6 +236,13 @@ export function createSqliteCalendarSubscriptionRepository(database) {
        AND subject_id = ?
        AND project_id = ?
        AND revoked_at_ms IS NULL
+       AND EXISTS (
+         SELECT 1
+           FROM projects p
+           JOIN memberships m ON m.org_id = p.org_id
+          WHERE p.id = calendar_subscriptions.project_id
+            AND m.user_id = calendar_subscriptions.subject_id
+       )
   `);
   const insertRotation = db.prepare(`
     INSERT INTO subscription_rotations(subscription_id, rotated_at_ms, expires_at_ms)
@@ -264,7 +295,10 @@ export function createSqliteCalendarSubscriptionRepository(database) {
       });
     },
 
-    /** List safe repository records only for the exact subject/project scope. */
+    /**
+     * List scoped records only while the subject remains a live member of the
+     * project's organization at the persistence boundary.
+     */
     async listSubscriptions({ subject_id: subjectId, project_id: projectId }) {
       return listSubscriptions.all(subjectId, projectId).map(normalizeSubscriptionRow);
     },
@@ -346,22 +380,27 @@ export function createSqliteCalendarSubscriptionRepository(database) {
     },
 
     /**
-     * Revoke a subscription idempotently. Repeating the same operator action
-     * returns the already-revoked state without creating duplicate audit facts.
+     * Revoke a subscription idempotently while independently requiring current
+     * project membership at both the scoped read and mutation boundaries.
      */
     async revokeSubscriptionAtomically(subscriptionId, binding) {
       return withSavepoint(db, REVOKE_SAVEPOINT, () => {
-        const existing = findScopedById.get(subscriptionId, binding.subject_id, binding.project_id);
+        const existing = findManageableScopedById.get(
+          subscriptionId,
+          binding.subject_id,
+          binding.project_id,
+        );
         if (!existing) return null;
         if (existing.revoked_at_ms !== null && existing.revoked_at_ms !== undefined) {
           return normalizeSubscriptionRow(existing);
         }
-        revokeSubscription.run(
+        const result = revokeSubscription.run(
           binding.now_ms,
           subscriptionId,
           binding.subject_id,
           binding.project_id,
         );
+        if (Number(result.changes) !== 1) return null;
         const current = findScopedById.get(subscriptionId, binding.subject_id, binding.project_id);
         insertAudit.run(
           subscriptionId,
