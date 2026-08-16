@@ -2,12 +2,7 @@ const STORAGE_KEY = 'scopeweave:planner-state:v1';
 const DEFAULT_PROJECT_NAME = 'ScopeWeave Planner';
 const MAX_PROJECT_NAME_LENGTH = 120;
 const MAX_BASE_DATE_LENGTH = 10;
-const OWNER_COLORS = [
-  '#3f51b5', '#8e24aa', '#d81b60', '#ef6c00', '#6d4c41',
-  '#00897b', '#1e88e5', '#3949ab', '#7cb342', '#f4511e',
-  '#5e35b1', '#c0ca33', '#00acc1', '#fb8c00', '#546e7a',
-  '#43a047', '#e53935', '#6a1b9a', '#039be5', '#5d4037'
-];
+const OWNER_COLOR_CLASS_COUNT = 20;
 
 const ACTUAL_PROGRESS_OPTIONS = [
   '미착수(0%)',
@@ -265,7 +260,7 @@ async function bootstrap() {
 function bindEvents() {
   const persistProjectMetadata = debounce(() => {
     persistState();
-    renderProjectMetadata();
+    renderAll({ metadataOnly: true });
   }, 150);
   const persistAndRenderPlan = debounce(() => {
     persistState();
@@ -514,10 +509,13 @@ function renderProjectMetadata() {
 }
 
 const cachedHasChildrenSet = new Set();
-function renderAll() {
-  const metrics = computeTaskMetrics();
-
+function renderAll({ metadataOnly = false } = {}) {
   renderProjectMetadata();
+  if (metadataOnly) {
+    return;
+  }
+
+  const metrics = computeTaskMetrics();
   elements.totalDays.textContent = `${formatNumber(metrics.totalDays)}일`;
   elements.plannedProgress.textContent = formatPercent(metrics.totalWeightedPlannedRatio * 100, 2);
   elements.actualProgress.textContent = formatPercent(metrics.totalWeightedActualRatio * 100, 2);
@@ -979,32 +977,17 @@ function createWarningBadge(warning) {
   return badge;
 }
 
-const BADGE_TEMPLATE_CACHE_LIMIT = 256;
-const ownerBadgeTemplateMap = new Map();
-const statusBadgeTemplateMap = new Map();
+// Badge templates are immutable shells only. Customer/task text and accessible names
+// are applied to each clone after cloning so cached detached nodes never retain row data.
+let ownerBadgeTemplate = null;
+let statusBadgeTemplate = null;
 
-function getCachedBadgeTemplate(cache, key, createTemplate) {
-  const cachedTemplate = cache.get(key);
-  if (cachedTemplate) {
-    cache.delete(key);
-    cache.set(key, cachedTemplate);
-    return cachedTemplate;
-  }
-
-  const template = createTemplate();
-  if (cache.size >= BADGE_TEMPLATE_CACHE_LIMIT) {
-    cache.delete(cache.keys().next().value);
-  }
-  cache.set(key, template);
-  return template;
-}
-
-function getOwnerColor(owner) {
+function getOwnerColorIndex(owner) {
   let hash = 0;
   for (let index = 0; index < owner.length; index += 1) {
     hash = ((hash << 5) - hash + owner.charCodeAt(index)) | 0;
   }
-  return OWNER_COLORS[Math.abs(hash) % OWNER_COLORS.length];
+  return Math.abs(hash) % OWNER_COLOR_CLASS_COUNT;
 }
 
 function createOwnerCellContent(owner) {
@@ -1012,14 +995,14 @@ function createOwnerCellContent(owner) {
     return createEmptyCell();
   }
 
-  const template = getCachedBadgeTemplate(ownerBadgeTemplateMap, owner, () => {
-    const badge = document.createElement('span');
-    badge.className = 'owner-badge';
-    badge.style.background = getOwnerColor(owner);
-    badge.textContent = owner;
-    return badge;
-  });
-  return template.cloneNode(true);
+  if (!ownerBadgeTemplate) {
+    ownerBadgeTemplate = document.createElement('span');
+    ownerBadgeTemplate.className = 'owner-badge';
+  }
+  const badge = ownerBadgeTemplate.cloneNode(false);
+  badge.className = `owner-badge owner-badge--color-${getOwnerColorIndex(owner)}`;
+  badge.textContent = owner;
+  return badge;
 }
 
 function createStatusCellContent(progressState) {
@@ -1027,22 +1010,18 @@ function createStatusCellContent(progressState) {
     return createEmptyCell();
   }
 
-  const cacheKey = JSON.stringify([
-    progressState.label,
-    progressState.className,
-    progressState.description || ''
-  ]);
-  const template = getCachedBadgeTemplate(statusBadgeTemplateMap, cacheKey, () => {
-    const badge = document.createElement('span');
-    badge.className = `status-badge ${progressState.className}`;
-    badge.textContent = progressState.label;
-    if (progressState.description) {
-      badge.title = progressState.description;
-      badge.setAttribute('aria-label', `${progressState.label} - ${progressState.description}`);
-    }
-    return badge;
-  });
-  return template.cloneNode(true);
+  if (!statusBadgeTemplate) {
+    statusBadgeTemplate = document.createElement('span');
+    statusBadgeTemplate.className = 'status-badge';
+  }
+  const badge = statusBadgeTemplate.cloneNode(false);
+  badge.className = `status-badge ${progressState.className}`;
+  badge.textContent = progressState.label;
+  if (progressState.description) {
+    badge.title = progressState.description;
+    badge.setAttribute('aria-label', `${progressState.label} - ${progressState.description}`);
+  }
+  return badge;
 }
 
 const metricTextTemplate = document.createElement('span');
