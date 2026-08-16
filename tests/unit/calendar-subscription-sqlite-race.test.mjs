@@ -11,8 +11,8 @@ import {
 } from '../../server/calendar_subscription_sqlite.mjs';
 
 function installCoreSchema(database) {
+  database.exec('PRAGMA foreign_keys = ON');
   database.exec(`
-    PRAGMA foreign_keys = ON;
     CREATE TABLE users (
       id INTEGER PRIMARY KEY,
       token_version INTEGER NOT NULL DEFAULT 0
@@ -188,6 +188,105 @@ test('revoke rechecks live membership before mutating subscription state or audi
     ).get().count,
     0,
     'failed authorization races must not manufacture durable revocation evidence',
+  );
+  database.close();
+});
+
+test('foreign-key enforcement rejects invalid durable subscriptions and missing hashes normalize to null', async () => {
+  const database = new DatabaseSync(':memory:');
+  installCoreSchema(database);
+  installCalendarSubscriptionSchema(database);
+
+  assert.equal(
+    database.prepare('PRAGMA foreign_keys').get().foreign_keys,
+    1,
+    'bootstrap test fixture must exercise SQLite foreign-key enforcement rather than integrity inspection alone',
+  );
+  assert.throws(
+    () => database.prepare(`
+      INSERT INTO calendar_subscriptions(
+        subscription_id, secret_hash, subject_id, project_id, name, audience,
+        membership_version, created_at_ms, expires_at_ms, last_used_at_ms,
+        rotated_at_ms, revoked_at_ms
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,NULL,NULL)
+    `).run(
+      'csub_missing_project',
+      'c'.repeat(64),
+      1,
+      999999,
+      'Missing project',
+      'scopeweave:calendar',
+      '100:0',
+      1_000_000,
+      2_000_000,
+      null,
+    ),
+    /FOREIGN KEY constraint failed/,
+  );
+
+  const repository = createSqliteCalendarSubscriptionRepository(database);
+  assert.equal(
+    await repository.findSubscriptionByHash('f'.repeat(64)),
+    null,
+    'an unknown hash must retain the repository missing-row contract',
+  );
+  database.close();
+});
+
+test('savepoint cleanup failure never masks the causal operation error', async () => {
+  const database = new DatabaseSync(':memory:');
+  installCoreSchema(database);
+  installCalendarSubscriptionSchema(database);
+  const created = await createSubscription(database);
+  database.exec(`
+    CREATE TRIGGER calendar_subscription_test_abort_usage_cleanup
+    BEFORE INSERT ON calendar_subscription_audit_outbox
+    WHEN NEW.event_type = 'used'
+    BEGIN
+      SELECT RAISE(ABORT, 'forced audit outbox failure');
+    END;
+  `);
+
+  let rolledBack = false;
+  const cleanupFailingDatabase = {
+    prepare(sql) {
+      return database.prepare(sql);
+    },
+    exec(sql) {
+      if (sql === 'ROLLBACK TO calendar_subscription_usage_state') {
+        rolledBack = true;
+      } else if (rolledBack && sql === 'RELEASE calendar_subscription_usage_state') {
+        throw new Error('forced release cleanup failure');
+      }
+      return database.exec(sql);
+    },
+  };
+  const service = createCalendarSubscriptionService({
+    repository: createSqliteCalendarSubscriptionRepository(cleanupFailingDatabase),
+    clock: { nowMs: () => 1_000_000 },
+    randomSource: deterministicRandomSource(),
+    auditSink: { record: async () => {} },
+    projectAuthorization: createSqliteCalendarSubscriptionAuthorizationPort(database),
+    membershipRevocation: createSqliteCalendarSubscriptionMembershipPort(database),
+  });
+
+  await assert.rejects(
+    service.authorize({ secret: created.secret, projectId: '1000' }),
+    /forced audit outbox failure/,
+    'cleanup failure must not replace the operation error that caused rollback',
+  );
+  assert.equal(rolledBack, true, 'the adapter must attempt rollback before release cleanup');
+  assert.equal(
+    database.prepare(
+      'SELECT last_used_at_ms FROM calendar_subscriptions WHERE subscription_id = ?',
+    ).get(created.subscriptionId).last_used_at_ms,
+    null,
+    'the causal failure must leave authorization state rolled back',
+  );
+  assert.equal(
+    database.prepare('SELECT COUNT(*) AS count FROM subscription_usage_events').get().count,
+    0,
+    'rollback must remove usage evidence written before the audit failure',
   );
   database.close();
 });
