@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Added a deterministic Stripe entitlement-policy boundary over authoritative
+  Subscription and Invoice evidence: paid `active` access requires an exact paid
+  Invoice match, `past_due` never provisions or extends access, terminal states
+  fail closed, stale observations cannot roll back newer claims, and one canceled
+  Subscription cannot erase another independent unexpired claim. This active PR
+  slice derives immutable candidates only and does not persist or authorize access.
 - Added a tenant-scoped read-only projection over accepted authoritative Stripe
   Subscription observations, selecting current state by explicit append order,
   preserving ordered Price and source-event provenance, rejecting ambiguous local
