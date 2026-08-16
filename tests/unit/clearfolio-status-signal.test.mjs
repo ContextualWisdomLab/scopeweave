@@ -241,10 +241,9 @@ test('artifactUrl validates links and never exposes transport or response text',
       signedUrl: 'https://cdn.example/file.pdf?artifactToken=token%20value',
     }),
   });
-  assert.equal(
-    await artifactUrl(4, 5, 'job-1'),
-    'https://cdn.example/file.pdf?artifactToken=token%20value',
-    'a token from another origin is never transplanted into the trusted Clearfolio viewer',
+  await expectSanitizedFailure(
+    () => artifactUrl(4, 5, 'job-1'),
+    'clearfolio artifact-link response invalid',
   );
 });
 
