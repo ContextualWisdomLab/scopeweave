@@ -53,6 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Production planning-analysis requests now explicitly select contextual-orchestrator
+  `auto` mode, delegating route/conduct execution policy to the shared
+  orchestration service without weakening ScopeWeave's authenticated,
+  fail-closed transport and response-boundary controls.
 - Accepted XML whitespace before exact Microsoft Project element delimiters
   while preserving the linear, regex-free import scanner and rejecting
   attributes, longer names, non-XML whitespace, nested unmatched blocks, and
