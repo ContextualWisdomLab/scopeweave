@@ -44,8 +44,8 @@ replaceOnce(
 
 replaceOnce(
   'CHANGELOG.md',
-  '## [Unreleased]\n',
-  '## [Unreleased]\n\n### Changed\n\n- Production AI briefing requests now explicitly select contextual-orchestrator `auto` mode, so the orchestration plane may allocate the quality-sufficient route or conducted workflow and then minimize known cost instead of relying on an implicit or single-model default.\n',
+  '### Changed\n\n',
+  '### Changed\n\n- Production AI briefing requests now explicitly select contextual-orchestrator `auto` mode, so the orchestration plane may allocate the quality-sufficient route or conducted workflow and then minimize known cost instead of relying on an implicit or single-model default.\n',
 );
 
 replaceOnce(
