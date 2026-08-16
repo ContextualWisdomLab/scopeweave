@@ -33,6 +33,9 @@ export class BillingCheckoutReconciliationRequiredError extends Error {
 }
 
 function positiveOrganizationId(value) {
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    throw new TypeError('organizationId must be a positive integer');
+  }
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new TypeError('organizationId must be a positive integer');
