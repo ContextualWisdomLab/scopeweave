@@ -45,6 +45,11 @@ assert.match(
   'the durable calendar-subscription domain is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/calendar_subscription_sqlite\.mjs/,
+  'the durable calendar-subscription SQLite adapter is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/access-grant-domain\.test\.mjs/,
   'the access-grant behavior contract executes under c8',
@@ -68,6 +73,11 @@ assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/calendar-subscription-return-boundary\.test\.mjs/,
   'the calendar-subscription atomic-return trust-boundary regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/calendar-subscription-sqlite\.test\.mjs/,
+  'the calendar-subscription SQLite persistence contract executes under c8',
 );
 assert.match(
   scripts['test:coverage:cases'],
