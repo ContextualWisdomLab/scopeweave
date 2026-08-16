@@ -14,8 +14,8 @@ function loadApp() {
 ;globalThis.__cachingExports = {
   createStatusCellContent,
   createOwnerCellContent,
-  statusBadgeTemplateMap,
-  ownerBadgeTemplateMap,
+  getStatusBadgeTemplate: () => statusBadgeTemplate,
+  getOwnerBadgeTemplate: () => ownerBadgeTemplate,
 };
 `;
 
@@ -120,8 +120,8 @@ function loadApp() {
 const {
   createStatusCellContent,
   createOwnerCellContent,
-  statusBadgeTemplateMap,
-  ownerBadgeTemplateMap,
+  getStatusBadgeTemplate,
+  getOwnerBadgeTemplate,
   getCreateElementCalls,
 } = loadApp();
 
@@ -139,16 +139,20 @@ assert.equal(
   firstDoneCell.attributes['aria-label'],
   `완료 - ${doneState.description}`,
 );
-assert.equal(statusBadgeTemplateMap.size, 1);
+const statusShell = getStatusBadgeTemplate();
+assert.equal(statusShell.className, 'status-badge');
+assert.equal(statusShell.textContent, undefined, 'cached status shell must not retain row text');
+assert.equal(statusShell.title, undefined, 'cached status shell must not retain row title');
+assert.equal(
+  statusShell.attributes['aria-label'],
+  undefined,
+  'cached status shell must not retain row accessibility text',
+);
 
 const equivalentDoneCell = createStatusCellContent({ ...doneState });
 assert.notEqual(firstDoneCell, equivalentDoneCell);
 assert.equal(equivalentDoneCell.text, '완료');
-assert.equal(
-  statusBadgeTemplateMap.size,
-  1,
-  'equivalent rendered status values share one semantic cache entry',
-);
+assert.equal(getStatusBadgeTemplate(), statusShell, 'status rendering reuses one immutable shell');
 
 const revisedDescription = '완료되었지만 검토가 필요한 작업입니다.';
 const revisedDoneCell = createStatusCellContent({
@@ -160,12 +164,10 @@ assert.equal(
   revisedDoneCell.attributes['aria-label'],
   `완료 - ${revisedDescription}`,
 );
-assert.equal(
-  statusBadgeTemplateMap.size,
-  2,
-  'different accessible descriptions cannot reuse stale cached text',
-);
+assert.equal(statusShell.textContent, undefined, 'status shell remains free of revised row text');
+assert.equal(statusShell.title, undefined, 'status shell remains free of revised row descriptions');
 
+const createElementCallsBeforeStatuses = getCreateElementCalls();
 for (let index = 0; index < 300; index += 1) {
   createStatusCellContent({
     label: `status-${index}`,
@@ -173,10 +175,12 @@ for (let index = 0; index < 300; index += 1) {
     description: `description-${index}`,
   });
 }
-assert.ok(
-  statusBadgeTemplateMap.size <= 256,
-  'status badge templates stay within the bounded cache budget',
+assert.equal(
+  getCreateElementCalls() - createElementCallsBeforeStatuses,
+  0,
+  'status values clone one immutable shell without allocating per-value templates',
 );
+assert.equal(statusShell.textContent, undefined, 'status shell never retains customer status values');
 
 const emptyState = { label: '', className: '', description: '' };
 const emptyCell = createStatusCellContent(emptyState);
@@ -185,41 +189,42 @@ assert.equal(emptyCell.className, 'empty-cell');
 
 const firstOwnerCell = createOwnerCellContent('홍길동');
 assert.equal(firstOwnerCell.text, '홍길동');
-assert.equal(firstOwnerCell.className, 'owner-badge');
-assert.ok(firstOwnerCell.style.background);
-assert.equal(ownerBadgeTemplateMap.has('홍길동'), true);
+assert.match(firstOwnerCell.className, /^owner-badge owner-badge--color-\d+$/);
+assert.equal(firstOwnerCell.style.background, undefined, 'owner color must not use inline style');
+const ownerShell = getOwnerBadgeTemplate();
+assert.equal(ownerShell.className, 'owner-badge');
+assert.equal(ownerShell.textContent, undefined, 'cached owner shell must not retain user data');
+assert.equal(ownerShell.style.background, undefined, 'cached owner shell must not retain inline color');
 
 const secondOwnerCell = createOwnerCellContent('홍길동');
 assert.notEqual(firstOwnerCell, secondOwnerCell);
 assert.equal(secondOwnerCell.text, '홍길동');
-assert.equal(secondOwnerCell.className, 'owner-badge');
-assert.equal(firstOwnerCell.style.background, secondOwnerCell.style.background);
+assert.equal(firstOwnerCell.className, secondOwnerCell.className, 'owner color class stays deterministic');
+assert.equal(getOwnerBadgeTemplate(), ownerShell, 'owner rendering reuses one immutable shell');
 
+const createElementCallsBeforeOwners = getCreateElementCalls();
 for (let index = 0; index < 300; index += 1) {
-  createOwnerCellContent(`owner-${index}`);
+  const ownerCell = createOwnerCellContent(`owner-${index}`);
+  assert.match(ownerCell.className, /^owner-badge owner-badge--color-\d+$/);
 }
-assert.ok(
-  ownerBadgeTemplateMap.size <= 256,
-  'owner badge templates stay within the bounded cache budget',
+assert.equal(
+  getCreateElementCalls() - createElementCallsBeforeOwners,
+  0,
+  'unique owner values clone one immutable shell without allocating user-keyed templates',
 );
+assert.equal(ownerShell.textContent, undefined, 'owner shell never retains customer owner values');
 
-ownerBadgeTemplateMap.clear();
 const createElementCallsBeforeVolume = getCreateElementCalls();
 for (let rowIndex = 0; rowIndex < 5_000; rowIndex += 1) {
   createOwnerCellContent('same-owner');
 }
 assert.equal(
   getCreateElementCalls() - createElementCallsBeforeVolume,
-  1,
-  '5,000 identical owner rows create one DOM template and clone it thereafter',
-);
-assert.equal(
-  ownerBadgeTemplateMap.size,
-  1,
-  '5,000 identical owner rows retain one bounded cache entry',
+  0,
+  '5,000 identical owner rows clone the existing immutable shell without new elements',
 );
 
 const emptyOwner = createOwnerCellContent('');
 assert.equal(emptyOwner.className, 'empty-cell');
 
-console.log('✓ bounded DOM template caching tests passed');
+console.log('✓ immutable DOM badge shell caching tests passed');
