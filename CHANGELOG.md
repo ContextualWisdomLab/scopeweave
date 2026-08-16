@@ -26,19 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   follow-up work under issue #413.
 - Added a separate framework-neutral calendar-subscription credential domain
   with one-time secret display on create/rotate, hash-only persistence ports,
-  project-scoped management, reusable feed authorization, membership-version
-  rechecks, safe lifecycle metadata, rotation, revocation, and usage evidence.
-  Runtime route, database adapter/migration, and UI implementation remain
-  follow-up work under issue #413; the required calendar-management interaction
-  contract is captured in Figma and traced in the doctoring record.
-- **Active PR #524; not yet protected-`develop` truth:** added normalized SQLite
-  persistence for calendar-subscription credentials with current-hash-only
-  storage, a frozen `calendar_read` purpose, issuance-epoch membership binding,
-  atomic live-membership checks, durable rotation/usage evidence, first-transition
-  revocation evidence, a secret-free audit outbox, restart-survival tests, and
-  c8 registration. Protected route and customer UI migration remain follow-up
-  work under issue #413. The adapter still accepts a parent domain that omits
-  `purpose` so #514 create/use/rotate remain bindable before #539 lands.
+  project-scoped management, reusable `calendar_read` authorization, issuance
+  membership-epoch binding so remove-then-rejoin cannot revive a secret,
+  a 366-day create/rotate lifetime cap, exact-expiry rejection, safe lifecycle
+  metadata, rotation, revocation, and usage evidence. Runtime route, database
+  adapter/migration, and UI implementation remain follow-up work under issue
+  #413; the required calendar-management interaction contract is captured in
+  Figma and traced in the doctoring record.
 
 ### Security
 
@@ -78,6 +72,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Accepted XML whitespace before exact Microsoft Project element delimiters
+  while preserving the linear, regex-free import scanner and rejecting
+  attributes, longer names, non-XML whitespace, nested unmatched blocks, and
+  truncated input.
 - Attachment-list status refresh now removes the per-row database lookup,
   uses a configurable bounded worker pool with per-item abortable timeouts and
   a request-wide latency budget, preserves stale status after downstream,

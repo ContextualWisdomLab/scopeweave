@@ -43,8 +43,8 @@
   contain.
 - Kubernetes/IaC security coverage remains a follow-up design lane for
   any future `infra/` or container packaging surface.
-- Calendar feed credentials are a separately revocable `calendar_read`
-  subscription, not a session JWT in the ICS URL. The domain (#514/#539)
-  owns lifecycle rules; SQLite persistence (#524) stores only the current
-  hash, frozen purpose, and issuance membership epoch. Route and UI
-  migration remain later slices under issue #413.
+- Short-lived `stream` / `attachment_view` access grants and reusable
+  `calendar_read` subscriptions are separate credential domains. Calendar
+  use binds the stored issuance membership epoch; rotation re-binds the
+  live epoch and invalidates the previous secret. Neither domain may
+  restore a general session JWT in a URL.

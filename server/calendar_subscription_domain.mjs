@@ -6,9 +6,23 @@ const SECRET_PATTERN = /^[A-Za-z0-9_-]{43}$/;
 const NAME_MAX_LENGTH = 120;
 const MEMBERSHIP_VERSION_MAX_LENGTH = 128;
 const CONTROL_PATTERN = /[\u0000-\u001F\u007F-\u009F]/u;
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /** Fixed resource-server audience for reusable project calendar subscriptions. */
 export const CALENDAR_SUBSCRIPTION_AUDIENCE = 'scopeweave:calendar';
+
+/**
+ * Fixed purpose bound to ICS/calendar-feed read only.
+ * Thin HTTP adapters must not treat this principal as session-equivalent
+ * access to JSON APIs, SSE, attachments, or other projects.
+ */
+export const CALENDAR_SUBSCRIPTION_PURPOSE = 'calendar_read';
+
+/**
+ * Inclusive upper bound on create/rotate lifetime, measured from `nowMs`.
+ * 366 days covers a leap-year span without allowing a decades-long feed secret.
+ */
+export const CALENDAR_SUBSCRIPTION_MAX_LIFETIME_MS = 366 * MS_PER_DAY;
 
 /** Stable domain error safe for thin HTTP adapters to map without secret-state disclosure. */
 export class CalendarSubscriptionError extends Error {
@@ -69,6 +83,10 @@ function normalizeExpiry(expiresAtMs, nowMs) {
   if (!Number.isSafeInteger(expiresAtMs) || expiresAtMs <= nowMs) {
     throw new CalendarSubscriptionError('calendar_subscription_expiry_invalid', 400);
   }
+  const lifetimeMs = expiresAtMs - nowMs;
+  if (!Number.isSafeInteger(lifetimeMs) || lifetimeMs > CALENDAR_SUBSCRIPTION_MAX_LIFETIME_MS) {
+    throw new CalendarSubscriptionError('calendar_subscription_expiry_invalid', 400);
+  }
   return expiresAtMs;
 }
 
@@ -122,6 +140,7 @@ function viewOf(record, nowMs) {
     subjectId: record.subject_id,
     projectId: record.project_id,
     name: record.name,
+    purpose: record.purpose ?? CALENDAR_SUBSCRIPTION_PURPOSE,
     audience: record.audience,
     createdAtMs: record.created_at_ms,
     expiresAtMs: record.expires_at_ms,
@@ -165,11 +184,24 @@ async function readMembershipVersion(membershipRevocation, subjectId, projectId)
  * their SHA-256 hashes cross the repository port. Repository adapters own the
  * durable `calendar_subscriptions`, `subscription_rotations`, and
  * `subscription_usage_events` state and must make usage/rotation/revocation
- * transitions atomic. `recordUsageAtomically()` and
- * `rotateSubscriptionAtomically()` must compare the supplied membership version
- * with live membership state in the same transaction, closing the
- * revoke-between-check-and-use race. Adapters without a shared transaction must
- * atomically revoke affected subscriptions when membership changes.
+ * transitions atomic.
+ *
+ * `authorize()` supplies the *issuance* membership version captured on the
+ * stored row. `recordUsageAtomically()` must reject unless, in one transaction,
+ * live membership equals that supplied version and the row's
+ * `membership_version` still equals it. Remove-then-rejoin therefore cannot
+ * revive an unrevoked secret; the operator must rotate (or create) to bind a
+ * new epoch. `rotateSubscriptionAtomically()` receives the *current* live
+ * membership version so a still-authorized operator can re-bind after rejoin
+ * while invalidating the previous secret. Both atomic ports must also reject
+ * wrong project/audience/purpose, `expires_at_ms <= now_ms`, and a non-null
+ * `revoked_at_ms`. The service fail-closes unless the returned row is
+ * `statusOf(...) === 'active'`. `revokeSubscriptionAtomically()` must set
+ * `revocation_applied: true` only on the first transition so a same-millisecond
+ * retry cannot emit a second audit event. Adapters without a shared transaction
+ * must atomically revoke affected subscriptions when membership changes; that
+ * revoke-on-membership-change path is mandatory, not an alternative to the
+ * epoch comparison.
  *
  * Audit delivery is best-effort after repository commits so an audit transport
  * outage cannot cause a client to retry and accidentally expose multiple active
@@ -205,6 +237,11 @@ export function createCalendarSubscriptionService({
   requireMethod(projectAuthorization, 'assertCanManage');
   requireMethod(membershipRevocation, 'assertActive');
 
+  /**
+   * Mint a reusable calendar-read secret. Returns plaintext once; persists only the hash.
+   * @param {{subjectId: string, projectId: string, name: string, expiresAtMs: number}} request
+   * @returns {Promise<object>} Frozen lifecycle view plus one-time `secret`.
+   */
   async function create({ subjectId, projectId, name, expiresAtMs }) {
     validateIdentity(subjectId, projectId);
     const normalizedName = normalizeName(name);
@@ -220,6 +257,7 @@ export function createCalendarSubscriptionService({
       subject_id: subjectId,
       project_id: projectId,
       name: normalizedName,
+      purpose: CALENDAR_SUBSCRIPTION_PURPOSE,
       audience: CALENDAR_SUBSCRIPTION_AUDIENCE,
       membership_version: membershipVersion,
       created_at_ms: nowMs,
@@ -234,12 +272,18 @@ export function createCalendarSubscriptionService({
       subscription_id: subscriptionId,
       subject_id: subjectId,
       project_id: projectId,
+      purpose: CALENDAR_SUBSCRIPTION_PURPOSE,
       audience: CALENDAR_SUBSCRIPTION_AUDIENCE,
       expires_at_ms: normalizedExpiry,
     });
     return Object.freeze({ secret, ...viewOf(record, nowMs) });
   }
 
+  /**
+   * List safe lifecycle metadata for the caller's project. Never returns secret or hash.
+   * @param {{subjectId: string, projectId: string}} request
+   * @returns {Promise<ReadonlyArray<object>>}
+   */
   async function list({ subjectId, projectId }) {
     validateIdentity(subjectId, projectId);
     await assertManage(projectAuthorization, subjectId, projectId);
@@ -249,42 +293,71 @@ export function createCalendarSubscriptionService({
     return Object.freeze(records.map((record) => viewOf(record, nowMs)));
   }
 
+  /**
+   * Authorize a calendar-read principal. Rejects exact expiry, revoke, and
+   * remove-then-rejoin unless the stored issuance membership epoch still matches live membership.
+   * @param {{secret: string, projectId: string}} request
+   * @returns {Promise<{subscriptionId: string, subjectId: string, projectId: string, purpose: string, audience: string}>}
+   */
   async function authorize({ secret, projectId }) {
     if (typeof secret !== 'string' || !SECRET_PATTERN.test(secret) || !isBoundedString(projectId)) {
       throw unauthorizedSubscription();
     }
     const secretHash = hashSecret(secret);
     const existing = await repository.findSubscriptionByHash(secretHash);
-    if (!existing || existing.project_id !== projectId || existing.audience !== CALENDAR_SUBSCRIPTION_AUDIENCE) {
+    if (
+      !existing
+      || existing.project_id !== projectId
+      || existing.audience !== CALENDAR_SUBSCRIPTION_AUDIENCE
+      || existing.purpose !== CALENDAR_SUBSCRIPTION_PURPOSE
+    ) {
       throw unauthorizedSubscription();
     }
-    const membershipVersion = await readMembershipVersion(
+    const issuedMembershipVersion = normalizeMembershipVersion(existing.membership_version);
+    const liveMembershipVersion = await readMembershipVersion(
       membershipRevocation,
       existing.subject_id,
       existing.project_id,
     );
+    if (liveMembershipVersion !== issuedMembershipVersion) {
+      throw unauthorizedSubscription();
+    }
+    const nowMs = readNow(clock);
+    if (statusOf(existing, nowMs) !== 'active') {
+      throw unauthorizedSubscription();
+    }
     const used = await repository.recordUsageAtomically(secretHash, {
-      now_ms: readNow(clock),
+      now_ms: nowMs,
       project_id: projectId,
+      purpose: CALENDAR_SUBSCRIPTION_PURPOSE,
       audience: CALENDAR_SUBSCRIPTION_AUDIENCE,
-      membership_version: membershipVersion,
+      membership_version: issuedMembershipVersion,
     });
-    if (!used) throw unauthorizedSubscription();
+    if (!used || statusOf(used, nowMs) !== 'active' || used.purpose !== CALENDAR_SUBSCRIPTION_PURPOSE) {
+      throw unauthorizedSubscription();
+    }
     await recordAuditBestEffort(auditSink, {
       event: 'calendar_subscription.used',
       subscription_id: used.subscription_id,
       subject_id: used.subject_id,
       project_id: used.project_id,
+      purpose: used.purpose,
       audience: used.audience,
     });
     return Object.freeze({
       subscriptionId: used.subscription_id,
       subjectId: used.subject_id,
       projectId: used.project_id,
+      purpose: used.purpose,
       audience: used.audience,
     });
   }
 
+  /**
+   * Replace the secret, bind the current live membership epoch, and invalidate the previous secret.
+   * @param {{subjectId: string, projectId: string, subscriptionId: string, expiresAtMs: number}} request
+   * @returns {Promise<object>} Frozen lifecycle view plus one-time `secret`.
+   */
   async function rotate({ subjectId, projectId, subscriptionId, expiresAtMs }) {
     validateIdentity(subjectId, projectId);
     const normalizedSubscriptionId = normalizeSubscriptionId(subscriptionId);
@@ -299,20 +372,29 @@ export function createCalendarSubscriptionService({
       new_secret_hash: hashSecret(secret),
       now_ms: nowMs,
       expires_at_ms: normalizedExpiry,
+      purpose: CALENDAR_SUBSCRIPTION_PURPOSE,
       membership_version: membershipVersion,
     });
-    if (!rotated) throw notFoundSubscription();
+    if (!rotated || statusOf(rotated, nowMs) !== 'active' || rotated.purpose !== CALENDAR_SUBSCRIPTION_PURPOSE) {
+      throw notFoundSubscription();
+    }
     await recordAuditBestEffort(auditSink, {
       event: 'calendar_subscription.rotated',
       subscription_id: rotated.subscription_id,
       subject_id: rotated.subject_id,
       project_id: rotated.project_id,
+      purpose: rotated.purpose,
       audience: rotated.audience,
       expires_at_ms: rotated.expires_at_ms,
     });
     return Object.freeze({ secret, ...viewOf(rotated, nowMs) });
   }
 
+  /**
+   * Revoke a subscription. Repeat calls keep the original `revoked_at_ms` and do not re-audit.
+   * @param {{subjectId: string, projectId: string, subscriptionId: string}} request
+   * @returns {Promise<object>} Frozen lifecycle view.
+   */
   async function revoke({ subjectId, projectId, subscriptionId }) {
     validateIdentity(subjectId, projectId);
     const normalizedSubscriptionId = normalizeSubscriptionId(subscriptionId);
@@ -324,13 +406,16 @@ export function createCalendarSubscriptionService({
       now_ms: nowMs,
     });
     if (!revoked) throw notFoundSubscription();
-    await recordAuditBestEffort(auditSink, {
-      event: 'calendar_subscription.revoked',
-      subscription_id: revoked.subscription_id,
-      subject_id: revoked.subject_id,
-      project_id: revoked.project_id,
-      audience: revoked.audience,
-    });
+    if (revoked.revocation_applied === true) {
+      await recordAuditBestEffort(auditSink, {
+        event: 'calendar_subscription.revoked',
+        subscription_id: revoked.subscription_id,
+        subject_id: revoked.subject_id,
+        project_id: revoked.project_id,
+        purpose: revoked.purpose ?? CALENDAR_SUBSCRIPTION_PURPOSE,
+        audience: revoked.audience,
+      });
+    }
     return viewOf(revoked, nowMs);
   }
 
