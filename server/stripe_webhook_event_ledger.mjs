@@ -1,6 +1,7 @@
 const MAX_EVENT_FIELD_LENGTH = 255;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const SAVEPOINT_NAME = 'billing_stripe_webhook_event_write';
+let configuredRecorder = null;
 
 /** Stable persistence-boundary error for verified Stripe webhook events. */
 export class StripeWebhookLedgerError extends Error {
@@ -88,6 +89,32 @@ function withSavepoint(database, operation) {
     }
     throw error;
   }
+}
+
+/**
+ * Install the process-local verified-event recorder during database bootstrap.
+ *
+ * Keeping recorder installation explicit avoids database side effects in pure
+ * signature-verification unit tests while ensuring the production app, which
+ * imports `db.mjs` before the webhook verifier, records every authenticated event.
+ *
+ * @param {(input: {event: Record<string, unknown>, payloadSha256: string}) => unknown} recorder durable recorder function
+ * @returns {void}
+ */
+export function configureStripeWebhookEventRecorder(recorder) {
+  if (typeof recorder !== 'function') throw new TypeError('recorder must be a function');
+  configuredRecorder = recorder;
+}
+
+/**
+ * Record verified evidence when bootstrap has installed a durable recorder.
+ * Pure verifier-only consumers may intentionally run without one.
+ *
+ * @param {{event: Record<string, unknown>, payloadSha256: string}} input verified event evidence
+ * @returns {unknown|null} recorder result, or null when no runtime recorder exists
+ */
+export function recordVerifiedStripeWebhookEvent(input) {
+  return configuredRecorder ? configuredRecorder(input) : null;
 }
 
 /**
