@@ -53,6 +53,7 @@ test('jobStatus enforces endpoint, signal, transport, HTTP, and status contracts
   assert.equal(status, 'RUNNING');
   assert.equal(observedUrl, 'https://clearfolio.example/api/v1/convert/jobs/job-1');
   assert.equal(observedOptions.signal, controller.signal);
+  assert.equal(observedOptions.redirect, 'error');
 
   setNetworkError(new Error('connect ECONNREFUSED https://private-clearfolio.internal'));
   await expectSanitizedFailure(
@@ -124,6 +125,7 @@ test('submitJob rejects transport details and malformed successful responses', a
   );
   assert.equal(observedUrl, 'https://clearfolio.example/api/v1/convert/jobs');
   assert.equal(observedOptions.method, 'POST');
+  assert.equal(observedOptions.redirect, 'error');
   assert.ok(observedOptions.body instanceof FormData);
 
   const malformedPayloads = [
@@ -189,6 +191,7 @@ test('artifactUrl validates links and never exposes transport or response text',
     'https://clearfolio.example/api/v1/viewer/job-1/artifact-links',
   );
   assert.equal(observedOptions.method, 'POST');
+  assert.equal(observedOptions.redirect, 'error');
 
   const malformedPayloads = [
     {
@@ -204,6 +207,10 @@ test('artifactUrl validates links and never exposes transport or response text',
     { label: 'malformed URL', json: async () => ({ artifactUrl: 'http://[' }) },
     { label: 'unsupported URL scheme', json: async () => ({ artifactUrl: 'javascript:alert(1)' }) },
     { label: 'HTTPS downgrade', json: async () => ({ artifactUrl: 'http://cdn.example/file.pdf' }) },
+    { label: 'foreign HTTPS origin', json: async () => ({ artifactUrl: 'https://cdn.example/file.pdf' }) },
+    { label: 'protocol-relative foreign origin', json: async () => ({ artifactUrl: '//evil.example/file.pdf' }) },
+    { label: 'credentialed same origin', json: async () => ({ artifactUrl: 'https://user@clearfolio.example/file.pdf' }) },
+    { label: 'fragmented same origin', json: async () => ({ artifactUrl: 'https://clearfolio.example/file.pdf#viewer-state' }) },
   ];
 
   for (const malformed of malformedPayloads) {
@@ -228,12 +235,6 @@ test('artifactUrl validates links and never exposes transport or response text',
     await artifactUrl(4, 5, 'job-1'),
     'https://clearfolio.example/viewer/job-1?artifactToken=same%20origin',
     'same-origin artifact tokens may be translated into the trusted viewer route',
-  );
-
-  setResponse({ json: async () => ({ url: 'https://cdn.example/file.pdf' }) });
-  assert.equal(
-    await artifactUrl(4, 5, 'job-1'),
-    'https://cdn.example/file.pdf',
   );
 
   setResponse({
