@@ -89,9 +89,9 @@ assert.doesNotMatch(
   'CodeQL must remain on the unprivileged pull_request trust boundary',
 );
 
-const exactBaseRef = 'ref: ${{ github.event.pull_request.base.sha }}';
+const liveBaseRef = 'ref: ${{ github.event.pull_request.base.ref }}';
+const liveBaseRefEnv = 'BASE_REF: ${{ github.event.pull_request.base.ref }}';
 const osvExactHeadRef = 'ref: ${{ github.event.pull_request.head.sha }}';
-const expectedBaseShaEnv = 'EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}';
 const expectedHeadShaEnv = 'EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}';
 const osvScannerV250Pin =
   'google/osv-scanner-action/osv-scanner-action@06b2ab4348248b456ee06c9e953637f55e03504f # v2.5.0';
@@ -104,9 +104,19 @@ assert.match(
   'OSV must retain the stable scan job identity used by protected-base code-scanning comparisons',
 );
 assert.equal(
-  osvWorkflow.split(exactBaseRef).length - 1,
+  osvWorkflow.split(liveBaseRef).length - 1,
   1,
-  'OSV must explicitly check out the exact live pull-request base for the baseline scan',
+  'OSV baseline checkout must resolve the live protected base ref instead of trusting the PR base snapshot SHA',
+);
+assert.equal(
+  osvWorkflow.split(liveBaseRefEnv).length - 1,
+  1,
+  'OSV baseline evidence must identify the protected base ref whose live tip was resolved by checkout',
+);
+assert.doesNotMatch(
+  osvWorkflow,
+  /github\.event\.pull_request\.base\.sha/,
+  'OSV must not treat the historical pull-request base SHA snapshot as the current protected base tip',
 );
 assert.equal(
   osvWorkflow.split(osvExactHeadRef).length - 1,
@@ -116,7 +126,7 @@ assert.equal(
 assert.match(
   osvWorkflow,
   /- name: Checkout exact contributor revision[\s\S]*?with:\s*[\r\n]+\s*ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}[\r\n]+\s*persist-credentials: false[\r\n]+\s*clean: false/,
-  'OSV contributor checkout must preserve the exact-base old-results.json across the second checkout',
+  'OSV contributor checkout must preserve the live-base old-results.json across the second checkout',
 );
 assert.equal(
   osvWorkflow.split('persist-credentials: false').length - 1,
@@ -126,12 +136,7 @@ assert.equal(
 assert.equal(
   osvWorkflow.split('git rev-parse HEAD').length - 1,
   2,
-  'OSV must verify both the baseline and contributor commits it actually scans',
-);
-assert.equal(
-  osvWorkflow.split(expectedBaseShaEnv).length - 1,
-  1,
-  'OSV baseline verification must bind to the pull-request base SHA',
+  'OSV must record the live-base revision it resolved and verify the contributor commit it actually scans',
 );
 assert.equal(
   osvWorkflow.split(expectedHeadShaEnv).length - 1,
@@ -169,4 +174,4 @@ assert.doesNotMatch(
   'OSV must remain on the unprivileged pull_request trust boundary',
 );
 
-console.log('✓ Server Tests, required CodeQL, and OSV exact-head workflow contracts passed');
+console.log('✓ Server Tests, required CodeQL, and OSV exact-head/live-base workflow contracts passed');
