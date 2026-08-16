@@ -464,9 +464,10 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
 /**
  * Issue a viewable artifact URL for a completed Clearfolio job.
  *
- * Same-origin `artifactToken` values may be translated into the local viewer
- * route. A token returned on another origin remains bound to that origin and is
- * never transplanted into the trusted Clearfolio viewer URL.
+ * Same-origin `artifactToken` values may be translated into the trusted viewer
+ * route. Token-bearing links from another origin are rejected until an explicit
+ * reviewed artifact-origin allowlist exists; tokens are never transplanted or
+ * returned to an unreviewed cross-origin host.
  *
  * @param {string|number} orgId - ScopeWeave organization identifier.
  * @param {string|number} userId - Requesting ScopeWeave user identifier.
@@ -511,7 +512,10 @@ export async function artifactUrl(orgId, userId, jobId) {
   }
 
   const token = url.searchParams.get('artifactToken');
-  if (token && url.origin === clearfolioUrl.origin) {
+  if (token) {
+    if (url.origin !== clearfolioUrl.origin) {
+      throw new Error('clearfolio artifact-link response invalid');
+    }
     return `${configuration.baseUrl}/viewer/${encodeURIComponent(canonicalJobId)}?artifactToken=${encodeURIComponent(token)}`;
   }
   return url.href;
