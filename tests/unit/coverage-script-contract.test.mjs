@@ -70,6 +70,11 @@ assert.match(
   'the current authoritative Stripe subscription projection is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/stripe_entitlement_policy\.mjs/,
+  'the monotonic Stripe entitlement policy is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
@@ -135,6 +140,16 @@ assert.match(
   'the current authoritative Stripe subscription projection regression executes under c8',
 );
 assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/stripe-entitlement-policy\.test\.mjs/,
+  'the Stripe entitlement behavior regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/stripe-entitlement-policy-edge\.test\.mjs/,
+  'the Stripe entitlement edge regression executes under c8',
+);
+assert.match(
   scripts['test:unit'],
   /tests\/unit\/stripe-webhook-recorder-integration\.test\.mjs/,
   'normal unit CI executes the verified-event recorder integration regression',
@@ -158,6 +173,16 @@ assert.match(
   scripts['test:unit'],
   /tests\/unit\/stripe-subscription-current-projection\.test\.mjs/,
   'normal unit CI executes the current authoritative Stripe subscription projection regression',
+);
+assert.match(
+  scripts['test:unit'],
+  /tests\/unit\/stripe-entitlement-policy\.test\.mjs/,
+  'normal unit CI executes the Stripe entitlement behavior regression',
+);
+assert.match(
+  scripts['test:unit'],
+  /tests\/unit\/stripe-entitlement-policy-edge\.test\.mjs/,
+  'normal unit CI executes the Stripe entitlement edge regression',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
