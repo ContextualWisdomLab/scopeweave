@@ -97,7 +97,7 @@ Outbox delivery itself is intentionally outside this slice. A later worker may m
 
 ## TDD and acceptance evidence
 
-The initial test-only head imported the absent `server/calendar_subscription_sqlite.mjs`. The hosted Server Tests run failed with `ERR_MODULE_NOT_FOUND`, demonstrating that production implementation was required before the persistence contract could pass. After the adapter was added, all nine focused SQLite behavior scenarios passed together with the repository unit/API suite and cloud browser E2E in the observed hosted run.
+The initial test-only head imported the absent `server/calendar_subscription_sqlite.mjs`. The hosted Server Tests run failed with `ERR_MODULE_NOT_FOUND`, demonstrating that production implementation was required before the persistence contract could pass. After the adapter was added, all ten focused SQLite behavior scenarios passed together with the repository unit/API suite and cloud browser E2E in the observed hosted run.
 
 However, those Server Tests currently check out GitHub's synthetic `refs/pull/524/merge` SHA rather than the contributor head. The observed GREEN checkout was synthetic merge `086f0e972e858264eae0dbd88091b476d9547cda`, produced from contributor head `7f667689b237e0910d99f47bfce63e6a267d2a85` over parent `cf12559739cc3161000e6e6dedfe9370033acb7a`. Under ScopeWeave's quality contract, synthetic/predecessor evidence is explicitly non-passing. PR #523/#522 addresses that workflow defect; #524 cannot promote this run to exact-head merge evidence.
 
