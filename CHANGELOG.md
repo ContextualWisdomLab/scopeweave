@@ -65,6 +65,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Accepted XML whitespace before exact Microsoft Project element delimiters
+  while preserving the linear, regex-free import scanner and rejecting
+  attributes, longer names, non-XML whitespace, nested unmatched blocks, and
+  truncated input.
 - Attachment-list status refresh now removes the per-row database lookup,
   uses a configurable bounded worker pool with per-item abortable timeouts and
   a request-wide latency budget, preserves stale status after downstream,
