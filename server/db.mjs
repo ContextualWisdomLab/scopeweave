@@ -9,6 +9,7 @@ import {
   installBillingCheckoutAttemptSchema,
 } from './billing_checkout_attempt.mjs';
 import {
+  configureStripeWebhookEventRecorder,
   createSqliteStripeWebhookEventRepository,
   installStripeWebhookEventSchema,
 } from './stripe_webhook_event_ledger.mjs';
@@ -190,6 +191,7 @@ installBillingCheckoutAttemptSchema(db);
 export const billingCheckoutAttempts = createSqliteBillingCheckoutAttemptRepository(db);
 installStripeWebhookEventSchema(db);
 export const stripeWebhookEvents = createSqliteStripeWebhookEventRepository(db);
+configureStripeWebhookEventRecorder((evidence) => stripeWebhookEvents.recordVerifiedEvent(evidence));
 
 // node:sqlite returns lastInsertRowid as number|bigint; normalize to Number.
 export const rowid = (r) => Number(r.lastInsertRowid);
