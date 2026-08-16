@@ -59,6 +59,21 @@ assert.equal(
   'CodeQL checkout must select the exact contributor head on pull requests',
 );
 assert.equal(
+  codeqlWorkflow.split(expectedShaEnv).length - 1,
+  1,
+  'CodeQL verification must bind to the exact expected SHA',
+);
+assert.equal(
+  codeqlWorkflow.split('git rev-parse HEAD').length - 1,
+  1,
+  'CodeQL must inspect the commit it actually checked out',
+);
+assert.equal(
+  codeqlWorkflow.split('test "$actual_sha" = "$EXPECTED_CHECKOUT_SHA"').length - 1,
+  1,
+  'CodeQL must fail when the actual checkout differs from the expected SHA',
+);
+assert.equal(
   codeqlWorkflow.split('persist-credentials: false').length - 1,
   1,
   'CodeQL exact-head checkout must not persist repository credentials',
@@ -93,6 +108,11 @@ assert.equal(
   osvWorkflow.split(osvExactHeadRef).length - 1,
   1,
   'OSV must explicitly check out the exact contributor head for the candidate scan',
+);
+assert.match(
+  osvWorkflow,
+  /- name: Checkout exact contributor revision[\s\S]*?with:\s*[\r\n]+\s*ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}[\r\n]+\s*persist-credentials: false[\r\n]+\s*clean: false/,
+  'OSV contributor checkout must preserve the exact-base old-results.json across the second checkout',
 );
 assert.equal(
   osvWorkflow.split('persist-credentials: false').length - 1,
