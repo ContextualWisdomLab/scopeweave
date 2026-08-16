@@ -9,6 +9,7 @@ ScopeWeave's supported live SQLite backup path uses SQLite `VACUUM INTO` through
 The operator boundary is intentionally narrow:
 
 - backup and read-only verification only;
+- the source backup connection itself is opened read-only while retaining live-WAL `VACUUM INTO` support;
 - no automated destructive restore;
 - destination never overwritten;
 - destination publication remains bound to the canonically resolved directory even if a caller-visible parent symlink is retargeted during snapshot creation;
@@ -16,20 +17,22 @@ The operator boundary is intentionally narrow:
 - secure temporary output reserved with owner-only permissions before snapshot work begins;
 - source and backup integrity plus foreign-key checks;
 - exact `application_id`, `user_version`, and canonical `sqlite_schema` comparison;
+- schema inspection limits SQLite's result set to 100,001 rows before materialization and rejects more than 100,000 non-internal schema objects;
 - stable non-secret JSON error codes;
 - only uniquely owned temporary output is cleaned up after pre-publication failure, without replacing the causal failure.
 
 ## Primary-source basis
 
-SQLite's current backup documentation identifies the Online Backup API as the original live-backup mechanism and `VACUUM INTO` as an alternative that creates a copy of a live database. The current `VACUUM` documentation likewise defines `VACUUM ... INTO` as a backup-copy mechanism. SQLite's corruption guidance warns that a live database and its rollback journal or WAL represent one logical state; copying only the main file while transactions are active can therefore produce an inconsistent backup. These properties justify letting SQLite materialize the snapshot rather than implementing a filesystem-level copy routine.
+SQLite's current backup documentation identifies the Online Backup API as the original live-backup mechanism and `VACUUM INTO` as an alternative that creates a copy of a live database. The current `VACUUM` documentation likewise defines `VACUUM ... INTO` as a backup-copy mechanism and permits the output path to be absent or an empty file. SQLite's corruption guidance warns that a live database and its rollback journal or WAL represent one logical state; copying only the main file while transactions are active can therefore produce an inconsistent backup. These properties justify letting SQLite materialize the snapshot rather than implementing a filesystem-level copy routine.
 
-ScopeWeave currently supports Node `^22.13.0 || >=23.4.0`. Node's `node:sqlite` `DatabaseSync` API is available in the supported Node 22 line, including read-only database opens and prepared statements. The implementation therefore reuses `DatabaseSync` and parameterized SQL rather than adopting a newer helper that would silently change the runtime contract.
+ScopeWeave currently supports Node `^22.13.0 || >=23.4.0`. Node's `node:sqlite` `DatabaseSync` API is available in the supported Node 22 line, including read-only database opens and prepared statements. The implementation therefore reuses `DatabaseSync` and parameterized SQL rather than adopting a newer helper that would silently change the runtime contract. The live-WAL regression keeps a separate writer connection open while the backup connection runs `VACUUM INTO`, so changing the backup connection to `readOnly: true` retains the buyer-visible live-backup behavior while reducing source-side write authority.
 
 ## Requirement-to-evidence traceability
 
 | Requirement | Implementation evidence | Regression evidence |
 | --- | --- | --- |
-| Consistent live backup | `server/sqlite_backup.mjs` parameterized `VACUUM INTO` | open-writer WAL fixture verifies committed content in the snapshot |
+| Consistent live backup | read-only source connection plus parameterized `VACUUM INTO` | open-writer WAL fixture verifies committed content in the snapshot |
+| Bounded schema inspection | `sqlite_schema` query uses `LIMIT 100001` before mapping rows | fake-database contract asserts the SQL limit and rejects a 100,001-row schema |
 | No destination overwrite | secure temp + atomic no-overwrite hard-link publication | existing destination and source-alias tests fail closed |
 | Canonical destination authority | publication uses the destination path resolved under the canonical parent directory | parent-symlink swap during snapshot cannot redirect the final backup |
 | Preserve concurrent winner | an `EEXIST` publication failure cleans only the unique temporary path, never the destination | competing publisher fixture remains byte-for-byte intact after the losing attempt fails |
@@ -38,10 +41,11 @@ ScopeWeave currently supports Node `^22.13.0 || >=23.4.0`. Node's `node:sqlite` 
 | Backup corruption/FK rejection | independent read-only verification | verify failure fixtures |
 | Schema/version fidelity | canonical `sqlite_schema`, `application_id`, `user_version` comparison | injected metadata-mismatch snapshot |
 | Stable operator output | `runSqliteBackupCli` emits bounded JSON fields | success, usage, missing-file, output-sink, and direct-process tests |
+| Portable direct-process test path | Node `fileURLToPath` converts the module URL to a filesystem path | backup, verify, and usage subprocess cases share the converted path |
 | No destructive restore | no restore operation exported or accepted by CLI | operator runbook defines manual stopped-writer recovery rehearsal |
 | CI/coverage retention | package scripts instrument and execute the module | coverage-script contract locks both the include and regression case |
 
-The first branch commit, `3a04516d8cf3ff7336c47de911daf02faf496ef2`, intentionally added the backup contract before the production module existed. Production implementation followed on the same bounded branch. Later tests strengthened live-WAL and metadata-mismatch evidence. Security review then added a parent-symlink retarget regression at `3f55dafba40ace2a2d0192e893d961262878b8e5` and the canonical-directory repair at `1b31a58be5cfca0877252da79980d315369edf3e`. Concurrency review added a competing-publisher regression at `91f0cc411fcd8cd96be2538c8c99836ae4d76f81`; `b7083c6b8e038d1e772a2d43dfae6f804472edbb` corrected ownership so a losing publish attempt cannot delete another process's destination.
+The first branch commit, `3a04516d8cf3ff7336c47de911daf02faf496ef2`, intentionally added the backup contract before the production module existed. Production implementation followed on the same bounded branch. Later tests strengthened live-WAL and metadata-mismatch evidence. Security review then added a parent-symlink retarget regression at `3f55dafba40ace2a2d0192e893d961262878b8e5` and the canonical-directory repair at `1b31a58be5cfca0877252da79980d315369edf3e`. Concurrency review added a competing-publisher regression at `91f0cc411fcd8cd96be2538c8c99836ae4d76f81`; `b7083c6b8e038d1e772a2d43dfae6f804472edbb` corrected ownership so a losing publish attempt cannot delete another process's destination. Review follow-up `037fea3081774d78a80fcf04cab7fe2c1f98de76` added the pre-materialization schema-bound contract, and `2f7339486226730dd2103079b5312e437fcd4794` implemented the bounded query and read-only source connection.
 
 ## Security and privacy analysis
 
@@ -51,14 +55,14 @@ The module rejects source/destination aliasing after canonical path resolution a
 
 ## Recovery boundary
 
-A backup is evidence only after verification succeeds. Restoration is deliberately excluded from the executable API because replacing a live SQLite database is destructive and requires writer shutdown, preservation of failed-state evidence, deliberate handling of WAL/SHM companions, and post-start application acceptance. `docs/operations/sqlite-backup-recovery.md` defines that rehearsal without claiming an unmeasured RPO/RTO.
+A backup is evidence only after verification succeeds. Restoration is deliberately excluded from the executable API because replacing a live SQLite database is destructive and requires writer shutdown, preservation of the original database plus any `-wal`, `-shm`, and `-journal` sidecars as one evidence set, deliberate removal of those sidecars from the configured active path before replacement, and post-start application acceptance. `docs/operations/sqlite-backup-recovery.md` defines that rehearsal without claiming an unmeasured RPO/RTO.
 
 ## References
 
 Node.js contributors. (n.d.). *SQLite: Node.js v22 documentation*. Node.js. https://nodejs.org/download/release/latest-v22.x/docs/api/sqlite.html
 
-SQLite Consortium. (2026). *How to corrupt an SQLite database file*. SQLite. https://www.sqlite.org/howtocorrupt.html
+SQLite Consortium. (n.d.). *How to corrupt an SQLite database file*. SQLite. https://www.sqlite.org/howtocorrupt.html
 
-SQLite Consortium. (2026). *SQLite backup API*. SQLite. https://www.sqlite.org/backup.html
+SQLite Consortium. (n.d.). *SQLite backup API*. SQLite. https://www.sqlite.org/backup.html
 
-SQLite Consortium. (2026). *VACUUM*. SQLite. https://www.sqlite.org/lang_vacuum.html
+SQLite Consortium. (n.d.). *VACUUM*. SQLite. https://www.sqlite.org/lang_vacuum.html
