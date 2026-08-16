@@ -48,3 +48,7 @@
   use binds the stored issuance membership epoch; rotation re-binds the
   live epoch and invalidates the previous secret. Neither domain may
   restore a general session JWT in a URL.
+- Calendar-subscription SQLite persistence stores only the current secret
+  hash, frozen `calendar_read` purpose, issuance membership epoch, and
+  normalized lifecycle/audit evidence. Protected route and browser UI
+  migration remain later issue #413 slices.
