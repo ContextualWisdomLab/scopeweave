@@ -16,6 +16,11 @@ test('OpenCode development config uses only currently hosted NVIDIA NIM candidat
   assert.ok(provider.models?.['nvidia/llama-3.3-nemotron-super-49b-v1.5']);
   assert.ok(provider.models?.['meta/llama-3.1-8b-instruct']);
   assert.ok(provider.models?.['meta/llama-3.3-70b-instruct']);
+  assert.equal(
+    provider.models['meta/llama-3.3-70b-instruct'].limit?.output,
+    4096,
+    '70B output must stay within the NVIDIA NIM max_tokens range of 1-4096',
+  );
 
   const serialized = JSON.stringify(config);
   assert.doesNotMatch(serialized, /github-models/i);
