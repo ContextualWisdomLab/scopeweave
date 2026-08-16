@@ -184,7 +184,27 @@ test('projection returns null or an empty list when no accepted observation exis
 
 test('projection rejects malformed local authority before querying', () => {
   const { projection } = setup();
-  for (const organizationId of [0, -1, 1.5, Number.NaN, {}, '', true, false]) {
+  assert.deepEqual(
+    projection.listCurrentSubscriptions({ organizationId: '42' }),
+    [],
+    'canonical decimal route authority remains supported',
+  );
+  for (const organizationId of [
+    0,
+    -1,
+    1.5,
+    Number.NaN,
+    {},
+    '',
+    true,
+    false,
+    ' 42',
+    '42 ',
+    '+42',
+    '0x2a',
+    '4.2e1',
+    '042',
+  ]) {
     assert.throws(
       () => projection.listCurrentSubscriptions({ organizationId }),
       TypeError,
