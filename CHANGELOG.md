@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Made contextual-orchestrator briefing requests fail closed unless an authenticated endpoint is configured. Deterministic generated text is restricted to explicit `SCOPEWEAVE_DEV=1`, message/provider responses are bounded and validated, and non-loopback HTTP transport is rejected.
 - Bounded hosted Stripe Checkout provider calls to one 15-second, no-retry
   attempt with a 1 MiB response ceiling before JSON parsing until durable
   idempotency exists; validated returned destinations as exact HTTPS
