@@ -11,12 +11,11 @@ test('cloud status feedback is visibly rendered as a non-focus-taking live statu
   await expect(toast).not.toHaveAttribute('tabindex', /.+/);
   await expect(toast).toHaveClass(/\bvisible\b/);
   await expect(toast).toBeVisible();
+  await expect(toast).toHaveCSS('opacity', '1');
 
-  const renderedState = await toast.evaluate((element) => ({
-    opacity: Number.parseFloat(getComputedStyle(element).opacity),
-    activeElementIsToast: document.activeElement === element,
-  }));
+  const activeElementIsToast = await toast.evaluate(
+    (element) => document.activeElement === element,
+  );
 
-  expect(renderedState.opacity).toBeGreaterThanOrEqual(0.99);
-  expect(renderedState.activeElementIsToast).toBe(false);
+  expect(activeElementIsToast).toBe(false);
 });
