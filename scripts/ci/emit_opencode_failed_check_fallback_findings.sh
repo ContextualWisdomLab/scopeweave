@@ -420,8 +420,8 @@ emit_known_missing_string_finding \
 	"scripts/ci/test_strix_quick_gate.sh"
 emit_known_missing_string_finding \
 	"$EVIDENCE_FILE" \
-	"MODEL: github-models/openai/gpt-5" \
-	"OpenCode review must try GitHub Models GPT-5 first" \
+	"MODEL: nvidia-nim/nvidia/llama-3.3-nemotron-super-49b-v1.5" \
+	"OpenCode review must try NVIDIA NIM Nemotron Super first" \
 	".github/workflows/opencode-review.yml" \
 	"scripts/ci/test_strix_quick_gate.sh"
 

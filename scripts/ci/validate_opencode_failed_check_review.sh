@@ -347,7 +347,7 @@ for evidence_marker in \
   "Self-test Strix gate script" \
   "github.event.inputs.strix_llm" \
   "STRIX_LLM must select" \
-  "MODEL: github-models/openai/gpt-5"
+  "MODEL: nvidia-nim/nvidia/llama-3.3-nemotron-super-49b-v1.5"
 do
   if grep -Fq -- "$evidence_marker" "$FAILED_CHECK_EVIDENCE_FILE" &&
     ! contains_review_text "$evidence_marker"; then
