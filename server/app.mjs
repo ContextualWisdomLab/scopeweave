@@ -10,6 +10,7 @@ import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
+import { StripeWebhookError, verifyStripeWebhookRequest } from './stripe_webhook.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
@@ -601,15 +602,21 @@ app.post('/api/orgs/:id/checkout', requireAuth, async (c) => {
   return c.json(session);
 });
 
-// Stripe webhook (stub). Live mode should verify the signature with
-// STRIPE_WEBHOOK_SECRET before trusting the event — named ceiling.
+// Stripe webhook verifies exact raw bytes before acknowledging delivery. A
+// verified delivery still cannot mutate entitlements until durable event
+// deduplication and out-of-order reconciliation bind it to provider state.
 app.post('/api/stripe/webhook', async (c) => {
-  const event = await c.req.json().catch(() => ({}));
-  if (event?.type === 'checkout.session.completed') {
-    const orgId = event.data?.object?.client_reference_id || event.data?.object?.metadata?.orgId;
-    if (orgId) db.prepare("UPDATE orgs SET plan = 'pro' WHERE id = ?").run(orgId);
+  try {
+    await verifyStripeWebhookRequest(c.req.raw, {
+      secret: process.env.STRIPE_WEBHOOK_SECRET,
+    });
+    return c.json({ received: true }, 200, { 'Cache-Control': 'no-store' });
+  } catch (error) {
+    if (error instanceof StripeWebhookError) {
+      return c.json({ error: error.code }, error.status, { 'Cache-Control': 'no-store' });
+    }
+    return c.json({ error: 'stripe_webhook_unavailable' }, 500, { 'Cache-Control': 'no-store' });
   }
-  return c.json({ received: true });
 });
 
 // Dev-only: simulate a successful checkout upgrading the org to Pro.
