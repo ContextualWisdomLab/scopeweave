@@ -218,9 +218,11 @@ function createSecureTemporaryPath(parent) {
  * Create a verified, non-overwriting SQLite snapshot.
  *
  * The destination parent is resolved once to a canonical directory and every
- * later existence check, publish, permission change, and cleanup uses that
- * canonical path. A caller-visible parent symlink therefore cannot redirect
- * the verified artifact after validation while SQLite is snapshotting.
+ * later existence check and publish uses that canonical path. A caller-visible
+ * parent symlink therefore cannot redirect the verified artifact after
+ * validation while SQLite is snapshotting. Publication is a single no-overwrite
+ * hard-link operation; if another process wins that destination name, its file
+ * is never treated as cleanup owned by this attempt.
  *
  * @param {{sourcePath:string,destinationPath:string,snapshot?:Function}} options
  * Operator inputs plus an injectable snapshot seam for deterministic tests.
@@ -252,7 +254,6 @@ export function createVerifiedSqliteBackup({ sourcePath, destinationPath, snapsh
   const parentReal = dirname(destinationReal);
   const temporaryPath = createSecureTemporaryPath(parentReal);
   let database;
-  let published = false;
   try {
     database = new DatabaseSync(sourceReal);
     database.exec('PRAGMA foreign_keys = ON');
@@ -268,13 +269,15 @@ export function createVerifiedSqliteBackup({ sourcePath, destinationPath, snapsh
 
     try {
       linkSync(temporaryPath, destinationReal);
-      published = true;
     } catch (error) {
       if (error?.code === 'EEXIST') throw fail('destination_exists');
       throw error;
     }
-    chmodSync(destinationReal, 0o600);
-    unlinkSync(temporaryPath);
+
+    // The published hard link points at the already-verified 0600 inode. Once
+    // publication succeeds, temporary-name cleanup cannot invalidate that
+    // durable logical result or justify deleting a destination we now own.
+    runBestEffortCleanup(() => unlinkSync(temporaryPath));
 
     return {
       bytes,
@@ -283,7 +286,8 @@ export function createVerifiedSqliteBackup({ sourcePath, destinationPath, snapsh
       schemaObjects: backupMetadata.schema.length,
     };
   } catch (error) {
-    if (!published) removeIncompleteBackupBestEffort(destinationReal);
+    // Only the unique temporary file is owned before publication. In
+    // particular, EEXIST means another process owns destinationReal.
     removeIncompleteBackupBestEffort(temporaryPath);
     if (error instanceof SqliteBackupError) throw error;
     throw fail('sqlite_backup_failed', error);
