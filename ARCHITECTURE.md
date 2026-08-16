@@ -43,6 +43,10 @@
   contain.
 - Kubernetes/IaC security coverage remains a follow-up design lane for
   any future `infra/` or container packaging surface.
+- Clearfolio artifact redirects trust only the configured provider origin
+  unless `CLEARFOLIO_ARTIFACT_ORIGINS` lists additional exact HTTPS origins.
+  Cross-origin `artifactToken` values stay on the returned origin and are
+  never transplanted into the Clearfolio viewer.
 - Optional Clearfolio conversion is a replaceable MSA capability. Process
   liveness stays on `GET /api/health`. Configuration readiness is emitted at
   startup, queried from authenticated `GET /api/capabilities`, and used to

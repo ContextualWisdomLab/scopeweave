@@ -91,10 +91,11 @@ credentials never reach the browser. HWP/HWPX are rejected (Clearfolio policy).
 | `GET` | `/api/projects/:id/attachments/:aid/view` | 302 → signed artifact URL (`?token=` for new-tab opens). Locally unready Clearfolio returns `503`. |
 | `DELETE` | `/api/projects/:id/attachments/:aid` | Uploader or manage |
 
-Env: `CLEARFOLIO_URL` and `CLEARFOLIO_HMAC_SECRET` for production conversion.
-Unset in production makes the capability unavailable (`ready=false`) rather
-than simulating success. `SCOPEWEAVE_DEV=1` without a URL enables the
-in-memory adapter for local work only.
+Env: `CLEARFOLIO_URL` plus `CLEARFOLIO_HMAC_SECRET` for production conversion.
+Optional `CLEARFOLIO_ARTIFACT_ORIGINS` adds reviewed exact HTTPS CDN/object-store
+origins; unset trusts only the Clearfolio origin. An unset URL in production
+makes the capability unavailable (`ready=false`) rather than simulating success;
+`SCOPEWEAVE_DEV=1` without a URL enables the in-memory adapter for local work only.
 
 ## Comments (코멘트)
 

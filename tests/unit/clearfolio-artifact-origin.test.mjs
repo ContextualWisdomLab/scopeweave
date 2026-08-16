@@ -44,6 +44,22 @@ test('artifact URLs default to the configured Clearfolio origin', async () => {
     () => resolveArtifact('https://cdn.example/file.pdf', undefined),
     /clearfolio artifact-link response invalid/,
   );
+  await assert.rejects(
+    () => resolveArtifact('https://evil.com/file.pdf?artifactToken=stolen', undefined),
+    /clearfolio artifact-link response invalid/,
+    'an unallowlisted token stays rejected instead of moving into the viewer',
+  );
+  for (const link of [
+    '//evil.com/file.pdf',
+    '/\\evil.com/file.pdf',
+    'https://clearfolio.example@evil.com/x?artifactToken=t',
+  ]) {
+    await assert.rejects(
+      () => resolveArtifact(link, undefined),
+      /clearfolio artifact-link response invalid/,
+      `${link} must not inherit the provider origin`,
+    );
+  }
   assert.equal(
     await resolveArtifact('/signed/file.pdf', undefined),
     'https://clearfolio.example/signed/file.pdf',
@@ -54,6 +70,11 @@ test('explicit HTTPS artifact origins are exact scheme-host-port allowlist entri
   assert.equal(
     await resolveArtifact('https://cdn.example/file.pdf', ' https://cdn.example '),
     'https://cdn.example/file.pdf',
+  );
+  assert.equal(
+    await resolveArtifact('https://cdn.example/file.pdf', 'https://cdn.example/'),
+    'https://cdn.example/file.pdf',
+    'a trailing slash is still an origin-only allowlist entry',
   );
   assert.equal(
     await resolveArtifact(
@@ -91,8 +112,14 @@ test('artifact origin configuration fails closed before provider transport', asy
     'https://cdn.example/path',
     'https://cdn.example?query=1',
     'https://cdn.example#fragment',
+    'https://cdn.example#',
+    'https://:@cdn.example',
+    'https://cdn.example/foo/..',
+    'https://cdn.example:443',
     'not a URL',
     'https://cdn.example,',
+    '',
+    '   ',
   ];
 
   for (const artifactOrigins of invalidConfigurations) {

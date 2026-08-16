@@ -36,7 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transplanted into the trusted Clearfolio viewer URL.
 - Restricted hosted Clearfolio artifact redirects to the provider origin by
   default; optional `CLEARFOLIO_ARTIFACT_ORIGINS` entries must be exact HTTPS
-  origins, so scheme/host/port changes, credentials, fragments, and unapproved
+  origins (`URL.origin` or that origin plus `/`), so scheme/host/port changes,
+  credentials, fragments, protocol-relative lookalikes, and unapproved
   cross-origin links fail closed while approved cross-origin tokens remain bound
   to the origin that issued them.
 - Bounded hosted Clearfolio calls to non-redirecting 15-second requests and

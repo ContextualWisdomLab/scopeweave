@@ -10,9 +10,9 @@ This boundary prevents configuration text from becoming an arbitrary downstream 
 
 ## Artifact-token origin rule
 
-If Clearfolio returns an `artifactToken`, ScopeWeave rewrites it into the trusted Clearfolio viewer route only when the returned URL has the same origin as the configured Clearfolio service. A token-bearing link from another origin is rejected rather than transplanted into the trusted viewer or returned directly to an unreviewed host. This closes the token-confusion boundary without claiming that arbitrary cross-origin artifact hosts are approved.
+If Clearfolio returns an `artifactToken`, ScopeWeave rewrites it into the trusted Clearfolio viewer route only when the returned URL has the same origin as the configured Clearfolio service. A token-bearing link from another origin is never transplanted into the trusted viewer. Reviewed CDN or object-storage hosts are added only through the later `CLEARFOLIO_ARTIFACT_ORIGINS` allowlist recorded in `docs/doctoring/clearfolio-artifact-origin-trust.md`; without that setting, a cross-origin token remains rejected.
 
-Issue #489 remains open after this slice. A subsequent bounded change must still implement the explicit reviewed artifact-origin allowlist, redirect policy, streaming response-size/media-type limits, provider-wide request budget, and the remaining resource/lifecycle acceptance criteria before the Clearfolio adapter can be described as fully production-complete.
+Issue #489 remains open after this slice. Streaming response-size/media-type limits and the provider-wide request budget are owned by the provider-response-boundary record. Remaining work is capability readiness, persistence/lifecycle controls, incident and recovery evidence, and destination DNS/IP authorization so an allowlisted origin cannot become an arbitrary in-origin redirector.
 
 ## Executable evidence
 

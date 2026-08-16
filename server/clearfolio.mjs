@@ -148,9 +148,10 @@ function clearfolioArtifactOrigins(baseUrl) {
   }
 
   for (const entry of entries) {
+    const canonical = entry.trim();
     let url;
     try {
-      url = new URL(entry.trim());
+      url = new URL(canonical);
     } catch {
       throw new ClearfolioConfigurationError(
         'clearfolio_artifact_origins_invalid',
@@ -163,6 +164,7 @@ function clearfolioArtifactOrigins(baseUrl) {
       || url.pathname !== '/'
       || Boolean(url.search)
       || Boolean(url.hash)
+      || (canonical !== url.origin && canonical !== `${url.origin}/`)
     ) {
       throw new ClearfolioConfigurationError(
         'clearfolio_artifact_origins_invalid',
