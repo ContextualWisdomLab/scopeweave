@@ -122,6 +122,9 @@ logs, traces, or alert annotations.
 ## Data & scale path
 
 - **Dev / single node**: `node:sqlite` on a persistent volume (this setup). Simple, no external DB.
+  Use `npm run ops:sqlite-backup` for verified live backup or read-only verification,
+  and follow [`docs/operations/sqlite-backup-recovery.md`](operations/sqlite-backup-recovery.md)
+  for command syntax, recovery rehearsal, sidecar preservation, and restore safety.
 - **Production / multi-instance**: swap the SQLite driver in `server/db.mjs` for
   managed **Postgres** (the schema is Postgres-portable) and run several stateless
   backend replicas behind a load balancer. `node:sqlite` is a single-writer,
