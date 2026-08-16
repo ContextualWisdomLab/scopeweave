@@ -23,6 +23,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
 
 const MAX_SCHEMA_OBJECTS = 100_000;
+const SCHEMA_QUERY_LIMIT = MAX_SCHEMA_OBJECTS + 1;
 
 /** Stable public error used by the backup operator boundary. */
 export class SqliteBackupError extends Error {
@@ -118,7 +119,7 @@ export function inspectOpenSqliteDatabase(database, prefix) {
   const applicationId = sqliteScalar(database, 'PRAGMA application_id', 'application_id');
   const userVersion = sqliteScalar(database, 'PRAGMA user_version', 'user_version');
   const schema = database.prepare(
-    "SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name",
+    `SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name LIMIT ${SCHEMA_QUERY_LIMIT}`,
   ).all().map((row) => ({ ...row }));
   if (schema.length > MAX_SCHEMA_OBJECTS) throw fail(`${prefix}_schema_too_large`);
 
@@ -255,7 +256,7 @@ export function createVerifiedSqliteBackup({ sourcePath, destinationPath, snapsh
   const temporaryPath = createSecureTemporaryPath(parentReal);
   let database;
   try {
-    database = new DatabaseSync(sourceReal);
+    database = new DatabaseSync(sourceReal, { readOnly: true });
     database.exec('PRAGMA foreign_keys = ON');
     const sourceMetadata = inspectOpenSqliteDatabase(database, 'source_database');
 
