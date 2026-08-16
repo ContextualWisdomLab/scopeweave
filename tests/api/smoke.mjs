@@ -167,7 +167,7 @@ assert.equal(r.status, 401, 'SSE without token → 401');
 await r.body?.cancel?.();
 
 // Static allowlist — client files served, source/db never exposed
-for (const [path, code] of [['/', 200], ['/index.html', 200], ['/app.js', 200], ['/cloud-sync.js', 200], ['/analytics.js', 200], ['/styles.css', 200], ['/wbs.json', 200], ['/landing.html', 200], ['/landing.en.html', 200], ['/pricing', 200], ['/docs/api.md', 200], ['/robots.txt', 200], ['/sitemap.xml', 200]]) {
+for (const [path, code] of [['/', 200], ['/index.html', 200], ['/app.js', 200], ['/cloud-sync.js', 200], ['/analytics.js', 200], ['/styles.css', 200], ['/toast-state.css', 200], ['/wbs.json', 200], ['/landing.html', 200], ['/landing.en.html', 200], ['/pricing', 200], ['/docs/api.md', 200], ['/robots.txt', 200], ['/sitemap.xml', 200]]) {
   const res = await req(path);
   assert.equal(res.status, code, `static ${path} → ${code}`);
 }
