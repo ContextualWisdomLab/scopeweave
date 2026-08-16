@@ -217,6 +217,11 @@ function createSecureTemporaryPath(parent) {
 /**
  * Create a verified, non-overwriting SQLite snapshot.
  *
+ * The destination parent is resolved once to a canonical directory and every
+ * later existence check, publish, permission change, and cleanup uses that
+ * canonical path. A caller-visible parent symlink therefore cannot redirect
+ * the verified artifact after validation while SQLite is snapshotting.
+ *
  * @param {{sourcePath:string,destinationPath:string,snapshot?:Function}} options
  * Operator inputs plus an injectable snapshot seam for deterministic tests.
  * @returns {{bytes:number,applicationId:number,userVersion:number,schemaObjects:number}}
@@ -238,7 +243,7 @@ export function createVerifiedSqliteBackup({ sourcePath, destinationPath, snapsh
 
   if (sourceReal === destinationReal) throw fail('destination_matches_source');
   try {
-    if (pathEntryExists(destinationPath) || pathEntryExists(destinationReal)) throw fail('destination_exists');
+    if (pathEntryExists(destinationReal)) throw fail('destination_exists');
   } catch (error) {
     if (error instanceof SqliteBackupError) throw error;
     throw fail('sqlite_backup_failed', error);
@@ -262,13 +267,13 @@ export function createVerifiedSqliteBackup({ sourcePath, destinationPath, snapsh
     assertBackupMetadataMatches(sourceMetadata, backupMetadata);
 
     try {
-      linkSync(temporaryPath, destinationPath);
+      linkSync(temporaryPath, destinationReal);
       published = true;
     } catch (error) {
       if (error?.code === 'EEXIST') throw fail('destination_exists');
       throw error;
     }
-    chmodSync(destinationPath, 0o600);
+    chmodSync(destinationReal, 0o600);
     unlinkSync(temporaryPath);
 
     return {
@@ -278,7 +283,7 @@ export function createVerifiedSqliteBackup({ sourcePath, destinationPath, snapsh
       schemaObjects: backupMetadata.schema.length,
     };
   } catch (error) {
-    if (!published) removeIncompleteBackupBestEffort(destinationPath);
+    if (!published) removeIncompleteBackupBestEffort(destinationReal);
     removeIncompleteBackupBestEffort(temporaryPath);
     if (error instanceof SqliteBackupError) throw error;
     throw fail('sqlite_backup_failed', error);
