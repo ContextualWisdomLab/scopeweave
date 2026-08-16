@@ -33,6 +33,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   adapter/migration, and UI implementation remain follow-up work under issue
   #413; the required calendar-management interaction contract is captured in
   Figma and traced in the doctoring record.
+- **Active PR #524; not yet protected-`develop` truth:** added normalized SQLite
+  persistence for calendar-subscription credentials with current-hash-only
+  storage, atomic live-membership checks, durable rotation/usage evidence,
+  idempotent revocation, a secret-free audit outbox, restart-survival tests, and
+  c8 registration. Protected route and customer UI migration remain follow-up
+  work under issue #413.
 
 ### Security
 
