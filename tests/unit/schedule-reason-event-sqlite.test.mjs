@@ -163,6 +163,56 @@ test('rolls back the version transition and both durable relations when audit pe
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schedule_reason_event_audit_records').get().count, 1);
 });
 
+test('rollback cleanup preserves the causal audit failure and never releases an unconfirmed savepoint', async () => {
+  const database = newDatabase();
+  database.exec(`CREATE TABLE work_item_versions(
+    work_item_id TEXT PRIMARY KEY,
+    resource_version TEXT NOT NULL
+  ); INSERT INTO work_item_versions VALUES('task-17', 'work-v7');`);
+  installScheduleReasonEventSchema(database);
+  database.exec(`
+    CREATE TRIGGER schedule_reason_test_audit_failure
+    BEFORE INSERT ON schedule_reason_event_audit_records
+    BEGIN
+      SELECT RAISE(ABORT, 'causal schedule audit write failure');
+    END;
+  `);
+
+  const executed = [];
+  const guardedDatabase = {
+    prepare: database.prepare.bind(database),
+    exec(sql) {
+      executed.push(sql);
+      if (sql === 'ROLLBACK TO schedule_reason_event_commit_state') {
+        throw new Error('simulated rollback cleanup failure');
+      }
+      return database.exec(sql);
+    },
+  };
+  const repository = createSqliteScheduleReasonEventRepository(guardedDatabase, {
+    advanceResourceVersion: ({ workItemId, expectedResourceVersion }) => {
+      const result = database.prepare(`
+        UPDATE work_item_versions SET resource_version = 'work-v8'
+         WHERE work_item_id = ? AND resource_version = ?
+      `).run(workItemId, expectedResourceVersion);
+      return Number(result.changes) === 1
+        ? { advanced: true, resourceVersion: 'work-v8' }
+        : { advanced: false };
+    },
+    nextAuditRecordId: () => 'audit-record-causal',
+  });
+
+  await assert.rejects(
+    repository.commitReasonEvent({ event: baseEvent(), expectedResourceVersion: 'work-v7' }),
+    /causal schedule audit write failure/,
+  );
+  assert.equal(
+    executed.filter((sql) => sql === 'RELEASE schedule_reason_event_commit_state').length,
+    0,
+    'failed rollback must not release an unconfirmed savepoint',
+  );
+});
+
 test('fails closed on stale or non-advancing resource versions before durable inserts', async () => {
   for (const transition of [
     { advanced: false },
