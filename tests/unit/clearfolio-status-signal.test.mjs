@@ -245,9 +245,9 @@ test('artifactUrl validates links and never exposes transport or response text',
   );
 
   setResponse({ json: async () => ({ url: 'https://cdn.example/file.pdf' }) });
-  assert.equal(
-    await artifactUrl(4, 5, 'job-1'),
-    'https://cdn.example/file.pdf',
+  await expectSanitizedFailure(
+    () => artifactUrl(4, 5, 'job-1'),
+    'clearfolio artifact-link response invalid',
   );
 
   setResponse({

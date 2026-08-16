@@ -462,12 +462,88 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
 }
 
 /**
+ * Parse the reviewed artifact-origin allowlist used for attachment-view redirects.
+ *
+ * Each entry must be an absolute origin URL. Production entries require HTTPS
+ * and reject credentials, query strings, fragments, and paths so the allowlist
+ * cannot become an arbitrary request prefix. HTTP is limited to explicit
+ * development-mode loopback hosts. An empty setting trusts only the configured
+ * Clearfolio origin.
+ *
+ * @returns {string[]} Canonical WHATWG origins.
+ * @throws {ClearfolioConfigurationError} If any configured origin is unsafe or ambiguous.
+ */
+function artifactOriginAllowlist() {
+  const input = String(process.env.CLEARFOLIO_ARTIFACT_ORIGINS || '').trim();
+  if (!input) return [];
+  const origins = [];
+  const seen = new Set();
+  for (const part of input.split(',')) {
+    const raw = part.trim();
+    if (!raw) continue;
+    let url;
+    try {
+      url = new URL(raw);
+    } catch {
+      throw new ClearfolioConfigurationError(
+        'clearfolio_artifact_origins_invalid',
+        'CLEARFOLIO_ARTIFACT_ORIGINS must be a comma-separated list of absolute origin URLs. Set reviewed HTTPS CDN origins, or leave the setting empty to allow only the configured Clearfolio origin.',
+      );
+    }
+    if (url.username || url.password) {
+      throw new ClearfolioConfigurationError(
+        'clearfolio_artifact_origins_invalid',
+        'CLEARFOLIO_ARTIFACT_ORIGINS entries must not contain credentials.',
+      );
+    }
+    if (url.search) {
+      throw new ClearfolioConfigurationError(
+        'clearfolio_artifact_origins_invalid',
+        'CLEARFOLIO_ARTIFACT_ORIGINS entries must not contain a query string.',
+      );
+    }
+    if (url.hash) {
+      throw new ClearfolioConfigurationError(
+        'clearfolio_artifact_origins_invalid',
+        'CLEARFOLIO_ARTIFACT_ORIGINS entries must not contain a fragment.',
+      );
+    }
+    if (url.pathname !== '/') {
+      throw new ClearfolioConfigurationError(
+        'clearfolio_artifact_origins_invalid',
+        'CLEARFOLIO_ARTIFACT_ORIGINS entries must identify an origin without a path.',
+      );
+    }
+    if (!['https:', 'http:'].includes(url.protocol)) {
+      throw new ClearfolioConfigurationError(
+        'clearfolio_artifact_origins_invalid',
+        'CLEARFOLIO_ARTIFACT_ORIGINS entries must use HTTP or HTTPS.',
+      );
+    }
+    const isLoopback = LOOPBACK_HOSTNAMES.has(url.hostname);
+    if (url.protocol === 'http:' && !(process.env.SCOPEWEAVE_DEV === '1' && isLoopback)) {
+      throw new ClearfolioConfigurationError(
+        'clearfolio_artifact_origins_invalid',
+        'CLEARFOLIO_ARTIFACT_ORIGINS production entries require HTTPS.',
+      );
+    }
+    if (!seen.has(url.origin)) {
+      seen.add(url.origin);
+      origins.push(url.origin);
+    }
+  }
+  return origins;
+}
+
+/**
  * Issue a viewable artifact URL for a completed Clearfolio job.
  *
  * Same-origin `artifactToken` values may be translated into the trusted viewer
- * route. Token-bearing links from another origin are rejected until an explicit
- * reviewed artifact-origin allowlist exists; tokens are never transplanted or
- * returned to an unreviewed cross-origin host.
+ * route. Cross-origin links are returned only when the origin appears in the
+ * reviewed `CLEARFOLIO_ARTIFACT_ORIGINS` allowlist; tokens on those hosts stay
+ * on that origin and are never transplanted into the Clearfolio viewer.
+ * Credentials and fragments are rejected before the attachment-view 302 target
+ * is returned.
  *
  * @param {string|number} orgId - ScopeWeave organization identifier.
  * @param {string|number} userId - Requesting ScopeWeave user identifier.
@@ -510,12 +586,18 @@ export async function artifactUrl(orgId, userId, jobId) {
   if (url.protocol !== 'https:' && !allowsHttp) {
     throw new Error('clearfolio artifact-link response invalid');
   }
+  if (url.username || url.password || url.hash) {
+    throw new Error('clearfolio artifact-link response invalid');
+  }
+
+  const allowlist = artifactOriginAllowlist();
+  const sameOrigin = url.origin === clearfolioUrl.origin;
+  if (!sameOrigin && !allowlist.includes(url.origin)) {
+    throw new Error('clearfolio artifact-link response invalid');
+  }
 
   const token = url.searchParams.get('artifactToken');
-  if (token) {
-    if (url.origin !== clearfolioUrl.origin) {
-      throw new Error('clearfolio artifact-link response invalid');
-    }
+  if (token && sameOrigin) {
     return `${configuration.baseUrl}/viewer/${encodeURIComponent(canonicalJobId)}?artifactToken=${encodeURIComponent(token)}`;
   }
   return url.href;
