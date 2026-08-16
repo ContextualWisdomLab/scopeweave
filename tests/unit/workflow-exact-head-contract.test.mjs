@@ -93,6 +93,10 @@ const exactBaseRef = 'ref: ${{ github.event.pull_request.base.sha }}';
 const osvExactHeadRef = 'ref: ${{ github.event.pull_request.head.sha }}';
 const expectedBaseShaEnv = 'EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}';
 const expectedHeadShaEnv = 'EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}';
+const osvScannerV250Pin =
+  'google/osv-scanner-action/osv-scanner-action@06b2ab4348248b456ee06c9e953637f55e03504f # v2.5.0';
+const osvReporterV250Pin =
+  'google/osv-scanner-action/osv-reporter-action@06b2ab4348248b456ee06c9e953637f55e03504f # v2.5.0';
 
 assert.match(
   osvWorkflow,
@@ -139,10 +143,20 @@ assert.doesNotMatch(
   /osv-scanner-reusable-pr\.yml/,
   'OSV must not delegate candidate selection to the reusable workflow that scans synthetic GITHUB_SHA merge commits',
 );
-assert.match(
+assert.equal(
+  osvWorkflow.split(osvScannerV250Pin).length - 1,
+  2,
+  'OSV must scan both immutable revisions with the direct action pinned by upstream v2.5.0',
+);
+assert.equal(
+  osvWorkflow.split(osvReporterV250Pin).length - 1,
+  1,
+  'OSV must compare introduced vulnerabilities with the reporter pinned by upstream v2.5.0',
+);
+assert.doesNotMatch(
   osvWorkflow,
-  /google\/osv-scanner-action\/osv-reporter-action@8dc09193bb540e09b23da07ad7e30bd33bf87018/,
-  'OSV must retain the pinned upstream differential reporter for introduced-vulnerability semantics',
+  /8dc09193bb540e09b23da07ad7e30bd33bf87018|# v2\.3\.8/,
+  'OSV must not regress to the superseded v2.3.8 action revision or annotation',
 );
 assert.match(
   osvWorkflow,
