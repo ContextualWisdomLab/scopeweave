@@ -27,8 +27,20 @@ function withSavepoint(database, savepointName, operation) {
     database.exec(`RELEASE ${savepointName}`);
     return result;
   } catch (error) {
-    database.exec(`ROLLBACK TO ${savepointName}`);
-    database.exec(`RELEASE ${savepointName}`);
+    let rollbackSucceeded = false;
+    try {
+      database.exec(`ROLLBACK TO ${savepointName}`);
+      rollbackSucceeded = true;
+    } catch {
+      // An unconfirmed rollback must leave the savepoint open rather than risk committing failed state.
+    }
+    if (rollbackSucceeded) {
+      try {
+        database.exec(`RELEASE ${savepointName}`);
+      } catch {
+        // Cleanup failure must never replace the causal operation error after state is rolled back.
+      }
+    }
     throw error;
   }
 }
