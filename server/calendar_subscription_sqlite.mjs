@@ -3,6 +3,7 @@ const USAGE_SAVEPOINT = 'calendar_subscription_usage_state';
 const ROTATE_SAVEPOINT = 'calendar_subscription_rotate_state';
 const REVOKE_SAVEPOINT = 'calendar_subscription_revoke_state';
 const CALENDAR_AUDIENCE = 'scopeweave:calendar';
+const CALENDAR_PURPOSE = 'calendar_read';
 
 function requireDatabase(database) {
   if (!database || typeof database.exec !== 'function' || typeof database.prepare !== 'function') {
@@ -80,11 +81,11 @@ function assertLiveMembershipVersion(statement, projectId, subjectId, expectedVe
  * Install normalized durable storage for reusable calendar subscriptions.
  *
  * The authorization relation stores only the currently active SHA-256 secret
- * hash. Rotation and usage relations contain lifecycle facts only and never
- * retain either plaintext credentials or historical hashes. The audit outbox
- * intentionally has no foreign key to the live subscription so security-event
- * evidence survives resource deletion; delivery can therefore be retried by a
- * later operator without restoring authorization state.
+ * hash plus the fixed `calendar_read` purpose and the membership/session epoch
+ * captured when the credential was issued or rotated. Rotation and usage
+ * relations contain lifecycle facts only and never retain plaintext credentials
+ * or historical hashes. The audit outbox intentionally has no foreign key to
+ * the live subscription so security-event evidence survives resource deletion.
  *
  * Call this during database bootstrap with foreign-key enforcement enabled.
  * Request handlers must never perform schema installation.
@@ -101,6 +102,7 @@ export function installCalendarSubscriptionSchema(database) {
       subject_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
       name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 120),
+      purpose TEXT NOT NULL CHECK(purpose = '${CALENDAR_PURPOSE}'),
       audience TEXT NOT NULL CHECK(audience = '${CALENDAR_AUDIENCE}'),
       membership_version TEXT NOT NULL CHECK(length(membership_version) BETWEEN 1 AND 128),
       created_at_ms INTEGER NOT NULL CHECK(created_at_ms >= 0),
@@ -155,9 +157,13 @@ export function installCalendarSubscriptionSchema(database) {
  * transaction while still rolling back lifecycle state and durable audit-outbox
  * evidence together. Create and rotate compare the membership version supplied
  * by the domain with live database membership inside that transaction. Usage
- * additionally requires the stored snapshot to match the live version in the
- * same conditional UPDATE, closing membership-removal and session-revocation
- * races. Management list and revoke queries independently require live project
+ * binds the supplied issuance epoch to both the stored row and independently
+ * resolved live membership in the same conditional UPDATE, so remove-then-rejoin
+ * cannot revive a durable calendar credential. Purpose and audience are checked
+ * at the same persistence boundary. Rotation is the only path that can bind the
+ * credential to a newly authorized membership epoch.
+ *
+ * Management list and revoke queries independently require live project
  * membership, so authorization loss between domain preflight and persistence
  * cannot disclose metadata or mutate state. Rotation replaces the sole current
  * hash; no historical credential hash is copied into history relations.
@@ -170,10 +176,10 @@ export function createSqliteCalendarSubscriptionRepository(database) {
   const liveMembershipVersion = membershipVersionStatement(db);
   const insertSubscription = db.prepare(`
     INSERT INTO calendar_subscriptions(
-      subscription_id, secret_hash, subject_id, project_id, name, audience,
-      membership_version, created_at_ms, expires_at_ms, last_used_at_ms,
+      subscription_id, secret_hash, subject_id, project_id, name, purpose,
+      audience, membership_version, created_at_ms, expires_at_ms, last_used_at_ms,
       rotated_at_ms, revoked_at_ms
-    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+    ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
   `);
   const listSubscriptions = db.prepare(`
     SELECT *
@@ -217,6 +223,7 @@ export function createSqliteCalendarSubscriptionRepository(database) {
        END
      WHERE secret_hash = ?
        AND project_id = ?
+       AND purpose = ?
        AND audience = ?
        AND revoked_at_ms IS NULL
        AND ? >= created_at_ms
@@ -241,6 +248,7 @@ export function createSqliteCalendarSubscriptionRepository(database) {
      WHERE subscription_id = ?
        AND subject_id = ?
        AND project_id = ?
+       AND purpose = ?
        AND revoked_at_ms IS NULL
        AND ? >= created_at_ms
        AND ? > ?
@@ -302,6 +310,7 @@ export function createSqliteCalendarSubscriptionRepository(database) {
           record.subject_id,
           record.project_id,
           record.name,
+          record.purpose,
           record.audience,
           membershipVersion,
           record.created_at_ms,
@@ -334,8 +343,8 @@ export function createSqliteCalendarSubscriptionRepository(database) {
     },
 
     /**
-     * Record one successful use while comparing stored and live membership
-     * versions in the same SQLite transition.
+     * Record one successful use while comparing the stored issuance epoch with
+     * the caller-supplied issuance epoch and live membership in one transition.
      */
     async recordUsageAtomically(secretHash, binding) {
       return withSavepoint(db, USAGE_SAVEPOINT, () => {
@@ -345,6 +354,7 @@ export function createSqliteCalendarSubscriptionRepository(database) {
           binding.now_ms,
           secretHash,
           binding.project_id,
+          binding.purpose,
           binding.audience,
           binding.now_ms,
           binding.now_ms,
@@ -366,10 +376,10 @@ export function createSqliteCalendarSubscriptionRepository(database) {
     },
 
     /**
-     * Atomically replace the sole active secret hash and snapshot the freshly
-     * rechecked membership version. The prior hash is not retained anywhere.
-     * A membership change after the domain preflight returns `null` so the
-     * domain preserves its stable tenant-nondisclosing not-found boundary.
+     * Atomically replace the sole active secret hash and bind it to the current
+     * live membership version. The prior hash is not retained anywhere. A
+     * membership change after the domain preflight returns `null` so the domain
+     * preserves its stable tenant-nondisclosing not-found boundary.
      */
     async rotateSubscriptionAtomically(subscriptionId, binding) {
       return withSavepoint(db, ROTATE_SAVEPOINT, () => {
@@ -388,6 +398,7 @@ export function createSqliteCalendarSubscriptionRepository(database) {
           subscriptionId,
           binding.subject_id,
           binding.project_id,
+          binding.purpose,
           binding.now_ms,
           binding.expires_at_ms,
           binding.now_ms,
@@ -409,7 +420,9 @@ export function createSqliteCalendarSubscriptionRepository(database) {
 
     /**
      * Revoke a subscription idempotently while independently requiring current
-     * project membership at both the scoped read and mutation boundaries.
+     * project membership. `revocation_applied` is true only for the first state
+     * transition so callers cannot emit duplicate external audit events on a
+     * same-millisecond or later retry.
      */
     async revokeSubscriptionAtomically(subscriptionId, binding) {
       return withSavepoint(db, REVOKE_SAVEPOINT, () => {
@@ -420,7 +433,10 @@ export function createSqliteCalendarSubscriptionRepository(database) {
         );
         if (!existing) return null;
         if (existing.revoked_at_ms !== null && existing.revoked_at_ms !== undefined) {
-          return normalizeSubscriptionRow(existing);
+          return {
+            ...normalizeSubscriptionRow(existing),
+            revocation_applied: false,
+          };
         }
         const result = revokeSubscription.run(
           binding.now_ms,
@@ -437,7 +453,10 @@ export function createSqliteCalendarSubscriptionRepository(database) {
           current.project_id,
           binding.now_ms,
         );
-        return normalizeSubscriptionRow(current);
+        return {
+          ...normalizeSubscriptionRow(current),
+          revocation_applied: true,
+        };
       });
     },
   });
