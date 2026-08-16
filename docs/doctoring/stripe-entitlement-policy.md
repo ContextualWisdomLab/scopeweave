@@ -48,13 +48,15 @@ This slice deliberately does not infer payment from webhook arrival order or fro
 
 ## Multiple subscriptions
 
-Entitlement is first modeled per Subscription and only then aggregated for an organization. A canceled or unpaid Subscription cannot erase access independently supported by another unexpired Subscription claim. Organization aggregation therefore returns the set of currently active Subscription identities and the furthest valid-until bound across them.
+Entitlement is first modeled per Subscription and only then aggregated for an organization. A canceled or unpaid Subscription cannot erase access independently supported by another unexpired Subscription claim. Organization aggregation therefore consumes exactly one current claim per Subscription identity, returns the set of currently active Subscription identities, and returns the furthest valid-until bound across them.
+
+Duplicate claims for the same Subscription identity are treated as upstream authority corruption and fail closed rather than being silently de-duplicated, ordered, or allowed to produce conflicting organization entitlement. The future persistence adapter should make the one-current-claim-per-Subscription invariant structural where possible; the pure policy still validates it because callers remain untrusted at this boundary.
 
 This is a projection contract, not a recommendation to encode all product packaging as one Boolean forever. Future feature/seat/quantity entitlements should remain normalized per product/price/grant dimension rather than overloading this aggregate.
 
 ## Security and privacy
 
-Inputs are bounded and fail closed before a decision. Organization identifiers and observation identifiers must be positive safe integers. Provider identifiers are bounded structured strings. Cross-tenant previous claims are rejected. Output objects and Subscription-ID collections are immutable.
+Inputs are bounded and fail closed before a decision. Organization identifiers and observation identifiers must be positive safe integers. Provider identifiers are bounded structured strings. Cross-tenant previous claims and duplicate current claim identities are rejected. Output objects and Subscription-ID collections are immutable.
 
 The module accepts no Stripe secret, raw webhook body, browser session credential, HMAC material, or arbitrary provider response. No PII is introduced by this slice.
 
@@ -62,9 +64,9 @@ The module accepts no Stripe secret, raw webhook body, browser session credentia
 
 The first branch commit introduced the entitlement behavior contract while `server/stripe_entitlement_policy.mjs` was absent; focused local Node execution failed with `ERR_MODULE_NOT_FOUND` before production implementation. The production implementation followed on the same owning branch.
 
-The edge suite then locks fail-closed validation, exact-expiry behavior, same-observation invoice enrichment, stale-observation rejection, all supported lifecycle states, cross-tenant evidence rejection, and multi-Subscription aggregation. Local Node 22.16.0 verification of the production module with the behavior and edge suites reports **100% line, 100% branch, and 100% function coverage** under Node's built-in test coverage. Hosted exact-head c8 evidence remains mandatory before integration; local evidence and test registration are not substitutes for live protected checks.
+The edge suite then locked fail-closed validation, exact-expiry behavior, same-observation invoice enrichment, stale-observation rejection, all supported lifecycle states, cross-tenant evidence rejection, and multi-Subscription aggregation. A later test-only regression added contradictory duplicate claims for one Subscription identity before the production aggregation guard existed; the source now rejects that ambiguity explicitly. Hosted exact-head c8 evidence remains mandatory before integration; local evidence and test registration are not substitutes for live protected checks.
 
-`package.json` registers both behavior suites in normal unit CI and canonical c8 execution, and `tests/unit/coverage-script-contract.test.mjs` prevents the module or either suite from silently dropping out of those paths.
+`package.json` registers all three focused policy suites in normal unit CI and canonical c8 execution, and `tests/unit/coverage-script-contract.test.mjs` prevents the module or any of those suites from silently dropping out of those paths.
 
 ## Remaining executable work
 
@@ -74,7 +76,7 @@ No production route should call this module and directly mutate `orgs.plan` as a
 
 ## Rollback and recovery
 
-Before persistence/runtime integration, rollback removes `server/stripe_entitlement_policy.mjs`, its two focused suites, coverage registrations, this doctoring record, and its Unreleased changelog line together. There is no data migration in this slice.
+Before persistence/runtime integration, rollback removes `server/stripe_entitlement_policy.mjs`, its three focused suites, coverage registrations, this doctoring record, and its Unreleased changelog line together. There is no data migration in this slice.
 
 After a future persistent entitlement adapter ships, rollback must not erase claim/audit history or restore webhook-arrival/provider-status overwrite behavior. Recovery must replay authoritative provider facts through a versioned policy and compare the reconstructed result against durable state before any corrective mutation.
 
