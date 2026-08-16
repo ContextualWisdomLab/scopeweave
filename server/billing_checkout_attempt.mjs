@@ -35,6 +35,9 @@ export class BillingCheckoutReconciliationRequiredError extends Error {
 }
 
 function positiveInteger(value, name) {
+  if (typeof value !== 'number' && typeof value !== 'string') {
+    throw new TypeError(`${name} must be a positive integer`);
+  }
   const parsed = Number(value);
   if (!Number.isSafeInteger(parsed) || parsed <= 0) {
     throw new TypeError(`${name} must be a positive integer`);
@@ -101,10 +104,19 @@ function withSavepoint(database, operation) {
     database.exec(`RELEASE SAVEPOINT ${SAVEPOINT_NAME}`);
     return result;
   } catch (error) {
+    let rollbackSucceeded = false;
     try {
       database.exec(`ROLLBACK TO SAVEPOINT ${SAVEPOINT_NAME}`);
-    } finally {
-      database.exec(`RELEASE SAVEPOINT ${SAVEPOINT_NAME}`);
+      rollbackSucceeded = true;
+    } catch {
+      // Keep an unconfirmed failed savepoint open instead of risking a partial commit.
+    }
+    if (rollbackSucceeded) {
+      try {
+        database.exec(`RELEASE SAVEPOINT ${SAVEPOINT_NAME}`);
+      } catch {
+        // Cleanup after a confirmed rollback must not replace the causal operation error.
+      }
     }
     throw error;
   }
