@@ -24,12 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   membership-revocation, random-source, clock, audit, and atomic repository
   ports. Route, database, calendar-subscription, and client migration remain
   follow-up work under issue #413.
-- Added durable SQLite persistence for short-lived access grants, including
-  restart-safe hash-only state, foreign-key lifecycle revocation, atomic
-  one-time consumption tied to the current membership identity and session
-  token version, tenant/resource authorization ports, and an immutable
-  transactional audit outbox for mint/consume evidence. Runtime browser
-  transport migration remains a follow-up under #413.
 
 ### Security
 
@@ -66,18 +60,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   only SHA-256 token hashes through the repository port, rechecked membership on
   redemption, and required the repository to perform one-time consumption as an
   atomic transition.
-- Added SQLite persistence enforcement for grant replay, expiry, current
-  membership identity/session version, and exact project/resource bindings in
-  the same conditional write that marks a grant used; subject/project/attachment
-  deletion cascades revoke outstanding grants without restoring broad URL
-  credentials.
-- Coupled each successful SQLite grant mint/consume transition to secret-free
-  durable audit evidence under the same savepoint; an audit-outbox failure now
-  rolls back the corresponding usable-grant transition instead of creating an
-  unaudited security state, while historical evidence survives resource deletion.
 
 ### Changed
 
+- Accepted XML whitespace before exact Microsoft Project element delimiters
+  while preserving the linear, regex-free import scanner and rejecting
+  attributes, longer names, non-XML whitespace, nested unmatched blocks, and
+  truncated input.
 - Attachment-list status refresh now removes the per-row database lookup,
   uses a configurable bounded worker pool with per-item abortable timeouts and
   a request-wide latency budget, preserves stale status after downstream,
