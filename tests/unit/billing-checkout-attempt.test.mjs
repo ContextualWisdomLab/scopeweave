@@ -336,3 +336,41 @@ test('invalid clock and identifier sources roll back without leaving a pending r
     0,
   );
 });
+
+test('rollback cleanup preserves the causal attempt write failure and never releases unconfirmed state', () => {
+  const database = createDatabase();
+  installBillingCheckoutAttemptSchema(database);
+  database.exec(`
+    CREATE TRIGGER billing_checkout_test_attempt_failure
+    BEFORE INSERT ON billing_checkout_attempts
+    BEGIN
+      SELECT RAISE(ABORT, 'causal checkout attempt write failure');
+    END;
+  `);
+
+  const executed = [];
+  const guardedDatabase = {
+    prepare: database.prepare.bind(database),
+    exec(sql) {
+      executed.push(sql);
+      if (sql === 'ROLLBACK TO SAVEPOINT billing_checkout_attempt_write') {
+        throw new Error('simulated rollback cleanup failure');
+      }
+      return database.exec(sql);
+    },
+  };
+  const repository = createSqliteBillingCheckoutAttemptRepository(guardedDatabase, {
+    randomUUID: deterministicIds(),
+    now: () => 8_000_000,
+  });
+
+  assert.throws(
+    () => repository.startAttempt({ organizationId: 7, priceId: 'price_rollback_failure' }),
+    /causal checkout attempt write failure/,
+  );
+  assert.equal(
+    executed.filter((sql) => sql === 'RELEASE SAVEPOINT billing_checkout_attempt_write').length,
+    0,
+    'failed rollback must not release an unconfirmed savepoint and accidentally commit partial state',
+  );
+});
