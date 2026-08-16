@@ -21,8 +21,12 @@ export async function chat(messages) {
         'content-type': 'application/json',
         ...(OC_TOKEN ? { authorization: `Bearer ${OC_TOKEN}` } : {}),
       },
-      // orchestrator는 알 수 없는 필드를 거부(strict validation) — model+messages만 전송.
-      body: JSON.stringify({ model: 'contextual-orchestrator', messages }),
+      // ScopeWeave owns planning semantics; contextual-orchestrator owns adaptive execution policy.
+      body: JSON.stringify({
+        model: 'contextual-orchestrator',
+        orchestration_mode: 'auto',
+        messages,
+      }),
       signal: ctrl.signal,
     });
     const data = await res.json().catch(() => ({}));
