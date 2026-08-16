@@ -39,10 +39,13 @@ endpoint is absent. That variable must never be set in staging or production.
 ## Orchestration responsibility
 
 ScopeWeave intentionally sends only a versioned OpenAI-compatible request to
-the orchestration service. Model selection, single-model versus multi-agent
-allocation, task decomposition, role-specific reasoning effort, recursion
-limits, access lists, synthesis, and verification belong to
+the orchestration service and explicitly selects `orchestration_mode: auto`.
+Model selection, single-model versus multi-agent allocation, task decomposition,
+role-specific reasoning effort, recursion limits, access lists, synthesis,
+verification, fallback, and known-price optimization belong to
 `contextual-orchestrator`, where they can be evaluated and evolved centrally.
+Quality sufficiency is evaluated before cost minimization, and absent price
+metadata is classified as unpriced rather than free.
 This separation is consistent with learned coordination research: Conductor
 learns task decompositions, worker assignments, communication topologies, and
 recursive test-time scaling; TRINITY adaptively assigns Thinker, Worker, and

@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Production AI briefing requests now explicitly select contextual-orchestrator `auto` mode, so the orchestration plane may allocate the quality-sufficient route or conducted workflow and then minimize known cost instead of relying on an implicit or single-model default.
 - Accepted XML whitespace before exact Microsoft Project element delimiters
   while preserving the linear, regex-free import scanner and rejecting
   attributes, longer names, non-XML whitespace, nested unmatched blocks, and

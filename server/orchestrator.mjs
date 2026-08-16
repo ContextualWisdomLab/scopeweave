@@ -303,7 +303,11 @@ export async function chat(messages) {
         'content-type': 'application/json',
         authorization: `Bearer ${configuration.token}`,
       },
-      body: JSON.stringify({ model: OC_MODEL, messages: safeMessages }),
+      body: JSON.stringify({
+        model: OC_MODEL,
+        orchestration_mode: 'auto',
+        messages: safeMessages,
+      }),
       signal: AbortSignal.timeout(ORCHESTRATOR_TIMEOUT_MS),
     });
   } catch {
