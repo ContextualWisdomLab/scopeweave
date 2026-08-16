@@ -118,6 +118,29 @@ test('current projection returns the newest accepted authoritative read with ord
   assert.equal(database.prepare('SELECT plan FROM orgs WHERE id = 42').get().plan, 'free');
 });
 
+test('current projection retains non-null trial and source-event provenance', () => {
+  const { database, observationRepository, projection } = setup();
+  database.prepare('INSERT INTO billing_stripe_webhook_events(event_id) VALUES(?)')
+    .run('evt_projection_trial');
+  observationRepository.recordAuthoritativeObservation({
+    snapshot: snapshot({
+      status: 'trialing',
+      trialEndSec: 1_789_000_000,
+      latestInvoiceId: null,
+      priceIds: Object.freeze(['price_scopeweave_trial']),
+    }),
+    sourceEventId: 'evt_projection_trial',
+  });
+
+  const current = projection.getCurrentSubscription({
+    organizationId: '42',
+    subscriptionId: 'sub_scopeweave_42',
+  });
+  assert.equal(current.trialEndSec, 1_789_000_000);
+  assert.equal(current.sourceEventId, 'evt_projection_trial');
+  assert.deepEqual(current.priceIds, ['price_scopeweave_trial']);
+});
+
 test('projection is tenant-scoped and never reveals another organization subscription', () => {
   const { observationRepository, projection } = setup();
   observationRepository.recordAuthoritativeObservation({ snapshot: snapshot() });
