@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -69,6 +69,25 @@ assert.throws(() => createVerifiedSqliteBackup({ sourcePath: source, destination
 assert.throws(() => createVerifiedSqliteBackup({ sourcePath: source, destinationPath: join(root, 'missing-dir', 'x.db') }), (e) => e.code === 'destination_parent_not_found');
 const alias = join(root, 'alias'); symlinkSync(root, alias, 'dir');
 assert.throws(() => createVerifiedSqliteBackup({ sourcePath: source, destinationPath: join(alias, 'source.db') }), (e) => e.code === 'destination_matches_source');
+
+// Resolve destination authority once, then keep publication bound to that
+// canonical directory even if an attacker swaps the caller-visible symlink
+// while SQLite is materializing the snapshot.
+const trustedDirectory = join(root, 'trusted-directory'); mkdirSync(trustedDirectory);
+const redirectedDirectory = join(root, 'redirected-directory'); mkdirSync(redirectedDirectory);
+const destinationAlias = join(root, 'destination-alias'); symlinkSync(trustedDirectory, destinationAlias, 'dir');
+const symlinkRaceDestination = join(destinationAlias, 'race.db');
+createVerifiedSqliteBackup({
+  sourcePath: source,
+  destinationPath: symlinkRaceDestination,
+  snapshot({ database, destinationPath }) {
+    database.prepare('VACUUM INTO ?').run(destinationPath);
+    unlinkSync(destinationAlias);
+    symlinkSync(redirectedDirectory, destinationAlias, 'dir');
+  },
+});
+assert.equal(existsSync(join(trustedDirectory, 'race.db')), true);
+assert.equal(existsSync(join(redirectedDirectory, 'race.db')), false);
 
 const corrupt = join(root, 'corrupt.db'); writeFileSync(corrupt, 'not sqlite');
 assert.throws(() => verifySqliteDatabase(corrupt), (e) => e.code === 'database_verification_failed');
