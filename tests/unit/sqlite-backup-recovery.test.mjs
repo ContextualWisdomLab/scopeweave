@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, mkdirSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -88,6 +88,19 @@ createVerifiedSqliteBackup({
 });
 assert.equal(existsSync(join(trustedDirectory, 'race.db')), true);
 assert.equal(existsSync(join(redirectedDirectory, 'race.db')), false);
+
+// A different process that wins the destination-name race owns that path. The
+// losing backup attempt must fail without deleting or rewriting the winner.
+const raceWinner = join(root, 'race-winner.db');
+assert.throws(() => createVerifiedSqliteBackup({
+  sourcePath: source,
+  destinationPath: raceWinner,
+  snapshot({ database, destinationPath }) {
+    database.prepare('VACUUM INTO ?').run(destinationPath);
+    writeFileSync(raceWinner, 'other-process-won', { flag: 'wx', mode: 0o600 });
+  },
+}), (e) => e.code === 'destination_exists');
+assert.equal(readFileSync(raceWinner, 'utf8'), 'other-process-won');
 
 const corrupt = join(root, 'corrupt.db'); writeFileSync(corrupt, 'not sqlite');
 assert.throws(() => verifySqliteDatabase(corrupt), (e) => e.code === 'database_verification_failed');
