@@ -43,12 +43,25 @@ function membershipVersionStatement(database) {
   `);
 }
 
-function assertLiveMembershipVersion(statement, projectId, subjectId, expectedVersion) {
+function matchLiveMembershipVersion(statement, projectId, subjectId, expectedVersion) {
   const live = statement.get(projectId, subjectId);
   if (!live?.membership_version || String(live.membership_version) !== String(expectedVersion)) {
-    throw new Error('calendar_subscription_membership_inactive');
+    return null;
   }
   return String(live.membership_version);
+}
+
+function assertLiveMembershipVersion(statement, projectId, subjectId, expectedVersion) {
+  const membershipVersion = matchLiveMembershipVersion(
+    statement,
+    projectId,
+    subjectId,
+    expectedVersion,
+  );
+  if (!membershipVersion) {
+    throw new Error('calendar_subscription_membership_inactive');
+  }
+  return membershipVersion;
 }
 
 /**
@@ -343,15 +356,18 @@ export function createSqliteCalendarSubscriptionRepository(database) {
     /**
      * Atomically replace the sole active secret hash and snapshot the freshly
      * rechecked membership version. The prior hash is not retained anywhere.
+     * A membership change after the domain preflight returns `null` so the
+     * domain preserves its stable tenant-nondisclosing not-found boundary.
      */
     async rotateSubscriptionAtomically(subscriptionId, binding) {
       return withSavepoint(db, ROTATE_SAVEPOINT, () => {
-        const membershipVersion = assertLiveMembershipVersion(
+        const membershipVersion = matchLiveMembershipVersion(
           liveMembershipVersion,
           binding.project_id,
           binding.subject_id,
           binding.membership_version,
         );
+        if (!membershipVersion) return null;
         const result = replaceSecret.run(
           binding.new_secret_hash,
           membershipVersion,
