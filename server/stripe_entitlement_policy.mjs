@@ -227,7 +227,8 @@ export function deriveStripeSubscriptionEntitlement(input) {
 /**
  * Aggregate current per-subscription claims into one organization entitlement.
  * A revoked or canceled subscription cannot erase another independent paid or
- * trial claim for the same organization.
+ * trial claim for the same organization. Duplicate subscription identities are
+ * invalid because aggregation requires exactly one current claim per Subscription.
  *
  * @param {{organizationId: number, claims: object[], nowSec: number}} input aggregation input
  * @returns {Readonly<{organizationId: number, entitled: boolean, validUntilSec: number|null, subscriptionIds: readonly string[]}>} organization entitlement view
@@ -243,6 +244,7 @@ export function deriveOrganizationStripeEntitlement(input) {
   }
 
   const activeClaims = [];
+  const seenSubscriptionIds = new Set();
   for (const value of input.claims) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
       throw new TypeError('each claim must be an entitlement claim object');
@@ -251,6 +253,10 @@ export function deriveOrganizationStripeEntitlement(input) {
       throw new TypeError('claim organization must match aggregation authority');
     }
     const subscriptionId = providerId(value.subscriptionId, 'claim.subscriptionId');
+    if (seenSubscriptionIds.has(subscriptionId)) {
+      throw new TypeError('duplicate subscription claim identity');
+    }
+    seenSubscriptionIds.add(subscriptionId);
     if (typeof value.entitled !== 'boolean') {
       throw new TypeError('claim.entitled must be boolean');
     }
