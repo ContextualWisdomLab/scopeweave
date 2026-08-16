@@ -21,21 +21,22 @@ jobs:
       contents: read
       security-events: write
     steps:
-      - name: Checkout exact base revision
+      - name: Checkout current protected base revision
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
-          ref: ${{ github.event.pull_request.base.sha }}
+          ref: ${{ github.event.pull_request.base.ref }}
           persist-credentials: false
 
-      - name: Verify exact base checkout
+      - name: Record resolved protected base checkout
         env:
-          EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
         run: |
           set -euo pipefail
+          test -n "$BASE_REF"
           actual_sha="$(git rev-parse HEAD)"
-          test "$actual_sha" = "$EXPECTED_BASE_SHA"
+          echo "Resolved refs/heads/$BASE_REF to $actual_sha for the OSV baseline scan"
 
-      - name: Scan exact base dependencies
+      - name: Scan current protected base dependencies
         uses: google/osv-scanner-action/osv-scanner-action@06b2ab4348248b456ee06c9e953637f55e03504f # v2.5.0
         continue-on-error: true
         with:
