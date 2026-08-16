@@ -56,10 +56,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Reused bounded owner and status badge templates in the WBS table render path.
-  Cache entries are keyed by rendered semantics, evicted with a 256-entry LRU
-  bound, and cloned before use; owner colors are deterministic without retaining
-  an unbounded owner registry.
+- Reused one immutable owner-badge shell and one immutable status-badge shell in
+  the WBS table render path. Row text, accessible descriptions, and deterministic
+  owner color classes are applied only after cloning, so detached templates do
+  not retain task/user values or inline color styles.
+- Accepted XML whitespace before exact Microsoft Project element delimiters
+  while preserving the linear, regex-free import scanner and rejecting
+  attributes, longer names, non-XML whitespace, nested unmatched blocks, and
+  truncated input.
 - Attachment-list status refresh now removes the per-row database lookup,
   uses a configurable bounded worker pool with per-item abortable timeouts and
   a request-wide latency budget, preserves stale status after downstream,
