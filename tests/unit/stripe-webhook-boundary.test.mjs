@@ -95,8 +95,8 @@ test('signature parser accepts one matching v1 value and rejects malformed, miss
     `v1=${validDigest}`,
     `t=not-a-number,v1=${validDigest}`,
     `t=${NOW_SECONDS},v1=xyz`,
-    `t=${NOW_SECONDS - 301},v1=${validDigest}`,
-    `t=${NOW_SECONDS + 301},v1=${validDigest}`,
+    signatureHeader(bytes, NOW_SECONDS - 301),
+    signatureHeader(bytes, NOW_SECONDS + 301),
   ]) {
     const request = webhookRequest(bytes, { signature });
     await expectWebhookError(
