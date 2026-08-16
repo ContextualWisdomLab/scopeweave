@@ -12,12 +12,26 @@ function toastElementMarkup(html) {
   return match[0];
 }
 
+function syncStatusElementMarkup(html) {
+  const match = html.match(/<span\s+[^>]*\bid=["']sync-status["'][^>]*>/i);
+  assert.ok(match, 'production index.html contains the sync status container');
+  return match[0];
+}
+
 test('toast container exposes advisory status updates without taking focus', () => {
   const toast = toastElementMarkup(indexHtml);
   assert.match(toast, /\brole=["']status["']/i, 'toast uses the WAI-ARIA status role');
   assert.match(toast, /\baria-live=["']polite["']/i, 'toast explicitly uses polite announcements');
   assert.match(toast, /\baria-atomic=["']true["']/i, 'toast announces its complete updated content');
   assert.doesNotMatch(toast, /\btabindex\s*=/i, 'status updates do not move keyboard focus');
+});
+
+test('sync status uses the same explicit advisory status semantics', () => {
+  const syncStatus = syncStatusElementMarkup(indexHtml);
+  assert.match(syncStatus, /\brole=["']status["']/i, 'sync feedback uses the WAI-ARIA status role');
+  assert.match(syncStatus, /\baria-live=["']polite["']/i, 'sync feedback explicitly uses polite announcements');
+  assert.match(syncStatus, /\baria-atomic=["']true["']/i, 'sync feedback announces its complete updated content');
+  assert.doesNotMatch(syncStatus, /\btabindex\s*=/i, 'sync feedback does not become a synthetic keyboard stop');
 });
 
 test('cloud toast state is visibly rendered by a shipped stylesheet', () => {
