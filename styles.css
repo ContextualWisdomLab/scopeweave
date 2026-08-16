@@ -404,6 +404,27 @@ select:focus-visible,
   text-shadow: 0 1px 1px rgba(0, 0, 0, 0.2);
 }
 
+.owner-badge--color-0 { background: #3f51b5; }
+.owner-badge--color-1 { background: #8e24aa; }
+.owner-badge--color-2 { background: #d81b60; }
+.owner-badge--color-3 { background: #ef6c00; }
+.owner-badge--color-4 { background: #6d4c41; }
+.owner-badge--color-5 { background: #00897b; }
+.owner-badge--color-6 { background: #1e88e5; }
+.owner-badge--color-7 { background: #3949ab; }
+.owner-badge--color-8 { background: #7cb342; }
+.owner-badge--color-9 { background: #f4511e; }
+.owner-badge--color-10 { background: #5e35b1; }
+.owner-badge--color-11 { background: #c0ca33; }
+.owner-badge--color-12 { background: #00acc1; }
+.owner-badge--color-13 { background: #fb8c00; }
+.owner-badge--color-14 { background: #546e7a; }
+.owner-badge--color-15 { background: #43a047; }
+.owner-badge--color-16 { background: #e53935; }
+.owner-badge--color-17 { background: #6a1b9a; }
+.owner-badge--color-18 { background: #039be5; }
+.owner-badge--color-19 { background: #5d4037; }
+
 .status-badge.before { background: #f1f5f9; color: var(--status-before); }
 .status-badge.active { background: #d1fae5; color: #047857; }
 .status-badge.done { background: #e2e8f0; color: var(--status-done); }
