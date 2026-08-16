@@ -262,6 +262,41 @@ test('a downstream observation-price write failure rolls back every identity and
   assert.equal(database.prepare('SELECT plan FROM orgs WHERE id = 42').get().plan, 'free');
 });
 
+test('savepoint rollback cleanup preserves the causal write failure and never releases unconfirmed state', () => {
+  const database = createDatabase();
+  database.exec(`
+    CREATE TRIGGER billing_stripe_test_price_failure
+    BEFORE INSERT ON billing_stripe_subscription_observation_prices
+    WHEN NEW.position_index = 1
+    BEGIN
+      SELECT RAISE(ABORT, 'causal observation write failure');
+    END;
+  `);
+
+  const executed = [];
+  const guardedDatabase = {
+    prepare: database.prepare.bind(database),
+    exec(sql) {
+      executed.push(sql);
+      if (sql === 'ROLLBACK TO SAVEPOINT billing_stripe_subscription_observation_write') {
+        throw new Error('simulated rollback cleanup failure');
+      }
+      return database.exec(sql);
+    },
+  };
+  const repository = createSqliteStripeSubscriptionObservationRepository(guardedDatabase);
+
+  assert.throws(
+    () => repository.recordAuthoritativeObservation({ snapshot: snapshot() }),
+    /causal observation write failure/,
+  );
+  assert.equal(
+    executed.filter((sql) => sql === 'RELEASE SAVEPOINT billing_stripe_subscription_observation_write').length,
+    0,
+    'failed rollback must not release an unconfirmed savepoint and accidentally commit partial state',
+  );
+});
+
 test('observation timestamps are monotonic per subscription despite local clock rollback', () => {
   const times = [1_787_000_100_000, 1_787_000_099_000];
   const { database, repository } = setup(() => times.shift());
