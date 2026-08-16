@@ -60,6 +60,11 @@ assert.match(
   'the authoritative Stripe subscription provider boundary is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/stripe_subscription_observation_ledger\.mjs/,
+  'the authoritative Stripe subscription observation ledger is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
@@ -115,6 +120,11 @@ assert.match(
   'the Checkout-to-Subscription tenant metadata regression executes under c8',
 );
 assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/stripe-subscription-observation-ledger\.test\.mjs/,
+  'the authoritative Stripe subscription observation regression executes under c8',
+);
+assert.match(
   scripts['test:unit'],
   /tests\/unit\/stripe-webhook-recorder-integration\.test\.mjs/,
   'normal unit CI executes the verified-event recorder integration regression',
@@ -128,6 +138,11 @@ assert.match(
   scripts['test:unit'],
   /tests\/unit\/stripe-subscription-metadata-propagation\.test\.mjs/,
   'normal unit CI executes the Checkout-to-Subscription tenant metadata regression',
+);
+assert.match(
+  scripts['test:unit'],
+  /tests\/unit\/stripe-subscription-observation-ledger\.test\.mjs/,
+  'normal unit CI executes the authoritative Stripe subscription observation regression',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
