@@ -40,6 +40,11 @@ assert.match(
   'the durable Checkout-attempt repository is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/stripe_webhook\.mjs/,
+  'the Stripe webhook trust boundary is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
@@ -58,6 +63,11 @@ assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/billing-provider-boundary\.test\.mjs/,
   'the Stripe provider trust and transport regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/stripe-webhook-boundary\.test\.mjs/,
+  'the Stripe webhook trust regression executes under c8',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
