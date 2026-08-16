@@ -16,8 +16,8 @@ The command performs the following fail-closed sequence:
 
 1. Resolve the source and destination parent to canonical filesystem paths and reject source/destination aliasing.
 2. Require the source to be a regular file and the destination parent to be an existing directory.
-3. Run `PRAGMA integrity_check` and `PRAGMA foreign_key_check` against the source.
-4. Capture `application_id`, `user_version`, and a canonical ordered `sqlite_schema` snapshot.
+3. Open the source connection read-only, then run `PRAGMA integrity_check` and `PRAGMA foreign_key_check` against the source.
+4. Capture `application_id`, `user_version`, and a canonical ordered `sqlite_schema` snapshot while bounding schema materialization to 100,001 rows and rejecting more than 100,000 non-internal schema objects.
 5. Reserve a unique temporary destination with owner-only `0600` permissions.
 6. Execute parameterized `VACUUM INTO` against that temporary path while SQLite owns consistency across the live database/WAL state.
 7. Verify the produced database independently with integrity and foreign-key checks, positive file size, and exact metadata/schema comparison.
@@ -42,14 +42,14 @@ A backup is not considered usable merely because the file exists. Verification m
 
 ScopeWeave intentionally does **not** provide an automatic destructive restore command. Recovery remains an explicit operator-controlled procedure:
 
-1. Put the service in maintenance mode or stop every ScopeWeave process that can write the database.
-2. Preserve the existing database evidence. If the stopped runtime still has `-wal` or `-shm` companions, retain them with the original database for incident analysis; do not copy or discard one live SQLite component independently while writers are active.
-3. Run the read-only `verify` command against the selected backup and record the stable verification result.
-4. Preserve the original database path before replacement. Restoration must occur only while writers remain stopped.
-5. Place the verified backup at the configured database path with owner-only permissions. Do not merge a stale WAL from the failed database with the restored snapshot.
-6. Start ScopeWeave and run application acceptance checks covering authentication, organization/project reads, permissions, and representative writes.
+1. Put the service in maintenance mode or stop every ScopeWeave process that can write the configured database. Keep writers stopped until the recovered database has been placed and the service is deliberately restarted.
+2. Preserve the failed state as **one SQLite evidence set**. Move the original database together with every existing same-basename `-wal`, `-shm`, and `-journal` sidecar into the incident-evidence location while preserving their filename relationship. Do not discard, separately rename, or pair any sidecar with another database.
+3. Verify that the configured active database path and its `-wal`, `-shm`, and `-journal` sidecar paths are now absent. If any remain, stop the rehearsal and investigate before placing a backup.
+4. Run the read-only `verify` command against the selected backup and record the stable verification result. Do not continue with a backup that fails verification.
+5. Place only the verified backup at the configured database path with owner-only permissions. Do not copy any sidecar from the failed evidence set beside the restored snapshot.
+6. Start ScopeWeave and run application acceptance checks covering authentication, organization/project reads, permissions, and representative writes. SQLite may create fresh sidecars for the recovered database according to the configured journal mode; those new sidecars are not evidence from the failed state.
 7. Run backup verification/integrity checks again against the recovered database after the acceptance pass.
-8. Retain the recovery evidence and original failed-state files according to incident and privacy-retention policy.
+8. Retain the complete failed-state evidence set and recovery evidence according to incident and privacy-retention policy.
 
 Do not claim a recovery-time objective, recovery-point objective, or disaster-recovery SLA until repeated protected-environment rehearsals establish measured evidence.
 
@@ -60,12 +60,12 @@ Do not claim a recovery-time objective, recovery-point objective, or disaster-re
 - The destination name is never reclaimed from another process. Operators should choose unique backup names; a collision fails closed and preserves the existing entry.
 - Backup destinations are operator-selected trusted storage. This command does not upload, encrypt, rotate, or retain backups on behalf of the operator.
 - `VACUUM INTO` captures committed state. Uncommitted transactions are intentionally absent.
-- The command does not mutate application schema, change `journal_mode`, or checkpoint WAL as a prerequisite.
+- The backup connection opens the source read-only and does not mutate application schema, change `journal_mode`, or checkpoint WAL as a prerequisite.
 - Backup creation should be scheduled according to the buyer's measured recovery-point requirement once that requirement is formally defined; the repository does not invent an RPO.
 - Restore remains separate from backup so a typo or compromised automation cannot overwrite the live database through this interface.
 
 ## Verification evidence
 
-The owning regression suite covers a populated relational database, live WAL with an open writer connection, source and backup integrity/FK checks, schema/version matching, destination collisions and aliases, caller-visible parent-symlink retargeting, a competing process that wins the destination name, malformed/corrupt inputs, invalid foreign keys, metadata mismatch, incomplete-snapshot cleanup, owner-only permissions, stable CLI output, and direct CLI invocation. The new module is registered in normal unit CI and the repository's instrumented coverage command.
+The owning regression suite covers a populated relational database, live WAL with an open writer connection, source and backup integrity/FK checks, bounded schema inspection, schema/version matching, destination collisions and aliases, caller-visible parent-symlink retargeting, a competing process that wins the destination name, malformed/corrupt inputs, invalid foreign keys, metadata mismatch, incomplete-snapshot cleanup, owner-only permissions, stable CLI output, and direct CLI invocation. The new module is registered in normal unit CI and the repository's instrumented coverage command.
 
 See `docs/doctoring/sqlite-backup-recovery.md` for the primary-source basis and requirement-to-test traceability.
