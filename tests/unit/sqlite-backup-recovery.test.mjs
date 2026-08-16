@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -53,6 +53,51 @@ assert.deepEqual(
 );
 liveSnapshot.close();
 liveWriter.close();
+
+// Rehearse recovery through the actual ScopeWeave database bootstrap rather
+// than treating a syntactically valid SQLite file as application recovery.
+// The writer process exits before the verified snapshot is copied into the
+// isolated recovery path, matching the documented stopped-writer procedure.
+const dbModuleUrl = new URL('../../server/db.mjs', import.meta.url).href;
+const productSource = join(root, 'product-source.db');
+const productBackup = join(root, 'product-backup.db');
+const recoveredDatabase = join(root, 'product-recovered.db');
+const seedProductDatabase = spawnSync(process.execPath, ['--input-type=module', '-e', `
+  const { db } = await import(${JSON.stringify(dbModuleUrl)});
+  db.prepare('INSERT INTO users(id,email,password_hash,name) VALUES(?,?,?,?)').run(7001, 'recovery@example.test', 'hash', 'Recovery Owner');
+  db.prepare('INSERT INTO orgs(id,name,owner_id) VALUES(?,?,?)').run(7101, 'Recovery Org', 7001);
+  db.prepare('INSERT INTO memberships(id,org_id,user_id,role) VALUES(?,?,?,?)').run(7201, 7101, 7001, 'owner');
+  db.prepare('INSERT INTO projects(id,org_id,name,base_date,tasks_json,created_by) VALUES(?,?,?,?,?,?)').run(7301, 7101, 'Recovered Plan', '2026-08-16', '[{"id":"task-1","task":"Verify recovery"}]', 7001);
+  db.close();
+`], {
+  encoding: 'utf8',
+  env: { ...process.env, SCOPEWEAVE_DB: productSource },
+});
+assert.equal(seedProductDatabase.status, 0, seedProductDatabase.stderr);
+createVerifiedSqliteBackup({ sourcePath: productSource, destinationPath: productBackup });
+assert.doesNotThrow(() => verifySqliteDatabase(productBackup));
+copyFileSync(productBackup, recoveredDatabase, copyFileSync.constants?.COPYFILE_EXCL);
+assert.doesNotThrow(() => verifySqliteDatabase(recoveredDatabase));
+const recoveredApplication = spawnSync(process.execPath, ['--input-type=module', '-e', `
+  const { db } = await import(${JSON.stringify(dbModuleUrl)});
+  const recovered = db.prepare(` + "`" + `SELECT projects.name AS project_name, users.email AS owner_email, memberships.role AS member_role
+    FROM projects
+    JOIN orgs ON orgs.id = projects.org_id
+    JOIN users ON users.id = orgs.owner_id
+    JOIN memberships ON memberships.org_id = orgs.id AND memberships.user_id = users.id
+    WHERE projects.id = ?` + "`" + `).get(7301);
+  console.log(JSON.stringify(recovered));
+  db.close();
+`], {
+  encoding: 'utf8',
+  env: { ...process.env, SCOPEWEAVE_DB: recoveredDatabase },
+});
+assert.equal(recoveredApplication.status, 0, recoveredApplication.stderr);
+assert.deepEqual(JSON.parse(recoveredApplication.stdout.trim()), {
+  project_name: 'Recovered Plan',
+  owner_email: 'recovery@example.test',
+  member_role: 'owner',
+});
 
 assert.throws(() => createVerifiedSqliteBackup({ sourcePath: source, destinationPath: backup }), (e) => e.code === 'destination_exists');
 assert.throws(() => createVerifiedSqliteBackup({ sourcePath: source, destinationPath: source }), (e) => e.code === 'destination_matches_source');
