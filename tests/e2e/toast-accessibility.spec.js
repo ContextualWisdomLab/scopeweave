@@ -12,13 +12,11 @@ test('cloud status feedback is visibly rendered as a non-focus-taking live statu
   await expect(toast).toHaveClass(/\bvisible\b/);
   await expect(toast).toBeVisible();
 
-  await expect.poll(
-    () => toast.evaluate((element) => Number.parseFloat(getComputedStyle(element).opacity)),
-    { message: 'toast opacity should reach its fully visible transition state' },
-  ).toBeGreaterThanOrEqual(0.99);
+  const renderedState = await toast.evaluate((element) => ({
+    opacity: Number.parseFloat(getComputedStyle(element).opacity),
+    activeElementIsToast: document.activeElement === element,
+  }));
 
-  await expect.poll(
-    () => toast.evaluate((element) => document.activeElement === element),
-    { message: 'advisory status must not capture keyboard focus' },
-  ).toBe(false);
+  expect(renderedState.opacity).toBeGreaterThanOrEqual(0.99);
+  expect(renderedState.activeElementIsToast).toBe(false);
 });

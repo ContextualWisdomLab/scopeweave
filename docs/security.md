@@ -19,7 +19,7 @@ Every user-controlled CSV cell is neutralized when, after optional leading white
 
 ## XML imports
 
-Microsoft Project XML extraction uses bounded `indexOf`/`slice` loops. Dynamic regular expressions and lazy whole-document block collectors are prohibited because truncated or adversarial input can cause catastrophic backtracking.
+Microsoft Project XML extraction uses bounded `indexOf`/`slice` loops. Opening and closing `Task`, `PredecessorLink`, and scalar tags accept only XML whitespace (space, tab, carriage return, or line feed) between the exact element name and `>`. Attributes, longer names, and other whitespace code points are not accepted by this deliberately narrow import profile. Dynamic regular expressions and lazy whole-document block collectors are prohibited because truncated or adversarial input can cause catastrophic backtracking.
 
 ## Release verification
 
