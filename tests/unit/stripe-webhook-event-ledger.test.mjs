@@ -98,7 +98,7 @@ test('same event ID with a different verified payload hash fails closed without 
   assert.equal(database.prepare('SELECT COUNT(*) AS count FROM billing_stripe_webhook_deliveries').get().count, 1);
 });
 
-test('malformed provider ordering and object identity metadata fail before persistence', () => {
+test('malformed provider ordering, object identity, and request envelopes fail before persistence', () => {
   const { database, repository } = setup();
   const invalid = [
     event({ created: -1 }),
@@ -106,6 +106,9 @@ test('malformed provider ordering and object identity metadata fail before persi
     event({ data: {} }),
     event({ data: { object: { id: '', object: 'subscription' } } }),
     event({ request: { id: 'x'.repeat(256) } }),
+    event({ request: 'req_not_an_object' }),
+    event({ request: [] }),
+    event({ request: {} }),
   ];
   for (const candidate of invalid) {
     assert.throws(
