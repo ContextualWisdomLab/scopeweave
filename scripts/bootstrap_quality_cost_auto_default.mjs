@@ -50,8 +50,19 @@ replaceOnce(
 
 replaceOnce(
   'docs/orchestrator-production.md',
-  '- **Model selection**: `ORCHESTRATOR_MODEL` defaults to `contextual-orchestrator` and can be overridden with another gateway-supported model identifier.\n',
-  '- **Model selection**: `ORCHESTRATOR_MODEL` defaults to `contextual-orchestrator` and can be overridden with another gateway-supported model identifier.\n- **Execution policy**: every production briefing request includes `orchestration_mode: auto`; contextual-orchestrator owns model/provider choice, workflow depth, verification, fallback, and known-price optimization. Quality sufficiency is evaluated before cost minimization, and missing price metadata is not treated as zero cost.\n',
+  `ScopeWeave intentionally sends only a versioned OpenAI-compatible request to
+the orchestration service. Model selection, single-model versus multi-agent
+allocation, task decomposition, role-specific reasoning effort, recursion
+limits, access lists, synthesis, and verification belong to
+\`contextual-orchestrator\`, where they can be evaluated and evolved centrally.`,
+  `ScopeWeave intentionally sends only a versioned OpenAI-compatible request to
+the orchestration service and explicitly selects \`orchestration_mode: auto\`.
+Model selection, single-model versus multi-agent allocation, task decomposition,
+role-specific reasoning effort, recursion limits, access lists, synthesis,
+verification, fallback, and known-price optimization belong to
+\`contextual-orchestrator\`, where they can be evaluated and evolved centrally.
+Quality sufficiency is evaluated before cost minimization, and absent price
+metadata is classified as unpriced rather than free.`,
 );
 
 const adrPath = 'docs/adr/0001-adaptive-contextual-orchestrator-default.md';
@@ -67,7 +78,7 @@ writeFileSync(
 
 ## Context
 
-ScopeWeave delegated AI briefing generation to contextual-orchestrator but omitted an explicit execution mode. The gateway currently interprets omission as adaptive `auto`, yet the consumer contract did not prevent a future default drift to one fixed worker or make the expected quality-cost policy reviewable.
+ScopeWeave delegated AI briefing generation to contextual-orchestrator but omitted an explicit execution mode. The gateway currently interprets omission as adaptive \`auto\`, yet the consumer contract did not prevent a future default drift to one fixed worker or make the expected quality-cost policy reviewable.
 
 ## Decision
 
