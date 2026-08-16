@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 
 const STRIPE_WEBHOOK_MAX_BYTES = 256 * 1024;
 const STRIPE_SIGNATURE_HEADER_MAX_LENGTH = 4096;
@@ -199,20 +199,22 @@ function parseVerifiedEvent(body) {
  * header is bounded, and the signed timestamp must be within five minutes of the
  * server clock. Multiple `v1` values are accepted for endpoint-secret rotation.
  *
- * This function establishes transport authenticity only. It intentionally does
- * not deduplicate event IDs, assume delivery ordering, or grant billing
- * entitlements; those operations require durable provider-state reconciliation.
+ * This function establishes transport authenticity only. Callers that persist
+ * replay evidence can request the SHA-256 digest of those exact verified bytes;
+ * the raw body itself never needs to cross into durable storage.
  *
  * @param {Request} request Fetch-compatible request containing the raw webhook body
  * @param {object} options verifier configuration
  * @param {string} options.secret Stripe endpoint signing secret
  * @param {number} [options.nowSeconds] integer epoch seconds used for replay checks
- * @returns {Promise<Record<string, unknown>>} verified bounded Stripe event object
+ * @param {boolean} [options.includeEvidence=false] return verified raw-byte digest with the parsed event
+ * @returns {Promise<Record<string, unknown>|{event: Record<string, unknown>, payloadSha256: string}>} verified event, optionally with exact-byte digest evidence
  * @throws {StripeWebhookError} for unconfigured, oversized, malformed, or unauthenticated requests
  */
 export async function verifyStripeWebhookRequest(request, {
   secret,
   nowSeconds = Math.floor(Date.now() / 1000),
+  includeEvidence = false,
 } = {}) {
   requireVerifierConfiguration(secret, nowSeconds);
   const body = await readBoundedRawBody(request);
@@ -220,5 +222,10 @@ export async function verifyStripeWebhookRequest(request, {
   if (!signatureMatches(body, signatureHeader, secret, nowSeconds)) {
     throw webhookError('stripe_webhook_signature_invalid');
   }
-  return parseVerifiedEvent(body);
+  const event = parseVerifiedEvent(body);
+  if (!includeEvidence) return event;
+  return {
+    event,
+    payloadSha256: createHash('sha256').update(body).digest('hex'),
+  };
 }
