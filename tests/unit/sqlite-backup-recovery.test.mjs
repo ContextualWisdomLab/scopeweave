@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, sym
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import {
   SqliteBackupError,
@@ -36,6 +37,8 @@ assert.equal(new SqliteBackupError('sample').code, 'sample');
 
 // Keep a writer connection open in WAL mode and prove committed WAL content is
 // present in the consistent snapshot without raw-copying the database/WAL pair.
+// This fixture also remains the compatibility proof when the backup connection
+// is opened read-only: the writer stays live throughout snapshot creation.
 const liveSource = join(root, 'live-source.db');
 const liveBackup = join(root, 'live-backup.db');
 const liveWriter = new DatabaseSync(liveSource);
@@ -122,11 +125,30 @@ const invalidFk = join(root, 'fk.db'); db = new DatabaseSync(invalidFk); db.exec
 assert.throws(() => createVerifiedSqliteBackup({ sourcePath: invalidFk, destinationPath: join(root, 'fk-backup.db') }), (e) => e.code === 'source_database_foreign_key_failed');
 assert.throws(() => verifySqliteDatabase(invalidFk), (e) => e.code === 'database_foreign_key_failed');
 
-const fake = (integrity, fk = [], scalar = 1, schema = []) => ({ prepare(sql) { return { all() { if (sql === 'PRAGMA integrity_check') return integrity; if (sql === 'PRAGMA foreign_key_check') return fk; return schema; }, get() { return { application_id: scalar, user_version: scalar }; } }; } });
+const observedSchemaQueries = [];
+const fake = (integrity, fk = [], scalar = 1, schema = []) => ({
+  prepare(sql) {
+    return {
+      all() {
+        if (sql === 'PRAGMA integrity_check') return integrity;
+        if (sql === 'PRAGMA foreign_key_check') return fk;
+        observedSchemaQueries.push(sql);
+        return schema;
+      },
+      get() { return { application_id: scalar, user_version: scalar }; },
+    };
+  },
+});
 assert.throws(() => inspectOpenSqliteDatabase(fake([], []), 'x'), (e) => e.code === 'x_integrity_failed');
 assert.throws(() => inspectOpenSqliteDatabase(fake([{ integrity_check: 'broken' }], []), 'x'), (e) => e.code === 'x_integrity_failed');
 assert.throws(() => inspectOpenSqliteDatabase(fake([{ integrity_check: 'ok' }], [{ table: 'x' }]), 'x'), (e) => e.code === 'x_foreign_key_failed');
 assert.deepEqual(inspectOpenSqliteDatabase(fake([{ integrity_check: 'ok' }], [], 3, [{ type: 'table', name: 'x', tbl_name: 'x', sql: 'CREATE TABLE x(a)' }]), 'x'), { applicationId: 3, userVersion: 3, schema: [{ type: 'table', name: 'x', tbl_name: 'x', sql: 'CREATE TABLE x(a)' }] });
+assert.match(observedSchemaQueries.at(-1), /\bLIMIT\s+100001\s*$/i, 'schema inspection must bound rows before materializing them');
+const oversizedSchema = Array.from({ length: 100_001 }, (_, index) => ({ type: 'table', name: `table_${index}`, tbl_name: `table_${index}`, sql: 'CREATE TABLE x(a)' }));
+assert.throws(
+  () => inspectOpenSqliteDatabase(fake([{ integrity_check: 'ok' }], [], 3, oversizedSchema), 'x'),
+  (e) => e.code === 'x_schema_too_large',
+);
 const meta = { applicationId: 1, userVersion: 2, schema: [] }; assert.doesNotThrow(() => assertBackupMetadataMatches(meta, { ...meta }));
 assert.throws(() => assertBackupMetadataMatches(meta, { ...meta, userVersion: 3 }), (e) => e.code === 'backup_metadata_mismatch');
 assert.doesNotThrow(() => assertBackupFileSize(1));
@@ -143,12 +165,13 @@ assert.equal(runSqliteBackupCli([], messages), 1); assert.match(messages.errors.
 assert.equal(runSqliteBackupCli(['verify', join(root, 'missing.db')], messages), 1); assert.match(messages.errors.at(-1), /database_not_found/);
 const throwingIo = { log() { throw new Error('sink failed'); }, error(v) { messages.errors.push(v); } };
 assert.equal(runSqliteBackupCli(['verify', cliBackup], throwingIo), 1); assert.match(messages.errors.at(-1), /sqlite_backup_failed/);
+const backupScript = fileURLToPath(new URL('../../server/sqlite_backup.mjs', import.meta.url));
 const directBackup = join(root, 'direct.db');
-const direct = spawnSync(process.execPath, [new URL('../../server/sqlite_backup.mjs', import.meta.url).pathname, 'backup', source, directBackup], { encoding: 'utf8', env: process.env });
+const direct = spawnSync(process.execPath, [backupScript, 'backup', source, directBackup], { encoding: 'utf8', env: process.env });
 assert.equal(direct.status, 0, direct.stderr); assert.match(direct.stdout, /"operation":"backup"/);
-const directVerify = spawnSync(process.execPath, [new URL('../../server/sqlite_backup.mjs', import.meta.url).pathname, 'verify', directBackup], { encoding: 'utf8', env: process.env });
+const directVerify = spawnSync(process.execPath, [backupScript, 'verify', directBackup], { encoding: 'utf8', env: process.env });
 assert.equal(directVerify.status, 0, directVerify.stderr); assert.match(directVerify.stdout, /"operation":"verify"/);
-const directUsage = spawnSync(process.execPath, [new URL('../../server/sqlite_backup.mjs', import.meta.url).pathname], { encoding: 'utf8', env: process.env });
+const directUsage = spawnSync(process.execPath, [backupScript], { encoding: 'utf8', env: process.env });
 assert.equal(directUsage.status, 1); assert.match(directUsage.stderr, /usage_invalid/);
 
 rmSync(root, { recursive: true, force: true });
