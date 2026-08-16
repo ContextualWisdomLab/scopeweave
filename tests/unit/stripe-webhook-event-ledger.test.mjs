@@ -31,7 +31,7 @@ function setup(now = () => 1_787_000_100_000) {
   return { database, repository };
 }
 
-test('schema is bootstrap-installed, normalized, and does not retain raw payloads', () => {
+test('schema is bootstrap-installed, 3NF-normalized, and does not retain raw payloads', () => {
   const { database } = setup();
   installStripeWebhookEventSchema(database);
 
@@ -43,7 +43,7 @@ test('schema is bootstrap-installed, normalized, and does not retain raw payload
     'api_version', 'request_id', 'payload_sha256', 'first_received_at_ms',
   ]);
   assert.deepEqual(deliveryColumns, [
-    'delivery_id', 'event_id', 'received_at_ms', 'replay_state', 'processing_result',
+    'delivery_id', 'event_id', 'received_at_ms', 'replay_state',
   ]);
   assert.equal(eventColumns.some((name) => /raw|payload_json|body/i.test(name)), false);
 });
@@ -65,8 +65,8 @@ test('first verified event stores bounded immutable metadata and one non-replay 
     payload_sha256: HASH_A,
     first_received_at_ms: 1_787_000_100_000,
   });
-  assert.deepEqual({ ...database.prepare('SELECT event_id, replay_state, processing_result FROM billing_stripe_webhook_deliveries').get() }, {
-    event_id: 'evt_scopeweave_1', replay_state: 'first_delivery', processing_result: 'received',
+  assert.deepEqual({ ...database.prepare('SELECT event_id, replay_state FROM billing_stripe_webhook_deliveries').get() }, {
+    event_id: 'evt_scopeweave_1', replay_state: 'first_delivery',
   });
 });
 
@@ -78,11 +78,11 @@ test('exact duplicate event IDs are idempotent and recorded as replay evidence',
   assert.equal(replay.replayed, true);
   assert.equal(database.prepare('SELECT COUNT(*) AS count FROM billing_stripe_webhook_events').get().count, 1);
   assert.deepEqual(
-    database.prepare('SELECT replay_state, processing_result FROM billing_stripe_webhook_deliveries ORDER BY delivery_id').all()
+    database.prepare('SELECT replay_state FROM billing_stripe_webhook_deliveries ORDER BY delivery_id').all()
       .map((row) => ({ ...row })),
     [
-      { replay_state: 'first_delivery', processing_result: 'received' },
-      { replay_state: 'duplicate_event', processing_result: 'duplicate_ignored' },
+      { replay_state: 'first_delivery' },
+      { replay_state: 'duplicate_event' },
     ],
   );
 });
