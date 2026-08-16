@@ -184,7 +184,7 @@ test('projection returns null or an empty list when no accepted observation exis
 
 test('projection rejects malformed local authority before querying', () => {
   const { projection } = setup();
-  for (const organizationId of [0, -1, 1.5, Number.NaN, {}, '']) {
+  for (const organizationId of [0, -1, 1.5, Number.NaN, {}, '', true, false]) {
     assert.throws(
       () => projection.listCurrentSubscriptions({ organizationId }),
       TypeError,
