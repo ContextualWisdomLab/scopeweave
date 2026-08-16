@@ -54,7 +54,7 @@ test('first verified event stores bounded immutable metadata and one non-replay 
 
   assert.equal(result.replayed, false);
   assert.equal(result.eventId, 'evt_scopeweave_1');
-  assert.deepEqual(database.prepare('SELECT * FROM billing_stripe_webhook_events').get(), {
+  assert.deepEqual({ ...database.prepare('SELECT * FROM billing_stripe_webhook_events').get() }, {
     event_id: 'evt_scopeweave_1',
     provider_created_at_sec: 1_787_000_000,
     event_type: 'customer.subscription.updated',
@@ -65,7 +65,7 @@ test('first verified event stores bounded immutable metadata and one non-replay 
     payload_sha256: HASH_A,
     first_received_at_ms: 1_787_000_100_000,
   });
-  assert.deepEqual(database.prepare('SELECT event_id, replay_state, processing_result FROM billing_stripe_webhook_deliveries').get(), {
+  assert.deepEqual({ ...database.prepare('SELECT event_id, replay_state, processing_result FROM billing_stripe_webhook_deliveries').get() }, {
     event_id: 'evt_scopeweave_1', replay_state: 'first_delivery', processing_result: 'received',
   });
 });
@@ -78,7 +78,8 @@ test('exact duplicate event IDs are idempotent and recorded as replay evidence',
   assert.equal(replay.replayed, true);
   assert.equal(database.prepare('SELECT COUNT(*) AS count FROM billing_stripe_webhook_events').get().count, 1);
   assert.deepEqual(
-    database.prepare('SELECT replay_state, processing_result FROM billing_stripe_webhook_deliveries ORDER BY delivery_id').all(),
+    database.prepare('SELECT replay_state, processing_result FROM billing_stripe_webhook_deliveries ORDER BY delivery_id').all()
+      .map((row) => ({ ...row })),
     [
       { replay_state: 'first_delivery', processing_result: 'received' },
       { replay_state: 'duplicate_event', processing_result: 'duplicate_ignored' },
