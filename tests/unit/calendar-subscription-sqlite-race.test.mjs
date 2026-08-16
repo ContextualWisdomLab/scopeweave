@@ -47,14 +47,18 @@ function deterministicRandomSource() {
   };
 }
 
-function createService(database, projectAuthorization) {
+function createService(
+  database,
+  projectAuthorization,
+  membershipRevocation = createSqliteCalendarSubscriptionMembershipPort(database),
+) {
   return createCalendarSubscriptionService({
     repository: createSqliteCalendarSubscriptionRepository(database),
     clock: { nowMs: () => 1_000_000 },
     randomSource: deterministicRandomSource(),
     auditSink: { record: async () => {} },
     projectAuthorization,
-    membershipRevocation: createSqliteCalendarSubscriptionMembershipPort(database),
+    membershipRevocation,
   });
 }
 
@@ -64,6 +68,17 @@ function revokingAuthorization(database) {
     async assertCanManage(binding) {
       await authorize.assertCanManage(binding);
       database.prepare('DELETE FROM memberships WHERE id = 100').run();
+    },
+  };
+}
+
+function changingMembershipVersionAfterRead(database) {
+  const membership = createSqliteCalendarSubscriptionMembershipPort(database);
+  return {
+    async assertActive(binding) {
+      const version = await membership.assertActive(binding);
+      database.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = 1').run();
+      return version;
     },
   };
 }
@@ -94,6 +109,54 @@ test('list rechecks live membership after the management authorization boundary'
     subscriptions,
     [],
     'membership removed after the preflight authorization must not disclose durable subscription metadata',
+  );
+  database.close();
+});
+
+test('rotate maps a membership-version race through the nondisclosing management boundary', async () => {
+  const database = new DatabaseSync(':memory:');
+  installCoreSchema(database);
+  installCalendarSubscriptionSchema(database);
+  const created = await createSubscription(database);
+  const before = database.prepare(`
+    SELECT secret_hash, membership_version, expires_at_ms, rotated_at_ms
+      FROM calendar_subscriptions
+     WHERE subscription_id = ?
+  `).get(created.subscriptionId);
+
+  const service = createService(
+    database,
+    createSqliteCalendarSubscriptionAuthorizationPort(database),
+    changingMembershipVersionAfterRead(database),
+  );
+  await assert.rejects(
+    service.rotate({
+      subjectId: '1',
+      projectId: '1000',
+      subscriptionId: created.subscriptionId,
+      expiresAtMs: 2_500_000,
+    }),
+    (error) => error?.code === 'calendar_subscription_not_found' && error?.status === 404,
+    'a version change after domain preflight must fail through the same tenant-nondisclosing boundary',
+  );
+
+  const after = database.prepare(`
+    SELECT secret_hash, membership_version, expires_at_ms, rotated_at_ms
+      FROM calendar_subscriptions
+     WHERE subscription_id = ?
+  `).get(created.subscriptionId);
+  assert.deepEqual(after, before, 'failed rotation races must leave authorization state unchanged');
+  assert.equal(
+    database.prepare('SELECT COUNT(*) AS count FROM subscription_rotations').get().count,
+    0,
+    'failed rotation races must not create lifecycle history',
+  );
+  assert.equal(
+    database.prepare(
+      "SELECT COUNT(*) AS count FROM calendar_subscription_audit_outbox WHERE event_type = 'rotated'",
+    ).get().count,
+    0,
+    'failed rotation races must not manufacture durable rotation evidence',
   );
   database.close();
 });
