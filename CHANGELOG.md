@@ -57,6 +57,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exact protected-`develop` push SHA) and fail closed when the runner's actual
   checkout differs, preventing synthetic merge results from being mistaken for
   contributor-head test evidence.
+- Restored protected `Analyze (javascript-typescript)` and `Analyze (python)`
+  CodeQL contexts through an exact-head repository workflow that runs analysis
+  without conflicting with GitHub CodeQL default setup's SARIF ownership, and
+  removed the disabled duplicate advanced-workflow source.
 - Attachment-list status refresh now removes the per-row database lookup,
   uses a configurable bounded worker pool with per-item abortable timeouts and
   a request-wide latency budget, preserves stale status after downstream,
