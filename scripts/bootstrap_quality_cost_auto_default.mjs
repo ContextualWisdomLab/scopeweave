@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** Create the test-first adaptive contextual-orchestrator default patch. */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 const phase = process.argv[2];
 if (!['test', 'implement'].includes(phase)) {
@@ -66,6 +66,7 @@ metadata is classified as unpriced rather than free.`,
 );
 
 const adrPath = 'docs/adr/0001-adaptive-contextual-orchestrator-default.md';
+mkdirSync('docs/adr', { recursive: true });
 if (existsSync(adrPath)) {
   throw new Error(`refusing to overwrite ${adrPath}`);
 }
