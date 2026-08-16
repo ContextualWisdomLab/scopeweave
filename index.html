@@ -10,6 +10,7 @@
     <link rel="modulepreload" href="analytics.js" />
     <link rel="modulepreload" href="app.js" />
     <link rel="stylesheet" href="styles.css" />
+    <link rel="stylesheet" href="toast-state.css" />
   </head>
   <body>
     <a href="#main-content" class="skip-link sr-only">본문으로 건너뛰기</a>
@@ -46,7 +47,7 @@
             <strong data-testid="summary-actual-progress" id="summary-actual-progress">0.00%</strong>
           </div>
           <div class="sync-panel">
-            <span id="sync-status" aria-live="polite" aria-atomic="true">브라우저 로컬 자동저장 사용 중</span>
+            <span id="sync-status" role="status" aria-live="polite" aria-atomic="true">브라우저 로컬 자동저장 사용 중</span>
             <button id="connect-json-sync" type="button" class="secondary-button">wbs.json 자동저장 연결</button>
           </div>
         </div>
@@ -97,7 +98,7 @@
 
     <input id="csv-file-input" type="file" accept=".csv,text/csv" hidden />
 
-    <div id="toast" class="toast" aria-live="polite"></div>
+    <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
     <div id="gantt-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="gantt-title" tabindex="-1">
       <div class="modal-backdrop" data-close-modal="true"></div>
