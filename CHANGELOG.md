@@ -53,6 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Accepted XML whitespace before exact Microsoft Project element delimiters
+  while preserving the linear, regex-free import scanner and rejecting
+  attributes, longer names, non-XML whitespace, nested unmatched blocks, and
+  truncated input.
 - Bound repository `Server Tests` to the exact pull-request contributor head (or
   exact protected-`develop` push SHA) and fail closed when the runner's actual
   checkout differs, preventing synthetic merge results from being mistaken for
