@@ -1,0 +1,78 @@
+name: Bootstrap adaptive contextual-orchestrator briefing default
+
+on:
+  push:
+    branches:
+      - agent/bootstrap-quality-cost-auto-default-v2
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bootstrap-quality-cost-auto-default-scopeweave
+  cancel-in-progress: false
+
+jobs:
+  red-green-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      TARGET_BRANCH: agent/quality-cost-auto-default
+    steps:
+      - name: Checkout bootstrap revision
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Preserve bounded bootstrap script
+        run: cp scripts/bootstrap_quality_cost_auto_default.mjs /tmp/bootstrap_quality_cost_auto_default.mjs
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Create clean test-first product branch
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin develop
+          git switch --force-create "$TARGET_BRANCH" origin/develop
+          node /tmp/bootstrap_quality_cost_auto_default.mjs test
+          git add tests/unit/orchestrator.test.mjs
+          git commit -m "test(ai): require adaptive briefing orchestration"
+
+      - name: Prove the regression contract is red
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          if node tests/unit/orchestrator.test.mjs; then
+            echo "Adaptive-default regression unexpectedly passed before implementation." >&2
+            exit 1
+          fi
+
+      - name: Implement adaptive quality-cost default
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          node /tmp/bootstrap_quality_cost_auto_default.mjs implement
+          git add server/orchestrator.mjs tests/unit/orchestrator.test.mjs CHANGELOG.md docs/orchestrator-production.md docs/adr/0001-adaptive-contextual-orchestrator-default.md
+          git commit -m "fix(ai): use adaptive orchestration for briefings"
+
+      - name: Verify server and coverage contracts
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          npm run test:unit
+          npm run test:coverage
+          git diff --check origin/develop...HEAD
+
+      - name: Publish clean product branch
+        run: git push origin "HEAD:refs/heads/$TARGET_BRANCH"
