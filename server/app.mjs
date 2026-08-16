@@ -7,7 +7,7 @@ import { randomBytes, createHmac, createHash } from 'node:crypto';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
-import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
+import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl, clearfolioCapabilityStatus } from './clearfolio.mjs';
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
@@ -27,6 +27,42 @@ const orgRole = (userId, orgId) =>
   db.prepare('SELECT role FROM memberships WHERE user_id = ? AND org_id = ?').get(userId, orgId)?.role || null;
 const canManage = (role) => role === 'owner' || role === 'admin';
 const canWrite = (role) => role === 'owner' || role === 'admin' || role === 'member';
+
+/**
+ * Build a non-secret Clearfolio capability record for authenticated surfaces.
+ *
+ * The payload reuses the configuration-only readiness evaluator so clients and
+ * operators receive the same `ready`, `mode`, `reason`, and `action` fields that
+ * startup logs already emit. Secret values, URLs, and provider diagnostics are
+ * never copied into this object.
+ *
+ * @returns {{capability:'clearfolio',ready:boolean,mode:string,reason:string|null,action:string|null}} Safe capability state.
+ */
+function clearfolioCapabilityPayload() {
+  return {
+    capability: 'clearfolio',
+    ...clearfolioCapabilityStatus(),
+  };
+}
+
+/**
+ * Return HTTP 503 when optional Clearfolio conversion is not locally ready.
+ *
+ * Callers use this before reading upload bytes or asking the provider for an
+ * artifact link so an unconfigured or unsafe deployment fails closed with a
+ * concrete next action instead of a generic 502 after wasted work.
+ *
+ * @param {object} context - Current Hono request context.
+ * @returns {Response|null} Service-unavailable response, or null when conversion may proceed.
+ */
+function clearfolioUnavailableResponse(context) {
+  const capability = clearfolioCapabilityStatus();
+  if (capability.ready) return null;
+  return context.json({
+    error: capability.action,
+    ...clearfolioCapabilityPayload(),
+  }, 503);
+}
 
 export const app = new Hono();
 
@@ -1037,6 +1073,8 @@ app.post('/api/projects/:id/attachments', requireAuth, async (c) => {
   const p = projectAccess(uid, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
   if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
+  const unavailable = clearfolioUnavailableResponse(c);
+  if (unavailable) return unavailable;
   const form = await c.req.formData().catch(() => null);
   const file = form?.get('file');
   if (!file || typeof file === 'string') return c.json({ error: 'multipart file required' }, 400);
@@ -1103,6 +1141,8 @@ app.get('/api/projects/:id/attachments/:aid/view', (c) => {
   const a = db.prepare('SELECT job_id, status FROM attachments WHERE id = ? AND project_id = ?').get(c.req.param('aid'), p.id);
   if (!a) return c.json({ error: 'not found' }, 404);
   if (a.status !== 'SUCCEEDED') return c.json({ error: `문서가 아직 준비되지 않았습니다 (${a.status})` }, 409);
+  const unavailable = clearfolioUnavailableResponse(c);
+  if (unavailable) return unavailable;
   return artifactUrl(p.org_id, uid, a.job_id)
     .then((url) => c.redirect(url))
     .catch((e) => c.json({ error: `열람 링크 발급 실패: ${e.message}` }, 502));
@@ -1375,6 +1415,17 @@ app.delete('/api/account', requireAuth, async (c) => {
 });
 
 app.get('/api/health', (c) => c.json({ ok: true }));
+
+/**
+ * Authenticated optional-capability readiness. This is not a liveness probe:
+ * `/api/health` stays `{ok:true}` while Clearfolio is unconfigured. The record
+ * is configuration-only and never performs provider I/O.
+ */
+app.get('/api/capabilities', requireAuth, (c) => c.json({
+  capabilities: {
+    clearfolio: clearfolioCapabilityStatus(),
+  },
+}));
 
 // Static client — strict allowlist so server/, data.db, package.json etc. are
 // never served. Anything not listed → 404.

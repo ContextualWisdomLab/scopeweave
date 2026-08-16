@@ -54,7 +54,7 @@ Outside explicit `SCOPEWEAVE_DEV=1`, Clearfolio operations fail closed with a
 stable configuration error and the mock artifact route is not registered. Other
 ScopeWeave planning capabilities remain available. For local integration work,
 `SCOPEWEAVE_DEV=1` permits the in-memory adapter when the URL is absent and also
-permits HTTP only for `localhost`, `127.0.0.1`, or `::1`; remote HTTP endpoints
+permits HTTP only for `localhost`, `127.0.0.1`, or `[::1]`; remote HTTP endpoints
 are rejected.
 
 At process startup ScopeWeave emits one structured, non-secret readiness record:
@@ -72,12 +72,15 @@ invalid artifact-origin allowlist report `ready=false` with a stable reason and
 a safe remediation instruction.
 
 `GET /api/health` remains liveness-only and returns `{"ok":true}` even when the
-optional Clearfolio capability is unavailable. This separation prevents an
-optional document-viewer dependency from causing the planner process to be
-restarted or removed from service. Kubernetes documents liveness as the signal
-for restarting unhealthy containers and readiness as the signal for whether a
-container should receive traffic; ScopeWeave keeps the whole application live
-while reporting the optional capability independently.
+optional Clearfolio capability is unavailable. Authenticated
+`GET /api/capabilities` returns the same non-secret record so operators do not
+need container logs. Attachment upload and view return HTTP 503 with that
+record when the capability is locally unready, before any provider call. This
+separation prevents an optional document-viewer dependency from causing the
+planner process to be restarted or removed from service. Kubernetes documents
+liveness as the signal for restarting unhealthy containers and readiness as the
+signal for whether a container should receive traffic; ScopeWeave keeps the
+whole application live while reporting the optional capability independently.
 
 Provider URLs are treated as service origins, not arbitrary request prefixes.
 Keep credentials in the dedicated HMAC secret setting rather than URL userinfo,
