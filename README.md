@@ -26,34 +26,34 @@ Both profiles are present on protected `develop`. Standalone compatibility is a 
 - optimistic project versioning, revisions, baselines, comments and SSE collaboration;
 - billing/entitlement, webhooks, audit/export/search and observability surfaces;
 - attachment conversion/status integration through a replaceable Clearfolio adapter;
-- contextual-orchestrator client integration;
+- fail-closed contextual-orchestrator client integration in production, with deterministic behavior restricted to explicit development mode;
 - Node/SQLite self-host profile and container deployment surfaces.
 
-Open PRs may harden or extend these capabilities. Their behavior is **not** shipped truth until the change reaches protected `develop`. In particular, do not infer production readiness from an open Clearfolio/orchestrator PR, a PR description or a development mock.
+Open PRs may harden or extend these capabilities. Their behavior is **not** shipped truth until the change reaches protected `develop`. In particular, do not infer production readiness from an open Clearfolio, billing, access-grant, schedule-intelligence or orchestrator-attribution PR.
 
 ## Architecture
 
 ```text
-index.html + styles.css + app.js      static planner / canonical browser state
-  ├─ analytics.js                     deterministic schedule analytics
-  └─ cloud-sync.js                    optional authenticated cloud overlay
+index.html + styles.css + toast-state.css + app.js   static planner / canonical browser state
+  ├─ analytics.js                                   deterministic schedule analytics
+  └─ cloud-sync.js                                  optional authenticated cloud overlay
 
 server/
-  ├─ server.mjs                       @hono/node-server entry
-  ├─ app.mjs                          HTTP/API composition and authorization
-  ├─ auth.mjs                         password/JWT/PAT security
-  ├─ db.mjs                           current node:sqlite persistence
-  ├─ billing.mjs                      plan/billing boundary
-  ├─ clearfolio.mjs                   replaceable document adapter
-  ├─ attachment_status.mjs            bounded attachment refresh engine
-  └─ orchestrator.mjs                 contextual-orchestrator adapter
+  ├─ server.mjs                                      @hono/node-server entry
+  ├─ app.mjs                                         HTTP/API composition and authorization
+  ├─ auth.mjs                                        password/JWT/PAT security
+  ├─ db.mjs                                          current node:sqlite persistence
+  ├─ billing.mjs                                     plan/billing boundary
+  ├─ clearfolio.mjs                                  replaceable document adapter
+  ├─ attachment_status.mjs                           bounded attachment refresh engine
+  └─ orchestrator.mjs                                contextual-orchestrator adapter
 ```
 
 See [`ARCHITECTURE.md`](ARCHITECTURE.md) for the as-built authority and trust boundaries. `CLAUDE.md` contains detailed development commands; `AGENTS.md` is the canonical agent/governance guide.
 
 ## Runtime contract
 
-The standalone client has no runtime package dependency. The cloud process uses only the production dependencies declared in `package.json` (currently Hono and `@hono/node-server`) plus Node built-ins. New production dependencies require a bounded product/security justification and may not break standalone operation.
+The standalone client has no runtime package dependency. The cloud process uses only the production dependencies declared in `package.json` plus Node built-ins. New production dependencies require a bounded product/security justification and may not break standalone operation.
 
 `node:sqlite` is the persistence implementation on protected `develop`. PostgreSQL is a migration target and must not be described as shipped until an adapter, migration and recovery evidence integrate.
 
@@ -75,7 +75,7 @@ npm run server
 # API + static client on http://127.0.0.1:8787
 ```
 
-Persist the JWT signing secret across restarts in real environments; regenerating it invalidates existing sessions. Deployment configuration and optional integrations are documented in [`docs/deploy.md`](docs/deploy.md).
+Persist the JWT signing secret across restarts in real environments; regenerating it invalidates existing sessions. Deployment configuration, verified SQLite backup/recovery guidance when integrated, and optional integrations are documented in [`docs/deploy.md`](docs/deploy.md).
 
 ## Verification
 
@@ -116,9 +116,9 @@ The live GitHub PR/issue queue is the authoritative development plan. Current co
 - replacing broad session-JWT query transport with scoped ephemeral access grants;
 - completing zero-downtime canonical database-object naming and PostgreSQL parity;
 - disabling orphaned GitHub Actions registry identities through an authorized operator path;
-- hardening Stripe lifecycle and entitlement reconciliation;
+- hardening Stripe Checkout and lifecycle/entitlement reconciliation;
 - completing fail-closed Clearfolio production transport/artifact/readiness policy;
-- completing contextual-orchestrator production hardening and cost attribution;
+- adding contextual-orchestrator business cost attribution and adaptive orchestration selection;
 - decision-ready schedule intelligence and Waterfall/Agile/Hybrid projections.
 
 Do not maintain a hard-coded historical PR merge table in this README. Always read the live PR base/head relationships and current protected branch before deciding integration order.
