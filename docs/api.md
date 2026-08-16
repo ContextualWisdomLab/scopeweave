@@ -87,11 +87,14 @@ credentials never reach the browser. HWP/HWPX are rejected (Clearfolio policy).
 | --- | --- | --- |
 | `POST` | `/api/projects/:id/attachments` | multipart `file` (+`taskId?`, ≤10MB) → conversion job (write roles) |
 | `GET` | `/api/projects/:id/attachments?taskId=` | List (+ refreshes pending statuses) |
-| `GET` | `/api/projects/:id/attachments/:aid/view` | 302 → signed artifact URL (`?token=` for new-tab opens) |
+| `GET` | `/api/projects/:id/attachments/:aid/view` | 302 → same-origin or allowlisted artifact URL (`?token=` for new-tab opens) |
 | `DELETE` | `/api/projects/:id/attachments/:aid` | Uploader or manage |
 
-Env: `CLEARFOLIO_URL` (+ optional `CLEARFOLIO_HMAC_SECRET` for gateway-signed
-tenant claims). Unset → a built-in mock converter (dev/test only).
+Env: `CLEARFOLIO_URL` and `CLEARFOLIO_HMAC_SECRET` for production conversion.
+`CLEARFOLIO_ARTIFACT_ORIGINS` lists reviewed CDN origins for attachment-view
+redirects; empty trusts only the Clearfolio origin. Unset `CLEARFOLIO_URL`
+fails closed in production and enables the in-memory converter only with
+`SCOPEWEAVE_DEV=1`.
 
 ## Comments (코멘트)
 

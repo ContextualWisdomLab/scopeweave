@@ -31,6 +31,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   256 KiB streamed JSON responses, composed caller cancellation with the
   provider budget, and validated document metadata/bytes and provider job IDs
   before allocation, persistence, or URL construction.
+- Restricted Clearfolio attachment-view redirects to the configured provider
+  origin or an explicit `CLEARFOLIO_ARTIFACT_ORIGINS` allowlist, and rejected
+  credential-bearing or fragment-bearing artifact links before the 302 target
+  is returned.
 - Made `SCOPEWEAVE_JWT_SECRET` mandatory at startup and rejected weak or
   unexpanded placeholder values so production deployments fail closed.
 - Neutralized audit-log CSV formulas even when executable prefixes are hidden

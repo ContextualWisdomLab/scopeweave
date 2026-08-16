@@ -12,7 +12,7 @@ This boundary prevents configuration text from becoming an arbitrary downstream 
 
 If Clearfolio returns an `artifactToken`, ScopeWeave rewrites it into the trusted Clearfolio viewer route only when the returned URL has the same origin as the configured Clearfolio service. A token-bearing link from another origin is rejected rather than transplanted into the trusted viewer or returned directly to an unreviewed host. This closes the token-confusion boundary without claiming that arbitrary cross-origin artifact hosts are approved.
 
-Issue #489 remains open after this slice. A subsequent bounded change must still implement the explicit reviewed artifact-origin allowlist, redirect policy, streaming response-size/media-type limits, provider-wide request budget, and the remaining resource/lifecycle acceptance criteria before the Clearfolio adapter can be described as fully production-complete.
+Issue #489 remains open after this slice. Transport, JSON-response, and artifact-origin allowlist rules now live in their successor doctoring records. Remaining #489 work is retry/idempotency, capability readiness, persistence/lifecycle, and protected integration—not another configuration parser.
 
 ## Executable evidence
 

@@ -25,6 +25,13 @@
   app flows.
 - `tests/config/`: repository governance and workflow ownership checks.
 
+## Clearfolio adapter
+
+- Clearfolio is an optional MSA document-viewer adapter. Planning stays available when it is unconfigured.
+- Production requires a root HTTPS origin and HMAC secret; the in-memory adapter exists only behind `SCOPEWEAVE_DEV=1`.
+- Hosted provider calls are non-redirecting, time-bounded, and JSON-bounded before any provider data can change ScopeWeave state.
+- Attachment view 302s only to the configured origin or `CLEARFOLIO_ARTIFACT_ORIGINS`. Credentials and fragments are rejected.
+
 ## Core decisions
 
 - One global `tasks` array holds canonical task records.

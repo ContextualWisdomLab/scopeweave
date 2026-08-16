@@ -41,6 +41,7 @@ persists the database in the `scopeweave-data` volume.
 | `ORCHESTRATOR_TOKEN` | with URL | Required bearer token for the configured contextual-orchestrator service (`CONTEXTUAL_ORCHESTRATOR_TOKEN`). |
 | `CLEARFOLIO_URL` | for production 산출물 viewer | Root Clearfolio service origin. Production requires HTTPS and rejects credentials, paths, query strings, and fragments. When absent in production, document conversion/viewing is unavailable rather than simulated. |
 | `CLEARFOLIO_HMAC_SECRET` | with URL | Required tenant-claim HMAC secret; must contain at least 32 non-whitespace characters and match Clearfolio's configured verifier secret. |
+| `CLEARFOLIO_ARTIFACT_ORIGINS` | with URL, when artifacts are served from a CDN | Comma-separated reviewed HTTPS origin list for attachment-view redirects. Empty means only the configured Clearfolio origin is trusted. Entries must be origin URLs without credentials, paths, query strings, or fragments. |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY` | no (default 8, maximum 32) | Maximum concurrent Clearfolio status lookups during one attachment-list request. Invalid values fall back to 8; values above 32 are clamped. |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS` | no (default 3000, maximum 30000) | Hard caller-side timeout for each Clearfolio status lookup. The AbortSignal is also forwarded downstream. |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_BUDGET_MS` | no (default 5000, maximum 60000) | Wall-clock budget for the entire best-effort refresh pass. Work not started before the deadline is deferred to a later list request. |
@@ -75,6 +76,13 @@ settings. A deployment that needs larger provider responses, longer requests, or
 larger documents requires a reviewed application change with corresponding
 resource, latency, and security evidence; do not work around these bounds at the
 proxy layer.
+
+Attachment view 302s the browser to the provider-returned artifact URL. That
+URL is accepted only when it has no credentials or fragment and its origin is
+the configured Clearfolio origin or an origin listed in
+`CLEARFOLIO_ARTIFACT_ORIGINS`. If planners cannot open a converted document
+hosted on a CDN, add that reviewed origin to the allowlist or keep the file on
+the Clearfolio host.
 
 ## Attachment status refresh operations
 

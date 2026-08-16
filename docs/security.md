@@ -13,6 +13,10 @@ ScopeWeave treats the following controls as release-blocking invariants. A chang
 
 Bearer-token middleware and every endpoint that accepts a JWT through another transport must compare the token's `tv` claim with the user's current database `token_version`.
 
+## Clearfolio attachment view
+
+`GET /api/projects/:id/attachments/:aid/view` may 302 only to the configured Clearfolio origin or an origin listed in `CLEARFOLIO_ARTIFACT_ORIGINS`. Returned links with userinfo or fragments are rejected. Cross-origin `artifactToken` values are never copied into the Clearfolio viewer host.
+
 ## Spreadsheet exports
 
 Every user-controlled CSV cell is neutralized when, after optional leading whitespace, it begins with `=`, `+`, `-`, `@`, or `|`. Export code must not rely on callers to sanitize values.

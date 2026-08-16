@@ -102,6 +102,8 @@ Docker: set a **persistent** `SCOPEWEAVE_JWT_SECRET` first, then run `docker com
 | `STRIPE_SECRET_KEY` | Real checkout (mock URL when unset) |
 | `SCOPEWEAVE_RATE_LIMIT_MAX` (+`_WINDOW_MS`) | Opt-in per-IP rate limiting |
 | `SCOPEWEAVE_DEV=1` | Dev-only endpoints (activate-pro) |
+| `CLEARFOLIO_URL` / `CLEARFOLIO_HMAC_SECRET` | Production document viewer origin and HMAC secret |
+| `CLEARFOLIO_ARTIFACT_ORIGINS` | Reviewed CDN origins for attachment-view redirects |
 
 ## Verification
 
