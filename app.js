@@ -87,7 +87,7 @@ const CSV_HEADERS = [
   '스프린트',
   '스토리포인트'
 ];
-const CSV_FORMULA_PREFIX_PATTERN = /^\s*[=+\-@|]/;
+const CSV_FORMULA_PREFIX_PATTERN = /^\s*[=+\-@|＝＋－＠｜]/;
 const UNSAFE_JSON_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 const CSV_FIELD_LABELS = Object.freeze(Object.assign(Object.create(null), {
