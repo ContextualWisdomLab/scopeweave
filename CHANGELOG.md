@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Persist verified Stripe webhook event metadata and per-delivery replay evidence
+  after raw-body signature verification without retaining the signed raw body;
+  exact event-ID/hash duplicates are idempotent, conflicting bytes and malformed
+  request envelopes fail closed, and no webhook event directly grants entitlement
+  before authoritative lifecycle reconciliation.
 - Persisted a tenant/price-scoped Stripe Checkout attempt identity and opaque
   idempotency key before live Session creation, reusing unresolved identity only
   inside a 23-hour safety window; network/abort and Stripe 5xx outcomes remain
