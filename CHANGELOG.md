@@ -53,6 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Bound repository `Server Tests` to the exact pull-request contributor head (or
+  exact protected-`develop` push SHA) and fail closed when the runner's actual
+  checkout differs, preventing synthetic merge results from being mistaken for
+  contributor-head test evidence.
 - Attachment-list status refresh now removes the per-row database lookup,
   uses a configurable bounded worker pool with per-item abortable timeouts and
   a request-wide latency budget, preserves stale status after downstream,
