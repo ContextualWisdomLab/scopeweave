@@ -359,3 +359,57 @@ test('owned schema is normalized, uses descriptive multiword names, and passes f
   assert.deepEqual(usage, ['usage_event_id', 'subscription_id', 'used_at_ms']);
   db.close();
 });
+
+test('adapter dependencies and stale or missing atomic transitions fail closed', async () => {
+  assert.throws(
+    () => installCalendarSubscriptionSchema(null),
+    /requires a database with exec\(\) and prepare\(\)/,
+  );
+
+  const db = new DatabaseSync(':memory:');
+  installCoreSchema(db);
+  seed(db);
+  installCalendarSubscriptionSchema(db);
+  const repository = createSqliteCalendarSubscriptionRepository(db);
+
+  db.prepare('UPDATE users SET token_version = 1 WHERE id = 1').run();
+  await assert.rejects(
+    repository.insertSubscription({
+      subscription_id: 'csub_stale_membership_snapshot',
+      secret_hash: 'a'.repeat(64),
+      subject_id: '1',
+      project_id: '1000',
+      name: 'Stale membership attempt',
+      audience: 'scopeweave:calendar',
+      membership_version: '100:0',
+      created_at_ms: 1_000_000,
+      expires_at_ms: 2_000_000,
+      last_used_at_ms: null,
+      rotated_at_ms: null,
+      revoked_at_ms: null,
+    }),
+    /calendar_subscription_membership_inactive/,
+    'create must recheck the live membership version inside the persistence boundary',
+  );
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM calendar_subscriptions').get().count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM calendar_subscription_audit_outbox').get().count, 0);
+
+  const missingRotation = await repository.rotateSubscriptionAtomically('csub_missing', {
+    subject_id: '1',
+    project_id: '1000',
+    new_secret_hash: 'b'.repeat(64),
+    now_ms: 1_000_100,
+    expires_at_ms: 2_000_000,
+    membership_version: '100:1',
+  });
+  assert.equal(missingRotation, null);
+
+  const missingRevocation = await repository.revokeSubscriptionAtomically('csub_missing', {
+    subject_id: '1',
+    project_id: '1000',
+    now_ms: 1_000_100,
+  });
+  assert.equal(missingRevocation, null);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM calendar_subscription_audit_outbox').get().count, 0);
+  db.close();
+});
