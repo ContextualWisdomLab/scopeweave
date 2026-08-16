@@ -233,7 +233,7 @@ test('foreign-key enforcement rejects invalid durable subscriptions and missing 
   database.close();
 });
 
-test('savepoint cleanup failure never masks the causal operation error', async () => {
+test('savepoint release cleanup failure never masks the causal operation error', async () => {
   const database = new DatabaseSync(':memory:');
   installCoreSchema(database);
   installCalendarSubscriptionSchema(database);
@@ -273,7 +273,7 @@ test('savepoint cleanup failure never masks the causal operation error', async (
   await assert.rejects(
     service.authorize({ secret: created.secret, projectId: '1000' }),
     /forced audit outbox failure/,
-    'cleanup failure must not replace the operation error that caused rollback',
+    'release cleanup failure must not replace the operation error that caused rollback',
   );
   assert.equal(rolledBack, true, 'the adapter must attempt rollback before release cleanup');
   assert.equal(
@@ -287,6 +287,57 @@ test('savepoint cleanup failure never masks the causal operation error', async (
     database.prepare('SELECT COUNT(*) AS count FROM subscription_usage_events').get().count,
     0,
     'rollback must remove usage evidence written before the audit failure',
+  );
+  database.close();
+});
+
+test('savepoint rollback cleanup failure never masks the causal operation error', async () => {
+  const database = new DatabaseSync(':memory:');
+  installCoreSchema(database);
+  installCalendarSubscriptionSchema(database);
+  const created = await createSubscription(database);
+  database.exec(`
+    CREATE TRIGGER calendar_subscription_test_abort_usage_rollback
+    BEFORE INSERT ON calendar_subscription_audit_outbox
+    WHEN NEW.event_type = 'used'
+    BEGIN
+      SELECT RAISE(ABORT, 'forced audit outbox failure');
+    END;
+  `);
+
+  let releaseAttempted = false;
+  const rollbackFailingDatabase = {
+    prepare(sql) {
+      return database.prepare(sql);
+    },
+    exec(sql) {
+      if (sql === 'ROLLBACK TO calendar_subscription_usage_state') {
+        throw new Error('forced rollback cleanup failure');
+      }
+      if (sql === 'RELEASE calendar_subscription_usage_state') {
+        releaseAttempted = true;
+      }
+      return database.exec(sql);
+    },
+  };
+  const service = createCalendarSubscriptionService({
+    repository: createSqliteCalendarSubscriptionRepository(rollbackFailingDatabase),
+    clock: { nowMs: () => 1_000_000 },
+    randomSource: deterministicRandomSource(),
+    auditSink: { record: async () => {} },
+    projectAuthorization: createSqliteCalendarSubscriptionAuthorizationPort(database),
+    membershipRevocation: createSqliteCalendarSubscriptionMembershipPort(database),
+  });
+
+  await assert.rejects(
+    service.authorize({ secret: created.secret, projectId: '1000' }),
+    /forced audit outbox failure/,
+    'rollback cleanup failure must not replace the operation error that caused rollback',
+  );
+  assert.equal(
+    releaseAttempted,
+    false,
+    'an unconfirmed rollback must not release and accidentally commit the failed savepoint',
   );
   database.close();
 });
