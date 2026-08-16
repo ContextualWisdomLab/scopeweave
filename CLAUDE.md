@@ -56,8 +56,8 @@ deploy guide is `docs/deploy.md`.
 
 ### Client (repo root)
 
-- `index.html` — app shell + modals, strict CSP meta tag; loads `cloud-sync.js`,
-  `analytics.js`, then `app.js`.
+- `index.html` — app shell + modals, strict CSP meta tag; loads `styles.css`,
+ `toast-state.css`, `cloud-sync.js`, `analytics.js`, then `app.js`.
 - `app.js` — all state, rendering, editing, validation, persistence, CSV
   import/export, and Gantt logic. The single global `tasks` array is the source of
   truth and `renderAll()` is the only rerender path (see `AGENTS.md`).
