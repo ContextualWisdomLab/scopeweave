@@ -35,9 +35,19 @@ assert.match(
   'the abortable Clearfolio adapter is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/orchestrator\.mjs/,
+  'the contextual-orchestrator client is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/orchestrator-quality-cost-default\.test\.mjs/,
+  'the adaptive orchestration transport regression executes under c8',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
