@@ -65,6 +65,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   CodeQL contexts through an exact-head repository workflow that runs analysis
   without conflicting with GitHub CodeQL default setup's SARIF ownership, and
   removed the disabled duplicate advanced-workflow source.
+- Made OSV differential scanning attest the immutable pull-request base and
+  contributor SHAs, retain the base result across checkout, preserve the
+  protected-base `scan` identity, and pin direct scanner/reporter actions to the
+  revision used by upstream v2.5.0 instead of delegating to synthetic-merge
+  checkout behavior.
 - Attachment-list status refresh now removes the per-row database lookup,
   uses a configurable bounded worker pool with per-item abortable timeouts and
   a request-wide latency budget, preserves stale status after downstream,
