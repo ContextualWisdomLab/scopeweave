@@ -118,3 +118,39 @@ test('malformed provider ordering, object identity, and request envelopes fail b
   }
   assert.equal(database.prepare('SELECT COUNT(*) AS count FROM billing_stripe_webhook_events').get().count, 0);
 });
+
+test('savepoint rollback cleanup preserves the causal delivery failure and never releases unconfirmed state', () => {
+  const database = new DatabaseSync(':memory:');
+  database.exec('PRAGMA foreign_keys = ON');
+  installStripeWebhookEventSchema(database);
+  database.exec(`
+    CREATE TRIGGER billing_stripe_test_delivery_failure
+    BEFORE INSERT ON billing_stripe_webhook_deliveries
+    BEGIN
+      SELECT RAISE(ABORT, 'causal webhook delivery write failure');
+    END;
+  `);
+
+  const executed = [];
+  const guardedDatabase = {
+    prepare: database.prepare.bind(database),
+    exec(sql) {
+      executed.push(sql);
+      if (sql === 'ROLLBACK TO SAVEPOINT billing_stripe_webhook_event_write') {
+        throw new Error('simulated rollback cleanup failure');
+      }
+      return database.exec(sql);
+    },
+  };
+  const repository = createSqliteStripeWebhookEventRepository(guardedDatabase);
+
+  assert.throws(
+    () => repository.recordVerifiedEvent({ event: event(), payloadSha256: HASH_A }),
+    /causal webhook delivery write failure/,
+  );
+  assert.equal(
+    executed.filter((sql) => sql === 'RELEASE SAVEPOINT billing_stripe_webhook_event_write').length,
+    0,
+    'failed rollback must not release an unconfirmed savepoint and accidentally commit partial event state',
+  );
+});
