@@ -25,8 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Made contextual-orchestrator briefing requests fail closed unless an authenticated endpoint is configured. Deterministic generated text is restricted to explicit `SCOPEWEAVE_DEV=1`, message/provider responses are bounded and validated, and non-loopback HTTP transport is rejected.
 - Confined the in-memory Clearfolio adapter to explicit development mode,
   required a canonical signed production origin, rejected ambiguous provider
-  URL components, and prevented cross-origin artifact tokens from being
-  transplanted into the trusted Clearfolio viewer URL.
+  URL components, disabled redirect following on tenant-signed provider calls,
+  and rejected cross-origin, credential-bearing, or fragmented artifact links
+  until an explicit reviewed artifact-origin allowlist is configured by a later
+  slice.
 - Made `SCOPEWEAVE_JWT_SECRET` mandatory at startup and rejected weak or
   unexpanded placeholder values so production deployments fail closed.
 - Neutralized audit-log CSV formulas even when executable prefixes are hidden
@@ -88,10 +90,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Initial ScopeWeave Planner release with tree-table editing,
   cumulative metrics, CSV import/export, and Gantt modal.
 - `wbs.json` seed loading plus browser autosave and optional file sync.
-- Playwright E2E coverage for add/edit hierarchy flows, delete
-  confirmation, subtree drag-and-drop, and JSON sync shape.
-- GitHub Pages deployment workflow and operator documentation.
-
-## [1.0.1] - 2026-06-25
-### 성능 개선 (Performance)
-- 드래그 앤 드롭 동작 중 `dragover` 이벤트에서 발생하는 O(N) 작업 리스트 검색 성능 병목 문제를, O(1) 해시맵(Map) 기반의 캐싱 조회 로직으로 개선하여 큰 크기의 WBS 리스트에서의 버벅임 현상을 해결했습니다.
