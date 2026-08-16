@@ -77,11 +77,16 @@ for (const invalidAttribution of [
   [],
   'scopeweave',
   { service: 'x'.repeat(257) },
+  { service: ['scopeweave'] },
+  { account: { organization_id: 42 } },
+  { team: Symbol('scopeweave') },
+  { group: Number.NaN },
+  { company: Number.POSITIVE_INFINITY },
 ]) {
   await assert.rejects(
     chat(messages, invalidAttribution),
     (error) => error.code === 'orchestrator_attribution_invalid',
-    'malformed or unbounded attribution fails before provider transport',
+    'malformed, non-scalar, non-finite, or unbounded attribution fails before provider transport',
   );
 }
 assert.equal(calls.length, 3, 'invalid attribution never reaches the provider');
