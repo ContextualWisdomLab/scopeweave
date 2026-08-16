@@ -51,5 +51,6 @@
   live epoch and invalidates the previous secret. Neither domain may
   restore a general session JWT in a URL. The domain (#539) owns
   lifecycle rules; SQLite persistence (#541) stores only the current
-  hash, frozen purpose, and issuance membership epoch. Route and UI
-  migration remain later slices under issue #413.
+  secret hash, frozen `calendar_read` purpose, issuance membership epoch,
+  and normalized lifecycle/audit evidence. Protected route and browser UI
+  migration remain later issue #413 slices.
