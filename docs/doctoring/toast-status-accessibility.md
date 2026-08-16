@@ -1,23 +1,24 @@
-# Toast status accessibility and visibility evidence
+# Toast and sync status accessibility and visibility evidence
 
 ## Status and decision
 
-This document describes **active PR #491**, not protected-`develop` shipped truth. ScopeWeave treats transient toast text as advisory status feedback. The active branch therefore makes one user-visible contract consistent for both assistive-technology and sighted users:
+This document describes **active PR #491**, not protected-`develop` shipped truth. ScopeWeave treats transient toast text and synchronization feedback as advisory status messages. The active branch therefore makes the user-visible contract explicit for assistive-technology and sighted users:
 
-- the shipped `#toast` container has `role="status"`, `aria-live="polite"`, and `aria-atomic="true"` and does not receive focus merely because its content changes; and
+- the shipped `#toast` container has `role="status"`, `aria-live="polite"`, and `aria-atomic="true"` and does not receive focus merely because its content changes;
+- the shipped `#sync-status` container uses the same explicit status/polite/atomic semantics without becoming a synthetic keyboard stop; and
 - the cloud/SaaS toast producer's `.visible` state is backed by shipped CSS that raises opacity to `1` and restores the translated element to its visible position.
 
-The second control matters because protected `develop` currently has two state names: the base application producer uses `.show`, while `cloud-sync.js` adds/removes `.visible`. `styles.css` renders `.toast.show`, so a cloud message can update its live-region text while remaining visually transparent unless `.toast.visible` is also rendered.
+The visual-state control matters because protected `develop` currently has two toast state names: the base application producer uses `.show`, while `cloud-sync.js` adds/removes `.visible`. `styles.css` renders `.toast.show`, so a cloud message can update its live-region text while remaining visually transparent unless `.toast.visible` is also rendered.
 
 ## Standards boundary
 
 WAI-ARIA 1.2 defines `status` as advisory live-region content and gives the role implicit `aria-live="polite"` and `aria-atomic="true"` semantics. It also advises authors not to move focus to a status message as a result of the update. WCAG 2.2 Success Criterion 4.1.3 requires status messages to be programmatically determinable so assistive technology can present them without receiving focus. ScopeWeave keeps the explicit live-region attributes in addition to the role so the intended contract remains visible in markup and executable regression evidence.
 
-This slice does not claim that the `.visible` compatibility rule itself is a WCAG conformance requirement. It is a product-integrity control that prevents the same advisory message from becoming available to screen-reader users while remaining transparent for sighted users.
+This slice does not claim that the `.visible` compatibility rule itself is a WCAG conformance requirement. It is a product-integrity control that prevents the same advisory toast message from becoming available to screen-reader users while remaining transparent for sighted users.
 
 ## TDD and regression chronology
 
-The branch previously contained the full accessibility and visibility slice at `aafd14ce6cc648b225080c5c7347ff75cfb5a1b0`. A later commit, `00c475f0312d958097a96d33356e4d6afb0a286b`, was titled as a CI re-kick but semantically removed `toast-state.css`, the production stylesheet link, both focused regressions, their test registrations, this doctoring record, and the CHANGELOG entry. Green checks on that reduced head did not prove the removed behavior.
+The branch previously contained the full toast accessibility and visibility slice at `aafd14ce6cc648b225080c5c7347ff75cfb5a1b0`. A later commit, `00c475f0312d958097a96d33356e4d6afb0a286b`, was titled as a CI re-kick but semantically removed `toast-state.css`, the production stylesheet link, both focused regressions, their test registrations, this doctoring record, and the CHANGELOG entry. Green checks on that reduced head did not prove the removed behavior.
 
 The repair deliberately re-established a RED-to-GREEN path rather than trusting predecessor results:
 
@@ -26,6 +27,8 @@ The repair deliberately re-established a RED-to-GREEN path rather than trusting 
 3. `82cef187687a43041d6532558c42c2bbf4ce65d6` re-registered both paths in normal CI. Exact-head `unit-and-api` then failed, proving the removed production asset was observable by the regression; the same run's browser lane was cancelled after the branch moved and is not treated as passing evidence.
 4. `66d515474f847caf23b358e9fbdd7aee58ea53d0` restored the `.toast.visible` rendering rule.
 5. `700bed8419181865e4dcaeb2adb8bca60e921784` restored the production stylesheet link.
+6. `0befe87f2ebfa3a608051e0f8ca0977618dedb49` strengthened the static regression first to require the same explicit status semantics on the existing `#sync-status` feedback region; the then-current production markup did not yet contain `role="status"`.
+7. `20f6088225d5b28ce1049d0be049b38637a31fde` applied the narrow production markup repair by adding only the status role to that already-polite, already-atomic synchronization region.
 
 Only terminal-success checks on the unchanged exact current head may establish GREEN evidence. Cancelled, skipped, pending, predecessor, model-only, or status-only results are non-passing.
 
@@ -34,7 +37,8 @@ Only terminal-success checks on the unchanged exact current head may establish G
 `tests/unit/toast-accessibility.test.mjs` reads the shipped `index.html`, `cloud-sync.js`, and `toast-state.css`. It proves that:
 
 - the production toast exposes status/polite/atomic semantics;
-- the toast is not made focusable merely for announcement;
+- the production synchronization feedback exposes the same explicit advisory status semantics;
+- neither advisory status region becomes a synthetic keyboard stop;
 - the cloud producer actually activates `.visible`;
 - the production document loads `toast-state.css`; and
 - `.toast.visible` is rendered with visible opacity and transform.
@@ -43,11 +47,11 @@ Only terminal-success checks on the unchanged exact current head may establish G
 
 ## Scope and security boundary
 
-This change does not alter toast content, timing, persistence, authentication, authorization, API semantics, credential handling, tenant isolation, attachment behavior, Clearfolio integration, database state, dependencies, workflows, or application focus-management code. Urgent blocking errors that require immediate interruption or user action need a separate interaction design rather than silently changing this advisory status region to an assertive alert.
+This change does not alter toast or synchronization content, timing, persistence, authentication, authorization, API semantics, credential handling, tenant isolation, attachment behavior, Clearfolio integration, database state, dependencies, workflows, or application focus-management code. Urgent blocking errors that require immediate interruption or user action need a separate interaction design rather than silently changing these advisory status regions to assertive alerts.
 
 ## Rollback
 
-Rollback must remove the status attributes, `toast-state.css`, its production link, both focused regressions and their test registrations, this doctoring record, the learning note, and the CHANGELOG entry together. A partial rollback that preserves tests but removes the rendering rule should fail closed; a partial rollback that removes the tests would erase the evidence that detected the semantic regression and is not acceptable.
+Rollback must remove the status semantics, `toast-state.css`, its production link, both focused toast regressions and their test registrations, this doctoring record, and the CHANGELOG entry together. A partial rollback that preserves tests but removes the rendering rule or status semantics should fail closed; a partial rollback that removes the tests would erase the evidence that detected the semantic regressions and is not acceptable.
 
 ## References
 
