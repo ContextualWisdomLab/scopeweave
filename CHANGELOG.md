@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a verified SQLite backup and recovery-rehearsal operator boundary that
+  creates live `VACUUM INTO` snapshots, fails closed on source/backup integrity
+  or foreign-key defects, preserves schema/version metadata, never overwrites an
+  existing destination, publishes owner-only backup files, and keeps destructive
+  restore outside the automated interface.
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS
   estimation coverage, dependency risk, and procurement package section checks.
 - Preserved PM-analysis research papers, NASA WBS handbook, BCP 14, and JSON
