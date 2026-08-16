@@ -5,6 +5,7 @@ import assert from 'node:assert';
 
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_DEV = '1'; // enables the dev-activate-pro endpoint for this test
+delete process.env.ORCHESTRATOR_URL; // keep the AI briefing on the explicit local dev adapter
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 const { app } = await import('../../server/app.mjs');
 
@@ -619,7 +620,7 @@ assert.equal(r.status, 200, 'sprint delete');
 r = await req(`/api/projects/${proj.id}/ai/brief`, { method: 'POST', headers: auth });
 assert.equal(r.status, 200, 'ai brief 200');
 const brief = await r.json();
-assert.ok(brief.analysis.includes('mock-orchestrator'), 'mock analysis returned');
+assert.ok(brief.analysis.includes('dev-orchestrator'), 'explicit development analysis returned');
 assert.ok(brief.analysis.length > 40, 'non-trivial analysis');
 r = await req(`/api/projects/${proj.id}/ai/brief`, { method: 'POST', headers: oauth });
 assert.equal(r.status, 404, 'non-member ai brief → 404');
