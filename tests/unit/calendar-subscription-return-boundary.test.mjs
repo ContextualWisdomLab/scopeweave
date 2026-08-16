@@ -7,6 +7,7 @@ import {
 } from '../../server/calendar_subscription_domain.mjs';
 
 const NOW = 1_900_000_000_000;
+const ROTATE_EXPIRY = NOW + 10;
 const VALID_SECRET = Buffer.alloc(32, 7).toString('base64url');
 
 const baseRecord = {
@@ -56,6 +57,7 @@ for (const returned of [
   { ...baseRecord, subscription_id: 'csub_other', last_used_at_ms: NOW },
   { ...baseRecord, subject_id: 'user-2', last_used_at_ms: NOW },
   { ...baseRecord, project_id: 'project-2', last_used_at_ms: NOW },
+  { ...baseRecord, purpose: 'session', last_used_at_ms: NOW },
   { ...baseRecord, audience: 'scopeweave:other', last_used_at_ms: NOW },
   { ...baseRecord, membership_version: 'membership-v2', last_used_at_ms: NOW },
 ]) {
@@ -67,12 +69,20 @@ for (const returned of [
   );
 }
 
+const rotatedRecord = {
+  ...baseRecord,
+  expires_at_ms: ROTATE_EXPIRY,
+  rotated_at_ms: NOW,
+};
+
 for (const returned of [
-  { ...baseRecord, subscription_id: 'csub_other', rotated_at_ms: NOW },
-  { ...baseRecord, subject_id: 'user-2', rotated_at_ms: NOW },
-  { ...baseRecord, project_id: 'project-2', rotated_at_ms: NOW },
-  { ...baseRecord, audience: 'scopeweave:other', rotated_at_ms: NOW },
-  { ...baseRecord, membership_version: 'membership-v2', rotated_at_ms: NOW },
+  { ...rotatedRecord, subscription_id: 'csub_other' },
+  { ...rotatedRecord, subject_id: 'user-2' },
+  { ...rotatedRecord, project_id: 'project-2' },
+  { ...rotatedRecord, purpose: 'session' },
+  { ...rotatedRecord, audience: 'scopeweave:other' },
+  { ...rotatedRecord, membership_version: 'membership-v2' },
+  { ...rotatedRecord, expires_at_ms: ROTATE_EXPIRY + 1 },
 ]) {
   const candidate = service({ rotateSubscriptionAtomically: async () => returned });
   await expectDomainError(
@@ -80,7 +90,7 @@ for (const returned of [
       subjectId: 'user-1',
       projectId: 'project-1',
       subscriptionId: 'csub_123',
-      expiresAtMs: NOW + 10,
+      expiresAtMs: ROTATE_EXPIRY,
     }),
     'calendar_subscription_not_found',
     404,
