@@ -8,6 +8,10 @@ import {
   createSqliteBillingCheckoutAttemptRepository,
   installBillingCheckoutAttemptSchema,
 } from './billing_checkout_attempt.mjs';
+import {
+  createSqliteStripeWebhookEventRepository,
+  installStripeWebhookEventSchema,
+} from './stripe_webhook_event_ledger.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.SCOPEWEAVE_DB || join(__dirname, '..', 'data.db');
@@ -181,9 +185,11 @@ try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAU
 try { db.exec('ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
 try { db.exec("ALTER TABLE projects ADD COLUMN methodology TEXT NOT NULL DEFAULT 'waterfall'"); } catch { /* already there */ }
 
-// Billing attempt state is installed at bootstrap only, after referenced orgs exist.
+// Billing state is installed at bootstrap only; request handlers never create schema.
 installBillingCheckoutAttemptSchema(db);
 export const billingCheckoutAttempts = createSqliteBillingCheckoutAttemptRepository(db);
+installStripeWebhookEventSchema(db);
+export const stripeWebhookEvents = createSqliteStripeWebhookEventRepository(db);
 
 // node:sqlite returns lastInsertRowid as number|bigint; normalize to Number.
 export const rowid = (r) => Number(r.lastInsertRowid);
