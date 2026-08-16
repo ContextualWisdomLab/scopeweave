@@ -333,7 +333,16 @@ export function createCalendarSubscriptionService({
       audience: CALENDAR_SUBSCRIPTION_AUDIENCE,
       membership_version: issuedMembershipVersion,
     });
-    if (!used || statusOf(used, nowMs) !== 'active' || used.purpose !== CALENDAR_SUBSCRIPTION_PURPOSE) {
+    if (
+      !used
+      || used.subscription_id !== existing.subscription_id
+      || used.subject_id !== existing.subject_id
+      || used.project_id !== existing.project_id
+      || used.purpose !== CALENDAR_SUBSCRIPTION_PURPOSE
+      || used.audience !== CALENDAR_SUBSCRIPTION_AUDIENCE
+      || used.membership_version !== issuedMembershipVersion
+      || statusOf(used, nowMs) !== 'active'
+    ) {
       throw unauthorizedSubscription();
     }
     await recordAuditBestEffort(auditSink, {
@@ -375,7 +384,17 @@ export function createCalendarSubscriptionService({
       purpose: CALENDAR_SUBSCRIPTION_PURPOSE,
       membership_version: membershipVersion,
     });
-    if (!rotated || statusOf(rotated, nowMs) !== 'active' || rotated.purpose !== CALENDAR_SUBSCRIPTION_PURPOSE) {
+    if (
+      !rotated
+      || rotated.subscription_id !== normalizedSubscriptionId
+      || rotated.subject_id !== subjectId
+      || rotated.project_id !== projectId
+      || rotated.purpose !== CALENDAR_SUBSCRIPTION_PURPOSE
+      || rotated.audience !== CALENDAR_SUBSCRIPTION_AUDIENCE
+      || rotated.membership_version !== membershipVersion
+      || rotated.expires_at_ms !== normalizedExpiry
+      || statusOf(rotated, nowMs) !== 'active'
+    ) {
       throw notFoundSubscription();
     }
     await recordAuditBestEffort(auditSink, {
