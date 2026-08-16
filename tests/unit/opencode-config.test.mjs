@@ -6,7 +6,7 @@ const config = JSON.parse(readFileSync(new URL('../../opencode.jsonc', import.me
 
 test('OpenCode development config uses only currently hosted NVIDIA NIM candidates', () => {
   assert.equal(config.model, 'nvidia-nim/nvidia/llama-3.3-nemotron-super-49b-v1.5');
-  assert.equal(config.small_model, 'nvidia-nim/meta/llama-3.3-70b-instruct');
+  assert.equal(config.small_model, 'nvidia-nim/meta/llama-3.1-8b-instruct');
   assert.deepEqual(config.enabled_providers, ['nvidia-nim']);
 
   const provider = config.provider?.['nvidia-nim'];
@@ -14,8 +14,8 @@ test('OpenCode development config uses only currently hosted NVIDIA NIM candidat
   assert.equal(provider.options?.baseURL, 'https://integrate.api.nvidia.com/v1');
   assert.equal(provider.options?.apiKey, '{env:NVIDIA_API_KEY}');
   assert.ok(provider.models?.['nvidia/llama-3.3-nemotron-super-49b-v1.5']);
+  assert.ok(provider.models?.['meta/llama-3.1-8b-instruct']);
   assert.ok(provider.models?.['meta/llama-3.3-70b-instruct']);
-  assert.ok(provider.models?.['mistralai/mixtral-8x7b-instruct-v0.1']);
 
   const serialized = JSON.stringify(config);
   assert.doesNotMatch(serialized, /github-models/i);
