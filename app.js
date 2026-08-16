@@ -2701,11 +2701,7 @@ function formatLocalDateInput(date) {
 }
 
 function formatCompactDate(date) {
-  const m = date.getMonth() + 1;
-  const d = date.getDate();
-  const month = m < 10 ? '0' + m : m;
-  const day = d < 10 ? '0' + d : d;
-  return `${date.getFullYear()}${month}${day}`;
+  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function formatPercent(value, digits) {
