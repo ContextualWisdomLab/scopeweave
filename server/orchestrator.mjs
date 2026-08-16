@@ -152,10 +152,13 @@ function validatedMessages(messages) {
  * Copy optional cost-attribution labels into the exact orchestrator allowlist.
  *
  * Unknown dimensions and empty values are omitted rather than forwarded to the
- * strict contextual-orchestrator request validator. Values are normalized to
- * bounded strings. Execution model/provider identity remains controlled by the
- * top-level request model and the orchestrator's own provider routing evidence;
- * this object is business cost-allocation metadata only.
+ * strict contextual-orchestrator request validator. Values must be strings or
+ * finite numeric identifiers before normalization to bounded strings; complex
+ * objects and non-finite numbers fail closed instead of becoming misleading
+ * labels through implicit JavaScript string coercion. Execution model/provider
+ * identity remains controlled by the top-level request model and the
+ * orchestrator's own provider routing evidence; this object is business
+ * cost-allocation metadata only.
  *
  * @param {unknown} attribution optional business cost-attribution mapping
  * @returns {Record<string, string>|undefined} bounded allowed labels or undefined
@@ -172,6 +175,15 @@ function sanitizedAttribution(attribution) {
   const safe = {};
   for (const [key, value] of Object.entries(attribution)) {
     if (!ATTRIBUTION_DIMENSIONS.has(key) || value === undefined || value === null) continue;
+    if (
+      typeof value !== 'string'
+      && (typeof value !== 'number' || !Number.isFinite(value))
+    ) {
+      throw new OrchestratorConfigurationError(
+        'orchestrator_attribution_invalid',
+        'Orchestrator attribution values must be strings or finite numbers.',
+      );
+    }
     const text = String(value).trim();
     if (!text) continue;
     if (text.length > MAX_ATTRIBUTION_VALUE_LENGTH) {
