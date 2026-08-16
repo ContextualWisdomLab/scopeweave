@@ -1,116 +1,111 @@
-# Exact-head CI execution evidence
+# Exact-head and live-base CI execution evidence
 
 ## Status and authority
 
 **Status: active PR #523 evidence, not protected-`develop` shipped truth.**
 
-This record belongs to issue #522 / PR #523. Protected `develop` remains the source of shipped truth until one unchanged integrated head satisfies the live ruleset, deterministic checks, security and dependency gates, resolved-review requirements, and a qualifying independent approval after the latest push.
+This record belongs to issue #522 / PR #523. Protected `develop` remains shipped truth until one unchanged integrated head satisfies the live ruleset, deterministic checks, security and dependency gates, resolved-review requirements, and any qualifying independent approval required after the latest push.
 
 ## Buyer/control objective
 
-A green CI badge is not defensible evidence if the job executed a different commit than the one a reviewer is asked to approve. ScopeWeave therefore separates two questions:
+A green CI badge is not defensible evidence if a job executed a different contributor revision from the one under review, or if a base-sensitive comparison silently used an old pull-request base snapshot instead of the current protected branch tip. ScopeWeave therefore keeps three identities separate:
 
-1. Did the exact contributor head under review execute and pass the repository-owned deterministic gates?
-2. Will that immutable head satisfy the live protected-base integration and governance requirements?
+1. the exact immutable contributor head under review;
+2. the pull-request base snapshot recorded in event/PR metadata; and
+3. the live protected base ref tip resolved when base-sensitive evidence executes.
 
-GitHub documents that `pull_request` workflow runs normally expose a synthetic `refs/pull/<number>/merge` ref and that `GITHUB_SHA` is the corresponding merge commit. The official `actions/checkout` documentation separately shows that testing the pull request's contributor commit requires an explicit `github.event.pull_request.head.sha` checkout. Synthetic-merge success remains useful integration evidence, but it cannot substitute for contributor-head evidence under ScopeWeave's exact-head review contract.
+GitHub documents that `pull_request` workflow runs normally expose a synthetic `refs/pull/<number>/merge` ref and that `GITHUB_SHA` is the corresponding merge commit. The `actions/checkout` documentation separately shows how to checkout an explicit contributor commit or named branch. Synthetic-merge success remains useful integration evidence, but it cannot substitute for exact contributor-head evidence; similarly, `github.event.pull_request.base.sha` is a snapshot identity and is not used as ScopeWeave's live protected-base authority.
 
 ## Server Tests root cause and RED evidence
 
 Before this PR, both jobs in `.github/workflows/server-tests.yml` invoked the pinned `actions/checkout` action with `persist-credentials: false` but no `ref`. On a pull request, the action therefore followed the event's default synthetic merge ref.
 
-The realistic RED regression was committed at contributor head `7c6810211a211bb0fd09c36476b5ea47c1c0af46`. Hosted Server Tests run `31924337433`, job `95109405299`, fetched and executed synthetic merge commit `120def420dec9abe154353fa699e6a69e0388268` from `refs/remotes/pull/523/merge`, whose message merged the contributor head into protected-base head `ffeffde83d62a3c0710c446a43f89aed495ae0a8`. The new contract failed because neither checkout selected the contributor head. This established the defect on the real GitHub runner rather than with a fabricated fixture.
+The realistic RED regression was committed at contributor head `7c6810211a211bb0fd09c36476b5ea47c1c0af46`. Hosted Server Tests run `31924337433`, job `95109405299`, fetched and executed synthetic merge commit `120def420dec9abe154353fa699e6a69e0388268` from `refs/remotes/pull/523/merge`; the new contract failed because neither job selected the contributor head.
 
-## Server Tests narrow control
+Commit `0f247d2e05fd8c9c2f69e617efd369ee7aea005d` changed both Server Tests jobs to select `${{ github.event.pull_request.head.sha || github.sha }}` with `persist-credentials: false`. Each job binds `EXPECTED_CHECKOUT_SHA` to the same expression, runs `git rev-parse HEAD`, and fails closed if the actual revision differs. The fallback preserves exact protected-`develop` push execution.
 
-Commit `0f247d2e05fd8c9c2f69e617efd369ee7aea005d` changes both Server Tests jobs to select:
-
-```yaml
-ref: ${{ github.event.pull_request.head.sha || github.sha }}
-persist-credentials: false
-```
-
-Immediately after checkout, each job binds `EXPECTED_CHECKOUT_SHA` to the same expression, runs `git rev-parse HEAD`, and fails closed if the actual SHA differs. The fallback preserves exact execution for the existing protected-`develop` push path, where there is no pull-request head.
-
-The control deliberately keeps the unprivileged `pull_request` event, repository permissions at `contents: read`, immutable action pins, disabled credential persistence, and the existing unit/API and browser-E2E workloads. It adds no secret, token authority, merge-ref synthesis, temporary writer workflow, or bypass.
+The control keeps the unprivileged `pull_request` event, `contents: read`, immutable action pins, disabled credential persistence, and the existing unit/API and browser-E2E workloads. It adds no secret, token authority, merge-ref synthesis, temporary writer workflow, or bypass.
 
 ## Required CodeQL context recovery
 
-Acceptance testing exposed a second CI-integrity defect. Protected `develop` requires the GitHub Actions contexts `Analyze (javascript-typescript)` and `Analyze (python)`, but the repository's historical `.github/workflows/codeql.yml` workflow identity (`310400876`) was disabled while GitHub CodeQL default setup was active. The source file could therefore suggest an advanced workflow existed while no current pull-request run supplied the two required contexts.
+Acceptance testing exposed a second CI-integrity defect. Protected `develop` requires `Analyze (javascript-typescript)` and `Analyze (python)`, while the repository's historical CodeQL workflow was disabled under GitHub CodeQL default setup.
 
-GitHub documents this control-plane behavior: enabling CodeQL default setup disables existing CodeQL workflow configurations and blocks their CodeQL analysis uploads. GitHub also states that a no-longer-used pre-existing CodeQL workflow file may be deleted after default setup becomes authoritative.
+PR #523 restores those deterministic context names through `.github/workflows/codeql-required.yml`. It selects and verifies the exact contributor head, retains `persist-credentials: false`, analyzes both required languages, and remains on the unprivileged `pull_request` boundary.
 
-PR #523 restores the required deterministic contexts through the permanent `.github/workflows/codeql-required.yml` workflow, registered as active workflow identity `335384625`. It preserves the exact protected context names, analyzes both JavaScript/TypeScript and Python, uses the same explicit contributor-head checkout expression as Server Tests, verifies `git rev-parse HEAD`, retains `persist-credentials: false`, and remains on the unprivileged `pull_request` boundary.
+The first hosted replacement attempt on contributor head `612dcb6ed0ff17b03e30baacb301dc006bac7d6f` reached CodeQL analysis but failed when GitHub rejected advanced-configuration SARIF publication while default setup was authoritative. The narrow repair uses the CodeQL Action's supported `upload: never` mode. GitHub default setup remains the code-scanning publication authority while the repository-owned workflow performs real local analysis to supply the protected required contexts.
 
-The first hosted attempt on contributor head `612dcb6ed0ff17b03e30baacb301dc006bac7d6f` correctly selected and verified the contributor head, initialized CodeQL, and executed queries, but run `31928403203` failed during analysis result publication because GitHub rejected the advanced-configuration SARIF upload while default setup was enabled. This failure was treated as causal evidence rather than bypassed.
+The disabled historical `.github/workflows/codeql.yml` source is removed after the replacement workflow proved active and successful. This reduces source ambiguity without disabling CodeQL default setup.
 
-The narrow compatibility repair sets `upload: never` on the pinned `github/codeql-action/analyze` step. The CodeQL Action's own action definition documents `upload: never` as the supported way to run analysis without uploading SARIF. This keeps GitHub default setup as the repository's CodeQL alert-publication authority while the repository-owned workflow performs actual CodeQL query execution solely to provide the exact-head required-check contexts. The executable regression contract requires this separation so a future edit cannot silently reintroduce the default-setup upload conflict.
+## OSV contributor-head and live-base differential scanning
 
-The disabled historical `.github/workflows/codeql.yml` source is removed from this PR after the replacement workflow proved active and successful. This reduces canonical-source ambiguity; it does not disable CodeQL default setup or remove the protected required contexts.
+The former repository OSV lane delegated to Google's reusable pull-request workflow, whose candidate selection follows `$GITHUB_SHA` and therefore the synthetic merge revision on normal pull-request events. PR #523 instead owns the differential scan locally while preserving immutable direct scanner/reporter pins.
 
-## Exact-base and exact-head OSV differential scanning
+PR #487 established that upstream `google/osv-scanner-action@v2.5.0` points to `8deb546fdb875b9996d27d4950be7312dac076a1`; that release's reusable workflow pins its direct scanner and reporter steps to `06b2ab4348248b456ee06c9e953637f55e03504f`. PR #523 uses that direct revision while controlling revision selection itself.
 
-The former repository OSV lane delegated to Google's reusable pull-request workflow. That reusable workflow checks out the target branch and then checks out `$GITHUB_SHA`. On a normal `pull_request` event, `$GITHUB_SHA` is the synthetic merge commit, so upgrading only the reusable workflow would preserve immutable supply-chain pinning but would not satisfy ScopeWeave's contributor-head evidence requirement.
+### Stale-base snapshot defect and TDD repair
 
-PR #487 correctly established that upstream tag `google/osv-scanner-action@v2.5.0` points to commit `8deb546fdb875b9996d27d4950be7312dac076a1`. Inspection of that tagged reusable workflow showed that its scanner and reporter steps are themselves pinned to direct action revision `06b2ab4348248b456ee06c9e953637f55e03504f`, annotated as v2.5.0. PR #523 preserves that unique supply-chain value without adopting the reusable workflow's synthetic-merge checkout behavior.
+An additional evidence defect remained in the first PR #523 implementation: the baseline scanner checked out `github.event.pull_request.base.sha` and labeled it the live base. That value is pull-request/event snapshot evidence, not an independently resolved current protected branch tip. A base-sensitive dependency comparison can therefore become stale as `develop` moves.
 
-The repository-owned OSV `scan` job now performs the differential comparison explicitly:
+Test-only commit `d8d6d0bd0e3c343b52986856b0df18181639ceb7` changed `tests/unit/workflow-exact-head-contract.test.mjs` to require the named protected base ref, require the ref identity in baseline evidence, and explicitly reject `github.event.pull_request.base.sha` in the OSV workflow. At that commit, the production workflow still contained the snapshot SHA checkout, so the executable contract and production source were deliberately RED.
 
-1. checkout `github.event.pull_request.base.sha` with credentials disabled;
-2. verify `git rev-parse HEAD` equals `EXPECTED_BASE_SHA`;
-3. scan the exact base into `old-results.json` with the v2.5.0 direct scanner pin;
-4. checkout `github.event.pull_request.head.sha` with credentials disabled and `clean: false` so the baseline result survives;
+Production commit `e527c7fadbdea523905bf985121d0fa9d8809f2b` changed the OSV baseline to checkout `${{ github.event.pull_request.base.ref }}`. `actions/checkout` therefore resolves the protected branch name at runner execution rather than accepting the PR snapshot SHA. The following step records the actual resolved revision using `git rev-parse HEAD` together with `BASE_REF`. Merge classification must still freshly resolve `develop` again after checks because any live base can advance after a workflow starts.
+
+The current OSV comparison sequence is:
+
+1. checkout the current protected base **ref** with credentials disabled;
+2. record the resolved protected-base SHA and ref identity;
+3. scan that resolved baseline into `old-results.json` with the v2.5.0 direct scanner pin;
+4. checkout the exact immutable `github.event.pull_request.head.sha` with credentials disabled and `clean: false` so the baseline result survives;
 5. verify `git rev-parse HEAD` equals `EXPECTED_HEAD_SHA`;
 6. scan the exact contributor head into `new-results.json` with the same v2.5.0 pin;
-7. compare only introduced findings with the v2.5.0 reporter pin; and
-8. upload the candidate-head SARIF through the repository-trusted pinned CodeQL upload action.
+7. compare introduced findings with the v2.5.0 reporter pin; and
+8. upload candidate-head SARIF through the pinned CodeQL upload action.
 
-The job identity remains `scan`, matching the protected-base code-scanning configuration. This matters because changing only the identity to the reusable workflow's `osv-scan` produced a neutral GitHub Advanced Security comparison record stating that the protected-base `scan` configuration was not found. A neutral configuration-mismatch record is not passing security evidence.
+The job identity remains `scan`, matching protected-base code-scanning identity. A neutral configuration-mismatch record is not treated as passing security evidence.
 
 ## Executable regression contract
 
-`tests/unit/workflow-exact-head-contract.test.mjs`, registered in normal `test:unit`, locks the workflow structure by requiring:
+`tests/unit/workflow-exact-head-contract.test.mjs`, registered in normal `test:unit`, requires:
 
 - exactly two Server Tests exact-head checkout refs and runtime expected-SHA bindings;
 - `git rev-parse HEAD` verification in both Server Tests jobs;
-- disabled checkout credential persistence and absence of `pull_request_target`;
-- the two protected CodeQL `Analyze (...)` context names and both required languages;
-- CodeQL exact-head checkout, runtime expected/actual SHA comparison, and disabled credential persistence;
-- `upload: never` so required-context analysis coexists with GitHub default setup;
+- disabled checkout credential persistence and no `pull_request_target`;
+- both protected CodeQL `Analyze (...)` context names and required languages;
+- CodeQL exact-head checkout, expected/actual SHA comparison, disabled credential persistence, and `upload: never`;
 - the stable OSV `scan` job identity;
-- exact immutable OSV base and contributor checkouts with runtime SHA verification;
-- `clean: false` on the contributor checkout so `old-results.json` is retained;
+- OSV baseline selection by `github.event.pull_request.base.ref`, with the base ref recorded in evidence;
+- explicit rejection of `github.event.pull_request.base.sha` as a live-base authority;
+- exact immutable contributor-head checkout and runtime SHA verification;
+- `clean: false` on the contributor checkout so `old-results.json` survives;
 - exactly two v2.5.0 direct scanner pins and one v2.5.0 reporter pin;
-- absence of the superseded v2.3.8 OSV revision and reusable-workflow delegation; and
-- absence of privileged `pull_request_target` execution in every covered lane.
+- absence of the superseded v2.3.8 revision and reusable-workflow delegation; and
+- absence of privileged `pull_request_target` execution.
 
-The structural contract complements, rather than replaces, hosted runtime evidence. A syntactically plausible YAML edit still has to prove its behavior on GitHub runners.
+The structural contract complements, rather than replaces, hosted runtime evidence. Every changed head must still prove its own runner behavior.
 
-## OSV v2.5.0 TDD evidence
+## Prior OSV v2.5.0 TDD evidence
 
-Test-only commit `4162255078be53b839b8d656b369d70939eee817` first changed the executable contract to require the v2.5.0 direct scanner and reporter revision while the production workflow still used v2.3.8. Hosted Server Tests run `31938300903` proved RED on the exact contributor head: `unit-and-api` job `95143597780` completed checkout and `Verify exact checkout` successfully, then failed in the unit-test step; the independent browser lane remained green. This isolated the missing production pin rather than a checkout or runner failure.
+Test-only commit `4162255078be53b839b8d656b369d70939eee817` required the v2.5.0 direct scanner/reporter revision while production still used v2.3.8. Hosted Server Tests run `31938300903`, `unit-and-api` job `95143597780`, verified the exact checkout and then failed the unit contract. Production commit `21786e695c800133936032eea3f0ceaa9053c58a` changed only the scanner/reporter pins. Hosted Server Tests run `31938384438` then proved the exact head green, and OSV run `31938384547`, job `95143808626`, executed the v2.5.0 baseline/candidate comparison and SARIF upload successfully on that revision.
 
-Production commit `21786e695c800133936032eea3f0ceaa9053c58a` then replaced only the two scanner pins and the reporter pin with upstream v2.5.0 revision `06b2ab4348248b456ee06c9e953637f55e03504f`. Hosted Server Tests run `31938384438` proved GREEN on that exact head: `unit-and-api` job `95143808063` and `cloud-e2e` job `95143808146` both completed exact checkout verification and their full workloads successfully.
-
-OSV run `31938384547`, job `95143808626`, also ran on exact head `21786e695c800133936032eea3f0ceaa9053c58a`. It pulled the v2.5.0 scanner image, verified both immutable checkouts, scanned both revisions, compared the results, and uploaded SARIF successfully. This is production-path evidence for that immutable code head; later documentation or metadata commits require their own exact-head gate sweep before merge authority can be claimed.
+Those earlier results do not transfer to later heads. The live-base repair and this documentation commit require fresh exact-current-head checks before merge readiness can be assessed.
 
 ## Evidence semantics and security boundary
 
-The repository-owned `CodeQL Required` lane does **not** claim to publish CodeQL alerts; `upload: never` is intentional. GitHub default setup remains responsible for CodeQL alert publication. Required-context analysis and code-scanning publication are separate controls with separate evidence.
+The repository-owned `CodeQL Required` lane does **not** publish CodeQL alerts; `upload: never` is intentional. GitHub default setup remains responsible for CodeQL alert publication. Required-context analysis and code-scanning publication are separate evidence channels.
 
-Exact SHA checkout reduces evidence ambiguity; it is not code signing, artifact provenance, or a substitute for SAST, dependency review, supply-chain controls, or independent review. Forked contributions must continue to avoid executing untrusted contributor code in a privileged `pull_request_target` context.
+Exact contributor-head checkout reduces evidence ambiguity; it is not code signing, artifact provenance, or a substitute for SAST, dependency review, supply-chain controls, or independent review. The named-base-ref checkout gives a current protected-base observation at workflow execution; it is not a permanent assertion that the branch will remain unchanged. Merge/release decisions must refetch the protected tip independently after all gates finish.
 
-Neutral, skipped, cancelled, absent, stale, predecessor-head, rate-limited, model-only, status-only, or configuration-mismatch records are not promoted to passing evidence. In particular, GitHub Advanced Security can emit neutral comparison records when a protected-base code-scanning configuration is not observed for a PR head; those records require separate causal investigation and are not represented here as successful gates merely because an underlying repository-native scanner workflow succeeded.
+Neutral, skipped, cancelled, absent, stale, predecessor-head, rate-limited, model-only, status-only, or configuration-mismatch records are not promoted to passing evidence. Forked contributions must not execute untrusted contributor code in privileged `pull_request_target` context.
 
 ## Rollback and recovery
 
-Before protected integration, rollback is source-only: remove this doctoring record, the workflow contract registration/test, the explicit Server Tests checkout/runtime assertions, the repository-owned exact-base/exact-head OSV workflow, and the replacement required-context workflow together.
+Before protected integration, rollback is source-only: remove this doctoring record, the workflow contract registration/test, the explicit Server Tests checkout/runtime assertions, the repository-owned OSV workflow, and the replacement required-context workflow together.
 
-After protected integration, do **not** silently restore default pull-request checkout and then treat synthetic merge success as contributor-head evidence. A replacement must preserve the invariant that the exact expected SHA is selected and verified at runtime.
+After protected integration, do not silently restore default pull-request checkout and then treat synthetic merge success as contributor-head evidence. Do not restore `github.event.pull_request.base.sha` and label it the current protected base. Any replacement base-sensitive workflow must preserve an independently resolved live-base identity and exact contributor-head identity.
 
-Do not restore reusable OSV pull-request delegation unless the upstream workflow can select and attest the immutable contributor and base SHAs while preserving the protected-base code-scanning identity. Do not downgrade the direct OSV pins without a separately evidenced vulnerability, compatibility, or rollback reason.
+Do not restore reusable OSV pull-request delegation unless the upstream workflow can select the intended live baseline and exact contributor head while preserving the protected-base code-scanning identity. Do not downgrade the direct OSV pins without separately evidenced vulnerability, compatibility, or rollback reason.
 
-Do not restore the disabled historical CodeQL workflow while default setup remains authoritative. If code-scanning ownership moves from default setup back to advanced configuration, treat that as a control-plane migration: update the alert-publication authority, required contexts, regression contract, and protected-branch evidence together and verify the resulting exact integrated head before release.
+If CodeQL alert-publication ownership later moves from default setup back to advanced configuration, treat that as a control-plane migration and update publication authority, required contexts, regression contracts, and protected-branch evidence together.
 
 ## References
 
