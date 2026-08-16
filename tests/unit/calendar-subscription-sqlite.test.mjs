@@ -106,6 +106,7 @@ test('SQLite calendar adapter persists hash-only reusable state and safe list me
   assert.equal(stored.subject_id, 1);
   assert.equal(stored.project_id, 1000);
   assert.equal(stored.membership_version, '100:0');
+  assert.equal(stored.purpose, 'calendar_read');
   assert.equal(stored.secret_hash, secretHash(created.secret));
   assert.notEqual(stored.secret_hash, created.secret);
   assert.equal(Object.hasOwn(stored, 'secret'), false);
@@ -331,22 +332,23 @@ test('owned schema is normalized, uses descriptive multiword names, and passes f
   assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys, 1);
   assert.throws(() => db.prepare(`
     INSERT INTO calendar_subscriptions(
-      subscription_id, secret_hash, subject_id, project_id, name, audience,
+      subscription_id, secret_hash, subject_id, project_id, name, purpose, audience,
       membership_version, created_at_ms, expires_at_ms, last_used_at_ms,
       rotated_at_ms, revoked_at_ms
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
   `).run(
     'csub_missing_project',
     'c'.repeat(64),
     1,
     999999,
     'Missing project',
+    'calendar_read',
     'scopeweave:calendar',
     '100:0',
     1_000_000,
     2_000_000,
     null,
-  ));
+  ), /FOREIGN KEY constraint failed/);
 
   const owned = db.prepare(`
     SELECT name, type

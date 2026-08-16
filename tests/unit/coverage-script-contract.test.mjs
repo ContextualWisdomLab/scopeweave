@@ -81,6 +81,16 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage:cases'],
+  /tests\/unit\/calendar-subscription-sqlite-race\.test\.mjs/,
+  'the calendar-subscription SQLite race contract executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/calendar-subscription-sqlite-issuance-epoch\.test\.mjs/,
+  'the calendar-subscription issuance-epoch persistence contract executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
 );

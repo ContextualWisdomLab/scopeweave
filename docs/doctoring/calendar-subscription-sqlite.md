@@ -2,7 +2,7 @@
 
 > **Status:** Active stacked PR work only. Nothing in this document is protected-`develop` shipped truth until the complete stack is independently reviewed, satisfies the live rulesets on the unchanged integrated head, and reaches protected `develop`.
 >
-> **Stack:** issue #413 → access-grant domain (#506) → calendar-subscription domain (#514) → SQLite persistence (#524). This slice deliberately does **not** change the protected calendar HTTP route, browser UI, deployment topology, or release version.
+> **Stack:** issue #413 → access-grant domain (#506) → calendar-subscription domain (#514, with issuance-epoch landing #539) → SQLite persistence (#524). This slice deliberately does **not** change the protected calendar HTTP route, browser UI, deployment topology, or release version. The parent domain on #514 still emits audience without `purpose`; this adapter freezes `calendar_read` at rest so a later domain rebase can send the field explicitly without a schema change.
 
 ## Problem and bounded outcome
 
@@ -36,6 +36,7 @@ erDiagram
       integer subject_id FK
       integer project_id FK
       text name
+      text purpose
       text audience
       text membership_version
       integer created_at_ms
@@ -77,7 +78,7 @@ All owned table/index names contain multiple lexical words and use snake_case. T
 
 1. The one-time plaintext credential exists only at the parent domain `create()`/`rotate()` return boundary. The SQLite adapter receives and stores only SHA-256 hashes.
 2. Only the current hash remains in `calendar_subscriptions`; historical rotation, usage, and audit relations contain no secret or hash fields. Rotation therefore cannot create a credential-hash archive.
-3. Calendar audience is fixed to `scopeweave:calendar`; authorization additionally binds the credential to exactly one project.
+3. Calendar audience is fixed to `scopeweave:calendar` and purpose is frozen to `calendar_read`. A parent domain that still omits `purpose` receives that frozen value at the persistence boundary; an explicit non-calendar purpose cannot authorize or persist.
 4. Create rechecks the domain-captured membership version inside the SQLite savepoint before inserting state.
 5. Use performs a conditional update that simultaneously verifies current hash, project, audience, non-revocation, pre-expiry time, stored membership-version snapshot, and independently resolved live membership/session version before it records `last_used_at_ms` and usage evidence.
 6. Removing and re-adding an organization membership changes the membership-row identity. Session-wide invalidation changes `users.token_version`. Either change makes an already issued credential unusable until an authenticated operator explicitly rotates it.

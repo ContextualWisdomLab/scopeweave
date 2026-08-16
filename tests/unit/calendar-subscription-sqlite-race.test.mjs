@@ -205,16 +205,17 @@ test('foreign-key enforcement rejects invalid durable subscriptions and missing 
   assert.throws(
     () => database.prepare(`
       INSERT INTO calendar_subscriptions(
-        subscription_id, secret_hash, subject_id, project_id, name, audience,
+        subscription_id, secret_hash, subject_id, project_id, name, purpose, audience,
         membership_version, created_at_ms, expires_at_ms, last_used_at_ms,
         rotated_at_ms, revoked_at_ms
-      ) VALUES(?,?,?,?,?,?,?,?,?,?,NULL,NULL)
+      ) VALUES(?,?,?,?,?,?,?,?,?,?,?,NULL,NULL)
     `).run(
       'csub_missing_project',
       'c'.repeat(64),
       1,
       999999,
       'Missing project',
+      'calendar_read',
       'scopeweave:calendar',
       '100:0',
       1_000_000,

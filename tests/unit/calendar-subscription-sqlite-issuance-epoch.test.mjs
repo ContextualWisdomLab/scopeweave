@@ -52,6 +52,20 @@ const baseRecord = (overrides = {}) => ({
   ...overrides,
 });
 
+test('omitted parent-domain purpose still persists as calendar_read', async () => {
+  const database = new DatabaseSync(':memory:');
+  installFixture(database);
+  const repository = createSqliteCalendarSubscriptionRepository(database);
+  const { purpose, ...recordWithoutPurpose } = baseRecord();
+
+  await repository.insertSubscription(recordWithoutPurpose);
+  const stored = await repository.findSubscriptionByHash('a'.repeat(64));
+
+  assert.equal(purpose, 'calendar_read');
+  assert.equal(stored.purpose, 'calendar_read');
+  database.close();
+});
+
 test('SQLite subscription storage persists the calendar_read purpose as authorization state', async () => {
   const database = new DatabaseSync(':memory:');
   installFixture(database);
