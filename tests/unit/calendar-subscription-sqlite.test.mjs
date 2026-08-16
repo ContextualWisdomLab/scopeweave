@@ -17,8 +17,8 @@ import {
 } from '../../server/calendar_subscription_sqlite.mjs';
 
 function installCoreSchema(db) {
+  db.exec('PRAGMA foreign_keys = ON');
   db.exec(`
-    PRAGMA foreign_keys = ON;
     CREATE TABLE users (
       id INTEGER PRIMARY KEY,
       token_version INTEGER NOT NULL DEFAULT 0
@@ -328,6 +328,26 @@ test('owned schema is normalized, uses descriptive multiword names, and passes f
   seed(db);
   installCalendarSubscriptionSchema(db);
 
+  assert.equal(db.prepare('PRAGMA foreign_keys').get().foreign_keys, 1);
+  assert.throws(() => db.prepare(`
+    INSERT INTO calendar_subscriptions(
+      subscription_id, secret_hash, subject_id, project_id, name, audience,
+      membership_version, created_at_ms, expires_at_ms, last_used_at_ms,
+      rotated_at_ms, revoked_at_ms
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL)
+  `).run(
+    'csub_missing_project',
+    'c'.repeat(64),
+    1,
+    999999,
+    'Missing project',
+    'scopeweave:calendar',
+    '100:0',
+    1_000_000,
+    2_000_000,
+    null,
+  ));
+
   const owned = db.prepare(`
     SELECT name, type
       FROM sqlite_master
@@ -410,6 +430,7 @@ test('adapter dependencies and stale or missing atomic transitions fail closed',
     now_ms: 1_000_100,
   });
   assert.equal(missingRevocation, null);
+  assert.equal(await repository.findSubscriptionByHash('f'.repeat(64)), null);
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM calendar_subscription_audit_outbox').get().count, 0);
   db.close();
 });
