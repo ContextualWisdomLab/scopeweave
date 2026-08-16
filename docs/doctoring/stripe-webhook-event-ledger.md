@@ -43,17 +43,16 @@ One row per accepted delivery attempt, referencing the immutable event fact:
 - `delivery_id` — local surrogate identity;
 - `event_id` — foreign key to `billing_stripe_webhook_events`;
 - `received_at_ms` — trusted local receipt time;
-- `replay_state` — `first_delivery` or `duplicate_event`;
-- `processing_result` — `received` or `duplicate_ignored`.
+- `replay_state` — `first_delivery` or `duplicate_event`.
 
-Indexes use descriptive multiword snake_case names. The event fact and delivery history are separated so repeated deliveries do not denormalize provider metadata. The signed raw JSON body is not retained by this ledger.
+Indexes use descriptive multiword snake_case names. The event fact and delivery history are separated so repeated deliveries do not denormalize provider metadata. `replay_state` is the sole persisted delivery classification: the earlier draft also stored a `processing_result` whose value was completely determined by `replay_state`, so that redundant dependent column was removed to preserve third normal form. The signed raw JSON body is not retained by this ledger.
 
 ## Replay and conflict semantics
 
 `recordVerifiedEvent({ event, payloadSha256 })` normalizes and bounds the provider evidence before opening its write savepoint.
 
-- A new event ID inserts one immutable event fact and one `first_delivery` / `received` delivery row.
-- An existing event ID with the same exact-byte SHA-256 leaves the immutable event fact unchanged and appends a `duplicate_event` / `duplicate_ignored` delivery row.
+- A new event ID inserts one immutable event fact and one `first_delivery` row.
+- An existing event ID with the same exact-byte SHA-256 leaves the immutable event fact unchanged and appends a `duplicate_event` row.
 - An existing event ID with a different exact-byte SHA-256 fails closed with stable `stripe_webhook_event_conflict` / HTTP 409 and records no false replay evidence.
 - Malformed event ordering, object identity, API/request metadata, payload hashes, or trusted-clock values fail before persistence with stable sanitized errors.
 
@@ -81,19 +80,19 @@ A SHA-256 digest is evidence of byte identity, not a confidentiality mechanism o
 
 ## TDD and current verification evidence
 
-The event-ledger implementation was followed by a focused review of its malformed-input and coverage boundary. Regression commit `e1a403cb4c1c3bc45902db09aca4349f07734e6d` added invalid non-null Stripe `request` envelopes and made the recorder-integration tests part of normal and c8 execution. The then-current hosted Server Tests run observed the intended failure before the production repair.
+The event-ledger implementation was first hardened for malformed provider metadata. Regression commit `e1a403cb4c1c3bc45902db09aca4349f07734e6d` added invalid non-null Stripe `request` envelopes and made the recorder-integration tests part of normal and c8 execution. The then-current hosted Server Tests run observed the intended failure. Commit `67dd5e70ec6bb273e4d9ff1967a09be0f305cb08` added the narrow `normalizedRequestId(...)` production check, after which the corresponding repository-native workloads completed successfully.
 
-Commit `67dd5e70ec6bb273e4d9ff1967a09be0f305cb08` added the narrow `normalizedRequestId(...)` production check. The subsequent repository-native unit/API, browser, dependency, and OSV jobs completed successfully, including the new malformed-envelope and recorder-integration regressions.
+A second review found a data-normalization defect in the delivery relation: `processing_result` was a deterministic restatement of `replay_state`. Regression commit `e0b01deac9d6c553791ef5498fffa6f16c9b12ea` changed the executable schema contract to require only one delivery classification. Hosted Server Tests run `31925596498`, `unit-and-api` job `95112552686`, then failed in the unit suite as expected. Commit `8e923e6098ab55d77ded088340ca741ed2dd1835` removed the redundant production column and insert value. The next hosted run proved the unit suite green but exposed a stale API assertion that still queried the removed column; `8256af240af6b77001e9d25d76861ad3d3abeae6` aligned that real route regression with the normalized schema. All post-push evidence remains head-specific and must be re-established after this documentation commit.
 
-Those Server Tests results are **not merge-grade exact-head evidence** under the repository's current execution contract: the job log shows `actions/checkout` fetched PR #521's synthetic merge ref and executed commit `250b24a31e5be818dfe63d036a12611f0f3723ba`, not contributor head `67dd5e70ec6bb273e4d9ff1967a09be0f305cb08`. The repository workflow checkout integrity gap must be repaired and current-head evidence re-established before any protected integration. Green synthetic-merge evidence is preserved here only as causal test information, never promoted to the exact-head merge gate.
+Those Server Tests observations are **causal test evidence, not merge-grade exact-head evidence** under the repository's current protected-shipped workflow. PR #521 is based on a branch that still contains the older default pull-request checkout behavior, so its Server Tests may execute GitHub's synthetic merge ref. PR #523 separately repairs that repository-owned evidence-integrity gap. Until that fix is protected-shipped and this stack is revalidated against the live base, no synthetic-merge success is promoted to exact-current-head merge evidence.
 
 ## Acceptance trace
 
 Executable contracts include:
 
-- `tests/unit/stripe-webhook-event-ledger.test.mjs` — schema shape, raw-body non-retention, first delivery, exact replay, conflicting-byte rejection, and malformed provider metadata;
+- `tests/unit/stripe-webhook-event-ledger.test.mjs` — 3NF schema shape, raw-body non-retention, first delivery, exact replay, conflicting-byte rejection, and malformed provider metadata;
 - `tests/unit/stripe-webhook-recorder-integration.test.mjs` — verifier-only behavior, runtime recorder installation, exact-byte evidence forwarding, and sanitized persistence failures;
-- `tests/api/stripe-webhook.test.mjs` — real Hono/SQLite route behavior, signed durable receipt without entitlement mutation, concurrent duplicate convergence, and signature/body-mutation rejection;
+- `tests/api/stripe-webhook.test.mjs` — real Hono/SQLite route behavior, signed durable receipt without entitlement mutation, concurrent duplicate convergence, and signature/body-mutation rejection using the normalized delivery evidence model;
 - `tests/unit/coverage-script-contract.test.mjs` — locks the production ledger and both focused suites into the canonical c8 producer;
 - `package.json` — executes the focused suites in normal unit and owned-production coverage paths.
 
