@@ -41,7 +41,7 @@ The 10 MiB limit matches the current ScopeWeave attachment API ceiling, so the d
 
 The preceding slice already prevents a cross-origin `artifactToken` from being transplanted into the trusted Clearfolio viewer origin. This slice bounds and media-validates the artifact-link response itself and disables redirects on the request.
 
-It **does not yet approve arbitrary cross-origin artifact URLs**. Issue #489 still owns the reviewed artifact-origin allowlist and the remaining URL rules for returned links, including credential and fragment rejection. Until that later slice integrates, cross-origin artifact URLs retain the narrower predecessor behavior and must not be represented as a fully qualified production CDN/object-storage policy.
+Reviewed cross-origin artifact hosts are not implied here. They are owned by the later `CLEARFOLIO_ARTIFACT_ORIGINS` allowlist in `docs/doctoring/clearfolio-artifact-origin-trust.md`, which also rejects credentials and fragments on returned links. Until that allowlist is configured, only the provider origin is trusted. Issue #489 still owns destination DNS/IP authorization, signed-artifact URL shape, and the remaining lifecycle/acceptance work.
 
 ## Verification contract
 

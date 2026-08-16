@@ -90,8 +90,10 @@ credentials never reach the browser. HWP/HWPX are rejected (Clearfolio policy).
 | `GET` | `/api/projects/:id/attachments/:aid/view` | 302 → signed artifact URL (`?token=` for new-tab opens) |
 | `DELETE` | `/api/projects/:id/attachments/:aid` | Uploader or manage |
 
-Env: `CLEARFOLIO_URL` (+ optional `CLEARFOLIO_HMAC_SECRET` for gateway-signed
-tenant claims). Unset → a built-in mock converter (dev/test only).
+Env: `CLEARFOLIO_URL` plus `CLEARFOLIO_HMAC_SECRET` for production conversion.
+Optional `CLEARFOLIO_ARTIFACT_ORIGINS` adds reviewed HTTPS CDN/object-store
+origins; unset trusts only the Clearfolio origin. An unset URL is not a
+successful converter: the in-memory mock exists only with `SCOPEWEAVE_DEV=1`.
 
 ## Comments (코멘트)
 
