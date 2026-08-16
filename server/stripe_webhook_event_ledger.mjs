@@ -55,6 +55,14 @@ function normalizedPayloadHash(value) {
   return value.toLowerCase();
 }
 
+function normalizedRequestId(request) {
+  if (request == null) return null;
+  if (typeof request !== 'object' || Array.isArray(request)) {
+    throw ledgerError('stripe_webhook_event_invalid');
+  }
+  return requiredString(request.id);
+}
+
 function normalizedEvent(event) {
   if (!event || typeof event !== 'object' || Array.isArray(event)) {
     throw ledgerError('stripe_webhook_event_invalid');
@@ -63,7 +71,7 @@ function normalizedEvent(event) {
   if (!providerObject || typeof providerObject !== 'object' || Array.isArray(providerObject)) {
     throw ledgerError('stripe_webhook_event_invalid');
   }
-  const requestId = event.request == null ? null : nullableString(event.request?.id);
+  const requestId = normalizedRequestId(event.request);
   return {
     eventId: requiredString(event.id),
     providerCreatedAtSec: safeCreated(event.created),
