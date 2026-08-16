@@ -36,6 +36,11 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage'],
+  /--include=server\/orchestrator\.mjs/,
+  'the contextual-orchestrator production boundary is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
   /--include=server\/billing_checkout_attempt\.mjs/,
   'the durable Checkout-attempt repository is instrumented',
 );
@@ -53,6 +58,16 @@ assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/orchestrator\.test\.mjs/,
+  'the contextual-orchestrator behavior regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/orchestrator-coverage\.test\.mjs/,
+  'the contextual-orchestrator edge coverage regression executes under c8',
 );
 assert.match(
   scripts['test:coverage:cases'],
