@@ -59,6 +59,11 @@ assert.equal(
   1,
   'CodeQL exact-head checkout must not persist repository credentials',
 );
+assert.match(
+  codeqlWorkflow,
+  /\bupload:\s*never\b/,
+  'required-context CodeQL must analyze locally without conflicting with repository default setup SARIF ownership',
+);
 assert.doesNotMatch(
   codeqlWorkflow,
   /\bpull_request_target\s*:/,
