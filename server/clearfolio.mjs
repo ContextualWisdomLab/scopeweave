@@ -464,10 +464,12 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
 /**
  * Issue a viewable artifact URL for a completed Clearfolio job.
  *
+ * All browser redirect authority remains bound to the configured Clearfolio
+ * origin in this transport slice. Cross-origin artifact hosts stay fail-closed
+ * until the separately reviewed artifact-origin allowlist lands. Credentials
+ * and fragments are rejected for both token-bearing and tokenless links.
  * Same-origin `artifactToken` values may be translated into the trusted viewer
- * route. Token-bearing links from another origin are rejected until an explicit
- * reviewed artifact-origin allowlist exists; tokens are never transplanted or
- * returned to an unreviewed cross-origin host.
+ * route without exposing the token to an unreviewed host.
  *
  * @param {string|number} orgId - ScopeWeave organization identifier.
  * @param {string|number} userId - Requesting ScopeWeave user identifier.
@@ -510,12 +512,17 @@ export async function artifactUrl(orgId, userId, jobId) {
   if (url.protocol !== 'https:' && !allowsHttp) {
     throw new Error('clearfolio artifact-link response invalid');
   }
+  if (
+    url.origin !== clearfolioUrl.origin
+    || url.username
+    || url.password
+    || url.hash
+  ) {
+    throw new Error('clearfolio artifact-link response invalid');
+  }
 
   const token = url.searchParams.get('artifactToken');
   if (token) {
-    if (url.origin !== clearfolioUrl.origin) {
-      throw new Error('clearfolio artifact-link response invalid');
-    }
     return `${configuration.baseUrl}/viewer/${encodeURIComponent(canonicalJobId)}?artifactToken=${encodeURIComponent(token)}`;
   }
   return url.href;
