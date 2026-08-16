@@ -11,6 +11,7 @@ process.env.STRIPE_PRICE_ID = 'price_scopeweave_webhook';
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_scopeweave_api_webhook_secret';
 
 const { app } = await import('../../server/app.mjs?stripe-webhook-api-test=1');
+const { db } = await import('../../server/db.mjs');
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 const jsonHeaders = { 'content-type': 'application/json' };
@@ -55,10 +56,15 @@ async function currentPlan(token) {
 function checkoutCompletedBody(orgId) {
   return JSON.stringify({
     id: `evt_checkout_${orgId}`,
+    object: 'event',
+    api_version: '2025-02-24.acacia',
+    created: Math.floor(Date.now() / 1000),
     type: 'checkout.session.completed',
+    request: { id: `req_checkout_${orgId}`, idempotency_key: null },
     data: {
       object: {
         id: `cs_test_${orgId}`,
+        object: 'checkout.session',
         client_reference_id: String(orgId),
         metadata: { orgId: String(orgId) },
       },
@@ -83,7 +89,7 @@ test('unsigned Stripe webhook cannot upgrade an organization', async () => {
   assert.equal(await currentPlan(token), 'free');
 });
 
-test('verified webhook is acknowledged but does not grant entitlement before durable reconciliation', async () => {
+test('verified webhook is durably recorded but does not grant entitlement before reconciliation', async () => {
   const { token, orgId } = await signupAndOrg();
   const body = checkoutCompletedBody(orgId);
   const response = await app.request('https://scopeweave.example/api/stripe/webhook', {
@@ -96,19 +102,48 @@ test('verified webhook is acknowledged but does not grant entitlement before dur
   });
 
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { received: true });
+  assert.deepEqual(await response.json(), { received: true, replayed: false });
   assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM billing_stripe_webhook_events').get().count, 1);
+  assert.deepEqual(
+    db.prepare('SELECT replay_state, processing_result FROM billing_stripe_webhook_deliveries ORDER BY delivery_id DESC LIMIT 1').get(),
+    { replay_state: 'first_delivery', processing_result: 'received' },
+  );
   assert.equal(
     await currentPlan(token),
     'free',
-    'authenticated delivery alone cannot bypass durable duplicate/order/provider-state reconciliation',
+    'authenticated delivery alone cannot bypass authoritative provider-state reconciliation',
   );
 });
 
-test('stale signed delivery and raw-body mutation fail before entitlement state changes', async () => {
+test('exact duplicate verified event is acknowledged idempotently and retained as replay evidence', async () => {
+  const { token, orgId } = await signupAndOrg();
+  const body = checkoutCompletedBody(orgId);
+  const headers = { ...jsonHeaders, 'stripe-signature': signatureHeader(body) };
+
+  let response = await app.request('https://scopeweave.example/api/stripe/webhook', { method: 'POST', headers, body });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { received: true, replayed: false });
+
+  response = await app.request('https://scopeweave.example/api/stripe/webhook', { method: 'POST', headers, body });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { received: true, replayed: true });
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM billing_stripe_webhook_events WHERE event_id = ?').get(`evt_checkout_${orgId}`).count, 1);
+  assert.deepEqual(
+    db.prepare('SELECT replay_state, processing_result FROM billing_stripe_webhook_deliveries WHERE event_id = ? ORDER BY delivery_id').all(`evt_checkout_${orgId}`),
+    [
+      { replay_state: 'first_delivery', processing_result: 'received' },
+      { replay_state: 'duplicate_event', processing_result: 'duplicate_ignored' },
+    ],
+  );
+  assert.equal(await currentPlan(token), 'free');
+});
+
+test('stale signed delivery and raw-body mutation fail before entitlement or ledger state changes', async () => {
   const { token, orgId } = await signupAndOrg();
   const body = checkoutCompletedBody(orgId);
   const staleTimestamp = Math.floor(Date.now() / 1000) - 301;
+  const before = db.prepare('SELECT COUNT(*) AS count FROM billing_stripe_webhook_events').get().count;
 
   let response = await app.request('https://scopeweave.example/api/stripe/webhook', {
     method: 'POST',
@@ -131,5 +166,6 @@ test('stale signed delivery and raw-body mutation fail before entitlement state 
   });
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: 'stripe_webhook_signature_invalid' });
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM billing_stripe_webhook_events').get().count, before);
   assert.equal(await currentPlan(token), 'free');
 });
