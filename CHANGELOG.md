@@ -30,6 +30,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Added durable SQLite persistence for authorized schedule terminal-reason events,
+  separating event, cancellation approval, and audit evidence into normalized
+  relations while atomically enforcing the authoritative work-item version
+  transition and rolling the whole write back on stale or failed persistence.
 - Added a version-bound schedule reason-event authorization and audit contract
   for skipped, cancelled, and not-performed decisions; cancellation approval
   must be independently verified, stale authority is rejected before mutation,
