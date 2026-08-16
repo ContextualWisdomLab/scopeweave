@@ -741,33 +741,54 @@ function openReportModal() {
 export function parseMsProjectXml(xml) {
   // Fully linear extract (indexOf/slice) — no dynamic RegExp and no lazy
   // [\s\S]*? block collectors (those can quadratic-backtrack on truncated input).
-  const tag = (block, name) => {
-    const openingTag = `<${name}>`;
-    const closingTag = `</${name}>`;
-    const valueStart = block.indexOf(openingTag);
-    if (valueStart === -1) return '';
-    const contentStart = valueStart + openingTag.length;
-    const valueEnd = block.indexOf(closingTag, contentStart);
-    return valueEnd === -1 ? '' : block.slice(contentStart, valueEnd).trim();
+  const isXmlWhitespace = (charCode) => (
+    charCode === 0x20 || charCode === 0x09 || charCode === 0x0d || charCode === 0x0a
+  );
+  const findTagBoundary = (source, name, from, closing = false) => {
+    const prefix = `<${closing ? '/' : ''}${name}`;
+    let searchFrom = from;
+    for (;;) {
+      const start = source.indexOf(prefix, searchFrom);
+      if (start === -1) return null;
+      let delimiter = start + prefix.length;
+      while (delimiter < source.length && isXmlWhitespace(source.charCodeAt(delimiter))) {
+        delimiter += 1;
+      }
+      if (source.charCodeAt(delimiter) === 0x3e) {
+        return { start, end: delimiter + 1 };
+      }
+      // Reject attributes, longer names, and non-XML whitespace while advancing
+      // past every inspected byte so malformed candidates are never rescanned.
+      searchFrom = Math.max(delimiter + 1, start + prefix.length);
+    }
   };
-  const collectBlocks = (source, openTag, closeTag) => {
+  const tag = (block, name) => {
+    const opening = findTagBoundary(block, name, 0);
+    if (!opening) return '';
+    const closing = findTagBoundary(block, name, opening.end, true);
+    const nextOpening = findTagBoundary(block, name, opening.end);
+    if (!closing || (nextOpening && nextOpening.start < closing.start)) return '';
+    return block.slice(opening.end, closing.start).trim();
+  };
+  const collectBlocks = (source, name) => {
     const out = [];
     let from = 0;
     for (;;) {
-      const start = source.indexOf(openTag, from);
-      if (start === -1) break;
-      const contentStart = start + openTag.length;
-      const end = source.indexOf(closeTag, contentStart);
-      // Incomplete open tag: stop linearly (do not rescan the remainder).
-      if (end === -1) break;
-      out.push(source.slice(start, end + closeTag.length));
-      from = end + closeTag.length;
+      const opening = findTagBoundary(source, name, from);
+      if (!opening) break;
+      const closing = findTagBoundary(source, name, opening.end, true);
+      const nextOpening = findTagBoundary(source, name, opening.end);
+      // Incomplete or nested same-name block: stop at the first unmatched
+      // opening tag instead of pairing it with a later block's closing tag.
+      if (!closing || (nextOpening && nextOpening.start < closing.start)) break;
+      out.push(source.slice(opening.start, closing.end));
+      from = closing.end;
     }
     return out;
   };
   const predecessorIds = (block) => {
     const ids = [];
-    for (const link of collectBlocks(block, '<PredecessorLink>', '</PredecessorLink>')) {
+    for (const link of collectBlocks(block, 'PredecessorLink')) {
       const uid = tag(link, 'PredecessorUID');
       if (/^\d+$/.test(uid)) ids.push(`msp-${uid}`);
     }
@@ -779,7 +800,7 @@ export function parseMsProjectXml(xml) {
   const day = (s) => (/^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : '');
   const tasks = [];
   const parents = {}; // depth -> last task id at that depth
-  const blocks = collectBlocks(String(xml || ''), '<Task>', '</Task>');
+  const blocks = collectBlocks(String(xml || ''), 'Task');
   for (const block of blocks) {
     const uid = tag(block, 'UID');
     const name = unescape(tag(block, 'Name'));
