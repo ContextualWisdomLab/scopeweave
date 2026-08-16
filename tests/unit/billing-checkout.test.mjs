@@ -119,6 +119,7 @@ test('live checkout binds SDK-style calls to the durable idempotency identity', 
         cancel_url: 'https://planner.example.com/?billing=cancel',
         client_reference_id: '73',
         metadata: { orgId: '73' },
+        subscription_data: { metadata: { orgId: '73' } },
       },
       requestOptions: { idempotencyKey: 'idem-test-001' },
     }]);
@@ -190,6 +191,7 @@ test('default live provider transport sends the persisted Stripe Idempotency-Key
     assert.equal(form.get('cancel_url'), 'https://planner.example.com/?billing=cancel');
     assert.equal(form.get('client_reference_id'), '91');
     assert.equal(form.get('metadata[orgId]'), '91');
+    assert.equal(form.get('subscription_data[metadata][orgId]'), '91');
     assert.deepEqual(attemptRepository.events.at(-1), {
       type: 'success',
       input: {
