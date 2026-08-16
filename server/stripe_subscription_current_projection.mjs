@@ -1,7 +1,11 @@
 const MAX_PROVIDER_ID_LENGTH = 255;
 const PROVIDER_IDENTIFIER_PATTERN = /^[A-Za-z0-9_:-]+$/u;
+const CANONICAL_ORGANIZATION_ID_PATTERN = /^[1-9][0-9]*$/u;
 
 function positiveOrganizationId(value) {
+  if (typeof value === 'string' && !CANONICAL_ORGANIZATION_ID_PATTERN.test(value)) {
+    throw new TypeError('organizationId must be a positive safe integer');
+  }
   if (typeof value !== 'number' && typeof value !== 'string') {
     throw new TypeError('organizationId must be a positive safe integer');
   }
