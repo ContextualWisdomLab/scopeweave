@@ -39,6 +39,8 @@ test.describe('CSV formula fuzzing', () => {
         const expectedSanitized = `'${candidate}`;
 
         expect(result.sanitized).toBe(expectedSanitized);
+        expect(result.escaped.startsWith('"')).toBe(true);
+        expect(result.escaped.endsWith('"')).toBe(true);
         expect(result.escaped.slice(1, -1).replace(/""/g, '"')).toBe(expectedSanitized);
       }
     }
