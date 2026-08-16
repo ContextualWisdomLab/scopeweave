@@ -1,0 +1,88 @@
+name: Apply quality-first cost-aware orchestration default
+
+on:
+  push:
+    branches:
+      - agent/adaptive-orchestrator-default
+    paths:
+      - scripts/stage-quality-cost-default-test.mjs
+      - scripts/apply-quality-cost-default.mjs
+      - .github/workflows/apply-quality-cost-default.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-quality-cost-default-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  red-green-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout exact branch head
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Stage the transport regression
+        run: node scripts/stage-quality-cost-default-test.mjs
+
+      - name: Establish red state or recognize an already-applied source change
+        id: red
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          node tests/unit/orchestrator-quality-cost-default.test.mjs > /tmp/scopeweave-adaptive-red.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/scopeweave-adaptive-red.log
+          if [ "$status" -eq 0 ]; then
+            echo "already_applied=true" >> "$GITHUB_OUTPUT"
+          else
+            grep -Eq "not ok|AssertionError|Expected" /tmp/scopeweave-adaptive-red.log
+            echo "already_applied=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Apply client, package script, ADR, and changelog changes
+        run: node scripts/apply-quality-cost-default.mjs
+
+      - name: Prove the focused regression is green
+        run: node tests/unit/orchestrator-quality-cost-default.test.mjs
+
+      - name: Run complete unit suite
+        run: npm run test:unit
+
+      - name: Run repository test command
+        run: npm test
+
+      - name: Verify patch integrity
+        run: git diff --check
+
+      - name: Publish the verified source commit
+        env:
+          TARGET_BRANCH: agent/adaptive-orchestrator-default
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm scripts/stage-quality-cost-default-test.mjs
+          rm scripts/apply-quality-cost-default.mjs
+          rm .github/workflows/apply-quality-cost-default.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          git diff --cached --check
+          git commit -m "feat(ai): make adaptive orchestration the planning default"
+          git push origin "HEAD:${TARGET_BRANCH}"
