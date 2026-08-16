@@ -52,6 +52,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Production planning-analysis calls now explicitly request contextual-orchestrator
+  `auto` mode, keeping planning semantics in ScopeWeave while delegating adaptive
+  route/conduct execution policy to the shared orchestrator contract.
 - Attachment-list status refresh now removes the per-row database lookup,
   uses a configurable bounded worker pool with per-item abortable timeouts and
   a request-wide latency budget, preserves stale status after downstream,
