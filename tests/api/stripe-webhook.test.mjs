@@ -102,7 +102,7 @@ test('verified webhook is durably recorded but does not grant entitlement before
   });
 
   assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { received: true, replayed: false });
+  assert.deepEqual(await response.json(), { received: true });
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM billing_stripe_webhook_events').get().count, 1);
   assert.deepEqual(
@@ -116,18 +116,18 @@ test('verified webhook is durably recorded but does not grant entitlement before
   );
 });
 
-test('exact duplicate verified event is acknowledged idempotently and retained as replay evidence', async () => {
+test('concurrent duplicate verified events converge to one event and explicit replay evidence', async () => {
   const { token, orgId } = await signupAndOrg();
   const body = checkoutCompletedBody(orgId);
   const headers = { ...jsonHeaders, 'stripe-signature': signatureHeader(body) };
 
-  let response = await app.request('https://scopeweave.example/api/stripe/webhook', { method: 'POST', headers, body });
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { received: true, replayed: false });
-
-  response = await app.request('https://scopeweave.example/api/stripe/webhook', { method: 'POST', headers, body });
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), { received: true, replayed: true });
+  const [first, second] = await Promise.all([
+    app.request('https://scopeweave.example/api/stripe/webhook', { method: 'POST', headers, body }),
+    app.request('https://scopeweave.example/api/stripe/webhook', { method: 'POST', headers, body }),
+  ]);
+  assert.deepEqual([first.status, second.status], [200, 200]);
+  assert.deepEqual(await first.json(), { received: true });
+  assert.deepEqual(await second.json(), { received: true });
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM billing_stripe_webhook_events WHERE event_id = ?').get(`evt_checkout_${orgId}`).count, 1);
   assert.deepEqual(
     db.prepare('SELECT replay_state, processing_result FROM billing_stripe_webhook_deliveries WHERE event_id = ? ORDER BY delivery_id').all(`evt_checkout_${orgId}`),
