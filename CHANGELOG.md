@@ -33,7 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   transplanted into the trusted Clearfolio viewer URL.
 - Restricted hosted Clearfolio artifact redirects to the provider origin by
   default; optional `CLEARFOLIO_ARTIFACT_ORIGINS` entries must be exact HTTPS
-  origins, so scheme/host/port changes, credentials, fragments, and unapproved
+  origins (`URL.origin` or that origin plus `/`), so scheme/host/port changes,
+  credentials, fragments, protocol-relative lookalikes, and unapproved
   cross-origin links fail closed while approved cross-origin tokens remain bound
   to the origin that issued them.
 - Bounded hosted Clearfolio calls to non-redirecting 15-second requests and
@@ -107,4 +108,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.1] - 2026-06-25
 ### 성능 개선 (Performance)
-- 드래그 앤 드롭 동작 중 `dragover` 이벤트에서 발생하는 O(N) 작업 리스트 검색 성능 병목 문제를, O(1) 해시맵(Map) 기반의 캐싱 조회 로직으로 개선하여 큰 크기의 WBS 리스트에서의 버벅임 현상을 해결했습니다.
+- 드래그 앤 드롭 동작 중 `dragover` 이벤트에서 발생하던 O(N) 작업 리스트 검색 성능 병목 문제를, O(1) 해시맵(Map) 기반의 캐싱 조회 로직으로 개선하여 큰 크기의 WBS 리스트에서의 버벅임 현상을 해결했습니다.

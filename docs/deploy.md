@@ -41,7 +41,7 @@ persists the database in the `scopeweave-data` volume.
 | `ORCHESTRATOR_TOKEN` | with URL | Required bearer token for the configured contextual-orchestrator service (`CONTEXTUAL_ORCHESTRATOR_TOKEN`). |
 | `CLEARFOLIO_URL` | for production 산출물 viewer | Root Clearfolio service origin. Production requires HTTPS and rejects credentials, paths, query strings, and fragments. When absent in production, document conversion/viewing is unavailable rather than simulated. |
 | `CLEARFOLIO_HMAC_SECRET` | with URL | Required tenant-claim HMAC secret; must contain at least 32 non-whitespace characters and match Clearfolio's configured verifier secret. |
-| `CLEARFOLIO_ARTIFACT_ORIGINS` | only for reviewed cross-origin artifact hosts | Optional comma-separated HTTPS origins for approved CDN/object-storage artifact redirects. Do not include credentials, paths, query strings, fragments, or empty entries. Unset keeps artifact trust same-origin only. |
+| `CLEARFOLIO_ARTIFACT_ORIGINS` | optional with URL | Comma-separated exact HTTPS artifact origins (scheme, host, optional non-default port). Leave unset to trust only `CLEARFOLIO_URL`. Empty, whitespace-only, HTTP, credentialed, path, query, fragment, or non-canonical entries fail closed before any provider call. |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY` | no (default 8, maximum 32) | Maximum concurrent Clearfolio status lookups during one attachment-list request. Invalid values fall back to 8; values above 32 are clamped. |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS` | no (default 3000, maximum 30000) | Hard caller-side timeout for each Clearfolio status lookup. The AbortSignal is also forwarded downstream. |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_BUDGET_MS` | no (default 5000, maximum 60000) | Wall-clock budget for the entire best-effort refresh pass. Work not started before the deadline is deferred to a later list request. |
@@ -83,6 +83,14 @@ Provider URLs are treated as service origins, not arbitrary request prefixes.
 Keep credentials in the dedicated HMAC secret setting rather than URL userinfo,
 and do not configure a path, query string, or fragment. The adapter constructs
 its own versioned API paths from the validated origin.
+
+Artifact links returned by Clearfolio are untrusted until they match the
+provider origin or an origin listed in `CLEARFOLIO_ARTIFACT_ORIGINS`. If
+Clearfolio serves files from a reviewed CDN or object store, add only that
+origin, for example `https://artifacts.example.com`. Do not put signed paths,
+object keys, or tokens in the setting. Unset keeps the least-privilege default:
+only the Clearfolio origin is trusted, and a cross-origin `artifactToken` is
+never copied into the viewer URL.
 
 Every hosted Clearfolio request is non-redirecting and has a hard 15-second
 adapter budget; attachment status lookups compose that budget with the caller's
