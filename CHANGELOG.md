@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Made contextual-orchestrator briefing requests fail closed unless an authenticated endpoint is configured. Deterministic generated text is restricted to explicit `SCOPEWEAVE_DEV=1`, message/provider responses are bounded and validated, and non-loopback HTTP transport is rejected.
 - Persisted a tenant/price-scoped Stripe Checkout attempt identity and opaque
   idempotency key before live Session creation, reusing unresolved identity only
   inside a 23-hour safety window; network/abort and Stripe 5xx outcomes remain
