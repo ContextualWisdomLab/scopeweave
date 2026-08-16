@@ -106,7 +106,7 @@ test('verified webhook is durably recorded but does not grant entitlement before
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM billing_stripe_webhook_events').get().count, 1);
   assert.deepEqual(
-    db.prepare('SELECT replay_state, processing_result FROM billing_stripe_webhook_deliveries ORDER BY delivery_id DESC LIMIT 1').get(),
+    { ...db.prepare('SELECT replay_state, processing_result FROM billing_stripe_webhook_deliveries ORDER BY delivery_id DESC LIMIT 1').get() },
     { replay_state: 'first_delivery', processing_result: 'received' },
   );
   assert.equal(
@@ -130,7 +130,8 @@ test('concurrent duplicate verified events converge to one event and explicit re
   assert.deepEqual(await second.json(), { received: true });
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM billing_stripe_webhook_events WHERE event_id = ?').get(`evt_checkout_${orgId}`).count, 1);
   assert.deepEqual(
-    db.prepare('SELECT replay_state, processing_result FROM billing_stripe_webhook_deliveries WHERE event_id = ? ORDER BY delivery_id').all(`evt_checkout_${orgId}`),
+    db.prepare('SELECT replay_state, processing_result FROM billing_stripe_webhook_deliveries WHERE event_id = ? ORDER BY delivery_id').all(`evt_checkout_${orgId}`)
+      .map((row) => ({ ...row })),
     [
       { replay_state: 'first_delivery', processing_result: 'received' },
       { replay_state: 'duplicate_event', processing_result: 'duplicate_ignored' },
