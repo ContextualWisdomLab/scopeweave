@@ -43,3 +43,8 @@
   contain.
 - Kubernetes/IaC security coverage remains a follow-up design lane for
   any future `infra/` or container packaging surface.
+- Short-lived `stream` / `attachment_view` access grants and reusable
+  `calendar_read` subscriptions are separate credential domains. Calendar
+  use binds the stored issuance membership epoch; rotation re-binds the
+  live epoch and invalidates the previous secret. Neither domain may
+  restore a general session JWT in a URL.

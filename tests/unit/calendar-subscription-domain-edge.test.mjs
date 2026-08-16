@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import {
   CALENDAR_SUBSCRIPTION_AUDIENCE,
+  CALENDAR_SUBSCRIPTION_MAX_LIFETIME_MS,
+  CALENDAR_SUBSCRIPTION_PURPOSE,
   CalendarSubscriptionError,
   createCalendarSubscriptionService,
 } from '../../server/calendar_subscription_domain.mjs';
@@ -91,7 +93,14 @@ async function expectError(promise, code, status) {
       'calendar_subscription_request_invalid', 400,
     );
   }
-  for (const expiresAtMs of [NOW, NOW - 1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+  for (const expiresAtMs of [
+    NOW,
+    NOW - 1,
+    1.5,
+    Number.MAX_SAFE_INTEGER,
+    Number.MAX_SAFE_INTEGER + 1,
+    NOW + CALENDAR_SUBSCRIPTION_MAX_LIFETIME_MS + 1,
+  ]) {
     await expectError(
       svc.create({ subjectId: 'user-1', projectId: 'project-1', name: 'Calendar', expiresAtMs }),
       'calendar_subscription_expiry_invalid', 400,
@@ -183,10 +192,16 @@ async function expectError(promise, code, status) {
 
   const baseRecord = {
     subscription_id: 'csub_123', subject_id: 'user-1', project_id: 'project-1', name: 'Calendar',
-    audience: CALENDAR_SUBSCRIPTION_AUDIENCE, created_at_ms: NOW - 1, expires_at_ms: NOW + 100,
+    purpose: CALENDAR_SUBSCRIPTION_PURPOSE, audience: CALENDAR_SUBSCRIPTION_AUDIENCE,
+    membership_version: 'membership-v1', created_at_ms: NOW - 1, expires_at_ms: NOW + 100,
     last_used_at_ms: null, rotated_at_ms: null, revoked_at_ms: null,
   };
-  for (const record of [null, { ...baseRecord, project_id: 'project-2' }, { ...baseRecord, audience: 'other' }]) {
+  for (const record of [
+    null,
+    { ...baseRecord, project_id: 'project-2' },
+    { ...baseRecord, audience: 'other' },
+    { ...baseRecord, purpose: 'stream' },
+  ]) {
     const candidate = service({ repository: { findSubscriptionByHash: async () => record } });
     await expectError(candidate.authorize({ secret: VALID_SECRET, projectId: 'project-1' }), 'calendar_subscription_unauthorized', 401);
   }
@@ -201,6 +216,58 @@ async function expectError(promise, code, status) {
     membershipRevocation: { assertActive: async () => { throw new Error('gone'); } },
   });
   await expectError(membershipReject.authorize({ secret: VALID_SECRET, projectId: 'project-1' }), 'calendar_subscription_unauthorized', 401);
+
+  const exactExpiry = service({
+    repository: { findSubscriptionByHash: async () => ({ ...baseRecord, expires_at_ms: NOW }) },
+  });
+  await expectError(exactExpiry.authorize({ secret: VALID_SECRET, projectId: 'project-1' }), 'calendar_subscription_unauthorized', 401);
+
+  let authorizeLiveVersion = 'membership-v1';
+  const authorizeMidCheck = service({
+    repository: {
+      findSubscriptionByHash: async () => ({ ...baseRecord, membership_version: 'membership-v1' }),
+      recordUsageAtomically: async (_hash, expected) => (
+        authorizeLiveVersion === expected.membership_version ? { ...baseRecord, last_used_at_ms: NOW } : null
+      ),
+    },
+    membershipRevocation: {
+      async assertActive() {
+        const captured = authorizeLiveVersion;
+        authorizeLiveVersion = 'membership-v2';
+        return captured;
+      },
+    },
+  });
+  await expectError(
+    authorizeMidCheck.authorize({ secret: VALID_SECRET, projectId: 'project-1' }),
+    'calendar_subscription_unauthorized',
+    401,
+  );
+
+  let rotateLiveVersion = 'membership-v1';
+  const rotateMidCheck = service({
+    repository: {
+      rotateSubscriptionAtomically: async (_id, expected) => (
+        rotateLiveVersion === expected.membership_version
+          ? { ...baseRecord, secret_hash: 'rotated', rotated_at_ms: NOW, membership_version: expected.membership_version }
+          : null
+      ),
+    },
+    membershipRevocation: {
+      async assertActive() {
+        const captured = rotateLiveVersion;
+        rotateLiveVersion = 'membership-v2';
+        return captured;
+      },
+    },
+  });
+  await expectError(
+    rotateMidCheck.rotate({
+      subjectId: 'user-1', projectId: 'project-1', subscriptionId: 'csub_123', expiresAtMs: NOW + 10,
+    }),
+    'calendar_subscription_not_found',
+    404,
+  );
 }
 
 {
