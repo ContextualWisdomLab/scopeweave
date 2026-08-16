@@ -10,7 +10,7 @@ This boundary prevents configuration text from becoming an arbitrary downstream 
 
 ## Artifact-token origin rule
 
-If Clearfolio returns an `artifactToken`, ScopeWeave rewrites it into the trusted Clearfolio viewer route only when the returned URL has the same origin as the configured Clearfolio service. A token supplied on another origin stays bound to that returned origin and is never transplanted into the trusted viewer URL. This closes a token-confusion boundary without claiming that arbitrary cross-origin artifact hosts are approved.
+If Clearfolio returns an `artifactToken`, ScopeWeave rewrites it into the trusted Clearfolio viewer route only when the returned URL has the same origin as the configured Clearfolio service. A token-bearing link from another origin is rejected rather than transplanted into the trusted viewer or returned directly to an unreviewed host. This closes the token-confusion boundary without claiming that arbitrary cross-origin artifact hosts are approved.
 
 Issue #489 remains open after this slice. A subsequent bounded change must still implement the explicit reviewed artifact-origin allowlist, redirect policy, streaming response-size/media-type limits, provider-wide request budget, and the remaining resource/lifecycle acceptance criteria before the Clearfolio adapter can be described as fully production-complete.
 
@@ -24,7 +24,7 @@ Issue #489 remains open after this slice. A subsequent bounded change must still
 - loopback HTTP is accepted only under explicit development mode; and
 - signed tenant headers retain the documented canonical HMAC contract.
 
-`tests/unit/clearfolio-status-signal.test.mjs` continues to exercise sanitized transport/HTTP/JSON/status/artifact failures and now proves that cross-origin artifact tokens are not moved into the Clearfolio viewer origin. `tests/api/attachment-status.test.mjs` makes its test-only in-memory provider explicit instead of relying on an unset production URL.
+`tests/unit/clearfolio-status-signal.test.mjs` continues to exercise sanitized transport/HTTP/JSON/status/artifact failures and now proves that a cross-origin token-bearing artifact link fails closed rather than moving the token into the Clearfolio viewer or returning it to an unreviewed host. `tests/api/attachment-status.test.mjs` makes its test-only in-memory provider explicit instead of relying on an unset production URL.
 
 The shipped `server/clearfolio.mjs` remains in the canonical c8 production coverage target, so the new configuration branches execute under the repository coverage gate rather than a documentation-only path.
 
