@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Added a tenant-scoped read-only projection over accepted authoritative Stripe
+  Subscription observations, selecting current state by explicit append order,
+  preserving ordered Price and source-event provenance, rejecting ambiguous local
+  organization authority strings, and never treating provider status as local
+  entitlement authority.
 - Made contextual-orchestrator briefing requests fail closed unless an authenticated endpoint is configured. Deterministic generated text is restricted to explicit `SCOPEWEAVE_DEV=1`, message/provider responses are bounded and validated, and non-loopback HTTP transport is rejected.
 - Persist authoritative Stripe Subscription reads as normalized append-only
   tenant-bound observations without mutating local entitlement state; atomic
