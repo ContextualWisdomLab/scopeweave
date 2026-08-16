@@ -72,4 +72,53 @@ assert.deepEqual(
 const incompleteOpens = `<Project><Tasks>${'<Task><UID>9</UID><Name>open</Name>'.repeat(5000)}</Tasks></Project>`;
 assert.deepEqual(parseMsProjectXml(incompleteOpens), [], 'unclosed Task blocks yield no tasks');
 
+assert.deepEqual(
+  parseMsProjectXml(
+    '<Project><Tasks><Task><UID>11</UID><Name>unclosed outer</Name><Task><UID>12</UID><Name>nested</Name></Task></Tasks></Project>',
+  ),
+  [],
+  'an unmatched outer Task cannot consume a nested Task closing tag',
+);
+
+const whitespaceTags = parseMsProjectXml(`
+<Project><Tasks><Task \t>
+  <UID\t>8</UID \r\n>
+  <Name >Whitespace-compatible task</Name   >
+  <OutlineLevel\n>1</OutlineLevel\t>
+  <Start >2026-08-11T09:00:00</Start\r>
+  <Finish\t>2026-08-12T17:00:00</Finish >
+  <PredecessorLink \n>
+    <PredecessorUID >2</PredecessorUID\t>
+  </PredecessorLink   >
+</Task \n></Tasks></Project>`);
+assert.equal(whitespaceTags.length, 1, 'XML whitespace before tag delimiters is accepted');
+assert.equal(whitespaceTags[0].id, 'msp-8');
+assert.equal(whitespaceTags[0].phase, 'Whitespace-compatible task');
+assert.equal(whitespaceTags[0].plannedStartDate, '2026-08-11');
+assert.equal(whitespaceTags[0].plannedEndDate, '2026-08-12');
+assert.equal(whitespaceTags[0].predecessors, 'msp-2', 'block and scalar tags share the scanner');
+
+assert.deepEqual(
+  parseMsProjectXml('<Project><Tasks><TaskX><UID>9</UID><Name>wrong</Name></TaskX></Tasks></Project>'),
+  [],
+  'TaskX must not match Task',
+);
+assert.deepEqual(
+  parseMsProjectXml('<Project><Tasks><Task\u000B><UID>9</UID><Name>wrong whitespace</Name></Task\u000B></Tasks></Project>'),
+  [],
+  'non-XML whitespace before a delimiter is rejected',
+);
+assert.deepEqual(
+  parseMsProjectXml('<Project><Tasks><Task \t><UID >10</UID ><Name >truncated</Name >'),
+  [],
+  'truncated whitespace-delimited Task stops safely',
+);
+assert.deepEqual(
+  parseMsProjectXml(
+    '<Project><Tasks><Task><UID>13</UID><Name>outer<Name>inner</Name><OutlineLevel>1</OutlineLevel></Task></Tasks></Project>',
+  ),
+  [],
+  'a nested scalar opening cannot consume the inner closing delimiter',
+);
+
 console.log('✓ MS Project import tests passed');
