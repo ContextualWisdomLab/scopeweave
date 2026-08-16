@@ -26,4 +26,21 @@ test.describe('CSV formula fuzzing', () => {
       { numRuns: 100, seed: 20260709 }
     );
   });
+
+  test('neutralizes fullwidth formula-prefix compatibility characters', async ({ page }) => {
+    const compatibilityPrefixes = ['＝', '＋', '－', '＠', '｜'];
+
+    for (const prefix of compatibilityPrefixes) {
+      for (const candidate of [`${prefix}1+1`, ` \t${prefix}SUM(A1:A2)`]) {
+        const result = await page.evaluate((value) => ({
+          escaped: window.csvEscape(value),
+          sanitized: window.sanitizeCsvFormulaValue(value)
+        }), candidate);
+        const expectedSanitized = `'${candidate}`;
+
+        expect(result.sanitized).toBe(expectedSanitized);
+        expect(result.escaped.slice(1, -1).replace(/""/g, '"')).toBe(expectedSanitized);
+      }
+    }
+  });
 });
