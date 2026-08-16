@@ -55,7 +55,7 @@ two modes:
 ## Architecture
 
 ```
-index.html + app.js + styles.css     ← static client (eval-safe; no top-level imports)
+index.html + app.js + styles.css + toast-state.css  ← static client (eval-safe; no top-level imports)
   ├─ analytics.js                    ← EVM/S-curve/CPM (window.ScopeWeaveAnalytics)
   └─ cloud-sync.js                   ← opt-in cloud overlay (window.ScopeWeaveCloud)
 server/
@@ -135,7 +135,7 @@ the previous; merging in order auto-retargets the next):
 | 9 | #222 | Dockerfile + compose |
 | 10 | #223 | landing page |
 | 11 | #224 | audit log |
-| 12 | #225 | workspace export |
+| 12 | #225 | workspace export (JSON) |
 | 13 | #226 | onboarding (샘플로 시작) |
 | 14 | #227 | observability (metrics + logs) |
 | 15 | #228 | signed webhooks |
