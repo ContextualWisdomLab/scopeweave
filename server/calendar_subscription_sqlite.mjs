@@ -78,6 +78,22 @@ function assertLiveMembershipVersion(statement, projectId, subjectId, expectedVe
 }
 
 /**
+ * Freeze the ICS-only purpose when a parent domain record omits it.
+ *
+ * The current stacked parent (#514) still emits audience without purpose.
+ * Persistence must not fail closed on that omission, and it must not accept a
+ * broader purpose such as a session credential. An explicit non-calendar value
+ * is passed through so the conditional UPDATE/INSERT CHECK can reject it.
+ *
+ * @param {unknown} value Caller-supplied purpose, if any.
+ * @returns {string} `calendar_read` or the explicit supplied value.
+ */
+function resolveCalendarPurpose(value) {
+  if (value == null || value === '') return CALENDAR_PURPOSE;
+  return String(value);
+}
+
+/**
  * Install normalized durable storage for reusable calendar subscriptions.
  *
  * The authorization relation stores only the currently active SHA-256 secret
@@ -310,7 +326,7 @@ export function createSqliteCalendarSubscriptionRepository(database) {
           record.subject_id,
           record.project_id,
           record.name,
-          record.purpose,
+          resolveCalendarPurpose(record.purpose),
           record.audience,
           membershipVersion,
           record.created_at_ms,
@@ -354,7 +370,7 @@ export function createSqliteCalendarSubscriptionRepository(database) {
           binding.now_ms,
           secretHash,
           binding.project_id,
-          binding.purpose,
+          resolveCalendarPurpose(binding.purpose),
           binding.audience,
           binding.now_ms,
           binding.now_ms,
@@ -398,7 +414,7 @@ export function createSqliteCalendarSubscriptionRepository(database) {
           subscriptionId,
           binding.subject_id,
           binding.project_id,
-          binding.purpose,
+          resolveCalendarPurpose(binding.purpose),
           binding.now_ms,
           binding.expires_at_ms,
           binding.now_ms,
