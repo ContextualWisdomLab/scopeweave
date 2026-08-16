@@ -150,6 +150,11 @@ assert.match(
   'the Stripe entitlement edge regression executes under c8',
 );
 assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/stripe-entitlement-policy-duplicate-claims\.test\.mjs/,
+  'duplicate subscription-claim corruption is exercised under c8',
+);
+assert.match(
   scripts['test:unit'],
   /tests\/unit\/stripe-webhook-recorder-integration\.test\.mjs/,
   'normal unit CI executes the verified-event recorder integration regression',
@@ -183,6 +188,11 @@ assert.match(
   scripts['test:unit'],
   /tests\/unit\/stripe-entitlement-policy-edge\.test\.mjs/,
   'normal unit CI executes the Stripe entitlement edge regression',
+);
+assert.match(
+  scripts['test:unit'],
+  /tests\/unit\/stripe-entitlement-policy-duplicate-claims\.test\.mjs/,
+  'normal unit CI executes duplicate subscription-claim corruption regression',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
