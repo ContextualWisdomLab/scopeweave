@@ -1,4 +1,8 @@
 import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import {
+  StripeWebhookLedgerError,
+  recordVerifiedStripeWebhookEvent,
+} from './stripe_webhook_event_ledger.mjs';
 
 const STRIPE_WEBHOOK_MAX_BYTES = 256 * 1024;
 const STRIPE_SIGNATURE_HEADER_MAX_LENGTH = 4096;
@@ -191,7 +195,7 @@ function parseVerifiedEvent(body) {
 }
 
 /**
- * Verify and parse one Stripe webhook without mutating its signed request body.
+ * Verify, parse, and (when bootstrap configured it) durably record one Stripe webhook.
  *
  * Stripe signs `timestamp + "." + raw request body`; JSON parsing therefore
  * happens only after constant-time HMAC verification over the exact streamed
@@ -199,9 +203,10 @@ function parseVerifiedEvent(body) {
  * header is bounded, and the signed timestamp must be within five minutes of the
  * server clock. Multiple `v1` values are accepted for endpoint-secret rotation.
  *
- * This function establishes transport authenticity only. Callers that persist
- * replay evidence can request the SHA-256 digest of those exact verified bytes;
- * the raw body itself never needs to cross into durable storage.
+ * After authentication, a SHA-256 digest of the exact signed bytes is passed to
+ * the bootstrap-injected event recorder. No raw webhook payload is retained by
+ * that boundary. Pure verifier consumers without a configured recorder remain
+ * side-effect free.
  *
  * @param {Request} request Fetch-compatible request containing the raw webhook body
  * @param {object} options verifier configuration
@@ -209,7 +214,7 @@ function parseVerifiedEvent(body) {
  * @param {number} [options.nowSeconds] integer epoch seconds used for replay checks
  * @param {boolean} [options.includeEvidence=false] return verified raw-byte digest with the parsed event
  * @returns {Promise<Record<string, unknown>|{event: Record<string, unknown>, payloadSha256: string}>} verified event, optionally with exact-byte digest evidence
- * @throws {StripeWebhookError} for unconfigured, oversized, malformed, or unauthenticated requests
+ * @throws {StripeWebhookError} for unconfigured, oversized, malformed, unauthenticated, conflicting, or unavailable persistence
  */
 export async function verifyStripeWebhookRequest(request, {
   secret,
@@ -223,9 +228,15 @@ export async function verifyStripeWebhookRequest(request, {
     throw webhookError('stripe_webhook_signature_invalid');
   }
   const event = parseVerifiedEvent(body);
+  const payloadSha256 = createHash('sha256').update(body).digest('hex');
+  try {
+    recordVerifiedStripeWebhookEvent({ event, payloadSha256 });
+  } catch (error) {
+    if (error instanceof StripeWebhookLedgerError) {
+      throw webhookError(error.code, error.status);
+    }
+    throw webhookError('stripe_webhook_persistence_unavailable', 503);
+  }
   if (!includeEvidence) return event;
-  return {
-    event,
-    payloadSha256: createHash('sha256').update(body).digest('hex'),
-  };
+  return { event, payloadSha256 };
 }
