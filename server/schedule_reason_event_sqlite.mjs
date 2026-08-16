@@ -26,8 +26,20 @@ function withSavepoint(db, operation) {
     db.exec(`RELEASE ${COMMIT_SAVEPOINT}`);
     return result;
   } catch (error) {
-    db.exec(`ROLLBACK TO ${COMMIT_SAVEPOINT}`);
-    db.exec(`RELEASE ${COMMIT_SAVEPOINT}`);
+    let rollbackSucceeded = false;
+    try {
+      db.exec(`ROLLBACK TO ${COMMIT_SAVEPOINT}`);
+      rollbackSucceeded = true;
+    } catch {
+      // Keep an unconfirmed failed savepoint open instead of risking a partial commit.
+    }
+    if (rollbackSucceeded) {
+      try {
+        db.exec(`RELEASE ${COMMIT_SAVEPOINT}`);
+      } catch {
+        // Cleanup after a confirmed rollback must not replace the causal operation error.
+      }
+    }
     throw error;
   }
 }
