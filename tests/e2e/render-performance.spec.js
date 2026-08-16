@@ -255,6 +255,9 @@ test('5,000-row production rendering beats the exact protected-base median by at
   expect(optimizedMeasurement.evidence.samples).toHaveLength(SAMPLE_COUNT);
   expect(optimizedMeasurement.evidence.renderedRows).toBe(ROW_COUNT);
   expect(optimized.metadataTaskGridReused).toBe(true);
+  for (const sample of optimizedMeasurement.evidence.samples) {
+    expect(sample.createElementCalls).toBe(0);
+  }
   expect(optimized.medianDurationMs).toBeGreaterThan(0);
   expect(optimized.p95DurationMs).toBeGreaterThanOrEqual(optimized.medianDurationMs);
   expect(optimized.editOpened).toBe(true);
