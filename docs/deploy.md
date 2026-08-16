@@ -53,8 +53,10 @@ Outside explicit `SCOPEWEAVE_DEV=1`, Clearfolio operations fail closed with a
 stable configuration error and the mock artifact route is not registered. Other
 ScopeWeave planning capabilities remain available. For local integration work,
 `SCOPEWEAVE_DEV=1` permits the in-memory adapter when the URL is absent and also
-permits HTTP only for `localhost`, `127.0.0.1`, or `::1`; remote HTTP endpoints
-are rejected.
+permits HTTP only for `localhost`, `127.0.0.1`, or `[::1]`; remote HTTP endpoints
+are rejected. Provider `fetch` calls fail closed on HTTP redirects so tenant HMAC
+headers are never replayed onto another host. Attachment-view links must share
+the configured Clearfolio origin until a reviewed artifact-host allowlist exists.
 
 Provider URLs are treated as service origins, not arbitrary request prefixes.
 Keep credentials in the dedicated HMAC secret setting rather than URL userinfo,

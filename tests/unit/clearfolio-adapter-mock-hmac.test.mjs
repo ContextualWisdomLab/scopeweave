@@ -104,9 +104,56 @@ test('production URL and HMAC configuration rejects ambiguous or unsafe input', 
       'RUNNING',
       'explicit development mode accepts the IPv6 loopback origin documented by the adapter',
     );
+
+    process.env.CLEARFOLIO_URL = 'http://clearfolio.example';
+    const remoteDev = await freshModule('development-remote-http');
+    await assert.rejects(
+      () => remoteDev.jobStatus(1, 2, 'job-1'),
+      (error) => error.code === 'clearfolio_transport_insecure',
+      'explicit development mode still rejects remote HTTP provider origins',
+    );
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.SCOPEWEAVE_DEV;
+    delete process.env.CLEARFOLIO_URL;
+    delete process.env.CLEARFOLIO_HMAC_SECRET;
+  }
+});
+
+test('HMAC secrets trim surrounding whitespace before signing', async () => {
+  delete process.env.SCOPEWEAVE_DEV;
+  process.env.CLEARFOLIO_URL = 'https://clearfolio.example/';
+  process.env.CLEARFOLIO_HMAC_SECRET = `${HMAC_SECRET}\n`;
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  let observedOptions;
+  Date.now = () => 1_750_000_000_000;
+  globalThis.fetch = async (_url, options) => {
+    observedOptions = options;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ status: 'RUNNING' }),
+    };
+  };
+
+  try {
+    const signed = await freshModule('hmac-secret-file-newline');
+    assert.equal(await signed.jobStatus(21, 34, 'signed-job'), 'RUNNING');
+    assert.equal(
+      observedOptions.headers['X-Clearfolio-Claims-Signature'],
+      signed.signClaims(
+        'sw-org-21',
+        'sw-user-34',
+        'job:create,job:read,viewer:read,artifact-link:create',
+        '1750000000',
+        HMAC_SECRET,
+      ),
+      'a trailing newline from a secret file must not change the signed HMAC',
+    );
+  } finally {
+    Date.now = originalNow;
+    globalThis.fetch = originalFetch;
     delete process.env.CLEARFOLIO_URL;
     delete process.env.CLEARFOLIO_HMAC_SECRET;
   }
@@ -161,6 +208,11 @@ test('Clearfolio tenant claim headers use the documented HMAC contract', async (
     assert.doesNotMatch(
       observedOptions.headers['X-Clearfolio-Claims-Signature'],
       /=/,
+    );
+    assert.equal(
+      observedOptions.redirect,
+      'error',
+      'tenant HMAC headers must not follow a 3xx Location to another host',
     );
   } finally {
     Date.now = originalNow;

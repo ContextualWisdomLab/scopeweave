@@ -4,12 +4,13 @@
 import { createHmac } from 'node:crypto';
 
 const CF_URL_INPUT = String(process.env.CLEARFOLIO_URL || '').trim();
-const CF_SECRET = String(process.env.CLEARFOLIO_HMAC_SECRET || '');
+const CF_SECRET = String(process.env.CLEARFOLIO_HMAC_SECRET || '').trim();
 const PERMISSIONS = 'job:create,job:read,viewer:read,artifact-link:create';
 const CLEARFOLIO_JOB_STATUSES = new Set(['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED']);
 const MIN_HMAC_SECRET_LENGTH = 32;
 // WHATWG URL serializes an IPv6 hostname with brackets (`[::1]`).
 const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+const CLEARFOLIO_FETCH_REDIRECT = 'error';
 
 /** Whether the process uses the explicit in-memory Clearfolio development adapter. */
 export const clearfolioMock = process.env.SCOPEWEAVE_DEV === '1' && !CF_URL_INPUT;
@@ -130,6 +131,22 @@ export function signClaims(tenantId, subjectId, permissions, issuedAt, secret) {
 }
 
 /**
+ * Call a Clearfolio endpoint without following redirects.
+ *
+ * The Fetch default `redirect: 'follow'` would replay tenant HMAC headers
+ * onto a 3xx Location. Those headers are not forbidden, so a pinned origin
+ * that redirects would leak tenant, subject, permissions, issued-at, and
+ * the signature to another host. Fail closed instead.
+ *
+ * @param {string} url - Adapter-constructed Clearfolio endpoint.
+ * @param {RequestInit} [options] - Method, headers, body, and optional signal.
+ * @returns {Promise<Response>} Downstream response that did not redirect.
+ */
+function fetchClearfolio(url, options = {}) {
+  return fetch(url, { ...options, redirect: CLEARFOLIO_FETCH_REDIRECT });
+}
+
+/**
  * Build tenant-scoped Clearfolio request headers without exposing credentials.
  *
  * @param {string|number} orgId - ScopeWeave organization identifier.
@@ -217,7 +234,7 @@ export async function submitJob(orgId, userId, { name, mime, bytes }) {
   form.append('file', new Blob([bytes], { type: mime || 'application/octet-stream' }), name);
   let res;
   try {
-    res = await fetch(`${configuration.baseUrl}/api/v1/convert/jobs`, {
+    res = await fetchClearfolio(`${configuration.baseUrl}/api/v1/convert/jobs`, {
       method: 'POST',
       headers: tenantHeaders(orgId, userId, configuration.secret),
       body: form,
@@ -259,7 +276,7 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
   if (configuration.mock) return mockDocs.has(jobId) ? 'SUCCEEDED' : 'FAILED';
   let res;
   try {
-    res = await fetch(`${configuration.baseUrl}/api/v1/convert/jobs/${encodeURIComponent(jobId)}`, {
+    res = await fetchClearfolio(`${configuration.baseUrl}/api/v1/convert/jobs/${encodeURIComponent(jobId)}`, {
       headers: tenantHeaders(orgId, userId, configuration.secret),
       signal,
     });
@@ -277,10 +294,13 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
 /**
  * Issue a viewable artifact URL for a completed Clearfolio job.
  *
- * Same-origin `artifactToken` values may be translated into the trusted viewer
- * route. Token-bearing links from another origin are rejected until an explicit
- * reviewed artifact-origin allowlist exists; tokens are never transplanted or
- * returned to an unreviewed cross-origin host.
+ * Artifact links must share the configured Clearfolio origin. Same-origin
+ * `artifactToken` values may be translated into the trusted viewer route.
+ * Cross-origin links — with or without a token — are rejected until an
+ * explicit reviewed artifact-origin allowlist exists. Tokens are never
+ * transplanted or returned to an unreviewed host. Credentials and fragments
+ * on the returned link are rejected so the viewer redirect cannot carry
+ * provider userinfo or fragment-only confusion.
  *
  * @param {string|number} orgId - ScopeWeave organization identifier.
  * @param {string|number} userId - Requesting ScopeWeave user identifier.
@@ -293,7 +313,7 @@ export async function artifactUrl(orgId, userId, jobId) {
   if (configuration.mock) return `/api/mock-clearfolio/${encodeURIComponent(jobId)}`;
   let res;
   try {
-    res = await fetch(`${configuration.baseUrl}/api/v1/viewer/${encodeURIComponent(jobId)}/artifact-links`, {
+    res = await fetchClearfolio(`${configuration.baseUrl}/api/v1/viewer/${encodeURIComponent(jobId)}/artifact-links`, {
       method: 'POST',
       headers: tenantHeaders(orgId, userId, configuration.secret),
     });
@@ -320,12 +340,15 @@ export async function artifactUrl(orgId, userId, jobId) {
   if (url.protocol !== 'https:' && !allowsHttp) {
     throw new Error('clearfolio artifact-link response invalid');
   }
+  if (url.username || url.password || url.hash) {
+    throw new Error('clearfolio artifact-link response invalid');
+  }
+  if (url.origin !== clearfolioUrl.origin) {
+    throw new Error('clearfolio artifact-link response invalid');
+  }
 
   const token = url.searchParams.get('artifactToken');
   if (token) {
-    if (url.origin !== clearfolioUrl.origin) {
-      throw new Error('clearfolio artifact-link response invalid');
-    }
     return `${configuration.baseUrl}/viewer/${encodeURIComponent(jobId)}?artifactToken=${encodeURIComponent(token)}`;
   }
   return url.href;

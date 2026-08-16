@@ -53,6 +53,18 @@ test('jobStatus enforces endpoint, signal, transport, HTTP, and status contracts
   assert.equal(status, 'RUNNING');
   assert.equal(observedUrl, 'https://clearfolio.example/api/v1/convert/jobs/job-1');
   assert.equal(observedOptions.signal, controller.signal);
+  assert.equal(
+    observedOptions.redirect,
+    'error',
+    'status lookups must not follow redirects that would replay tenant HMAC headers',
+  );
+
+  setNetworkError(new TypeError('Failed to fetch: redirect'));
+  await expectSanitizedFailure(
+    () => jobStatus(1, 2, 'job-1'),
+    'clearfolio status unavailable',
+    /Failed to fetch|redirect/,
+  );
 
   setNetworkError(new Error('connect ECONNREFUSED https://private-clearfolio.internal'));
   await expectSanitizedFailure(
@@ -124,6 +136,7 @@ test('submitJob rejects transport details and malformed successful responses', a
   );
   assert.equal(observedUrl, 'https://clearfolio.example/api/v1/convert/jobs');
   assert.equal(observedOptions.method, 'POST');
+  assert.equal(observedOptions.redirect, 'error');
   assert.ok(observedOptions.body instanceof FormData);
 
   const malformedPayloads = [
@@ -189,6 +202,11 @@ test('artifactUrl validates links and never exposes transport or response text',
     'https://clearfolio.example/api/v1/viewer/job-1/artifact-links',
   );
   assert.equal(observedOptions.method, 'POST');
+  assert.equal(
+    observedOptions.redirect,
+    'error',
+    'artifact-link requests must not follow redirects that would replay tenant HMAC headers',
+  );
 
   const malformedPayloads = [
     {
@@ -204,6 +222,10 @@ test('artifactUrl validates links and never exposes transport or response text',
     { label: 'malformed URL', json: async () => ({ artifactUrl: 'http://[' }) },
     { label: 'unsupported URL scheme', json: async () => ({ artifactUrl: 'javascript:alert(1)' }) },
     { label: 'HTTPS downgrade', json: async () => ({ artifactUrl: 'http://cdn.example/file.pdf' }) },
+    { label: 'cross-origin host', json: async () => ({ url: 'https://cdn.example/file.pdf' }) },
+    { label: 'protocol-relative host', json: async () => ({ artifactUrl: '//cdn.example/file.pdf' }) },
+    { label: 'credentialed link', json: async () => ({ artifactUrl: 'https://user:pass@clearfolio.example/file.pdf' }) },
+    { label: 'fragmented link', json: async () => ({ artifactUrl: 'https://clearfolio.example/file.pdf#token' }) },
   ];
 
   for (const malformed of malformedPayloads) {
@@ -231,9 +253,10 @@ test('artifactUrl validates links and never exposes transport or response text',
   );
 
   setResponse({ json: async () => ({ url: 'https://cdn.example/file.pdf' }) });
-  assert.equal(
-    await artifactUrl(4, 5, 'job-1'),
-    'https://cdn.example/file.pdf',
+  await expectSanitizedFailure(
+    () => artifactUrl(4, 5, 'job-1'),
+    'clearfolio artifact-link response invalid',
+    /cdn\.example/,
   );
 
   setResponse({

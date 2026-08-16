@@ -43,3 +43,9 @@
   contain.
 - Kubernetes/IaC security coverage remains a follow-up design lane for
   any future `infra/` or container packaging surface.
+- Clearfolio is an optional production capability. The in-memory adapter
+  exists only under `SCOPEWEAVE_DEV=1` with no provider URL. Production
+  conversion fails closed when unconfigured, refuses provider redirects
+  that would replay tenant HMAC headers, and accepts artifact links only
+  from the configured Clearfolio origin until a reviewed host allowlist
+  exists. See `docs/doctoring/clearfolio-production-configuration.md`.

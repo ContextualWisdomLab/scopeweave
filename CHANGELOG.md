@@ -25,8 +25,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Made contextual-orchestrator briefing requests fail closed unless an authenticated endpoint is configured. Deterministic generated text is restricted to explicit `SCOPEWEAVE_DEV=1`, message/provider responses are bounded and validated, and non-loopback HTTP transport is rejected.
 - Confined the in-memory Clearfolio adapter to explicit development mode,
   required a canonical signed production origin, rejected ambiguous provider
-  URL components, and prevented cross-origin artifact tokens from being
-  transplanted into the trusted Clearfolio viewer URL.
+  URL components, refused provider HTTP redirects so tenant HMAC headers
+  cannot follow a `Location`, and rejected cross-origin, credentialed, or
+  fragmented artifact links instead of transplanting tokens or issuing an
+  unreviewed attachment-view 302.
 - Made `SCOPEWEAVE_JWT_SECRET` mandatory at startup and rejected weak or
   unexpanded placeholder values so production deployments fail closed.
 - Neutralized audit-log CSV formulas even when executable prefixes are hidden
