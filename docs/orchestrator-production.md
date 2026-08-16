@@ -38,6 +38,17 @@ endpoint is absent. That variable must never be set in staging or production.
 
 ## Orchestration responsibility
 
+ScopeWeave explicitly sends `orchestration_mode: "auto"` together with the
+configured model and validated messages on production briefing requests. The
+current protected `ContextualWisdomLab/contextual-orchestrator` `main` contract
+verified for this change, commit
+`6841b71935e0b7cb98fb52bcb4709cc5100c8d87`, accepts `auto`, `route`, and
+`conduct` as orchestration modes. ScopeWeave chooses `auto` as its default so
+execution policy can be optimized centrally without coupling this product to a
+specific provider, worker count, topology, verifier pattern, or cost heuristic.
+Those internal choices remain `contextual-orchestrator` authority and are not a
+ScopeWeave compatibility promise.
+
 ScopeWeave intentionally sends only a versioned OpenAI-compatible request to
 the orchestration service. Model selection, single-model versus multi-agent
 allocation, task decomposition, role-specific reasoning effort, recursion
