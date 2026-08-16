@@ -130,7 +130,8 @@ export function recordVerifiedStripeWebhookEvent(input) {
  *
  * Event facts are stored once by immutable Stripe event ID. Delivery attempts are
  * a separate one-to-many relation so retries remain auditable without duplicating
- * event metadata or retaining the signed raw JSON body.
+ * event metadata or retaining the signed raw JSON body. `replay_state` is the
+ * delivery outcome; no second result column repeats that same functional fact.
  *
  * @param {import('node:sqlite').DatabaseSync} database open SQLite database
  * @returns {void}
@@ -155,8 +156,7 @@ export function installStripeWebhookEventSchema(database) {
       delivery_id INTEGER PRIMARY KEY,
       event_id TEXT NOT NULL REFERENCES billing_stripe_webhook_events(event_id) ON DELETE CASCADE,
       received_at_ms INTEGER NOT NULL CHECK(received_at_ms >= 0),
-      replay_state TEXT NOT NULL CHECK(replay_state IN ('first_delivery','duplicate_event')),
-      processing_result TEXT NOT NULL CHECK(processing_result IN ('received','duplicate_ignored'))
+      replay_state TEXT NOT NULL CHECK(replay_state IN ('first_delivery','duplicate_event'))
     );
     CREATE INDEX IF NOT EXISTS billing_stripe_webhook_event_deliveries
       ON billing_stripe_webhook_deliveries(event_id, delivery_id);
@@ -193,8 +193,8 @@ export function createSqliteStripeWebhookEventRepository(database, { now = Date.
   `);
   const insertDelivery = database.prepare(`
     INSERT INTO billing_stripe_webhook_deliveries(
-      event_id, received_at_ms, replay_state, processing_result
-    ) VALUES(?,?,?,?)
+      event_id, received_at_ms, replay_state
+    ) VALUES(?,?,?)
   `);
 
   return {
@@ -214,7 +214,6 @@ export function createSqliteStripeWebhookEventRepository(database, { now = Date.
             normalized.eventId,
             receivedAtMs,
             'duplicate_event',
-            'duplicate_ignored',
           );
           return {
             eventId: normalized.eventId,
@@ -238,7 +237,6 @@ export function createSqliteStripeWebhookEventRepository(database, { now = Date.
           normalized.eventId,
           receivedAtMs,
           'first_delivery',
-          'received',
         );
         return {
           eventId: normalized.eventId,
