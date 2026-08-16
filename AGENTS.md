@@ -24,6 +24,15 @@
 
 ## CI / security workflow notes
 
+- OpenCode review uses NVIDIA NIM only. Keep the local client binding
+  `{env:NVIDIA_API_KEY}` in `opencode.jsonc`. The organization secret is
+  `NVIDIA_NIM_API_KEY`. CI must map
+  `NVIDIA_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}` and must not read a
+  GitHub secret named `NVIDIA_API_KEY`. Do not introduce
+  `COPILOT_GITHUB_TOKEN` or restore `github-models` on the OpenCode path.
+- Strix scan provider policy is independent and still uses GitHub Models /
+  `STRIX_GITHUB_MODELS_TOKEN`. Do not retarget Strix credentials when
+  changing OpenCode.
 - Keep Strix and companion SCA workflows development-only; do not add runtime dependencies.
 - Treat Strix as a repository scan target for this static app, not as
   a Kubernetes deployment blocker.

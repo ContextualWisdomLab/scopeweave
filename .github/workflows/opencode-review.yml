@@ -440,7 +440,7 @@ jobs:
         id: opencode_review_primary
         timeout-minutes: 60
         env:
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MODEL: nvidia-nim/nvidia/llama-3.3-nemotron-super-49b-v1.5
           SHARE: "false"
@@ -547,7 +547,7 @@ jobs:
         if: steps.opencode_review_primary.outputs.review_status != 'success'
         timeout-minutes: 60
         env:
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MODEL: nvidia-nim/meta/llama-3.3-70b-instruct
           SHARE: "false"
@@ -654,7 +654,7 @@ jobs:
         if: steps.opencode_review_primary.outputs.review_status != 'success' && steps.opencode_review_fallback.outputs.review_status != 'success'
         timeout-minutes: 60
         env:
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           MODEL: nvidia-nim/mistralai/codestral-22b-instruct-v0.1
           SHARE: "false"
@@ -916,7 +916,7 @@ jobs:
         env:
           GH_TOKEN: ${{ steps.opencode_app_token.outputs.token || secrets.OPENCODE_APPROVE_TOKEN || secrets.GITHUB_TOKEN }}
           GH_REPOSITORY: ${{ github.repository }}
-          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}
           OPENCODE_APP_TOKEN: ${{ steps.opencode_app_token.outputs.token }}
           OPENCODE_EVIDENCE_FILE: ${{ runner.temp }}/opencode-review-evidence.md
           OPENCODE_FAILED_CHECK_EVIDENCE_FILE: ${{ runner.temp }}/opencode-failed-check-evidence.md

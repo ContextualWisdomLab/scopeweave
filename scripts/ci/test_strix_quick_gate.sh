@@ -299,7 +299,7 @@ assert_strix_child_target_uses_constant_argument() {
 	assert_file_not_contains "$GATE_SCRIPT" 'command = [resolved_strix_bin, "-n", "-t", target_path, "--scan-mode", scan_mode]' "strix gate must not forward raw target paths as child arguments"
 }
 
-assert_opencode_review_uses_codegraph_and_gpt5_fallback() {
+assert_opencode_review_uses_codegraph_and_nim_fallback() {
 	local workflow_file="$REPO_ROOT/.github/workflows/opencode-review.yml"
 	local opencode_config="$REPO_ROOT/opencode.jsonc"
 
@@ -412,7 +412,8 @@ assert_opencode_review_uses_codegraph_and_gpt5_fallback() {
 	assert_file_contains "$workflow_file" "MODEL: nvidia-nim/nvidia/llama-3.3-nemotron-super-49b-v1.5" "opencode review uses NVIDIA NIM Nemotron Super as the default model"
 	assert_file_contains "$workflow_file" "MODEL: nvidia-nim/meta/llama-3.3-70b-instruct" "opencode review falls back to NVIDIA NIM Llama 3.3 70B Instruct"
 	assert_file_contains "$workflow_file" "MODEL: nvidia-nim/mistralai/codestral-22b-instruct-v0.1" "opencode review has a second NVIDIA NIM Codestral fallback model"
-	assert_file_contains "$workflow_file" 'NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}' "opencode review uses the NVIDIA NIM API key secret"
+	assert_file_contains "$workflow_file" 'NVIDIA_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}' "opencode CI maps secrets.NVIDIA_NIM_API_KEY onto process NVIDIA_API_KEY"
+	assert_file_not_contains "$workflow_file" 'secrets.NVIDIA_API_KEY' "opencode CI must not read a GitHub secret named NVIDIA_API_KEY"
 	assert_file_not_contains "$workflow_file" "STRIX_GITHUB_MODELS_TOKEN" "opencode review must not use the GitHub Models token"
 	assert_file_not_contains "$workflow_file" "COPILOT_GITHUB_TOKEN" "opencode review must not use COPILOT_GITHUB_TOKEN"
 	assert_file_not_contains "$workflow_file" "USE_GITHUB_TOKEN" "opencode review must not authenticate OpenCode through GitHub Models"
@@ -510,7 +511,9 @@ assert_opencode_review_uses_codegraph_and_gpt5_fallback() {
 	assert_file_contains "$opencode_config" '"small_model": "nvidia-nim/meta/llama-3.3-70b-instruct"' "opencode config uses a NVIDIA NIM Llama 3.3 70B small model"
 	assert_file_contains "$opencode_config" '"enabled_providers": ["nvidia-nim"]' "opencode config enables only the NVIDIA NIM provider"
 	assert_file_contains "$opencode_config" '"baseURL": "https://integrate.api.nvidia.com/v1"' "opencode config points NVIDIA NIM at the official integrate API"
-	assert_file_contains "$opencode_config" '"apiKey": "{env:NVIDIA_API_KEY}"' "opencode config reads the NVIDIA NIM API key from NVIDIA_API_KEY"
+	assert_file_contains "$opencode_config" '"apiKey": "{env:NVIDIA_API_KEY}"' "local OpenCode binding stays NVIDIA_API_KEY"
+	assert_file_contains "$REPO_ROOT/AGENTS.md" '{env:NVIDIA_API_KEY}' "AGENTS.md documents the local OpenCode NVIDIA_API_KEY binding"
+	assert_file_contains "$REPO_ROOT/AGENTS.md" 'NVIDIA_API_KEY: ${{ secrets.NVIDIA_NIM_API_KEY }}' "AGENTS.md documents the CI NVIDIA_NIM_API_KEY mapping"
 	assert_file_contains "$opencode_config" '"nvidia/llama-3.3-nemotron-super-49b-v1.5"' "opencode config defines NVIDIA NIM Nemotron Super with the full model id"
 	assert_file_contains "$opencode_config" '"meta/llama-3.3-70b-instruct"' "opencode config defines the NVIDIA NIM Llama 3.3 70B fallback"
 	assert_file_contains "$opencode_config" '"mistralai/codestral-22b-instruct-v0.1"' "opencode config defines the NVIDIA NIM Codestral fallback"
@@ -5438,7 +5441,7 @@ assert_strix_llm_file_read_is_literal_data
 
 assert_strix_child_target_uses_constant_argument
 
-assert_opencode_review_uses_codegraph_and_gpt5_fallback
+assert_opencode_review_uses_codegraph_and_nim_fallback
 
 assert_opencode_review_normalizer_accepts_transcript_json
 
