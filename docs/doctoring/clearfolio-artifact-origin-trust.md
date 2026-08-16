@@ -15,9 +15,9 @@ The adapter uses a positive allowlist rather than accepting any syntactically va
 ## Runtime contract
 
 1. `CLEARFOLIO_ARTIFACT_ORIGINS` is optional. When absent, only the validated Clearfolio provider origin is trusted.
-2. When present, the value is a comma-separated list of canonicalizable HTTPS origins. Whitespace around entries is ignored; empty entries are rejected.
-3. Any malformed entry, HTTP entry, URL credential, path, query, or fragment produces `ClearfolioConfigurationError` with stable code `clearfolio_artifact_origins_invalid` before the artifact-link provider request is sent.
-4. Provider-returned artifact URLs must still satisfy the existing HTTP/HTTPS and downgrade rules, must contain no credentials or fragment, and must resolve to the provider origin or an explicitly configured artifact origin.
+2. When present, the value is a comma-separated list of canonical HTTPS origins. Whitespace around entries is ignored. Empty values, whitespace-only values, and empty comma-separated entries are rejected. After parsing, each trimmed entry must equal `URL.origin` or that origin plus a single trailing `/`, so default-port `:443`, empty fragments, empty userinfo, and path-normalized lookalikes cannot sneak in.
+3. Any malformed entry, HTTP entry, URL credential, path, query, fragment, or non-canonical origin produces `ClearfolioConfigurationError` with stable code `clearfolio_artifact_origins_invalid` before the artifact-link provider request is sent.
+4. Provider-returned artifact URLs must still satisfy the existing HTTP/HTTPS and downgrade rules, must contain no credentials or fragment, and must resolve to the provider origin or an explicitly configured artifact origin. Protocol-relative links, backslash-normalized protocol-relative paths, and userinfo-as-host URLs inherit a foreign origin and are rejected unless that origin is explicitly allowlisted.
 5. A same-origin `artifactToken` may be translated into the trusted Clearfolio viewer route. A token on an approved cross-origin artifact URL remains on that returned URL; ScopeWeave never transplants it into the provider-origin viewer.
 6. Exact origin comparison includes the effective port. Approving `https://cdn.example:8443` does not approve `https://cdn.example`.
 
@@ -36,11 +36,12 @@ Do not place signed paths, object keys, tokens, credentials, query strings, or f
 `tests/unit/clearfolio-artifact-origin.test.mjs` exercises the production adapter with real `URL` parsing and a bounded mocked provider response. It proves:
 
 - cross-origin HTTPS artifacts fail by default;
+- protocol-relative, backslash-normalized, and userinfo-as-host links do not inherit the provider origin;
 - same-origin relative artifacts continue to resolve against the provider;
 - an explicitly approved origin succeeds only for the same scheme/host/port identity;
 - approved cross-origin `artifactToken` values remain on the approved origin;
 - credentials and fragments are rejected on provider and approved origins;
-- malformed, HTTP, credentialed, path-, query-, fragment-bearing, and empty-entry configuration fails before any provider transport.
+- malformed, HTTP, credentialed, path-, query-, fragment-bearing, non-canonical, empty, and whitespace-only configuration fails before any provider transport.
 
 The test is registered in both the normal unit suite and the production coverage cases so changes to this boundary cannot silently bypass repository coverage evidence.
 
