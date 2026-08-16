@@ -26,11 +26,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   follow-up work under issue #413.
 - Added a separate framework-neutral calendar-subscription credential domain
   with one-time secret display on create/rotate, hash-only persistence ports,
-  project-scoped management, reusable feed authorization, membership-version
-  rechecks, safe lifecycle metadata, rotation, revocation, and usage evidence.
-  Runtime route, database adapter/migration, and UI implementation remain
-  follow-up work under issue #413; the required calendar-management interaction
-  contract is captured in Figma and traced in the doctoring record.
+  project-scoped management, reusable `calendar_read` authorization, issuance
+  membership-epoch binding so remove-then-rejoin cannot revive a secret,
+  a 366-day create/rotate lifetime cap, exact-expiry rejection, safe lifecycle
+  metadata, rotation, revocation, and usage evidence. Runtime route, database
+  adapter/migration, and UI implementation remain follow-up work under issue
+  #413; the required calendar-management interaction contract is captured in
+  Figma and traced in the doctoring record.
 
 ### Security
 
