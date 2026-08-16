@@ -9,6 +9,10 @@ const codeqlWorkflow = readFileSync(
   new URL('../../.github/workflows/codeql-required.yml', import.meta.url),
   'utf8',
 );
+const osvWorkflow = readFileSync(
+  new URL('../../.github/workflows/osvscanner.yml', import.meta.url),
+  'utf8',
+);
 
 const exactHeadRef = 'ref: ${{ github.event.pull_request.head.sha || github.sha }}';
 const expectedShaEnv = 'EXPECTED_CHECKOUT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}';
@@ -70,4 +74,65 @@ assert.doesNotMatch(
   'CodeQL must remain on the unprivileged pull_request trust boundary',
 );
 
-console.log('✓ Server Tests and required CodeQL exact-head workflow contracts passed');
+const exactBaseRef = 'ref: ${{ github.event.pull_request.base.sha }}';
+const osvExactHeadRef = 'ref: ${{ github.event.pull_request.head.sha }}';
+const expectedBaseShaEnv = 'EXPECTED_BASE_SHA: ${{ github.event.pull_request.base.sha }}';
+const expectedHeadShaEnv = 'EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}';
+
+assert.match(
+  osvWorkflow,
+  /^\s{2}scan:\s*$/m,
+  'OSV must retain the stable scan job identity used by protected-base code-scanning comparisons',
+);
+assert.equal(
+  osvWorkflow.split(exactBaseRef).length - 1,
+  1,
+  'OSV must explicitly check out the exact live pull-request base for the baseline scan',
+);
+assert.equal(
+  osvWorkflow.split(osvExactHeadRef).length - 1,
+  1,
+  'OSV must explicitly check out the exact contributor head for the candidate scan',
+);
+assert.equal(
+  osvWorkflow.split('persist-credentials: false').length - 1,
+  2,
+  'both OSV checkouts must avoid persisting repository credentials',
+);
+assert.equal(
+  osvWorkflow.split('git rev-parse HEAD').length - 1,
+  2,
+  'OSV must verify both the baseline and contributor commits it actually scans',
+);
+assert.equal(
+  osvWorkflow.split(expectedBaseShaEnv).length - 1,
+  1,
+  'OSV baseline verification must bind to the pull-request base SHA',
+);
+assert.equal(
+  osvWorkflow.split(expectedHeadShaEnv).length - 1,
+  1,
+  'OSV candidate verification must bind to the pull-request contributor SHA',
+);
+assert.doesNotMatch(
+  osvWorkflow,
+  /osv-scanner-reusable-pr\.yml/,
+  'OSV must not delegate candidate selection to the reusable workflow that scans synthetic GITHUB_SHA merge commits',
+);
+assert.match(
+  osvWorkflow,
+  /google\/osv-scanner-action\/osv-reporter-action@8dc09193bb540e09b23da07ad7e30bd33bf87018/,
+  'OSV must retain the pinned upstream differential reporter for introduced-vulnerability semantics',
+);
+assert.match(
+  osvWorkflow,
+  /github\/codeql-action\/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e/,
+  'OSV must publish candidate-head SARIF through the repository-trusted pinned upload action',
+);
+assert.doesNotMatch(
+  osvWorkflow,
+  /\bpull_request_target\s*:/,
+  'OSV must remain on the unprivileged pull_request trust boundary',
+);
+
+console.log('✓ Server Tests, required CodeQL, and OSV exact-head workflow contracts passed');
