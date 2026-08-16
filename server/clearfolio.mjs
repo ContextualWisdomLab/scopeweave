@@ -199,6 +199,8 @@ export const mockArtifact = (jobId) => (clearfolioMock ? mockDocs.get(jobId) || 
  *
  * Downstream response text and transport errors are never copied into the
  * thrown error because the caller may serialize that message to a browser.
+ * Redirect following is disabled so tenant HMAC headers are never replayed to
+ * an untrusted Location target.
  *
  * @param {string|number} orgId - ScopeWeave organization identifier.
  * @param {string|number} userId - Requesting ScopeWeave user identifier.
@@ -221,6 +223,7 @@ export async function submitJob(orgId, userId, { name, mime, bytes }) {
       method: 'POST',
       headers: tenantHeaders(orgId, userId, configuration.secret),
       body: form,
+      redirect: 'error',
     });
   } catch {
     throw new Error('clearfolio submit unavailable');
@@ -246,6 +249,8 @@ export async function submitJob(orgId, userId, { name, mime, bytes }) {
  * without an exact documented conversion state all throw fixed operation-level
  * errors. The bounded refresh engine can therefore preserve the previously
  * persisted state without logging or returning private downstream details.
+ * Redirect following is disabled so tenant HMAC headers stay bound to the
+ * configured provider origin.
  *
  * @param {string|number} orgId - ScopeWeave organization identifier.
  * @param {string|number} userId - Requesting user identifier.
@@ -262,6 +267,7 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
     res = await fetch(`${configuration.baseUrl}/api/v1/convert/jobs/${encodeURIComponent(jobId)}`, {
       headers: tenantHeaders(orgId, userId, configuration.secret),
       signal,
+      redirect: 'error',
     });
   } catch {
     throw new Error('clearfolio status unavailable');
@@ -277,10 +283,12 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
 /**
  * Issue a viewable artifact URL for a completed Clearfolio job.
  *
- * Same-origin `artifactToken` values may be translated into the trusted viewer
- * route. Token-bearing links from another origin are rejected until an explicit
- * reviewed artifact-origin allowlist exists; tokens are never transplanted or
- * returned to an unreviewed cross-origin host.
+ * This root production-config slice accepts only the configured provider origin.
+ * Cross-origin artifact hosts remain fail-closed until an explicit reviewed
+ * allowlist lands. Credentials and fragments are never accepted as browser
+ * redirect authority. Same-origin `artifactToken` values may be translated into
+ * the trusted viewer route, and redirect following is disabled for the provider
+ * request so tenant HMAC headers cannot be replayed to a Location target.
  *
  * @param {string|number} orgId - ScopeWeave organization identifier.
  * @param {string|number} userId - Requesting ScopeWeave user identifier.
@@ -296,6 +304,7 @@ export async function artifactUrl(orgId, userId, jobId) {
     res = await fetch(`${configuration.baseUrl}/api/v1/viewer/${encodeURIComponent(jobId)}/artifact-links`, {
       method: 'POST',
       headers: tenantHeaders(orgId, userId, configuration.secret),
+      redirect: 'error',
     });
   } catch {
     throw new Error('clearfolio artifact-link unavailable');
@@ -320,12 +329,17 @@ export async function artifactUrl(orgId, userId, jobId) {
   if (url.protocol !== 'https:' && !allowsHttp) {
     throw new Error('clearfolio artifact-link response invalid');
   }
+  if (
+    url.origin !== clearfolioUrl.origin
+    || url.username
+    || url.password
+    || url.hash
+  ) {
+    throw new Error('clearfolio artifact-link response invalid');
+  }
 
   const token = url.searchParams.get('artifactToken');
   if (token) {
-    if (url.origin !== clearfolioUrl.origin) {
-      throw new Error('clearfolio artifact-link response invalid');
-    }
     return `${configuration.baseUrl}/viewer/${encodeURIComponent(jobId)}?artifactToken=${encodeURIComponent(token)}`;
   }
   return url.href;
