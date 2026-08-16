@@ -45,6 +45,26 @@ function fixture() {
   return db;
 }
 
+function cleanupFaultDatabase(database, { failRollback = false, failRelease = false } = {}) {
+  let rollbackAttempted = false;
+  const commands = [];
+  return {
+    commands,
+    prepare: database.prepare.bind(database),
+    exec(sql) {
+      commands.push(sql);
+      if (sql.startsWith('ROLLBACK TO ')) {
+        rollbackAttempted = true;
+        if (failRollback) throw new Error('simulated_rollback_cleanup_failure');
+      }
+      if (rollbackAttempted && sql.startsWith('RELEASE ') && failRelease) {
+        throw new Error('simulated_release_cleanup_failure');
+      }
+      return database.exec(sql);
+    },
+  };
+}
+
 function deterministicRandom() {
   let value = 9;
   return {
@@ -177,4 +197,44 @@ test('database constraints reject impossible grant lifetimes', async () => {
     /CHECK constraint failed/,
   );
   db.close();
+});
+
+test('savepoint cleanup failures never replace the causal persistence error', async () => {
+  const record = {
+    grant_id: 'agr_cleanup_failure',
+    token_hash: '2'.repeat(64),
+    subject_id: '1',
+    project_id: '1000',
+    purpose: ACCESS_GRANT_PURPOSES.STREAM,
+    audience: ACCESS_GRANT_AUDIENCES.STREAM,
+    attachment_id: null,
+    issued_at_ms: 10,
+    expires_at_ms: 10,
+    used_at_ms: null,
+    revoked_at_ms: null,
+  };
+
+  for (const faults of [
+    { failRollback: true, failRelease: false },
+    { failRollback: false, failRelease: true },
+  ]) {
+    const db = fixture();
+    const faultDb = cleanupFaultDatabase(db, faults);
+    const repository = createSqliteAccessGrantRepository(faultDb);
+
+    await assert.rejects(
+      repository.insertGrant(record),
+      (error) => /CHECK constraint failed/.test(error?.message ?? ''),
+      'cleanup failures must not mask the operation failure',
+    );
+
+    if (faults.failRollback) {
+      assert.equal(
+        faultDb.commands.some((sql) => sql.startsWith('RELEASE access_grant_insert_state')),
+        false,
+        'an unconfirmed rollback must not release the failed savepoint',
+      );
+    }
+    db.close();
+  }
 });
