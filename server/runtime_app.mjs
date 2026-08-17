@@ -19,6 +19,31 @@ const PRIVATE_NO_STORE_HEADERS = Object.freeze({
 });
 
 installCalendarSubscriptionSchema(db);
+db.exec(`
+  CREATE TRIGGER IF NOT EXISTS calendar_subscription_membership_revoke_trigger
+  BEFORE DELETE ON memberships
+  BEGIN
+    INSERT INTO calendar_subscription_audit_outbox(
+      subscription_id, event_type, subject_id, project_id, occurred_at_ms, delivered_at_ms
+    )
+    SELECT subscription_id,
+           'revoked',
+           subject_id,
+           project_id,
+           MAX(created_at_ms, CAST(strftime('%s', 'now') AS INTEGER) * 1000),
+           NULL
+      FROM calendar_subscriptions
+     WHERE subject_id = OLD.user_id
+       AND project_id IN (SELECT id FROM projects WHERE org_id = OLD.org_id)
+       AND revoked_at_ms IS NULL;
+
+    UPDATE calendar_subscriptions
+       SET revoked_at_ms = MAX(created_at_ms, CAST(strftime('%s', 'now') AS INTEGER) * 1000)
+     WHERE subject_id = OLD.user_id
+       AND project_id IN (SELECT id FROM projects WHERE org_id = OLD.org_id)
+       AND revoked_at_ms IS NULL;
+  END;
+`);
 
 function projectMembership(subjectId, projectId) {
   return db.prepare(`
