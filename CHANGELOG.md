@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a typed same-connection project-version transition adapter that binds
+  terminal reason events to the existing `projects.version` authority and exact
+  work-item membership without rewriting `tasks_json` or creating a parallel
+  work-item version store.
 - Added normalized SQLite persistence for authorized terminal schedule reason
   events, verified cancellation approval evidence, immutable audit records, and
   same-savepoint resource-version transition/rollback without duplicating the
