@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
+import { constants, copyFileSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -76,9 +76,9 @@ const seedProductDatabase = spawnSync(process.execPath, ['--input-type=module', 
 assert.equal(seedProductDatabase.status, 0, seedProductDatabase.stderr);
 createVerifiedSqliteBackup({ sourcePath: productSource, destinationPath: productBackup });
 assert.doesNotThrow(() => verifySqliteDatabase(productBackup));
-copyFileSync(productBackup, recoveredDatabase, copyFileSync.constants?.COPYFILE_EXCL);
+copyFileSync(productBackup, recoveredDatabase, constants.COPYFILE_EXCL);
 assert.throws(
-  () => copyFileSync(productBackup, recoveredDatabase, copyFileSync.constants?.COPYFILE_EXCL),
+  () => copyFileSync(productBackup, recoveredDatabase, constants.COPYFILE_EXCL),
   (error) => error?.code === 'EEXIST',
 );
 assert.doesNotThrow(() => verifySqliteDatabase(recoveredDatabase));
