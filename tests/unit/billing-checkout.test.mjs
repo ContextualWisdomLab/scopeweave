@@ -55,6 +55,18 @@ async function expectSafeProviderFailure(responseFactory) {
   });
 }
 
+function fixedSessionFactory(session) {
+  return async () => ({
+    checkout: {
+      sessions: {
+        async create() {
+          return session;
+        },
+      },
+    },
+  });
+}
+
 test('unconfigured production checkout fails closed with actionable HTTP 503', async () => {
   let rejectedError;
   await assert.rejects(
@@ -209,6 +221,16 @@ test('default live provider transport rejects malformed successful session paylo
   }));
 });
 
+test('live checkout rejects absent and blank provider redirect shapes', async () => {
+  for (const session of [null, {}, { url: null }, { url: '' }, { url: '   ' }]) {
+    await assertProviderFailure(() => createCheckout({
+      orgId: 92,
+      configuration: liveConfiguration,
+      stripeClientFactory: fixedSessionFactory(session),
+    }));
+  }
+});
+
 test('live checkout rejects unsafe or malformed provider redirect URLs', async () => {
   for (const url of [
     'http://checkout.stripe.com/c/pay/cs_test_plaintext',
@@ -219,15 +241,7 @@ test('live checkout rejects unsafe or malformed provider redirect URLs', async (
     await assertProviderFailure(() => createCheckout({
       orgId: 92,
       configuration: liveConfiguration,
-      stripeClientFactory: async () => ({
-        checkout: {
-          sessions: {
-            async create() {
-              return { url };
-            },
-          },
-        },
-      }),
+      stripeClientFactory: fixedSessionFactory({ url }),
     }));
   }
 });
