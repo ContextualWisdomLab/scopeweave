@@ -5,7 +5,9 @@
   "type": "module",
   "packageManager": "npm@10.9.2",
   "description": "Production-grade pure HTML/CSS/JS WBS planner",
-  "engines": { "node": "^22.13.0 || >=23.4.0" },
+  "engines": {
+    "node": "^22.13.0 || >=23.4.0"
+  },
   "scripts": {
     "check:python-docstrings": "node scripts/ci/static_coverage_evidence.mjs docstrings",
     "coverage": "npm run test:coverage",
@@ -20,6 +22,13 @@
     "test:fuzz": "playwright install chromium && playwright test tests/e2e/csv_formula_fuzz.spec.js",
     "fuzz": "node --test tests/fuzz/*.mjs"
   },
-  "dependencies": { "@hono/node-server": "^2.0.12", "hono": "^4.13.0" },
-  "devDependencies": { "@playwright/test": "1.61.1", "c8": "12.0.0", "fast-check": "4.9.0" }
+  "dependencies": {
+    "@hono/node-server": "^2.0.12",
+    "hono": "^4.13.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1",
+    "c8": "12.0.0",
+    "fast-check": "4.9.0"
+  }
 }
