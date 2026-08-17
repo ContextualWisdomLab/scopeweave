@@ -12,7 +12,7 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 # Server + the static client files the allowlist serves.
 COPY server ./server
-COPY index.html 404.html app.js cloud-sync.js analytics.js styles.css wbs.json ./
+COPY index.html 404.html app.js cloud-sync.js analytics.js styles.css toast-state.css wbs.json ./
 
 ENV PORT=8787
 ENV SCOPEWEAVE_DB=/data/scopeweave.db
