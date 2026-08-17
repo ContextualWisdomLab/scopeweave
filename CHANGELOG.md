@@ -12,7 +12,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added a GitHub Actions workflow-registry audit plus an explicit dry-run-first,
   exact-protected-SHA operator cleanup command. The audit binds complete
   paginated registry evidence to one unchanged protected-branch tree; cleanup
-  can disable only freshly revalidated `active_orphan` workflow IDs, requires
+  reports all `active_orphan` candidates but can disable only exact numeric IDs
+  separately selected with `--workflow-id` after ownership review, requires
   `--apply`, an immutable expected commit SHA, and authenticated GitHub Actions
   write authority, and verifies each disabled identity without name heuristics.
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS
