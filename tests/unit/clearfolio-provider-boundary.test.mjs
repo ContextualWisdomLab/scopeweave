@@ -131,6 +131,27 @@ test('provider job identifiers are bounded before URL construction', async () =>
   assert.equal(calls.length, before, 'oversized job identifiers never reach provider transport');
 });
 
+test('artifact redirects remain bound to the configured provider origin', async () => {
+  for (const artifactUrlValue of [
+    'https://cdn.example/file.pdf',
+    'https://user:pass@clearfolio.example/file.pdf',
+    'https://clearfolio.example/file.pdf#private-fragment',
+  ]) {
+    useResponse({ artifactUrl: artifactUrlValue });
+    await assert.rejects(
+      () => artifactUrl(1, 2, 'job-1'),
+      /clearfolio artifact-link response invalid/,
+      `${artifactUrlValue} must not become browser redirect authority`,
+    );
+  }
+
+  useResponse({ artifactUrl: 'https://clearfolio.example/file.pdf' });
+  assert.equal(
+    await artifactUrl(1, 2, 'job-1'),
+    'https://clearfolio.example/file.pdf',
+  );
+});
+
 test('valid submit response remains compatible with the bounded transport', async () => {
   useResponse({ jobId: ' job-2 ', status: 'PENDING' });
   assert.deepEqual(

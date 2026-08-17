@@ -55,7 +55,7 @@ two modes:
 ## Architecture
 
 ```
-index.html + app.js + styles.css     ← static client (eval-safe; no top-level imports)
+index.html + app.js + styles.css + toast-state.css  ← static client (eval-safe; no top-level imports)
   ├─ analytics.js                    ← EVM/S-curve/CPM (window.ScopeWeaveAnalytics)
   └─ cloud-sync.js                   ← opt-in cloud overlay (window.ScopeWeaveCloud)
 server/
