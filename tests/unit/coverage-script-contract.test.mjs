@@ -8,6 +8,10 @@ const packageJson = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 );
 const scripts = packageJson.scripts;
+const fuzzWorkflow = readFileSync(
+  new URL('../../.github/workflows/fuzz.yml', import.meta.url),
+  'utf8',
+);
 
 assert.equal(
   scripts.coverage,
@@ -43,6 +47,17 @@ assert.doesNotMatch(
   scripts['test:coverage:cases'],
   /npm run (?:coverage|test:coverage)(?:\s|$)/,
   'coverage cases never recursively invoke a coverage wrapper',
+);
+
+assert.match(
+  fuzzWorkflow,
+  /actions\/setup-node@820762786026740c76f36085b0efc47a31fe5020\s+# v7\.0\.0/,
+  'property fuzz uses the immutable setup-node v7 runtime that declares node24',
+);
+assert.doesNotMatch(
+  fuzzWorkflow,
+  /actions\/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af/,
+  'property fuzz no longer relies on the deprecated Node.js 20 setup-node runtime',
 );
 
 console.log('✓ coverage script contract tests passed');
