@@ -4,6 +4,7 @@ process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 
 const { app } = await import('../../server/runtime_app.mjs');
+const { db } = await import('../../server/db.mjs');
 
 const req = (path, opts = {}) => app.request(path, {
   ...opts,
@@ -19,6 +20,11 @@ assert.equal(response.status, 200);
 const { token } = await response.json();
 let currentToken = token;
 let auth = { authorization: `Bearer ${currentToken}` };
+
+response = await req('/api/me', { headers: auth });
+assert.equal(response.status, 200);
+const ownerMe = await response.json();
+const ownerOrgId = ownerMe.orgs[0].id;
 
 response = await req('/api/projects', {
   method: 'POST',
@@ -194,6 +200,52 @@ response = await req(`/api/projects/${project.id}/calendar-subscriptions`, {
   body: json({ name: 'Probe', expiresAtMs }),
 });
 assert.equal(response.status, 404, 'management authorization does not disclose cross-tenant project existence');
+
+response = await req('/api/auth/signup', {
+  method: 'POST',
+  body: json({ email: 'calendar-admin@example.com', password: 'password123', name: 'Calendar Admin' }),
+});
+assert.equal(response.status, 200);
+const adminToken = (await response.json()).token;
+const adminAuth = { authorization: `Bearer ${adminToken}` };
+response = await req(`/api/orgs/${ownerOrgId}/invites`, {
+  method: 'POST',
+  headers: auth,
+  body: json({ email: 'calendar-admin@example.com', role: 'admin' }),
+});
+assert.equal(response.status, 200);
+const adminInvite = await response.json();
+response = await req(`/api/invites/${adminInvite.token}/accept`, { method: 'POST', headers: adminAuth });
+assert.equal(response.status, 200);
+response = await req('/api/me', { headers: adminAuth });
+const adminMe = await response.json();
+const adminUserId = adminMe.user.id;
+
+response = await req(`/api/projects/${project.id}/calendar-subscriptions`, {
+  method: 'POST',
+  headers: adminAuth,
+  body: json({ name: 'Admin calendar', expiresAtMs: Date.now() + (7 * 24 * 60 * 60 * 1000) }),
+});
+assert.equal(response.status, 201, 'admin can manage a project calendar subscription');
+const adminSubscription = await response.json();
+response = await req(adminSubscription.feedPath);
+assert.equal(response.status, 200, 'admin subscription works before membership removal');
+
+response = await req(`/api/orgs/${ownerOrgId}/members/${adminUserId}`, {
+  method: 'DELETE',
+  headers: auth,
+});
+assert.equal(response.status, 200, 'owner removes the admin membership');
+response = await req(adminSubscription.feedPath);
+assert.equal(response.status, 401, 'membership removal immediately kills the reusable calendar secret');
+const removedRecord = db.prepare(
+  'SELECT revoked_at_ms FROM calendar_subscriptions WHERE subscription_id = ?',
+).get(adminSubscription.subscriptionId);
+assert.ok(Number.isSafeInteger(removedRecord?.revoked_at_ms), 'membership deletion durably marks the subscription revoked');
+const removalEvidence = db.prepare(
+  "SELECT event_type FROM calendar_subscription_audit_outbox WHERE subscription_id = ? AND event_type = 'revoked' ORDER BY audit_event_id DESC LIMIT 1",
+).get(adminSubscription.subscriptionId);
+assert.equal(removalEvidence?.event_type, 'revoked', 'membership deletion persists secret-free revocation evidence');
 
 response = await req(`/api/projects/${project.id}/calendar.ics?token=${encodeURIComponent(currentToken)}`);
 assert.equal(response.status, 200, 'legacy session-query calendar transport remains during the staged migration');
