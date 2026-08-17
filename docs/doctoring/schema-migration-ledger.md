@@ -33,6 +33,15 @@ must already be one complete known generation; mixed, incomplete, ledger-only,
 or otherwise ambiguous states fail closed before legacy bootstrap can mutate
 them.
 
+The historical compatibility columns `users.token_version`,
+`projects.archived`, and `projects.methodology` are also catalog-driven. Startup
+queries `PRAGMA table_info` and runs `ALTER TABLE` only when the exact column is
+absent. This replaces the former blanket `try/catch` pattern that treated every
+SQLite exception as "already there". With expected idempotence removed from the
+exception path, read-only, disk-I/O, locking, corruption, or other genuine DDL
+failures propagate and stop startup instead of leaving a partially upgraded
+schema available to request handling.
+
 A complete canonical generation is deliberately identified and recorded, but
 this application version still uses legacy table names in its query layer.
 Therefore startup records/verifies `canonical_schema_v2` and then fails with a
@@ -99,6 +108,12 @@ must restore the ledger from the same verified recovery point.
   databases; and
 - a real `server/db.mjs` subprocess regression proving canonical startup fails
   for the truthful query-layer reason without recreating any legacy table.
+
+`tests/unit/legacy-column-migration.test.mjs` additionally proves that the three
+historical additive columns are created idempotently from SQLite catalog
+evidence, preserve their production defaults, reject incomplete adapters, and
+propagate a real database error rather than converting it into false idempotent
+success.
 
 The production module is registered in the Istanbul coverage command. The API
 and existing server tests exercise normal startup integration through
