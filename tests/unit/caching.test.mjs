@@ -14,8 +14,10 @@ function loadApp() {
 ;globalThis.__cachingExports = {
   createStatusCellContent,
   createOwnerCellContent,
+  createActualProgressCellContent,
   getStatusBadgeTemplate: () => statusBadgeTemplate,
   getOwnerBadgeTemplate: () => ownerBadgeTemplate,
+  getActualProgressSelectTemplate: () => actualProgressSelectTemplate,
 };
 `;
 
@@ -23,6 +25,7 @@ function loadApp() {
     constructor(name) {
       this.name = name;
       this.attributes = Object.create(null);
+      this.dataset = Object.create(null);
       this.style = Object.create(null);
       this.children = [];
     }
@@ -38,9 +41,15 @@ function loadApp() {
     cloneNode(deep) {
       const node = new DummyNode(this.name);
       node.attributes = { ...this.attributes };
+      node.dataset = { ...this.dataset };
       node.style = { ...this.style };
       node.titleAttribute = this.titleAttribute;
-      if (deep) node.text = this.text;
+      node.id = this.id;
+      node.value = this.value;
+      if (deep) {
+        node.text = this.text;
+        node.children = this.children.map((child) => child.cloneNode(true));
+      }
       return node;
     }
   }
@@ -120,8 +129,10 @@ function loadApp() {
 const {
   createStatusCellContent,
   createOwnerCellContent,
+  createActualProgressCellContent,
   getStatusBadgeTemplate,
   getOwnerBadgeTemplate,
+  getActualProgressSelectTemplate,
   getCreateElementCalls,
 } = loadApp();
 
@@ -227,4 +238,55 @@ assert.equal(
 const emptyOwner = createOwnerCellContent('');
 assert.equal(emptyOwner.className, 'empty-cell');
 
-console.log('✓ immutable DOM badge shell caching tests passed');
+// Issue #409 also requires the pre-existing cached progress <select> shell to
+// remain detached from row-specific IDs, task data, selected values, and
+// validation metadata. Exercise two rows with different validation states so a
+// cached clone cannot leak aria-invalid/aria-describedby into the next row.
+const warningTask = {
+  id: 'task-a',
+  task: '검증 필요 작업',
+  activity: '',
+  phase: 'Phase A',
+  actualProgressStatus: '진행(50%)',
+};
+const warningProgressCell = createActualProgressCellContent(warningTask, {
+  plannedDateWarning: '계획 일정 검증 필요',
+  actualDateWarning: '',
+});
+const warningSelect = warningProgressCell.children[1];
+assert.equal(warningSelect.name, 'select');
+assert.equal(warningSelect.id, 'actual-progress-task-a');
+assert.equal(warningSelect.dataset.inlineProgress, 'task-a');
+assert.equal(warningSelect.value, '진행(50%)');
+assert.equal(warningSelect.attributes['aria-invalid'], 'true');
+assert.equal(warningSelect.attributes['aria-describedby'], 'actual-progress-error-task-a');
+
+const progressShell = getActualProgressSelectTemplate();
+assert.equal(progressShell.name, 'select');
+assert.equal(progressShell.id, undefined, 'cached progress shell must not retain a row ID');
+assert.equal(progressShell.dataset.inlineProgress, undefined, 'cached progress shell must not retain a task ID');
+assert.equal(progressShell.value, undefined, 'cached progress shell must not retain a selected row value');
+assert.equal(progressShell.attributes['aria-invalid'], undefined, 'cached progress shell must not retain validation state');
+assert.equal(progressShell.attributes['aria-describedby'], undefined, 'cached progress shell must not retain validation references');
+
+const cleanTask = {
+  id: 'task-b',
+  task: '정상 작업',
+  activity: '',
+  phase: 'Phase A',
+  actualProgressStatus: '완료(100%)',
+};
+const cleanProgressCell = createActualProgressCellContent(cleanTask, {
+  plannedDateWarning: '',
+  actualDateWarning: '',
+});
+const cleanSelect = cleanProgressCell.children[1];
+assert.notEqual(cleanSelect, warningSelect, 'each progress row receives a distinct select clone');
+assert.equal(cleanSelect.id, 'actual-progress-task-b');
+assert.equal(cleanSelect.dataset.inlineProgress, 'task-b');
+assert.equal(cleanSelect.value, '완료(100%)');
+assert.equal(cleanSelect.attributes['aria-invalid'], undefined, 'validation state does not leak between progress clones');
+assert.equal(cleanSelect.attributes['aria-describedby'], undefined, 'validation references do not leak between progress clones');
+assert.equal(getActualProgressSelectTemplate(), progressShell, 'progress rendering reuses one immutable select shell');
+
+console.log('✓ immutable DOM badge and progress shell caching tests passed');
