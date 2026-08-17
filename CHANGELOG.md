@@ -105,6 +105,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wbs.json` seed loading plus browser autosave and optional file sync.
 - Playwright E2E coverage for add/edit hierarchy flows, delete
   confirmation, subtree drag-and-drop, and JSON sync shape.
+- GitHub Pages deployment workflow and operator documentation.
 
 ## [1.0.1] - 2026-06-25
 ### 성능 개선 (Performance)
