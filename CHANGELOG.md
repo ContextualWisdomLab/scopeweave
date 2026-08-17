@@ -61,6 +61,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolved live protected-base commit and the exact pull-request contributor
   head, with SHA attestations before both scans, instead of treating a synthetic
   pull-request merge commit as exact-head security evidence.
+- Bound both required repository CodeQL matrix analyses to the exact contributor
+  head on pull requests and fail closed on a checkout mismatch before CodeQL
+  initialization instead of treating a synthetic merge checkout as exact-head
+  security evidence.
 - Accepted XML whitespace before exact Microsoft Project element delimiters
   while preserving the linear, regex-free import scanner and rejecting
   attributes, longer names, non-XML whitespace, nested unmatched blocks, and
