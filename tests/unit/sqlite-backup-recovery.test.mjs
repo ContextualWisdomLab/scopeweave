@@ -77,6 +77,10 @@ assert.equal(seedProductDatabase.status, 0, seedProductDatabase.stderr);
 createVerifiedSqliteBackup({ sourcePath: productSource, destinationPath: productBackup });
 assert.doesNotThrow(() => verifySqliteDatabase(productBackup));
 copyFileSync(productBackup, recoveredDatabase, copyFileSync.constants?.COPYFILE_EXCL);
+assert.throws(
+  () => copyFileSync(productBackup, recoveredDatabase, copyFileSync.constants?.COPYFILE_EXCL),
+  (error) => error?.code === 'EEXIST',
+);
 assert.doesNotThrow(() => verifySqliteDatabase(recoveredDatabase));
 const recoveredApplication = spawnSync(process.execPath, ['--input-type=module', '-e', `
   const { db } = await import(${JSON.stringify(dbModuleUrl)});
