@@ -1,4 +1,4 @@
-// Unit coverage for editorHasUnsavedChanges + beforeunload dirty-draft guard.
+// Unit coverage for editor dirty-state and rerender-safe focus restoration.
 // app.js is browser-first; evaluate under vm with an absolute filename so c8/V8
 // attributes coverage to app.js (same pattern as tests/fuzz/harness.mjs).
 // Run: node tests/unit/editor-unsaved.test.mjs
@@ -18,10 +18,28 @@ function loadApp() {
   editorHasUnsavedChanges,
   bindGlobalEvents,
   closeEditor,
+  openEditor,
+  handleInlineProgressChange,
+  handleRowAction,
   state,
   DEFAULT_EDITOR_STATE,
 };
+;globalThis.__setEditorFocusTestHooks = (hooks = {}) => {
+  if (hooks.renderAll) renderAll = hooks.renderAll;
+  if (hooks.persistState) persistState = hooks.persistState;
+  if (hooks.showToast) showToast = hooks.showToast;
+  if (hooks.findTask) findTask = hooks.findTask;
+  if (hooks.getVisibleTasks) getVisibleTasks = hooks.getVisibleTasks;
+  if (hooks.deleteTaskAndDescendants) deleteTaskAndDescendants = hooks.deleteTaskAndDescendants;
+};
 `;
+
+  const focusEvents = [];
+  const selectorQueries = [];
+  const idQueries = [];
+  const escapeCalls = [];
+  let querySelectorImpl;
+  let getElementByIdImpl;
 
   const classList = {
     contains: () => false,
@@ -30,11 +48,22 @@ function loadApp() {
     toggle() {},
   };
   const dummyElement = new Proxy(
-    { classList, style: {}, value: '', textContent: '', innerHTML: '', checked: false },
+    {
+      classList,
+      dataset: {},
+      style: {},
+      value: '',
+      textContent: '',
+      innerHTML: '',
+      checked: false,
+      focus() {
+        focusEvents.push('focus');
+      },
+    },
     {
       get(target, prop) {
         if (prop in target) return target[prop];
-        // Methods (setAttribute, focus, addEventListener, …) must be callable.
+        // Methods (setAttribute, addEventListener, append, …) must be callable.
         return () => dummyElement;
       },
       set(target, prop, value) {
@@ -43,6 +72,26 @@ function loadApp() {
       },
     },
   );
+  querySelectorImpl = () => dummyElement;
+  getElementByIdImpl = () => dummyElement;
+
+  const documentStub = {
+    activeElement: null,
+    getElementById(id) {
+      idQueries.push(id);
+      return getElementByIdImpl(id);
+    },
+    createElement: () => dummyElement,
+    createTextNode: () => dummyElement,
+    body: dummyElement,
+    addEventListener() {},
+    querySelector(selector) {
+      selectorQueries.push(selector);
+      return querySelectorImpl(selector);
+    },
+    querySelectorAll: () => [],
+    title: '',
+  };
 
   const windowListeners = Object.create(null);
   let confirmImpl = () => true;
@@ -58,22 +107,29 @@ function loadApp() {
     clearTimeout: () => undefined,
   };
 
+  let animationFrameCount = 0;
+  const requestAnimationFrame = (callback) => {
+    animationFrameCount += 1;
+    callback(animationFrameCount);
+    return animationFrameCount;
+  };
+
   const sandbox = {
     window: windowStub,
     self: windowStub,
-    document: {
-      getElementById: () => dummyElement,
-      createElement: () => dummyElement,
-      body: dummyElement,
-      addEventListener() {},
-      querySelector: () => dummyElement,
-      querySelectorAll: () => [],
-    },
+    document: documentStub,
     localStorage: {
       getItem: () => null,
       setItem: () => undefined,
       removeItem: () => undefined,
     },
+    CSS: {
+      escape(value) {
+        escapeCalls.push(String(value));
+        return `safe-${escapeCalls.length}`;
+      },
+    },
+    requestAnimationFrame,
     fetch: () => Promise.reject(new Error('fetch disabled in unit harness')),
     AbortController: globalThis.AbortController,
     crypto: globalThis.crypto,
@@ -107,6 +163,7 @@ function loadApp() {
   };
   sandbox.globalThis = sandbox;
   windowStub.window = windowStub;
+  windowStub.requestAnimationFrame = requestAnimationFrame;
 
   const context = vm.createContext(sandbox);
   // Absolute path is required so c8/V8 maps coverage back to app.js.
@@ -116,17 +173,40 @@ function loadApp() {
   if (!exportsObj?.editorHasUnsavedChanges) {
     throw new Error('Failed to extract editor exports from app.js');
   }
-  return { ...exportsObj, windowListeners, setConfirm: (fn) => { confirmImpl = fn; } };
+  return {
+    ...exportsObj,
+    windowListeners,
+    setConfirm: (fn) => { confirmImpl = fn; },
+    setFocusHooks: sandbox.__setEditorFocusTestHooks,
+    setActiveElement: (element) => { documentStub.activeElement = element; },
+    setQuerySelector: (fn) => { querySelectorImpl = fn; },
+    setGetElementById: (fn) => { getElementByIdImpl = fn; },
+    focusEvents,
+    selectorQueries,
+    idQueries,
+    escapeCalls,
+  };
 }
 
 const {
   editorHasUnsavedChanges,
   bindGlobalEvents,
   closeEditor,
+  openEditor,
+  handleInlineProgressChange,
+  handleRowAction,
   state,
   DEFAULT_EDITOR_STATE,
   windowListeners,
   setConfirm,
+  setFocusHooks,
+  setActiveElement,
+  setQuerySelector,
+  setGetElementById,
+  focusEvents,
+  selectorQueries,
+  idQueries,
+  escapeCalls,
 } = loadApp();
 
 // --- editorHasUnsavedChanges ---
@@ -228,4 +308,118 @@ setConfirm(() => {
 closeEditor(true);
 assert.equal(state.editor.mode, DEFAULT_EDITOR_STATE.mode, 'force close skips confirm');
 
-console.log('✓ editor unsaved / beforeunload coverage tests passed');
+// --- rerender-safe focus restoration coverage ---
+let renderCount = 0;
+let persistCount = 0;
+let visibleTasks = [];
+const taskById = new Map();
+setFocusHooks({
+  renderAll() {
+    renderCount += 1;
+  },
+  persistState() {
+    persistCount += 1;
+  },
+  showToast() {},
+  findTask(taskId) {
+    return taskById.get(taskId) || null;
+  },
+  getVisibleTasks() {
+    return visibleTasks;
+  },
+  deleteTaskAndDescendants(taskId) {
+    visibleTasks = visibleTasks.filter((task) => task.id !== taskId);
+    taskById.delete(taskId);
+  },
+});
+setQuerySelector(() => ({ focus() { focusEvents.push('selector-focus'); } }));
+setGetElementById(() => ({ focus() { focusEvents.push('id-focus'); } }));
+setConfirm(() => true);
+
+const hostileTaskId = 'task\"] [data-action="delete';
+const inlineTask = { id: hostileTaskId, expanded: true, actualProgressStatus: '미착수(0%)' };
+taskById.set(hostileTaskId, inlineTask);
+handleInlineProgressChange({
+  target: {
+    dataset: { inlineProgress: hostileTaskId },
+    value: '진행(50%)',
+  },
+});
+assert.equal(inlineTask.actualProgressStatus, '진행(50%)', 'inline progress update is preserved');
+assert.ok(escapeCalls.includes(hostileTaskId), 'inline focus selector escapes persisted task IDs');
+assert.ok(selectorQueries.some((selector) => selector.includes('[data-inline-progress="safe-')), 'inline focus queries with escaped selector data');
+assert.ok(persistCount >= 1 && renderCount >= 1, 'inline progress still persists and rerenders before focus restoration');
+assert.ok(focusEvents.includes('selector-focus'), 'inline progress restores focus to the rerendered control');
+
+const toggleEscapeCount = escapeCalls.length;
+handleRowAction('toggle', hostileTaskId);
+assert.equal(inlineTask.expanded, false, 'toggle action still updates expansion state');
+assert.ok(escapeCalls.length > toggleEscapeCount, 'toggle focus selector escapes persisted task IDs');
+assert.ok(selectorQueries.some((selector) => selector.includes('button[data-action="toggle"]')), 'toggle restoration resolves the rerendered toggle button');
+
+const deleteTaskId = 'delete\"] button[data-action="edit';
+const successorTaskId = 'successor\"] button[data-action="toggle';
+const deleteTask = { id: deleteTaskId, task: 'Delete me' };
+const successorTask = { id: successorTaskId, task: 'Keep me' };
+visibleTasks = [deleteTask, successorTask];
+taskById.set(deleteTaskId, deleteTask);
+taskById.set(successorTaskId, successorTask);
+const deleteEscapeCount = escapeCalls.length;
+handleRowAction('delete', deleteTaskId);
+assert.deepEqual(visibleTasks.map((task) => task.id), [successorTaskId], 'delete path keeps the successor visible');
+assert.ok(escapeCalls.slice(deleteEscapeCount).includes(successorTaskId), 'delete-successor focus selector escapes the successor ID');
+assert.ok(selectorQueries.some((selector) => selector.includes('button[data-action="delete"]')), 'delete restoration resolves a successor delete button');
+
+const invokingControl = {
+  id: 'edit-trigger',
+  dataset: { action: 'edit' },
+  closest(selector) {
+    assert.equal(selector, 'tr');
+    return { dataset: { taskId: hostileTaskId } };
+  },
+};
+setActiveElement(invokingControl);
+openEditor({ mode: 'create', parentId: null, depth: 1, draft: { task: 'Draft' } });
+assert.deepEqual(
+  state.previousFocus,
+  { id: 'edit-trigger', action: 'edit', taskId: hostileTaskId },
+  'openEditor stores stable focus identifiers instead of a detached DOM node',
+);
+const closeEscapeStart = escapeCalls.length;
+closeEditor(true);
+assert.deepEqual(
+  escapeCalls.slice(closeEscapeStart),
+  [hostileTaskId, 'edit'],
+  'closeEditor escapes both persisted task and action selector data',
+);
+assert.equal(state.previousFocus, null, 'closeEditor clears the stable focus descriptor after scheduling restoration');
+
+setActiveElement({
+  id: 'standalone-trigger',
+  dataset: {},
+  closest: () => null,
+});
+openEditor({ mode: 'create', parentId: null, depth: 1, draft: { task: 'Draft' } });
+assert.equal(state.previousFocus.taskId, null, 'openEditor records an ID-only fallback when the invoker is outside a task row');
+closeEditor(true);
+assert.ok(idQueries.includes('standalone-trigger'), 'ID-only restoration resolves the newly rendered element by ID');
+
+state.previousFocus = { id: 'fallback-trigger', action: '', taskId: hostileTaskId };
+closeEditor(true);
+assert.ok(idQueries.includes('fallback-trigger'), 'missing action falls back to stable element ID even when a task ID exists');
+
+const focusCountBeforeMissing = focusEvents.length;
+setGetElementById((id) => (id === 'missing-trigger' ? null : { focus() { focusEvents.push('id-focus'); } }));
+state.previousFocus = { id: 'missing-trigger', action: null, taskId: null };
+closeEditor(true);
+assert.equal(focusEvents.length, focusCountBeforeMissing, 'missing rerender target is safely ignored');
+
+state.previousFocus = {};
+closeEditor(true);
+assert.equal(state.previousFocus, null, 'empty focus descriptors fail closed without querying a selector');
+
+setActiveElement(null);
+openEditor({ mode: 'create', parentId: null, depth: 1, draft: { task: 'Draft' } });
+assert.equal(state.previousFocus, null, 'openEditor handles an absent active element without retaining stale focus state');
+
+console.log('✓ editor dirty-state and rerender focus coverage tests passed');
