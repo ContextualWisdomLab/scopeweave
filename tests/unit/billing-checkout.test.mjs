@@ -26,27 +26,32 @@ async function withDefaultStripeTransport(responseFactory, assertion) {
   }
 }
 
+async function assertProviderFailure(runCheckout) {
+  let rejectedError;
+  await assert.rejects(
+    runCheckout(),
+    (error) => {
+      rejectedError = error;
+      assert.equal(error.status, 502);
+      assert.equal(typeof error.getResponse, 'function');
+      return true;
+    },
+  );
+
+  const response = rejectedError.getResponse();
+  assert.equal(response.status, 502);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('content-type'), 'application/json; charset=UTF-8');
+  const payload = await response.json();
+  assert.deepEqual(payload, {
+    error: 'billing_provider_unavailable',
+    action: 'Checkout could not be started. Retry later; if the problem persists, contact your ScopeWeave operator.',
+  });
+}
+
 async function expectSafeProviderFailure(responseFactory) {
   await withDefaultStripeTransport(responseFactory, async () => {
-    let rejectedError;
-    await assert.rejects(
-      createCheckout({ orgId: 91, configuration: liveConfiguration }),
-      (error) => {
-        rejectedError = error;
-        assert.equal(error.status, 502);
-        assert.equal(typeof error.getResponse, 'function');
-        return true;
-      },
-    );
-
-    const response = rejectedError.getResponse();
-    assert.equal(response.status, 502);
-    assert.equal(response.headers.get('content-type'), 'application/json; charset=UTF-8');
-    const payload = await response.json();
-    assert.deepEqual(payload, {
-      error: 'billing_provider_unavailable',
-      action: 'Checkout could not be started. Retry later; if the problem persists, contact your ScopeWeave operator.',
-    });
+    await assertProviderFailure(() => createCheckout({ orgId: 91, configuration: liveConfiguration }));
   });
 }
 
@@ -183,6 +188,12 @@ test('default live provider transport rejects non-2xx Stripe responses with a sa
   }));
 });
 
+test('default live provider transport rejects network failures without leaking provider detail', async () => {
+  await expectSafeProviderFailure(async () => {
+    throw new Error('getaddrinfo ENOTFOUND api.stripe.com internal-network-detail');
+  });
+});
+
 test('default live provider transport rejects malformed successful session payloads', async () => {
   await expectSafeProviderFailure(async () => new Response(JSON.stringify({
     id: 'cs_test_missing_url',
@@ -195,5 +206,38 @@ test('default live provider transport rejects malformed successful session paylo
   await expectSafeProviderFailure(async () => new Response('{not-json', {
     status: 200,
     headers: { 'content-type': 'application/json; charset=utf-8' },
+  }));
+});
+
+test('live checkout rejects unsafe or malformed provider redirect URLs', async () => {
+  for (const url of [
+    'http://checkout.stripe.com/c/pay/cs_test_plaintext',
+    'https://user@checkout.stripe.com/c/pay/cs_test_userinfo',
+    'https://:password@checkout.stripe.com/c/pay/cs_test_password',
+    'not a URL',
+  ]) {
+    await assertProviderFailure(() => createCheckout({
+      orgId: 92,
+      configuration: liveConfiguration,
+      stripeClientFactory: async () => ({
+        checkout: {
+          sessions: {
+            async create() {
+              return { url };
+            },
+          },
+        },
+      }),
+    }));
+  }
+});
+
+test('live checkout maps unexpected injected provider failures to the same safe envelope', async () => {
+  await assertProviderFailure(() => createCheckout({
+    orgId: 93,
+    configuration: liveConfiguration,
+    stripeClientFactory: async () => {
+      throw new Error('provider credential detail must not escape');
+    },
   }));
 });
