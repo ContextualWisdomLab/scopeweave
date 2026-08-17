@@ -71,6 +71,11 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage:cases'],
+  /tests\/unit\/calendar-subscription-return-boundary\.test\.mjs/,
+  'the calendar-subscription atomic-return trust-boundary regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
   /tests\/unit\/calendar-subscription-sqlite\.test\.mjs/,
   'the calendar-subscription SQLite persistence contract executes under c8',
 );
