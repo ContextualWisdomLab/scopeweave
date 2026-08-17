@@ -2,47 +2,38 @@
 
 ## Status and scope
 
-This document describes **active pull-request work only**. Protected `develop` does not yet ship this SQLite adapter. The slice is stacked on the schedule reason-event authorization boundary from PR #518, whose exact parent head at branch creation was `2f790fe278d2c0a087348373fff9f250b4d37384`.
+This document describes **active pull-request work only**. Protected `develop` does not yet ship this SQLite adapter. The slice is stacked on PR #518 and has been reconciled against exact authorization parent `d9abfe2dfd150f3e3623165b8075063adf61ffbc`, including the domain-side prohibition on self-approved cancellation.
 
-The slice owns one bounded persistence responsibility: atomically preserve an already-authorized terminal schedule reason event, any verified cancellation approval evidence, an immutable audit record, and the authoritative work-item version transition that makes the write current. It does not add HTTP routes, browser authority, a second work-item source of truth, schedule-variance mathematics, forecasting, or decision UI.
+The slice owns one bounded persistence responsibility: atomically preserve an already-authorized terminal schedule reason event, any verified cancellation approval evidence, an immutable audit record, and the authoritative resource-version transition that makes the write current. It does not add HTTP routes, browser authority, a second work-item source of truth, schedule-variance mathematics, forecasting, or decision UI.
 
 ## Persistence contract
 
 `server/schedule_reason_event_sqlite.mjs` installs three normalized relations:
 
-- `schedule_reason_events`: one immutable reason event with tenant/project/work-item identity, prior and committed resource versions, terminal reason vocabulary, actor, trusted timestamps, and authorization identity.
-- `schedule_reason_event_approval_records`: optional one-to-zero-or-one cancellation approval evidence keyed by the event ID. Non-cancellation events cannot carry approval evidence.
-- `schedule_reason_event_audit_records`: one immutable audit identity and action for the event. Event facts are not duplicated into this relation.
+- `schedule_reason_events`: immutable reason facts with tenant/project/work-item identity, prior and committed resource versions, reason vocabulary, actor, trusted timestamps, and authorization identity.
+- `schedule_reason_event_approval_records`: optional cancellation approval evidence keyed by event ID.
+- `schedule_reason_event_audit_records`: one immutable audit identity/action for the event without duplicating event facts.
 
-Owned database objects use descriptive multiword snake_case names. The adapter deliberately does **not** create or own an authoritative work-item version table. Its injected `advanceResourceVersion` function must update the existing authoritative work-item store synchronously on the same SQLite connection. That update executes inside the adapter savepoint so the version transition, event insert, optional approval insert, and audit insert commit or roll back together.
-
-This separation preserves a 3NF-oriented ownership boundary: event facts, optional approval evidence, and audit identity each have one governing key and do not embed repeated structured objects. SQLite primary-key, unique, not-null, check, and foreign-key constraints provide deterministic local integrity checks; application authorization remains upstream of this adapter.
+Owned database objects use descriptive multiword snake_case names. The adapter deliberately does **not** create or own an authoritative work-item version table. Its injected `advanceResourceVersion` function must update the existing authoritative store synchronously on the same SQLite connection and inside the same savepoint. The version transition, event insert, optional approval insert, and audit insert therefore commit or roll back together.
 
 ## Concurrency, rollback, and failure behavior
 
-The repository receives the exact `expectedResourceVersion` already authorized by the domain boundary. A stale transition, a missing/blank resulting version, or a transition that does not actually advance the version fails closed before durable event insertion. The adapter does not retry against a newer work-item version because doing so would broaden authority beyond the decision that was checked.
+The repository receives the exact `expectedResourceVersion` already authorized by the domain boundary. A stale transition, missing/blank resulting version, or non-advancing transition fails closed before durable event insertion. It does not retry against a newer resource version because that would broaden authority beyond the decision that was actually checked.
 
-A named SQLite savepoint wraps the authoritative version transition and all three persistence writes. The realistic regression uses an in-memory authoritative `work_item_versions` table, then deliberately reuses an audit-record ID to force a SQLite uniqueness failure after the work-item version has advanced. The test verifies that the work-item version returns to `work-v7` and that no second event, approval, or audit row survives. This proves rollback of the complete transaction boundary rather than only checking a mocked call sequence.
+A named SQLite savepoint wraps the version transition and persistence writes. The realistic regression deliberately forces an audit uniqueness failure after a real version update and proves both the version and all child persistence roll back. Cleanup also preserves the causal write error when rollback cleanup itself fails.
 
 ## TDD and verification evidence
 
-- RED commit `393e8a48b4815a0fdbb2104fc3c4d846f65de057` added `tests/unit/schedule-reason-event-sqlite.test.mjs` while the production adapter did not exist. Focused Node 22.16.0 execution failed with `ERR_MODULE_NOT_FOUND` for `server/schedule_reason_event_sqlite.mjs`.
-- GREEN commit `f3aa61ae6cd0caa774386be3a8e3959ab210501f` added the production adapter. The focused suite passed 7/7 tests on Node 22.16.0.
-- Commit `f527bd778a2ae19f3c216b0f427dc9754824d7f7` registered the adapter and focused test in canonical unit/c8 execution.
-- Commit `40d303933d7e3306b6502098b832691f5d6dd864` locked the coverage registration into the coverage-script contract.
-- Node 22.16.0 experimental test coverage reports the owned production file `schedule_reason_event_sqlite.mjs` at **100.00% lines, 100.00% branches, and 100.00% functions**. Hosted repository c8 evidence remains required on the exact PR head; local evidence is not promoted into a hosted gate.
+- RED `393e8a48b4815a0fdbb2104fc3c4d846f65de057` introduced the persistence behavior contract before the production module and failed with `ERR_MODULE_NOT_FOUND`.
+- GREEN `f3aa61ae6cd0caa774386be3a8e3959ab210501f` added the adapter.
+- `f527bd778a2ae19f3c216b0f427dc9754824d7f7` and `40d303933d7e3306b6502098b832691f5d6dd864` registered and locked canonical unit/c8 evidence.
+- The branch was subsequently reconciled with the repaired #518 parent; predecessor-head evidence is historical and fresh exact-head hosted evidence is required.
 
-## Security and control-readiness interpretation
+## Security and integration boundary
 
-The adapter preserves tenant/project/work-item identifiers supplied by the already-authorized domain event and never derives authority from browser-controlled claims. Cancellation approval identity is stored separately from event facts, non-cancellation approval confusion is rejected, stale optimistic-concurrency writes fail closed, and audit IDs are generated by an injected opaque-ID source. These properties support access-control, integrity, and audit-evidence readiness; they are not a claim of SOC 2, CSAP, NIST, ISO, or other certification.
+The adapter preserves tenant/project/work-item identifiers from the already-authorized domain event, rejects non-cancellation approval confusion, fails stale optimistic-concurrency writes closed, and requires an opaque generated audit identity. Production bootstrap must keep SQLite foreign keys enabled because enforcement is connection-scoped.
 
-SQLite foreign-key enforcement is connection-scoped, so production bootstrap must keep foreign keys enabled on the connection that owns these relations. The focused test enables `PRAGMA foreign_keys = ON` explicitly. Deployment wiring must preserve that invariant before this adapter can become shipped truth.
-
-## Integration and rollback boundary
-
-The child must not be integrated independently of PR #518. If #518 moves, the child must be reconciled semantically against the new exact parent before current-head CI can be trusted. Rollback is source-level removal of the adapter and its bootstrap registration before production adoption; once durable rows exist, schema/data rollback requires an explicit migration and evidence-preserving export rather than dropping audit data opportunistically.
-
-Issue #287 remains open after this slice. Subsequent work still needs authenticated server/API wiring around the repository port, an authoritative same-connection work-item version adapter, deterministic schedule-variance computation in the repository's required Rust-first mathematical layer, explicit missingness denominators, and buyer-facing decision views.
+Do not integrate independently of #518/#517/#515. Issue #287 remains open. Subsequent work still needs authenticated server/API wiring, an authoritative same-connection project/work-item version adapter, Rust-first deterministic schedule-variance computation with explicit missingness denominators, and buyer-facing decision views.
 
 ## References
 
