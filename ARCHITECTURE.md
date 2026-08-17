@@ -57,11 +57,11 @@
   `calendar_read` subscriptions are separate credential domains. Calendar
   use binds the stored issuance membership epoch; rotation re-binds the
   live epoch and invalidates the previous secret. Neither domain may
-  restore a general session JWT in a URL.
-- **Active stacked PR #541; not yet protected-`develop` truth:** calendar-
-  subscription SQLite persistence stores only the current secret hash, frozen
-  `calendar_read` purpose, issuance membership epoch, and normalized lifecycle
-  and transactional audit evidence.
+  restore a general session JWT in a URL. The domain (#539) owns
+  lifecycle rules; SQLite persistence (#541) stores only the current
+  secret hash, frozen `calendar_read` purpose, issuance membership epoch,
+  and normalized lifecycle/audit evidence. Protected route and browser UI
+  migration remain later issue #413 slices.
 - **Active calendar-runtime child; not yet protected-`develop` truth:** the
   production composition exposes authenticated create/list/rotate/revoke
   management routes and a project-bound `subscription=` ICS feed. Subscription

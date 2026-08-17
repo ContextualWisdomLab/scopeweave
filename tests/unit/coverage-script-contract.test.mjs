@@ -47,7 +47,7 @@ assert.match(
 assert.match(
   scripts['test:coverage'],
   /--include=server\/calendar_subscription_sqlite\.mjs/,
-  'the calendar-subscription SQLite adapter is instrumented',
+  'the durable calendar-subscription SQLite adapter is instrumented',
 );
 assert.match(
   scripts['test:coverage'],
