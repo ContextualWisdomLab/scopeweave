@@ -57,6 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Switched the repository-local OpenCode development configuration from GitHub
+  Models to an NVIDIA NIM-only candidate set while preserving organization-level
+  review-workflow ownership in `ContextualWisdomLab/.github`.
 - Legacy `token_version`, `archived`, and `methodology` compatibility migrations
   now inspect SQLite catalog metadata before `ALTER TABLE` and propagate real
   DDL failures instead of treating every exception as an already-applied column.
