@@ -61,6 +61,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Switched the repository-local OpenCode development configuration from GitHub
+  Models to an NVIDIA NIM-only candidate set while preserving organization-level
+  review-workflow ownership in `ContextualWisdomLab/.github`.
 - Accepted XML whitespace before exact Microsoft Project element delimiters
   while preserving the linear, regex-free import scanner and rejecting
   attributes, longer names, non-XML whitespace, nested unmatched blocks, and
@@ -102,7 +105,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wbs.json` seed loading plus browser autosave and optional file sync.
 - Playwright E2E coverage for add/edit hierarchy flows, delete
   confirmation, subtree drag-and-drop, and JSON sync shape.
-- GitHub Pages deployment workflow and operator documentation.
 
 ## [1.0.1] - 2026-06-25
 ### 성능 개선 (Performance)
