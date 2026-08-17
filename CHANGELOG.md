@@ -57,14 +57,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `actions/setup-node` v7.0.0 so its JavaScript action runtime declares Node.js
   24 instead of relying on GitHub's compatibility override for deprecated
   Node.js 20, while retaining Node.js 22.13.0 for ScopeWeave itself.
-- Bound repository-owned OSV old/new dependency scans to an independently
-  resolved live protected-base commit and the exact pull-request contributor
-  head, with SHA attestations before both scans, instead of treating a synthetic
-  pull-request merge commit as exact-head security evidence.
-- Bound both required repository CodeQL matrix analyses to the exact contributor
-  head on pull requests and fail closed on a checkout mismatch before CodeQL
-  initialization instead of treating a synthetic merge checkout as exact-head
-  security evidence.
 - Accepted XML whitespace before exact Microsoft Project element delimiters
   while preserving the linear, regex-free import scanner and rejecting
   attributes, longer names, non-XML whitespace, nested unmatched blocks, and
