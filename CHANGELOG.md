@@ -53,10 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Accepted XML whitespace before exact Microsoft Project element delimiters
-  while preserving the linear, regex-free import scanner and rejecting
-  attributes, longer names, non-XML whitespace, nested unmatched blocks, and
-  truncated input.
+- Switched the repository-local OpenCode development configuration from GitHub
+  Models to an NVIDIA NIM-only candidate set while preserving organization-level
+  review-workflow ownership in `ContextualWisdomLab/.github`.
 - Bound repository `Server Tests` to the exact pull-request contributor head (or
   exact protected-`develop` push SHA) and fail closed when the runner's actual
   checkout differs, preventing synthetic merge results from being mistaken for
@@ -71,6 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   baseline result across checkout, preserve the protected-base `scan` identity,
   and pin direct scanner/reporter actions to the revision used by upstream
   v2.5.0 instead of delegating to synthetic-merge checkout behavior.
+- Accepted XML whitespace before exact Microsoft Project element delimiters
+  while preserving the linear, regex-free import scanner and rejecting
+  attributes, longer names, non-XML whitespace, nested unmatched blocks, and
+  truncated input.
 - Attachment-list status refresh now removes the per-row database lookup,
   uses a configurable bounded worker pool with per-item abortable timeouts and
   a request-wide latency budget, preserves stale status after downstream,
