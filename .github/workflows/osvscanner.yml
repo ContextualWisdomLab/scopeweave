@@ -15,136 +15,20 @@ concurrency:
 jobs:
   osv-scan:
     if: github.event_name == 'pull_request'
-    runs-on: ubuntu-latest
+    # Companion SCA lane for manifest evidence. Central .github still owns the
+    # required review/security/scheduler workflows.
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@3a7550f43ba5b58905a821ce3a0ed24c4858b3f4 # v2.3.8 + export-results gate
     permissions:
       actions: read
       contents: read
       security-events: write
-    env:
-      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      BASE_REF: ${{ github.event.pull_request.base.ref }}
-    steps:
-      - name: Checkout exact contributor head
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Resolve live protected base and attest contributor head
-        id: revisions
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          if ! [[ "$HEAD_SHA" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::Invalid contributor head SHA"
-            exit 1
-          fi
-          git check-ref-format --branch "$BASE_REF" >/dev/null
-
-          actual_head="$(git rev-parse HEAD)"
-          if [ "$actual_head" != "$HEAD_SHA" ]; then
-            echo "::error::OSV checkout resolved $actual_head, expected contributor head $HEAD_SHA"
-            exit 1
-          fi
-
-          git fetch --no-tags origin \
-            "refs/heads/${BASE_REF}:refs/remotes/origin/${BASE_REF}"
-          live_base_sha="$(git rev-parse "refs/remotes/origin/${BASE_REF}")"
-          if ! [[ "$live_base_sha" =~ ^[0-9a-f]{40}$ ]]; then
-            echo "::error::Could not resolve live protected base"
-            exit 1
-          fi
-          echo "live_base_sha=$live_base_sha" >> "$GITHUB_OUTPUT"
-
-      - name: Checkout live protected base
-        env:
-          LIVE_BASE_SHA: ${{ steps.revisions.outputs.live_base_sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          git checkout --detach "$LIVE_BASE_SHA"
-          actual_sha="$(git rev-parse HEAD)"
-          if [ "$actual_sha" != "$LIVE_BASE_SHA" ]; then
-            echo "::error::OSV base checkout resolved $actual_sha, expected $LIVE_BASE_SHA"
-            exit 1
-          fi
-
-      - name: Scan live protected base
-        uses: google/osv-scanner-action/osv-scanner-action@8dc09193bb540e09b23da07ad7e30bd33bf87018 # v2.3.8
-        continue-on-error: true
-        with:
-          scan-args: |-
-            --format=json
-            --output=old-results.json
-            --maven-registry=https://maven-central.storage-download.googleapis.com/maven2
-            --no-resolve
-            -r
-            ./
-
-      - name: Checkout and attest exact contributor head
-        shell: bash
-        run: |
-          set -euo pipefail
-          git checkout --detach "$HEAD_SHA"
-          actual_sha="$(git rev-parse HEAD)"
-          if [ "$actual_sha" != "$HEAD_SHA" ]; then
-            echo "::error::OSV contributor checkout resolved $actual_sha, expected $HEAD_SHA"
-            exit 1
-          fi
-
-      - name: Scan exact contributor head
-        uses: google/osv-scanner-action/osv-scanner-action@8dc09193bb540e09b23da07ad7e30bd33bf87018 # v2.3.8
-        continue-on-error: true
-        with:
-          scan-args: |-
-            --format=json
-            --output=new-results.json
-            --maven-registry=https://maven-central.storage-download.googleapis.com/maven2
-            --no-resolve
-            -r
-            ./
-
-      - name: Compare OSV results
-        uses: google/osv-scanner-action/osv-reporter-action@8dc09193bb540e09b23da07ad7e30bd33bf87018 # v2.3.8
-        with:
-          scan-args: |-
-            --output=results.sarif
-            --old=old-results.json
-            --new=new-results.json
-            --gh-annotations=true
-            --fail-on-vuln=false
-
-      - name: Upload OSV SARIF artifact
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        with:
-          name: OSV Scanner SARIF file
-          path: results.sarif
-          retention-days: 5
-
-      - name: Upload live-base OSV JSON
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        with:
-          name: old-json-results
-          path: old-results.json
-          retention-days: 5
-
-      - name: Upload exact-head OSV JSON
-        if: ${{ !cancelled() }}
-        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
-        with:
-          name: new-json-results
-          path: new-results.json
-          retention-days: 5
-
-      - name: Upload OSV results to code scanning
-        if: ${{ !cancelled() }}
-        uses: github/codeql-action/upload-sarif@cdefb33c0f6224e58673d9004f47f7cb3e328b89 # v4.31.10
-        with:
-          sarif_file: results.sarif
+    with:
+      scan-args: |-
+        --maven-registry=https://maven-central.storage-download.googleapis.com/maven2
+        --no-resolve
+        -r
+        ./
+      fail-on-vuln: false
 
   manifest-pattern-coverage:
     if: github.event_name == 'workflow_dispatch'
