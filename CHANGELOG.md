@@ -67,6 +67,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Switched the repository-local OpenCode development configuration from GitHub
+  Models to an NVIDIA NIM-only candidate set while preserving organization-level
+  review-workflow ownership in `ContextualWisdomLab/.github`.
 - Accepted XML whitespace before exact Microsoft Project element delimiters
   while preserving the linear, regex-free import scanner and rejecting
   attributes, longer names, non-XML whitespace, nested unmatched blocks, and
