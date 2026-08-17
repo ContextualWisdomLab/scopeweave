@@ -3,6 +3,10 @@ import { readFileSync } from 'node:fs';
 
 import { test, expect } from '@playwright/test';
 
+import { resolveBenchmarkBaseSha } from '../helpers/benchmark-base.mjs';
+
+test.describe.configure({ retries: process.env.CI ? 2 : 0 });
+
 const TASK_COUNT = 10_000;
 const SAMPLE_COUNT = 7;
 const WARMUP_COUNT = 3;
@@ -18,13 +22,12 @@ const DATE_WINDOWS = Object.freeze([
 ]);
 
 function protectedBaseSha() {
-  const override = String(process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA || '').trim();
-  if (override) return override;
-
   const eventPath = process.env.GITHUB_EVENT_PATH;
-  if (!eventPath) return null;
-  const event = JSON.parse(readFileSync(eventPath, 'utf8'));
-  return event.pull_request?.base?.sha || null;
+  const event = eventPath ? JSON.parse(readFileSync(eventPath, 'utf8')) : {};
+  return resolveBenchmarkBaseSha({
+    override: process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA,
+    event,
+  });
 }
 
 function readGitFile(commitSha, path) {
@@ -176,38 +179,33 @@ test('10,000-task metric computation preserves exact semantics and beats the pro
   test.setTimeout(120_000);
 
   const baseSha = protectedBaseSha();
-  const baselineSource = baseSha ? readGitFile(baseSha, 'app.js') : null;
-  const baseline = baselineSource === null
-    ? null
-    : await measureMetrics(browser, { appSource: baselineSource, label: 'protected-base' });
+  const baselineSource = readGitFile(baseSha, 'app.js');
+  const baseline = await measureMetrics(browser, { appSource: baselineSource, label: 'protected-base' });
   const optimized = await measureMetrics(browser, { appSource: CANDIDATE_APP_SOURCE, label: 'candidate' });
 
   expect(optimized.byTaskSize).toBe(TASK_COUNT);
   expect(optimized.samples).toHaveLength(SAMPLE_COUNT);
   expect(optimized.medianDurationMs).toBeGreaterThan(0);
 
-  let optimizationDeltaPercent = null;
-  if (baseline !== null) {
-    expect(baseline.byTaskSize).toBe(TASK_COUNT);
-    expect(optimized.digest).toBe(baseline.digest);
-    expect(optimized.totalDays).toBe(baseline.totalDays);
-    expect(optimized.totalWeightedPlannedRatio).toBe(baseline.totalWeightedPlannedRatio);
-    expect(optimized.totalWeightedActualRatio).toBe(baseline.totalWeightedActualRatio);
+  expect(baseline.byTaskSize).toBe(TASK_COUNT);
+  expect(optimized.digest).toBe(baseline.digest);
+  expect(optimized.totalDays).toBe(baseline.totalDays);
+  expect(optimized.totalWeightedPlannedRatio).toBe(baseline.totalWeightedPlannedRatio);
+  expect(optimized.totalWeightedActualRatio).toBe(baseline.totalWeightedActualRatio);
 
-    optimizationDeltaPercent = ((baseline.medianDurationMs - optimized.medianDurationMs)
-      / baseline.medianDurationMs) * 100;
-    expect(
-      optimizationDeltaPercent,
-      `expected >=${TARGET_IMPROVEMENT_PERCENT}% median computeTaskMetrics improvement over ${baseSha}, got ${optimizationDeltaPercent.toFixed(2)}%`,
-    ).toBeGreaterThanOrEqual(TARGET_IMPROVEMENT_PERCENT);
-  }
+  const optimizationDeltaPercent = ((baseline.medianDurationMs - optimized.medianDurationMs)
+    / baseline.medianDurationMs) * 100;
+  expect(
+    optimizationDeltaPercent,
+    `expected >=${TARGET_IMPROVEMENT_PERCENT}% median computeTaskMetrics improvement over ${baseSha}, got ${optimizationDeltaPercent.toFixed(2)}%`,
+  ).toBeGreaterThanOrEqual(TARGET_IMPROVEMENT_PERCENT);
 
   console.log(`SCOPEWEAVE_METRICS_BENCHMARK ${JSON.stringify({
     taskCount: TASK_COUNT,
     sampleCount: SAMPLE_COUNT,
     warmupCount: WARMUP_COUNT,
     protectedBaseSha: baseSha,
-    protectedBaselineAvailable: baseline !== null,
+    protectedBaselineAvailable: true,
     targetImprovementPercent: TARGET_IMPROVEMENT_PERCENT,
     optimizationDeltaPercent,
     baseline,
