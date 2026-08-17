@@ -6,6 +6,10 @@ import {
   createSqliteScheduleReasonProjectVersionAdapter,
   formatScheduleReasonResourceVersion,
 } from '../../server/schedule_reason_event_project_version.mjs';
+import {
+  createSqliteScheduleReasonEventRepository,
+  installScheduleReasonEventSchema,
+} from '../../server/schedule_reason_event_sqlite.mjs';
 
 function createDatabase({
   projectId = 41,
@@ -36,6 +40,25 @@ function request(overrides = {}) {
     projectId: '41',
     workItemId: 'work-item-01',
     expectedResourceVersion: 'project_version:3',
+    ...overrides,
+  };
+}
+
+function reasonEvent(overrides = {}) {
+  return {
+    eventId: 'evt-PROJECT-VERSION-01',
+    contractVersion: 'schedule-reason-event/v1',
+    organizationId: '7',
+    projectId: '41',
+    workItemId: 'work-item-01',
+    expectedWorkItemVersion: 'project_version:3',
+    type: 'skipped',
+    reasonCode: 'duplicate_scope',
+    actorId: 'user-owner-9',
+    occurredAt: '2026-08-17T12:00:00.000Z',
+    observedAt: '2026-08-17T13:00:00.000Z',
+    authorizationId: 'authz-decision-22',
+    approval: null,
     ...overrides,
   };
 }
@@ -135,5 +158,36 @@ test('maximum safe project version cannot be advanced into an unsafe integer', (
     /project version cannot advance beyond the safe integer range/,
   );
   assert.equal(database.prepare('SELECT version FROM projects WHERE id = 41').get().version, Number.MAX_SAFE_INTEGER);
+  database.close();
+});
+
+test('real reason-event savepoint rolls the authoritative project version back when audit persistence fails', async () => {
+  const database = createDatabase();
+  database.exec('PRAGMA foreign_keys = ON');
+  installScheduleReasonEventSchema(database);
+  const versionAdapter = createSqliteScheduleReasonProjectVersionAdapter(database);
+  const repository = createSqliteScheduleReasonEventRepository(database, {
+    advanceResourceVersion: versionAdapter.advanceResourceVersion,
+    nextAuditRecordId: () => 'audit-project-version-fixed',
+  });
+
+  await repository.commitReasonEvent({
+    event: reasonEvent(),
+    expectedResourceVersion: 'project_version:3',
+  });
+  assert.equal(database.prepare('SELECT version FROM projects WHERE id = 41').get().version, 4);
+
+  database.prepare('UPDATE projects SET version = 3 WHERE id = 41').run();
+  await assert.rejects(
+    repository.commitReasonEvent({
+      event: reasonEvent({ eventId: 'evt-PROJECT-VERSION-02' }),
+      expectedResourceVersion: 'project_version:3',
+    }),
+    /UNIQUE constraint failed: schedule_reason_event_audit_records.audit_record_id/,
+  );
+
+  assert.equal(database.prepare('SELECT version FROM projects WHERE id = 41').get().version, 3);
+  assert.equal(database.prepare('SELECT COUNT(*) AS count FROM schedule_reason_events').get().count, 1);
+  assert.equal(database.prepare('SELECT COUNT(*) AS count FROM schedule_reason_event_audit_records').get().count, 1);
   database.close();
 });
