@@ -24,21 +24,81 @@ assert.match(
   /--reporter=json-summary\b/,
   'test:coverage also creates the Istanbul JSON summary',
 );
-assert.match(scripts['test:coverage'], /--include=server\/attachment_status\.mjs/, 'the bounded refresh module is instrumented');
-assert.match(scripts['test:coverage'], /--include=server\/clearfolio\.mjs/, 'the abortable Clearfolio adapter is instrumented');
-assert.match(scripts['test:coverage'], /--include=server\/work_item_hierarchy\.mjs/, 'the work-item hierarchy domain is instrumented');
-assert.match(scripts['test:coverage'], /--include=server\/schedule_outcome_domain\.mjs/, 'the schedule-outcome domain is instrumented');
-assert.match(scripts['test:coverage'], /--include=server\/schedule_reason_event_domain\.mjs/, 'the schedule reason-event authorization domain is instrumented');
-assert.match(scripts['test:coverage'], /--include=server\/schedule_reason_event_sqlite\.mjs/, 'the durable schedule reason-event adapter is instrumented');
-assert.match(scripts['test:coverage'], /--include=server\/schedule_reason_event_project_version\.mjs/, 'the authoritative project-version adapter is instrumented');
-assert.match(scripts['test:coverage:cases'], /tests\/unit\/clearfolio-status-signal\.test\.mjs/, 'the Clearfolio signal and HTTP failure regression executes under c8');
-assert.match(scripts['test:coverage:cases'], /tests\/unit\/work-item-hierarchy\.test\.mjs/, 'the work-item hierarchy behavior contract executes under c8');
-assert.match(scripts['test:coverage:cases'], /tests\/unit\/schedule-outcome-domain\.test\.mjs/, 'the schedule-outcome behavior contract executes under c8');
-assert.match(scripts['test:coverage:cases'], /tests\/unit\/schedule-outcome-domain-edge\.test\.mjs/, 'the schedule-outcome failure-boundary contract executes under c8');
-assert.match(scripts['test:coverage:cases'], /tests\/unit\/schedule-reason-event-domain\.test\.mjs/, 'the schedule reason-event authority and audit contract executes under c8');
-assert.match(scripts['test:coverage:cases'], /tests\/unit\/schedule-reason-self-approval\.test\.mjs/, 'the independent cancellation-approval regression executes under c8');
-assert.match(scripts['test:coverage:cases'], /tests\/unit\/schedule-reason-event-sqlite\.test\.mjs/, 'the durable schedule reason-event transaction contract executes under c8');
-assert.match(scripts['test:coverage:cases'], /tests\/unit\/schedule-reason-project-version\.test\.mjs/, 'the authoritative project-version transition contract executes under c8');
+assert.match(
+  scripts['test:coverage'],
+  /--include=server\/attachment_status\.mjs/,
+  'the bounded refresh module is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
+  /--include=server\/clearfolio\.mjs/,
+  'the abortable Clearfolio adapter is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
+  /--include=server\/work_item_hierarchy\.mjs/,
+  'the work-item hierarchy domain is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
+  /--include=server\/schedule_outcome_domain\.mjs/,
+  'the schedule-outcome domain is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
+  /--include=server\/schedule_reason_event_domain\.mjs/,
+  'the schedule reason-event authorization domain is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
+  /--include=server\/schedule_reason_event_sqlite\.mjs/,
+  'the durable schedule reason-event adapter is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
+  /--include=server\/schedule_reason_event_project_version\.mjs/,
+  'the authoritative project-version adapter is instrumented',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
+  'the Clearfolio signal and HTTP failure regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/work-item-hierarchy\.test\.mjs/,
+  'the work-item hierarchy behavior contract executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/schedule-outcome-domain\.test\.mjs/,
+  'the schedule-outcome behavior contract executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/schedule-outcome-domain-edge\.test\.mjs/,
+  'the schedule-outcome failure-boundary contract executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/schedule-reason-event-domain\.test\.mjs/,
+  'the schedule reason-event authority and audit contract executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/schedule-reason-self-approval\.test\.mjs/,
+  'the independent cancellation-approval regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/schedule-reason-event-sqlite\.test\.mjs/,
+  'the durable schedule reason-event transaction contract executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/schedule-reason-project-version\.test\.mjs/,
+  'the authoritative project-version transition contract executes under c8',
+);
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
   /npm run (?:coverage|test:coverage)(?:\s|$)/,
