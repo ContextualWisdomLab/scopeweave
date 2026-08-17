@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 
-const { app } = await import('../../server/app.mjs');
+const { app } = await import('../../server/runtime_app.mjs');
 
 const req = (path, opts = {}) => app.request(path, {
   ...opts,
@@ -46,6 +46,19 @@ assert.equal(response.status, 200);
 const expiresAtMs = Date.now() + (7 * 24 * 60 * 60 * 1000);
 response = await req(`/api/projects/${project.id}/calendar-subscriptions`, {
   method: 'POST',
+  body: json({ name: 'Unauthenticated', expiresAtMs }),
+});
+assert.equal(response.status, 401, 'management endpoints require normal authenticated authority');
+
+response = await req(`/api/projects/${project.id}/calendar-subscriptions`, {
+  method: 'POST',
+  headers: auth,
+  body: json({ name: '', expiresAtMs }),
+});
+assert.equal(response.status, 400, 'domain validation errors retain stable client status');
+
+response = await req(`/api/projects/${project.id}/calendar-subscriptions`, {
+  method: 'POST',
   headers: auth,
   body: json({ name: 'Primary calendar', expiresAtMs }),
 });
@@ -76,9 +89,15 @@ assert.equal(response.status, 200, 'subscription secret authorizes only the cale
 assert.match(response.headers.get('content-type') || '', /^text\/calendar/);
 assert.equal(response.headers.get('cache-control'), 'private, no-store');
 assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
+assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
 const feed = await response.text();
 assert.match(feed, /BEGIN:VCALENDAR/);
 assert.match(feed, /SUMMARY:Ship calendar runtime/);
+
+response = await req(`${created.feedPath}&token=${encodeURIComponent(token)}`);
+assert.equal(response.status, 401, 'mixed subscription and session-query credentials fail closed');
+response = await req(created.feedPath, { headers: auth });
+assert.equal(response.status, 401, 'mixed subscription and Authorization credentials fail closed');
 
 response = await req('/api/projects', {
   method: 'POST',
