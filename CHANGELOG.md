@@ -27,6 +27,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   canonical public origin instead of request authority, rejected partial or
   ambiguous billing configuration at startup, and confined successful mock
   checkout to explicit development mode.
+- Made live Stripe Checkout fail closed on network errors, provider non-2xx
+  responses, malformed JSON, missing hosted URLs, plaintext redirect URLs, and
+  URL credentials, returning a stable non-leaking HTTP 502 retry/operator action
+  instead of treating provider error documents as successful sessions.
 - Made `SCOPEWEAVE_JWT_SECRET` mandatory at startup and rejected weak or
   unexpanded placeholder values so production deployments fail closed.
 - Neutralized audit-log CSV formulas even when executable prefixes are hidden
