@@ -64,6 +64,7 @@ python3 -m pytest tests/config
 ## LLM and automation
 
 - Model-backed development/tests use `NVIDIA_NIM_API_KEY`, preferably through contextual-orchestrator/OpenCode. Do not introduce `COPILOT_GITHUB_TOKEN` for development-model execution and do not disturb independent reviewer credentials.
+- ScopeWeave's repository-local `opencode.jsonc` is development configuration, not a replacement for the organization review workflow. It uses NVIDIA NIM only and reads the process-local `NVIDIA_API_KEY` binding; organization CI owns secret injection and maps the organization `NVIDIA_NIM_API_KEY` secret into that process binding. Do not add a repository-local OpenCode workflow or restore GitHub Models/COPILOT credentials to this configuration.
 - Model output is untrusted proposal data. Deterministic authorization, security, merge and release gates remain independent of model judgment.
 - Initialize/sync CodeGraph or code-review-graph when available before structural edits; use exact text search as a companion, not a substitute for source verification.
 
