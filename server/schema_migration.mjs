@@ -16,6 +16,24 @@ const MIGRATION_LEDGER_STATES = Object.freeze(Object.assign(Object.create(null),
   canonical_schema_v2: 'canonical_ready',
 }));
 
+const LEGACY_COMPATIBILITY_COLUMNS = Object.freeze([
+  Object.freeze({
+    tableName: 'users',
+    columnName: 'token_version',
+    definition: 'token_version INTEGER NOT NULL DEFAULT 0',
+  }),
+  Object.freeze({
+    tableName: 'projects',
+    columnName: 'archived',
+    definition: 'archived INTEGER NOT NULL DEFAULT 0',
+  }),
+  Object.freeze({
+    tableName: 'projects',
+    columnName: 'methodology',
+    definition: "methodology TEXT NOT NULL DEFAULT 'waterfall'",
+  }),
+]);
+
 /** Legacy single-word tables that will be replaced by issue #433. */
 export const LEGACY_SCHEMA_OBJECTS = Object.freeze(Object.keys(SCHEMA_OBJECT_RENAMES));
 
@@ -79,6 +97,33 @@ function readApplicationTableNames(database) {
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
   ).all();
   return new Set(rows.map((row) => String(row.name)));
+}
+
+/**
+ * Add the three historical compatibility columns only when catalog evidence
+ * proves each column is absent.
+ *
+ * Earlier startup code attempted every `ALTER TABLE` and caught every thrown
+ * error as though it meant "column already exists". That could let a read-only,
+ * corrupt, locked, or otherwise failing database continue booting with a
+ * partially upgraded schema. Catalog-first idempotence removes the expected
+ * duplicate-column error path, so any remaining DDL failure is causal evidence
+ * and propagates fail-closed to startup.
+ *
+ * @param {{exec: Function, prepare: Function}} database - node:sqlite-compatible database.
+ * @returns {void}
+ * @throws {TypeError} When the database adapter is missing required operations.
+ */
+export function ensureLegacyCompatibilityColumns(database) {
+  if (!database || typeof database.exec !== 'function' || typeof database.prepare !== 'function') {
+    throw new TypeError('database must provide exec and prepare');
+  }
+
+  for (const migration of LEGACY_COMPATIBILITY_COLUMNS) {
+    const columns = database.prepare(`PRAGMA table_info(${migration.tableName})`).all();
+    if (columns.some((row) => String(row.name) === migration.columnName)) continue;
+    database.exec(`ALTER TABLE ${migration.tableName} ADD COLUMN ${migration.definition}`);
+  }
 }
 
 /**
