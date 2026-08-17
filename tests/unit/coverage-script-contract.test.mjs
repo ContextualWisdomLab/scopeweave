@@ -55,6 +55,11 @@ assert.match(
   'the durable schedule reason-event adapter is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/schedule_reason_event_project_version\.mjs/,
+  'the authoritative project-version adapter is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
@@ -83,6 +88,11 @@ assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/schedule-reason-event-sqlite\.test\.mjs/,
   'the durable schedule reason-event transaction contract executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/schedule-reason-project-version\.test\.mjs/,
+  'the authoritative project-version transition contract executes under c8',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
