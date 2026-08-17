@@ -47,11 +47,11 @@ function parseResourceVersion(value) {
 function requireWorkItemId(value) {
   if (
     typeof value !== 'string'
-    || value.length === 0
+    || value.trim().length === 0
     || value.length > MAX_WORK_ITEM_ID_LENGTH
     || CONTROL_CHARACTERS.test(value)
   ) {
-    throw new TypeError('workItemId must be bounded non-empty text without control characters');
+    throw new TypeError('workItemId must be bounded non-blank text without control characters');
   }
   return value;
 }
