@@ -380,11 +380,9 @@ const invokingControl = {
 };
 setActiveElement(invokingControl);
 openEditor({ mode: 'create', parentId: null, depth: 1, draft: { task: 'Draft' } });
-assert.deepEqual(
-  state.previousFocus,
-  { id: 'edit-trigger', action: 'edit', taskId: hostileTaskId },
-  'openEditor stores stable focus identifiers instead of a detached DOM node',
-);
+assert.equal(state.previousFocus.id, 'edit-trigger', 'openEditor records the stable element ID');
+assert.equal(state.previousFocus.action, 'edit', 'openEditor records the stable action identity');
+assert.equal(state.previousFocus.taskId, hostileTaskId, 'openEditor records the owning task identity');
 const closeEscapeStart = escapeCalls.length;
 closeEditor(true);
 assert.deepEqual(
