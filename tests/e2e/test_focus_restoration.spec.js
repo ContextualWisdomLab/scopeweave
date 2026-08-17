@@ -25,6 +25,25 @@ test.describe('Focus Restoration after Editor Close', () => {
     await expect(addBtn).toBeFocused();
   });
 
+  test('restores focus to add root task button after saving root creator', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForSelector('#add-root-task');
+
+    const addBtn = page.locator('#add-root-task');
+    await addBtn.focus();
+    await addBtn.click();
+    await expect(page.locator('form[data-editor-form="true"]')).toBeVisible();
+
+    await page.fill('input[data-editor-field="phase"]', 'Saved phase');
+    await page.click('button[type="submit"]');
+
+    // saveEditor() closes the editor and then performs a second full render.
+    // Assert against the live page after both renders so a stale detached invoker
+    // cannot satisfy the focus-restoration contract.
+    await expect(page.locator('form[data-editor-form="true"]')).not.toBeVisible();
+    await expect(addBtn).toBeFocused();
+  });
+
   test('restores focus to edit button when closing task editor', async ({ page }) => {
     await page.goto('/');
 
