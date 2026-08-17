@@ -9,10 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- Added a read-only GitHub Actions workflow-registry audit that binds complete
-  paginated registry evidence to one unchanged protected-branch SHA and flags
-  active repository-path identities absent from the protected tree without
-  mutating workflow state.
+- Added a GitHub Actions workflow-registry audit plus an explicit dry-run-first,
+  exact-protected-SHA operator cleanup command. The audit binds complete
+  paginated registry evidence to one unchanged protected-branch tree; cleanup
+  can disable only freshly revalidated `active_orphan` workflow IDs, requires
+  `--apply`, an immutable expected commit SHA, and authenticated GitHub Actions
+  write authority, and verifies each disabled identity without name heuristics.
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS
   estimation coverage, dependency risk, and procurement package section checks.
 - Preserved PM-analysis research papers, NASA WBS handbook, BCP 14, and JSON
