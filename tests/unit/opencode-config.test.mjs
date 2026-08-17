@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
 const config = JSON.parse(readFileSync(new URL('../../opencode.jsonc', import.meta.url), 'utf8'));
+const agents = readFileSync(new URL('../../AGENTS.md', import.meta.url), 'utf8');
 
 test('OpenCode development config uses only currently hosted NVIDIA NIM candidates', () => {
   assert.equal(config.model, 'nvidia-nim/nvidia/llama-3.3-nemotron-super-49b-v1.5');
@@ -26,4 +27,15 @@ test('OpenCode development config uses only currently hosted NVIDIA NIM candidat
   assert.doesNotMatch(serialized, /github-models/i);
   assert.doesNotMatch(serialized, /STRIX_GITHUB_MODELS_TOKEN/);
   assert.doesNotMatch(serialized, /COPILOT_GITHUB_TOKEN/);
+});
+
+test('AGENTS.md keeps the local NVIDIA_API_KEY binding separate from the org NIM secret', () => {
+  assert.match(agents, /NVIDIA_API_KEY/);
+  assert.match(agents, /NVIDIA_NIM_API_KEY/);
+  assert.match(
+    agents,
+    /maps the organization `NVIDIA_NIM_API_KEY` secret/,
+    'org CI must map NVIDIA_NIM_API_KEY into the process-local NVIDIA_API_KEY binding',
+  );
+  assert.doesNotMatch(agents, /COPILOT_GITHUB_TOKEN/);
 });
