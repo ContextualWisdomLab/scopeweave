@@ -40,6 +40,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   revocation evidence, a secret-free audit outbox, restart-survival tests, and
   c8 registration. Protected route and customer UI migration remain later #413
   slices.
+- **Active stacked calendar-runtime child; not yet protected-`develop` truth:**
+  added production composition for calendar subscriptions with authenticated
+  create/list/rotate/revoke management endpoints, one-time `subscription=` feed
+  URLs, project/purpose/audience binding, private no-store/no-referrer ICS
+  responses, mixed-credential rejection, token-version/session-epoch invalidation,
+  durable membership-removal revocation evidence, and exact API/coverage
+  regression registration. The staged legacy `token=` calendar path now passes
+  only through the authoritative database-backed authentication boundary;
+  customer management UI and final legacy query-token retirement remain later
+  issue #413 slices.
 
 ### Security
 
@@ -108,20 +118,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `ContextualWisdomLab/.github`, removing repository-local workflow,
   script, and requirements copies.
 - Documented Kubernetes/IaC as follow-up work rather than a current
-  blocker for this static app.
-
-## [1.0.0] - 2026-04-20
-
-<!-- markdownlint-disable-next-line MD024 -->
-### Added
-
-- Initial ScopeWeave Planner release with tree-table editing,
-  cumulative metrics, CSV import/export, and Gantt modal.
-- `wbs.json` seed loading plus browser autosave and optional file sync.
-- Playwright E2E coverage for add/edit hierarchy flows, delete
-  confirmation, subtree drag-and-drop, and JSON sync shape.
-- GitHub Pages deployment workflow and operator documentation.
-
-## [1.0.1] - 2026-06-25
-### 성능 개선 (Performance)
-- 드래그 앤 드롭 동작 중 `dragover` 이벤트에서 발생하는 O(N) 작업 리스트 검색 성능 병목 문제를, O(1) 해시맵(Map) 기반의 캐싱 조회 로직으로 개선하여 큰 크기의 WBS 리스트에서의 버벅임 현상을 해결했습니다.
+  repository capability; Strix now focuses on this repository's actual source,
+  application security, dependencies, and deployment artifacts.
