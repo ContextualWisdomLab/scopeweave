@@ -56,6 +56,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Switched the repository-local OpenCode development configuration from GitHub
+  Models to an NVIDIA NIM-only candidate set while preserving organization-level
+  review-workflow ownership in `ContextualWisdomLab/.github`.
 - Reused one immutable owner-badge shell and one immutable status-badge shell in
   the WBS table render path. Row text, accessible descriptions, and deterministic
   owner color classes are applied only after cloning, so detached templates do
