@@ -50,6 +50,11 @@ assert.match(
   'the calendar-subscription SQLite adapter is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/runtime_app\.mjs/,
+  'the calendar-subscription production composition is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/access-grant-domain\.test\.mjs/,
   'the access-grant behavior contract executes under c8',
