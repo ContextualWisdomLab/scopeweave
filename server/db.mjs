@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
+  ensureLegacyCompatibilityColumns,
   ensureSchemaMigrationState,
   inspectSchemaBootstrapState,
   SchemaMigrationStateError,
@@ -189,10 +190,9 @@ CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(org_id);
 CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);
 `);
 
-// Migration for pre-existing DBs: add token_version if missing (idempotent).
-try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
-try { db.exec('ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
-try { db.exec("ALTER TABLE projects ADD COLUMN methodology TEXT NOT NULL DEFAULT 'waterfall'"); } catch { /* already there */ }
+// Compatibility migrations are catalog-driven so expected idempotence never
+// relies on swallowing unrelated SQLite failures as "already there".
+ensureLegacyCompatibilityColumns(db);
 
 // Issue #433 migration guard: record the complete naming generation and refuse
 // to serve a database left in a partial old/new table-name cutover.
