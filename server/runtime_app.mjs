@@ -13,6 +13,10 @@ import {
 
 const MANAGER_ROLES = new Set(['owner', 'admin']);
 const CALENDAR_QUERY_PARAMETER = 'subscription';
+const PRIVATE_NO_STORE_HEADERS = Object.freeze({
+  'Cache-Control': 'private, no-store',
+  'Referrer-Policy': 'no-referrer',
+});
 
 installCalendarSubscriptionSchema(db);
 
@@ -77,8 +81,7 @@ const calendarSubscriptionService = createCalendarSubscriptionService({
   membershipRevocation,
 });
 
-async function authenticatedUser(c) {
-  const authorization = c.req.header('authorization') || '';
+async function authenticatedUserFromAuthorization(authorization) {
   if (!authorization) return null;
   const response = await coreApp.request('/api/me', { headers: { authorization } });
   if (!response.ok) return null;
@@ -86,8 +89,16 @@ async function authenticatedUser(c) {
   return payload?.user?.id == null ? null : payload.user;
 }
 
+async function authenticatedUser(c) {
+  return authenticatedUserFromAuthorization(c.req.header('authorization') || '');
+}
+
 function noStoreJson(c, payload, status = 200) {
   return c.json(payload, status, { 'Cache-Control': 'no-store' });
+}
+
+function calendarUnauthorized(c) {
+  return c.json({ error: 'calendar_subscription_unauthorized' }, 401, PRIVATE_NO_STORE_HEADERS);
 }
 
 async function calendarOperation(c, operation, successStatus = 200) {
@@ -153,6 +164,15 @@ function renderCalendarFeed(project) {
   return `${lines.join('\r\n')}\r\n`;
 }
 
+function calendarFeedResponse(c, project) {
+  return c.text(renderCalendarFeed(project), 200, {
+    'Content-Type': 'text/calendar; charset=utf-8',
+    'Content-Disposition': `attachment; filename="scopeweave-${project.project_id}.ics"`,
+    ...PRIVATE_NO_STORE_HEADERS,
+    'X-Content-Type-Options': 'nosniff',
+  });
+}
+
 /**
  * Production composition layer. New capability routes are registered before
  * falling through to the legacy/core Hono app so staged migrations can replace
@@ -206,40 +226,30 @@ app.delete('/api/projects/:id/calendar-subscriptions/:subscriptionId', (c) => ca
 
 app.get('/api/projects/:id/calendar.ics', async (c) => {
   const secret = c.req.query(CALENDAR_QUERY_PARAMETER) || '';
-  if (!secret) return coreApp.fetch(c.req.raw);
-  if (c.req.query('token') || c.req.header('authorization')) {
-    return c.json({ error: 'calendar_subscription_unauthorized' }, 401, {
-      'Cache-Control': 'private, no-store',
-      'Referrer-Policy': 'no-referrer',
-    });
+  const queryToken = c.req.query('token') || '';
+  const authorization = c.req.header('authorization') || '';
+  if (secret) {
+    if (queryToken || authorization) return calendarUnauthorized(c);
+    try {
+      const principal = await calendarSubscriptionService.authorize({
+        secret,
+        projectId: c.req.param('id'),
+      });
+      const project = projectMembership(principal.subjectId, principal.projectId);
+      return project ? calendarFeedResponse(c, project) : calendarUnauthorized(c);
+    } catch (error) {
+      if (!(error instanceof CalendarSubscriptionError)) throw error;
+      return calendarUnauthorized(c);
+    }
   }
-  let principal;
-  try {
-    principal = await calendarSubscriptionService.authorize({
-      secret,
-      projectId: c.req.param('id'),
-    });
-  } catch (error) {
-    if (!(error instanceof CalendarSubscriptionError)) throw error;
-    return c.json({ error: 'calendar_subscription_unauthorized' }, 401, {
-      'Cache-Control': 'private, no-store',
-      'Referrer-Policy': 'no-referrer',
-    });
-  }
-  const project = projectMembership(principal.subjectId, principal.projectId);
-  if (!project) {
-    return c.json({ error: 'calendar_subscription_unauthorized' }, 401, {
-      'Cache-Control': 'private, no-store',
-      'Referrer-Policy': 'no-referrer',
-    });
-  }
-  return c.text(renderCalendarFeed(project), 200, {
-    'Content-Type': 'text/calendar; charset=utf-8',
-    'Content-Disposition': `attachment; filename="scopeweave-${project.project_id}.ics"`,
-    'Cache-Control': 'private, no-store',
-    'Referrer-Policy': 'no-referrer',
-    'X-Content-Type-Options': 'nosniff',
-  });
+
+  if (queryToken && authorization) return calendarUnauthorized(c);
+  const legacyAuthorization = authorization || (queryToken ? `Bearer ${queryToken}` : '');
+  const user = await authenticatedUserFromAuthorization(legacyAuthorization);
+  if (!user) return calendarUnauthorized(c);
+  const project = projectMembership(String(user.id), c.req.param('id'));
+  if (!project) return c.json({ error: 'not found' }, 404, PRIVATE_NO_STORE_HEADERS);
+  return calendarFeedResponse(c, project);
 });
 
 app.all('*', (c) => coreApp.fetch(c.req.raw));
