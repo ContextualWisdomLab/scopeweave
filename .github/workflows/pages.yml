@@ -33,7 +33,7 @@ jobs:
       - name: Stage runtime files
         run: |
           mkdir -p _site/docs
-          cp index.html 404.html app.js styles.css wbs.json _site/
+          cp index.html 404.html app.js cloud-sync.js analytics.js styles.css toast-state.css wbs.json _site/
           cp docs/user-guide.md _site/docs/
 
       - name: Upload static artifact
