@@ -1300,6 +1300,7 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
 
     // Verify sync status ARIA attributes
     const syncStatus = page.locator('#sync-status');
+    await expect(syncStatus).toHaveAttribute('role', 'status');
     await expect(syncStatus).toHaveAttribute('aria-live', 'polite');
     await expect(syncStatus).toHaveAttribute('aria-atomic', 'true');
 
