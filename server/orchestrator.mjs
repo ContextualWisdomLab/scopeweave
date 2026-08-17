@@ -367,6 +367,7 @@ export async function chat(messages, attribution) {
       },
       body: JSON.stringify({
         model: OC_MODEL,
+        orchestration_mode: 'auto',
         messages: safeMessages,
         ...(safeAttribution ? { attribution: safeAttribution } : {}),
       }),
