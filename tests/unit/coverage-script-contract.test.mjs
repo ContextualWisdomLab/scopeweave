@@ -16,6 +16,10 @@ const osvWorkflow = readFileSync(
   new URL('../../.github/workflows/osvscanner.yml', import.meta.url),
   'utf8',
 );
+const codeqlWorkflow = readFileSync(
+  new URL('../../.github/workflows/codeql.yml', import.meta.url),
+  'utf8',
+);
 
 assert.equal(
   scripts.coverage,
@@ -99,6 +103,20 @@ assert.match(
   osvWorkflow,
   /git checkout --detach "\$HEAD_SHA"[\s\S]*git rev-parse HEAD[\s\S]*\$HEAD_SHA/,
   'OSV scanning checks out and attests the exact contributor head before the new-code scan',
+);
+
+assert.ok(
+  codeqlWorkflow.includes('ref: ${{ github.event.pull_request.head.sha || github.sha }}'),
+  'CodeQL checks out the exact contributor head on pull requests rather than the synthetic merge',
+);
+assert.ok(
+  codeqlWorkflow.includes('EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}'),
+  'CodeQL records the exact expected source SHA before initialization',
+);
+assert.match(
+  codeqlWorkflow,
+  /git rev-parse HEAD[\s\S]*\$EXPECTED_SHA[\s\S]*Initialize CodeQL/,
+  'CodeQL attests the exact checkout before initializing the database',
 );
 
 console.log('✓ coverage script contract tests passed');
