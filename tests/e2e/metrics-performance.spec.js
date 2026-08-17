@@ -96,83 +96,86 @@ function median(values) {
 
 async function measureMetrics(browser, { appSource, label }) {
   const context = await browser.newContext();
-  const page = await context.newPage();
-  const instrumentedSource = instrumentMetricsSource(appSource);
+  try {
+    const page = await context.newPage();
+    const instrumentedSource = instrumentMetricsSource(appSource);
 
-  await page.route('**/app.js', async (route) => {
-    await route.fulfill({
-      status: 200,
-      contentType: 'application/javascript; charset=utf-8',
-      body: instrumentedSource,
+    await page.route('**/app.js', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/javascript; charset=utf-8',
+        body: instrumentedSource,
+      });
     });
-  });
 
-  await page.goto('/');
-  const tasks = Array.from({ length: TASK_COUNT }, (_, index) => createTask(index));
+    await page.goto('/');
+    const tasks = Array.from({ length: TASK_COUNT }, (_, index) => createTask(index));
 
-  const result = await page.evaluate(async ({ seededTasks, baseDate, sampleCount, warmupCount }) => {
-    const benchmark = window.__scopeweaveMetricsBenchmark;
-    if (!benchmark) throw new Error('metrics benchmark bridge did not initialize');
-    benchmark.seed(seededTasks, baseDate);
+    const result = await page.evaluate(async ({ seededTasks, baseDate, sampleCount, warmupCount }) => {
+      const benchmark = window.__scopeweaveMetricsBenchmark;
+      if (!benchmark) throw new Error('metrics benchmark bridge did not initialize');
+      benchmark.seed(seededTasks, baseDate);
 
-    for (let warmup = 0; warmup < warmupCount; warmup += 1) {
-      benchmark.compute();
-    }
+      for (let warmup = 0; warmup < warmupCount; warmup += 1) {
+        benchmark.compute();
+      }
 
-    const samples = [];
-    for (let sample = 0; sample < sampleCount; sample += 1) {
-      const startedAt = performance.now();
-      benchmark.compute();
-      samples.push(performance.now() - startedAt);
-    }
+      const samples = [];
+      for (let sample = 0; sample < sampleCount; sample += 1) {
+        const startedAt = performance.now();
+        benchmark.compute();
+        samples.push(performance.now() - startedAt);
+      }
 
-    const metrics = benchmark.compute();
-    const entries = Array.from(metrics.byTask, ([taskId, taskMetrics]) => [
-      taskId,
-      taskMetrics.durationDays,
-      taskMetrics.weightRatio,
-      taskMetrics.plannedProgressRatio,
-      taskMetrics.actualProgressRatio,
-      taskMetrics.weightedPlannedRatio,
-      taskMetrics.weightedActualRatio,
-      taskMetrics.progressState.label,
-      taskMetrics.progressState.className,
-      taskMetrics.plannedDateWarning,
-      taskMetrics.actualDateWarning,
-    ]);
-    const snapshot = JSON.stringify({
-      totalDays: metrics.totalDays,
-      totalWeightedPlannedRatio: metrics.totalWeightedPlannedRatio,
-      totalWeightedActualRatio: metrics.totalWeightedActualRatio,
-      entries,
+      const metrics = benchmark.compute();
+      const entries = Array.from(metrics.byTask, ([taskId, taskMetrics]) => [
+        taskId,
+        taskMetrics.durationDays,
+        taskMetrics.weightRatio,
+        taskMetrics.plannedProgressRatio,
+        taskMetrics.actualProgressRatio,
+        taskMetrics.weightedPlannedRatio,
+        taskMetrics.weightedActualRatio,
+        taskMetrics.progressState.label,
+        taskMetrics.progressState.className,
+        taskMetrics.plannedDateWarning,
+        taskMetrics.actualDateWarning,
+      ]);
+      const snapshot = JSON.stringify({
+        totalDays: metrics.totalDays,
+        totalWeightedPlannedRatio: metrics.totalWeightedPlannedRatio,
+        totalWeightedActualRatio: metrics.totalWeightedActualRatio,
+        entries,
+      });
+      const digestBytes = new Uint8Array(await crypto.subtle.digest(
+        'SHA-256',
+        new TextEncoder().encode(snapshot),
+      ));
+      const digest = Array.from(digestBytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
+
+      return {
+        samples,
+        digest,
+        totalDays: metrics.totalDays,
+        byTaskSize: metrics.byTask.size,
+        totalWeightedPlannedRatio: metrics.totalWeightedPlannedRatio,
+        totalWeightedActualRatio: metrics.totalWeightedActualRatio,
+      };
+    }, {
+      seededTasks: tasks,
+      baseDate: BASE_DATE,
+      sampleCount: SAMPLE_COUNT,
+      warmupCount: WARMUP_COUNT,
     });
-    const digestBytes = new Uint8Array(await crypto.subtle.digest(
-      'SHA-256',
-      new TextEncoder().encode(snapshot),
-    ));
-    const digest = Array.from(digestBytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
 
     return {
-      samples,
-      digest,
-      totalDays: metrics.totalDays,
-      byTaskSize: metrics.byTask.size,
-      totalWeightedPlannedRatio: metrics.totalWeightedPlannedRatio,
-      totalWeightedActualRatio: metrics.totalWeightedActualRatio,
+      label,
+      ...result,
+      medianDurationMs: median(result.samples),
     };
-  }, {
-    seededTasks: tasks,
-    baseDate: BASE_DATE,
-    sampleCount: SAMPLE_COUNT,
-    warmupCount: WARMUP_COUNT,
-  });
-
-  await context.close();
-  return {
-    label,
-    ...result,
-    medianDurationMs: median(result.samples),
-  };
+  } finally {
+    await context.close();
+  }
 }
 
 test('10,000-task metric computation preserves exact semantics and beats the protected base', async ({ browser }) => {
