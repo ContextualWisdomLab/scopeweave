@@ -19,6 +19,7 @@ function loadApp() {
   bindGlobalEvents,
   closeEditor,
   openEditor,
+  saveEditor,
   handleInlineProgressChange,
   handleRowAction,
   state,
@@ -108,10 +109,22 @@ function loadApp() {
   };
 
   let animationFrameCount = 0;
+  let deferAnimationFrames = false;
+  const pendingAnimationFrames = [];
   const requestAnimationFrame = (callback) => {
     animationFrameCount += 1;
-    callback(animationFrameCount);
-    return animationFrameCount;
+    const frameId = animationFrameCount;
+    if (deferAnimationFrames) {
+      pendingAnimationFrames.push(() => callback(frameId));
+    } else {
+      callback(frameId);
+    }
+    return frameId;
+  };
+  const flushAnimationFrames = () => {
+    while (pendingAnimationFrames.length > 0) {
+      pendingAnimationFrames.shift()();
+    }
   };
 
   const sandbox = {
@@ -181,6 +194,8 @@ function loadApp() {
     setActiveElement: (element) => { documentStub.activeElement = element; },
     setQuerySelector: (fn) => { querySelectorImpl = fn; },
     setGetElementById: (fn) => { getElementByIdImpl = fn; },
+    setAnimationFrameDeferred: (value) => { deferAnimationFrames = Boolean(value); },
+    flushAnimationFrames,
     focusEvents,
     selectorQueries,
     idQueries,
@@ -193,6 +208,7 @@ const {
   bindGlobalEvents,
   closeEditor,
   openEditor,
+  saveEditor,
   handleInlineProgressChange,
   handleRowAction,
   state,
@@ -203,6 +219,8 @@ const {
   setActiveElement,
   setQuerySelector,
   setGetElementById,
+  setAnimationFrameDeferred,
+  flushAnimationFrames,
   focusEvents,
   selectorQueries,
   idQueries,
@@ -401,6 +419,32 @@ openEditor({ mode: 'create', parentId: null, depth: 1, draft: { task: 'Draft' } 
 assert.equal(state.previousFocus.taskId, null, 'openEditor records an ID-only fallback when the invoker is outside a task row');
 closeEditor(true);
 assert.ok(idQueries.includes('standalone-trigger'), 'ID-only restoration resolves the newly rendered element by ID');
+
+// saveEditor() closes the editor and performs one more full render before the
+// browser runs requestAnimationFrame. Model that scheduling boundary explicitly
+// so the unit coverage proves focus is resolved only after the final render.
+setActiveElement({
+  id: 'add-root-task',
+  dataset: {},
+  closest: () => null,
+});
+openEditor({ mode: 'create', parentId: null, depth: 1, draft: { phase: 'Saved phase' } });
+const saveRenderStart = renderCount;
+const saveFocusEvent = `save-focus-render-${saveRenderStart + 2}`;
+setGetElementById((id) => ({
+  focus() {
+    focusEvents.push(id === 'add-root-task' ? `save-focus-render-${renderCount}` : 'id-focus');
+  },
+}));
+setAnimationFrameDeferred(true);
+saveEditor();
+assert.equal(renderCount, saveRenderStart + 2, 'save closes the editor and completes its final rerender before deferred focus');
+assert.equal(focusEvents.includes(saveFocusEvent), false, 'save focus waits for the deferred animation frame');
+flushAnimationFrames();
+assert.ok(idQueries.includes('add-root-task'), 'save restoration resolves the stable add-root-task ID');
+assert.ok(focusEvents.includes(saveFocusEvent), 'save restores focus after the final save-triggered render');
+setAnimationFrameDeferred(false);
+setGetElementById(() => ({ focus() { focusEvents.push('id-focus'); } }));
 
 state.previousFocus = { id: 'fallback-trigger', action: '', taskId: hostileTaskId };
 closeEditor(true);
