@@ -53,6 +53,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Moved the repository-owned property-fuzz setup action to immutable
+  `actions/setup-node` v7.0.0 so its JavaScript action runtime declares Node.js
+  24 instead of relying on GitHub's compatibility override for deprecated
+  Node.js 20, while retaining Node.js 22.13.0 for ScopeWeave itself.
 - Accepted XML whitespace before exact Microsoft Project element delimiters
   while preserving the linear, regex-free import scanner and rejecting
   attributes, longer names, non-XML whitespace, nested unmatched blocks, and
