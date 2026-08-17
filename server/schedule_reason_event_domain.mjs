@@ -76,7 +76,11 @@ export async function recordScheduleReasonEvent(input, ports) {
       expectedResourceVersion: normalized.expectedWorkItemVersion,
     });
     const approvalSnapshot = await adapters.approvalPort.verifyCancellationApproval(approvalRequest);
-    approval = normalizeApproval(approvalSnapshot, normalized.expectedWorkItemVersion);
+    approval = normalizeApproval(
+      approvalSnapshot,
+      normalized.expectedWorkItemVersion,
+      normalized.actorId,
+    );
   }
 
   const event = Object.freeze({
@@ -181,7 +185,7 @@ function normalizeAuthorization(value, expectedResourceVersion) {
 }
 
 /** Validate cancellation approval evidence returned by a trusted approval adapter. */
-function normalizeApproval(value, expectedResourceVersion) {
+function normalizeApproval(value, expectedResourceVersion, actorId) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || value.valid !== true) {
     throw new Error('cancellation approval denied');
   }
@@ -191,6 +195,9 @@ function normalizeApproval(value, expectedResourceVersion) {
   const resourceVersion = requireText(value.resourceVersion, 'approval.resourceVersion');
   if (resourceVersion !== expectedResourceVersion) {
     throw new Error('approval resource version is stale');
+  }
+  if (approverId === actorId) {
+    throw new Error('cancellation approver must be distinct from the acting user');
   }
   return Object.freeze({ approvalId, approverId, authorizationId });
 }
