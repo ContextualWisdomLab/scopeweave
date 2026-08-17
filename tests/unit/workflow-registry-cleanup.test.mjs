@@ -39,6 +39,7 @@ function evidence(overrides = {}) {
     unresolved_count: 0,
     classifications: [
       activeOrphan(11, '.github/workflows/legacy-repair.yml'),
+      activeOrphan(13, '.github/workflows/retired-one-shot.yml'),
       {
         workflow_id: 12,
         path: '.github/workflows/server-tests.yml',
@@ -51,31 +52,74 @@ function evidence(overrides = {}) {
   };
 }
 
-test('cleanup plan is exact-SHA bound and selects only reviewed active orphans', () => {
-  const plan = buildWorkflowCleanupPlan({ evidence: evidence(), expectedSha: SHA_A });
+test('cleanup plan is exact-SHA bound and mutates only explicitly reviewed active-orphan IDs', () => {
+  const plan = buildWorkflowCleanupPlan({ evidence: evidence(), expectedSha: SHA_A, reviewedWorkflowIds: [11] });
   assert.equal(plan.default_branch_sha, SHA_A);
+  assert.deepEqual(plan.candidates, [
+    { workflow_id: 11, path: '.github/workflows/legacy-repair.yml' },
+    { workflow_id: 13, path: '.github/workflows/retired-one-shot.yml' },
+  ]);
   assert.deepEqual(plan.targets, [{ workflow_id: 11, path: '.github/workflows/legacy-repair.yml' }]);
 
+  const dryRunPlan = buildWorkflowCleanupPlan({ evidence: evidence(), expectedSha: SHA_A });
+  assert.equal(dryRunPlan.candidates.length, 2);
+  assert.deepEqual(dryRunPlan.targets, []);
+
   assert.throws(
-    () => buildWorkflowCleanupPlan({ evidence: evidence(), expectedSha: SHA_B }),
+    () => buildWorkflowCleanupPlan({ evidence: evidence(), expectedSha: SHA_B, reviewedWorkflowIds: [11] }),
     /expected protected branch SHA/,
   );
   assert.throws(
-    () => buildWorkflowCleanupPlan({ evidence: evidence({ unresolved_count: 1 }), expectedSha: SHA_A }),
+    () => buildWorkflowCleanupPlan({ evidence: evidence({ unresolved_count: 1 }), expectedSha: SHA_A, reviewedWorkflowIds: [11] }),
     /unresolved workflow identities/,
+  );
+  assert.throws(
+    () => buildWorkflowCleanupPlan({ evidence: evidence(), expectedSha: SHA_A, reviewedWorkflowIds: [12] }),
+    /not a current active orphan/,
+  );
+  assert.throws(
+    () => buildWorkflowCleanupPlan({ evidence: evidence(), expectedSha: SHA_A, reviewedWorkflowIds: [99] }),
+    /not a current active orphan/,
+  );
+  assert.throws(
+    () => buildWorkflowCleanupPlan({ evidence: evidence(), expectedSha: SHA_A, reviewedWorkflowIds: [11, 11] }),
+    /duplicate reviewed workflow id/,
   );
 });
 
-test('cleanup CLI is dry-run by default and apply requires an immutable expected SHA', () => {
+test('cleanup CLI is dry-run by default and apply requires immutable SHA plus explicit reviewed workflow IDs', () => {
   assert.deepEqual(
     parseCleanupArgs(['--repo', REPO, '--branch', 'develop', '--expected-sha', SHA_A]),
-    { repository: REPO, branch: 'develop', expectedSha: SHA_A, preservePaths: [], apply: false },
+    { repository: REPO, branch: 'develop', expectedSha: SHA_A, preservePaths: [], reviewedWorkflowIds: [], apply: false },
   );
   assert.deepEqual(
-    parseCleanupArgs(['--repo', REPO, '--expected-sha', SHA_A, '--preserve-path', '.github/workflows/pr-owned.yml', '--apply']),
-    { repository: REPO, branch: 'develop', expectedSha: SHA_A, preservePaths: ['.github/workflows/pr-owned.yml'], apply: true },
+    parseCleanupArgs([
+      '--repo', REPO,
+      '--expected-sha', SHA_A,
+      '--preserve-path', '.github/workflows/pr-owned.yml',
+      '--workflow-id', '11',
+      '--workflow-id', '13',
+      '--apply',
+    ]),
+    {
+      repository: REPO,
+      branch: 'develop',
+      expectedSha: SHA_A,
+      preservePaths: ['.github/workflows/pr-owned.yml'],
+      reviewedWorkflowIds: [11, 13],
+      apply: true,
+    },
   );
   assert.throws(() => parseCleanupArgs(['--repo', REPO, '--apply']), /expected-sha is required/);
+  assert.throws(() => parseCleanupArgs(['--repo', REPO, '--expected-sha', SHA_A, '--apply']), /workflow-id is required/);
+  assert.throws(
+    () => parseCleanupArgs(['--repo', REPO, '--expected-sha', SHA_A, '--workflow-id', '0', '--apply']),
+    /workflow-id must be a positive safe integer/,
+  );
+  assert.throws(
+    () => parseCleanupArgs(['--repo', REPO, '--expected-sha', SHA_A, '--workflow-id', '11', '--workflow-id', '11', '--apply']),
+    /duplicate workflow-id/,
+  );
   assert.throws(() => parseCleanupArgs(['--repo', REPO, '--expected-sha', 'main', '--apply']), /40-character commit SHA/);
   assert.throws(() => parseCleanupArgs(['--repo', REPO, '--expected-sha', SHA_A, '--unknown']), /unsupported argument/);
 });
