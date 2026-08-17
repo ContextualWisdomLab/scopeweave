@@ -57,6 +57,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Legacy `token_version`, `archived`, and `methodology` compatibility migrations
+  now inspect SQLite catalog metadata before `ALTER TABLE` and propagate real
+  DDL failures instead of treating every exception as an already-applied column.
 - Accepted XML whitespace before exact Microsoft Project element delimiters
   while preserving the linear, regex-free import scanner and rejecting
   attributes, longer names, non-XML whitespace, nested unmatched blocks, and
