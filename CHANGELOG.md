@@ -53,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Switched the repository-local OpenCode development configuration from GitHub
+  Models to an NVIDIA NIM-only candidate set while preserving organization-level
+  review-workflow ownership in `ContextualWisdomLab/.github`.
 - Production planning-analysis requests now combine tenant-bound, server-derived
   contextual-orchestrator cost attribution with explicit `auto` orchestration
   mode, delegating provider/model/topology policy to the shared service without
