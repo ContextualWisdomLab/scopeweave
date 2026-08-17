@@ -91,4 +91,24 @@ for (const invalidAttribution of [
 }
 assert.equal(calls.length, 3, 'invalid attribution never reaches the provider');
 
+const originalJsonStringify = JSON.stringify;
+let serializedAttributionPrototype;
+JSON.stringify = (value, ...args) => {
+  if (value?.attribution) {
+    serializedAttributionPrototype = Object.getPrototypeOf(value.attribution);
+  }
+  return originalJsonStringify(value, ...args);
+};
+try {
+  await chat(messages, { service: 'scopeweave' });
+} finally {
+  JSON.stringify = originalJsonStringify;
+}
+assert.equal(
+  serializedAttributionPrototype,
+  null,
+  'validated attribution is held in a prototype-free map before provider serialization',
+);
+assert.equal(calls.length, 4, 'prototype-free attribution still reaches the provider once');
+
 console.log('✓ orchestrator attribution boundary tests passed');
