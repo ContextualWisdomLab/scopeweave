@@ -4,7 +4,9 @@
 
 - `index.html`: app shell and modal structure.
 - `styles.css`: responsive layout, table, badges, gantt, and modal
-  presentation.
+  presentation. `.toast.show` is the standalone producer state.
+- `toast-state.css`: cloud overlay `.toast.visible` rendering so SaaS
+  status messages stay visually observable.
 - `app.js`: state, rendering, editing, validation, persistence,
   import/export, and Gantt logic.
 - `analytics.js`: EVM, S-curve, CPM, workload, cost, and requirements/RFI/RFP

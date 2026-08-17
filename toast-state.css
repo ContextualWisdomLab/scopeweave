@@ -1,0 +1,8 @@
+/* ScopeWeave has two toast producers: app.js uses `.show`, while the cloud
+ * overlay uses `.visible`. The base stylesheet owns `.show`; this component
+ * rule keeps the cloud producer visually observable without changing either
+ * producer's timing or accessibility semantics. */
+.toast.visible {
+  opacity: 1;
+  transform: translateY(0);
+}
