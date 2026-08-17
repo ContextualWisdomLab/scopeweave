@@ -40,6 +40,7 @@ assert.equal(
 assert.equal(calls.length, 1);
 const attributedBody = JSON.parse(calls[0].init.body);
 assert.equal(attributedBody.model, 'nvidia/nemotron-3-super-120b-a12b');
+assert.equal(attributedBody.orchestration_mode, 'auto');
 assert.equal(Object.hasOwn(attributedBody, 'provider'), false);
 assert.deepEqual(attributedBody.attribution, {
   service: 'scopeweave',
@@ -56,6 +57,7 @@ assert.equal(
 
 await chat(messages, { unsupported_dimension: 'x', account: '   ' });
 const emptyBody = JSON.parse(calls[1].init.body);
+assert.equal(emptyBody.orchestration_mode, 'auto');
 assert.equal(
   Object.hasOwn(emptyBody, 'attribution'),
   false,
@@ -68,9 +70,10 @@ assert.deepEqual(
   legacyBody,
   {
     model: 'nvidia/nemotron-3-super-120b-a12b',
+    orchestration_mode: 'auto',
     messages,
   },
-  'omitting attribution preserves the hardened request shape exactly',
+  'omitting attribution preserves the hardened adaptive request shape exactly',
 );
 
 for (const invalidAttribution of [
