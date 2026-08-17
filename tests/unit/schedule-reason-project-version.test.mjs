@@ -114,6 +114,7 @@ test('adapter rejects ambiguous database identities and malformed version author
     request({ expectedResourceVersion: '3' }),
     request({ expectedResourceVersion: 'project_version:0' }),
     request({ workItemId: '' }),
+    request({ workItemId: '   ' }),
     request({ workItemId: 'x'.repeat(257) }),
   ];
   for (const candidate of invalidRequests) {
