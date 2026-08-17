@@ -53,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Switched the repository-local OpenCode development configuration from GitHub
+  Models to an NVIDIA NIM-only candidate set while preserving organization-level
+  review-workflow ownership in `ContextualWisdomLab/.github`.
 - Moved the repository-owned property-fuzz setup action to immutable
   `actions/setup-node` v7.0.0 so its JavaScript action runtime declares Node.js
   24 instead of relying on GitHub's compatibility override for deprecated
