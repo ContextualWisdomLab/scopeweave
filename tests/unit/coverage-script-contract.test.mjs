@@ -59,5 +59,18 @@ assert.doesNotMatch(
   /actions\/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af/,
   'property fuzz no longer relies on the deprecated Node.js 20 setup-node runtime',
 );
+assert.ok(
+  fuzzWorkflow.includes('ref: ${{ github.event.pull_request.head.sha || github.sha }}'),
+  'property fuzz checks out the exact contributor head rather than the synthetic pull-request merge',
+);
+assert.ok(
+  fuzzWorkflow.includes('EXPECTED_SHA: ${{ github.event.pull_request.head.sha || github.sha }}'),
+  'property fuzz records the exact expected contributor SHA for checkout attestation',
+);
+assert.match(
+  fuzzWorkflow,
+  /git rev-parse HEAD[\s\S]*\$EXPECTED_SHA/,
+  'property fuzz fails closed unless the checked-out commit matches the exact expected contributor SHA',
+);
 
 console.log('✓ coverage script contract tests passed');
