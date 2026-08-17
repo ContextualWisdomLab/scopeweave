@@ -38,6 +38,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Rejected whitespace-only work-item authority at the schedule reason-event
+  project-version persistence boundary so direct adapter use cannot bypass the
+  domain layer's non-blank identity contract before an authoritative version
+  transition.
 - Made contextual-orchestrator briefing requests fail closed unless an authenticated endpoint is configured. Deterministic generated text is restricted to explicit `SCOPEWEAVE_DEV=1`, message/provider responses are bounded and validated, and non-loopback HTTP transport is rejected.
 - Added a version-bound schedule reason-event authorization and audit contract
   for skipped, cancelled, and not-performed decisions; cancellation approval
