@@ -16,7 +16,7 @@ The slice adds a framework-neutral application-domain boundary for explicit `ski
 
 The authorization adapter must return an allowed decision with an authorization identifier and the exact resource version it evaluated. A stale version is rejected; the domain does not retry against a newer resource because doing so would silently broaden authority beyond the decision that was actually checked.
 
-Cancellation has a second trust boundary. A caller supplies only an `approvalRef`; a trusted approval adapter must resolve that reference and return a valid approval identifier, approver identity, approval-authorization identifier, and the same exact work-item version. Non-cancellation events reject approval references so approval-shaped data cannot accidentally become a confused-deputy channel.
+Cancellation has a second trust boundary. A caller supplies only an `approvalRef`; a trusted approval adapter must resolve that reference and return a valid approval identifier, approver identity, approval-authorization identifier, and the same exact work-item version. After that trusted resolution, the domain independently rejects the approval when `approverId` equals the acting `actorId`, so a misconfigured approval adapter cannot turn self-approval into a valid cancellation decision. Non-cancellation events reject approval references so approval-shaped data cannot accidentally become a confused-deputy channel.
 
 The repository adapter receives one immutable event plus the original expected resource version. Its contract is to atomically enforce optimistic concurrency and commit both the reason event and its audit record. A successful receipt must identify the exact committed event, the audit record, and the resulting resource version. The domain rejects malformed, mismatched, or non-committed receipts.
 
@@ -24,20 +24,21 @@ Generated public event identifiers must be opaque strings rather than sequential
 
 ## Failure and privacy behavior
 
-The boundary fails closed before persistence when authorization is denied, authorization was evaluated against another resource version, cancellation approval is absent/denied/stale, canonical timestamps are invalid or future-dated, a generated identifier is not opaque, or trusted adapter output is malformed.
+The boundary fails closed before persistence when authorization is denied, authorization was evaluated against another resource version, cancellation approval is absent/denied/stale/self-approved, canonical timestamps are invalid or future-dated, a generated identifier is not opaque, or trusted adapter output is malformed.
 
 Authorization and approval denials are intentionally generic. The domain does not echo provider-internal policy reasons, credentials, tokens, or tenant-discovery details. It stores no secret and does not require PII beyond stable actor/approver identifiers supplied by trusted adapters. Retention, export logging, encryption-at-rest, and deletion policy belong to the eventual persistence/operations layer and must preserve the purpose-bound authorization and tenant-isolation semantics established here.
 
 ## TDD and executable traceability
 
-The branch was cut from PR #517 exact head `227e8c3bafbb5b1b46d462de4a9b256cd7dcbd09` after fresh repository, protected-base, parent-head, review/check, and active-writer inspection.
+The original behavior contract preceded production implementation. Historical predecessor evidence does not authorize the reconciled head.
 
-- `f3ae772e976a96c06d07e3d28437b4415d6678ff` added the reason-event behavior contract before `server/schedule_reason_event_domain.mjs` existed. A local Node 22.16.0 execution was RED with `ERR_MODULE_NOT_FOUND`; no hosted pass is claimed for this state.
-- `48d3ecbc8f6292e593da6cff57aeb5a2298bbff1` added the production authorization/audit boundary. The focused Node 22.16.0 suite then passed 13/13 tests locally.
-- `7a7526ed004a8ccbbc22ffb5843bf2729d99f3e8` registered the new production module and focused contract in the canonical unit and c8 coverage producers.
-- `c827eac4c13c5396effc2b381910eb10494a6f04` locked that instrumentation and test execution into the coverage-script contract.
+- `f3ae772e976a96c06d07e3d28437b4415d6678ff` added the initial reason-event behavior contract before `server/schedule_reason_event_domain.mjs` existed; local execution was RED with `ERR_MODULE_NOT_FOUND`.
+- `48d3ecbc8f6292e593da6cff57aeb5a2298bbff1` added the initial production authorization/audit boundary.
+- `d2ba9a2e6bca12f8bfa3d6c642074631df654015` added a focused regression proving a cancellation approval whose trusted `approverId` equals the acting user must never reach persistence.
+- `e6e3fdebc3318d2a4358c37b5f76650a81c8572e` registered that regression in the normal unit and canonical c8 case paths before the production repair.
+- `3c5acb5f86eb19ccd5daafb4a6b778243edb73e2` added the narrow domain-side distinct-approver check.
 
-The realistic regressions cover tenant/resource identity propagation, action-specific authorization, stale-resource rejection, cancellation approval verification, authority-confusion rejection, future/malformed time evidence, opaque public identifiers, malformed trusted snapshots, commit/audit receipt mismatch, immutability, and side-effect ordering. Exact statement/branch/function/line coverage is accepted only from repository-native current-head c8 evidence after a PR exists; local-only or predecessor-head evidence is not promoted to passing.
+The realistic regressions cover tenant/resource identity propagation, action-specific authorization, stale-resource rejection, cancellation approval verification, direct self-approval rejection, authority-confusion rejection, future/malformed time evidence, opaque public identifiers, malformed trusted snapshots, commit/audit receipt mismatch, immutability, and side-effect ordering. Exact statement/branch/function/line coverage is accepted only from repository-native current-head c8 evidence; local-only or predecessor-head evidence is not promoted to passing.
 
 ## Standards rationale
 
@@ -51,7 +52,7 @@ The implementation remains deterministic and model-independent. LLM output may l
 
 Do not integrate this child independently of PR #517. If the parent head moves or reaches protected `develop`, compare this branch against the exact new parent/protected head for unintended deletion or weakening before trusting any green result.
 
-Before persistence/API/UI integration, rollback removes `server/schedule_reason_event_domain.mjs`, its focused test, package/coverage registrations, this doctoring record, and the corresponding Unreleased CHANGELOG entry together. No database state is introduced by this slice.
+Before persistence/API/UI integration, rollback removes `server/schedule_reason_event_domain.mjs`, its focused tests, package/coverage registrations, this doctoring record, and the corresponding Unreleased CHANGELOG entry together. No database state is introduced by this slice.
 
 A later adapter must implement the repository port with one transaction (or an equivalent atomic durable operation) that checks `expectedResourceVersion`, writes the reason event, writes its audit record, and returns a receipt for the exact generated event. The adapter must derive tenant/resource authority from authenticated server context rather than browser claims. A later cancellation-approval adapter must likewise resolve and verify approval authority rather than trusting `approvalRef` as proof.
 

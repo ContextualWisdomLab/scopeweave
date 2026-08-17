@@ -33,8 +33,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Made contextual-orchestrator briefing requests fail closed unless an authenticated endpoint is configured. Deterministic generated text is restricted to explicit `SCOPEWEAVE_DEV=1`, message/provider responses are bounded and validated, and non-loopback HTTP transport is rejected.
 - Added a version-bound schedule reason-event authorization and audit contract
   for skipped, cancelled, and not-performed decisions; cancellation approval
-  must be independently verified, stale authority is rejected before mutation,
-  and persistence must atomically return the exact event and audit receipt.
+  must come from a distinct independently verified approver, stale authority is
+  rejected before mutation, and persistence must atomically return the exact
+  event and audit receipt.
 - Made `SCOPEWEAVE_JWT_SECRET` mandatory at startup and rejected weak or
   unexpanded placeholder values so production deployments fail closed.
 - Neutralized audit-log CSV formulas even when executable prefixes are hidden
@@ -76,6 +77,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conversion identifiers from responses, reports attempted, changed, failed,
   skipped-data, and deferred-budget counters separately, and exposes fixed
   low-cardinality timeout, lookup, validation, and persistence failure counters.
+- Toast notifications and synchronization feedback now expose advisory updates
+  as explicit polite, atomic WAI-ARIA status regions without adding keyboard
+  stops, and cloud toast feedback now has a shipped visual state so the same
+  message remains visible to sighted users.
+- GitHub Pages, both Docker images, and the SaaS static allowlist now ship
+  `cloud-sync.js`, `analytics.js`, and `toast-state.css` with the documents
+  that load them, so share-error and cloud status toasts stay visible after
+  deploy.
 - 프로젝트 이름 입력 필드에 입력 예시(placeholder)를 추가하여 사용자 편의성을 개선했습니다.
 - 데이터 테이블의 반복되는 액션 버튼에 컨텍스트 정보(작업명)를 포함한 명시적인 ARIA 레이블을 추가하고, 유효성 검사 에러를 폼 필드에 연결하여 접근성을 개선했습니다.
 - `createGanttBarElement`, `renderGantt`, `buildWeekdayTimeline`에서 반복적으로 호출되던 `compareDateStrings`를 직접적인 문자열 비교 연산(`>=`, `<=`)으로 교체하여 O(N*D) 복잡도의 캐시 스레싱과 정규식 검사를 방지했습니다.

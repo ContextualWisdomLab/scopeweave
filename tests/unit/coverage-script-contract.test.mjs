@@ -74,6 +74,11 @@ assert.match(
   /tests\/unit\/schedule-reason-event-domain\.test\.mjs/,
   'the schedule reason-event authority and audit contract executes under c8',
 );
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/schedule-reason-self-approval\.test\.mjs/,
+  'the independent cancellation-approval regression executes under c8',
+);
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
   /npm run (?:coverage|test:coverage)(?:\s|$)/,
