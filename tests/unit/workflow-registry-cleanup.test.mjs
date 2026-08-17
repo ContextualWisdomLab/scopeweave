@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   applyWorkflowCleanupPlan,
   buildWorkflowCleanupPlan,
+  cleanupWorkflowRegistry,
   parseCleanupArgs,
 } from '../../scripts/ci/workflow_registry_cleanup.mjs';
 
@@ -122,6 +123,24 @@ test('cleanup CLI is dry-run by default and apply requires immutable SHA plus ex
   );
   assert.throws(() => parseCleanupArgs(['--repo', REPO, '--expected-sha', 'main', '--apply']), /40-character commit SHA/);
   assert.throws(() => parseCleanupArgs(['--repo', REPO, '--expected-sha', SHA_A, '--unknown']), /unsupported argument/);
+});
+
+test('high-level apply refuses missing authentication before audit or mutation traffic', async () => {
+  let requests = 0;
+  await assert.rejects(
+    () => cleanupWorkflowRegistry({
+      fetchImpl: async () => { requests += 1; return response(403, { private: 'must not surface' }); },
+      apiBase: API,
+      repository: REPO,
+      branch: 'develop',
+      expectedSha: SHA_A,
+      reviewedWorkflowIds: [11],
+      apply: true,
+      token: '',
+    }),
+    /GitHub token is required/,
+  );
+  assert.equal(requests, 0);
 });
 
 test('apply preflights exact workflow identity, disables only the planned ID, and verifies disabled state', async () => {
