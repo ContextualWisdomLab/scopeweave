@@ -76,13 +76,14 @@ function validateCheckoutSessionUrl(session) {
     throw billingProviderUnavailable();
   }
 
+  let checkoutUrl;
   try {
-    const checkoutUrl = new URL(session.url);
-    if (checkoutUrl.protocol !== 'https:' || checkoutUrl.username || checkoutUrl.password) {
-      throw billingProviderUnavailable();
-    }
-  } catch (error) {
-    if (error instanceof HTTPException) throw error;
+    checkoutUrl = new URL(session.url);
+  } catch {
+    throw billingProviderUnavailable();
+  }
+
+  if (checkoutUrl.protocol !== 'https:' || checkoutUrl.username || checkoutUrl.password) {
     throw billingProviderUnavailable();
   }
 
@@ -154,10 +155,9 @@ export async function createCheckout({
   }
 
   if (mode === 'live') {
-    let stripe;
     let session;
     try {
-      stripe = await stripeClientFactory(process.env.STRIPE_SECRET_KEY);
+      const stripe = await stripeClientFactory(process.env.STRIPE_SECRET_KEY);
       session = await stripe.checkout.sessions.create({
         mode: 'subscription',
         line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
@@ -166,8 +166,7 @@ export async function createCheckout({
         client_reference_id: String(orgId),
         metadata: { orgId: String(orgId) },
       });
-    } catch (error) {
-      if (error instanceof HTTPException) throw error;
+    } catch {
       throw billingProviderUnavailable();
     }
     return { url: validateCheckoutSessionUrl(session), live: true };
