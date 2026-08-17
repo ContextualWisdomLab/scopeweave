@@ -12,6 +12,14 @@
 - `analytics.js`: EVM, S-curve, CPM, workload, cost, and requirements/RFI/RFP
   WBS-estimation readiness analysis.
 - `wbs.json`: seed data in the user-specified JSON array format.
+- `server/app.mjs`: legacy/core Hono application and its established JSON,
+  collaboration, billing, export, and compatibility routes.
+- `server/runtime_app.mjs`: **active stacked PR work; not yet protected-`develop`
+  truth**. Production composition wrapper that installs the durable calendar-
+  subscription schema/revocation hook at bootstrap, adds the bounded calendar
+  subscription lifecycle/feed routes, and then delegates every other request to
+  `server/app.mjs`. `server/server.mjs` switches to this wrapper only on the
+  active child branch.
 
 ## CI and security structure
 
@@ -50,7 +58,18 @@
   use binds the stored issuance membership epoch; rotation re-binds the
   live epoch and invalidates the previous secret. Neither domain may
   restore a general session JWT in a URL.
-- Calendar-subscription SQLite persistence stores only the current secret
-  hash, frozen `calendar_read` purpose, issuance membership epoch, and
-  normalized lifecycle/audit evidence. Protected route and browser UI
-  migration remain later issue #413 slices.
+- **Active stacked PR #541; not yet protected-`develop` truth:** calendar-
+  subscription SQLite persistence stores only the current secret hash, frozen
+  `calendar_read` purpose, issuance membership epoch, and normalized lifecycle
+  and transactional audit evidence.
+- **Active calendar-runtime child; not yet protected-`develop` truth:** the
+  production composition exposes authenticated create/list/rotate/revoke
+  management routes and a project-bound `subscription=` ICS feed. Subscription
+  feed responses are private/no-store/no-referrer, reject mixed credentials,
+  and cannot authorize JSON APIs, SSE, attachments, or another project. Session
+  and PAT calendar compatibility remains temporarily available only through the
+  core database-backed authentication boundary so token-version revocation is
+  preserved during migration. Membership deletion transactionally revokes the
+  affected reusable subscriptions and writes revocation evidence. Customer
+  management UI and final retirement of the legacy `token=` calendar URL remain
+  later issue #413 slices.
