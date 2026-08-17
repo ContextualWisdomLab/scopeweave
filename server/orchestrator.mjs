@@ -172,7 +172,7 @@ function sanitizedAttribution(attribution) {
     );
   }
 
-  const safe = {};
+  const safe = Object.create(null);
   for (const [key, value] of Object.entries(attribution)) {
     if (!ATTRIBUTION_DIMENSIONS.has(key) || value === undefined || value === null) continue;
     if (
