@@ -51,7 +51,18 @@ jobs:
         run: npm run test:coverage
       - name: Coverage failure diagnostics
         if: failure()
-        run: node scripts/ci/coverage_diagnostics.mjs
+        run: |
+          found_report=0
+          for report in coverage/coverage-final.json coverage/browser/coverage-final.json; do
+            if [ -f "$report" ]; then
+              found_report=1
+              node scripts/ci/coverage_diagnostics.mjs "$report"
+            fi
+          done
+          if [ "$found_report" -eq 0 ]; then
+            echo "::error::coverage diagnostics unavailable: no Istanbul coverage report found"
+            exit 1
+          fi
       - name: Public docstring gate
         run: npm run check:python-docstrings
       - name: app.js stays eval-safe (no top-level import/export)
