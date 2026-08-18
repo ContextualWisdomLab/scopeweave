@@ -806,7 +806,7 @@ const oidcCodes = new Map();  // mock only: code -> email
 
 function cleanupOidcStates(now = Date.now()) {
   for (const [state, record] of oidcStates.entries()) {
-    if (record.exp < now) oidcStates.delete(state);
+    if (record.exp <= now) oidcStates.delete(state);
   }
 }
 
@@ -874,7 +874,7 @@ app.get('/api/auth/oidc/callback', async (c) => {
   const state = c.req.query('state');
   const code = c.req.query('code');
   const s = oidcStates.get(state);
-  if (!s || s.exp < Date.now()) {
+  if (!s || s.exp <= Date.now()) {
     if (s) oidcStates.delete(state);
     return c.json({ error: 'invalid or expired state' }, 400);
   }
