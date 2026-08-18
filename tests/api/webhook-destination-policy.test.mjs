@@ -80,4 +80,31 @@ assert.equal(created.url, 'https://hooks.example.com/scopeweave?tenant=buyer');
 assert.equal(created.events, 'project.updated');
 assert.match(created.secret, /^whsec_[A-Za-z0-9_-]+$/, 'secret is returned only at creation');
 
+response = await request(`/api/orgs/${organizationId}/webhooks`, {
+  method: 'POST',
+  headers: authorization,
+  body: json({
+    url: 'HTTPS://HOOKS.EXAMPLE.COM:443/staging/../scopeweave?tenant=buyer',
+    events: ['project.updated'],
+  }),
+});
+assert.equal(response.status, 200, 'equivalent public HTTPS spelling remains accepted');
+const canonicalized = await response.json();
+assert.equal(
+  canonicalized.url,
+  'https://hooks.example.com/scopeweave?tenant=buyer',
+  'registration persists and returns the canonical authority/path rather than attacker-controlled spelling',
+);
+
+response = await request(`/api/orgs/${organizationId}/webhooks`, {
+  headers: authorization,
+});
+assert.equal(response.status, 200, 'owner can inspect registered webhook destinations');
+const listing = await response.json();
+assert.equal(
+  listing.webhooks.find((webhook) => webhook.id === canonicalized.id)?.url,
+  'https://hooks.example.com/scopeweave?tenant=buyer',
+  'canonical destination is durable in storage and therefore reused by later delivery attempts',
+);
+
 console.log('webhook destination registration policy tests passed');
