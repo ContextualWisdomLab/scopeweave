@@ -76,6 +76,12 @@ response = await req(`/api/projects/${project.id}`, {
         plannedStartDate: '9999-12-31',
         plannedEndDate: '9999-12-31',
       },
+      {
+        id: 'calendar-task-7',
+        name: 'Reversed event range',
+        plannedStartDate: '2026-08-23',
+        plannedEndDate: '2026-08-21',
+      },
     ],
   }),
 });
@@ -137,6 +143,7 @@ assert.doesNotMatch(feed, /calendar-task-4/, 'impossible calendar months are omi
 assert.doesNotMatch(feed, /calendar-task-5/, 'impossible calendar days are omitted from the feed');
 assert.doesNotMatch(feed, /calendar-task-6/, 'events whose exclusive end cannot be represented are omitted');
 assert.doesNotMatch(feed, /\+01000001/, 'the feed never emits an extended-year value as an RFC 5545 DATE');
+assert.doesNotMatch(feed, /calendar-task-7/, 'events whose end precedes their start are omitted');
 
 response = await req(`${created.feedPath}&token=${encodeURIComponent(currentToken)}`);
 assert.equal(response.status, 401, 'mixed subscription and session-query credentials fail closed');
