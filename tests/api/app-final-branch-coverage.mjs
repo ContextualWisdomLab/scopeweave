@@ -78,18 +78,29 @@ await status(403, req(`/api/orgs/${orgId}/members/${ownerId}`, {
   headers: viewerAuth,
 }), 'viewer cannot remove member');
 
-// Empty browser-supplied filename/MIME metadata is normalized by the existing
-// attachment contract and remains viewable through a valid query JWT.
-const unnamedFile = new FormData();
-unnamedFile.append('file', new File(['unnamed document'], '', { type: '' }));
+// WHATWG multipart parsing treats filename="" as a regular form field rather
+// than a File. The upload boundary must reject that malformed file part instead
+// of pretending the unreachable File.name fallback is a browser behavior.
+const emptyFilename = new FormData();
+emptyFilename.append('file', new File(['unnamed document'], '', { type: '' }));
+await status(400, app.request(`/api/projects/${projectId}/attachments`, {
+  method: 'POST',
+  headers: ownerAuth,
+  body: emptyFilename,
+}), 'empty multipart filename is not accepted as a file');
+
+// A named browser file without explicit MIME metadata is normalized by the
+// multipart parser and remains uploadable/viewable through a valid query JWT.
+const untypedFile = new FormData();
+untypedFile.append('file', new File(['untyped document'], 'untyped.bin', { type: '' }));
 response = await app.request(`/api/projects/${projectId}/attachments`, {
   method: 'POST',
   headers: ownerAuth,
-  body: unnamedFile,
+  body: untypedFile,
 });
 assert.equal(response.status, 200);
-const unnamedAttachmentId = (await response.json()).id;
-response = await req(`/api/projects/${projectId}/attachments/${unnamedAttachmentId}/view?token=${encodeURIComponent(ownerToken)}`);
+const untypedAttachmentId = (await response.json()).id;
+response = await req(`/api/projects/${projectId}/attachments/${untypedAttachmentId}/view?token=${encodeURIComponent(ownerToken)}`);
 assert.equal(response.status, 302);
 await status(404, req(`/api/projects/${projectId}/attachments/999999`, {
   method: 'DELETE',
