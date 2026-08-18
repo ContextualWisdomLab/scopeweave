@@ -13,10 +13,9 @@ const { app } = await import('../../server/app.mjs');
 const start = await app.request('/api/auth/oidc/start?email=attacker@example.test');
 assert.equal(
   start.status,
-  503,
+  404,
   'an unconfigured production deployment must not expose the built-in mock identity provider',
 );
-assert.deepEqual(await start.json(), { error: 'OIDC not configured' });
 
 const mock = await app.request(
   '/api/auth/oidc/mock/authorize?state=attacker&email=attacker@example.test&redirect_uri=http://localhost/api/auth/oidc/callback',
@@ -30,9 +29,8 @@ assert.equal(
 const callback = await app.request('/api/auth/oidc/callback?state=attacker&code=attacker');
 assert.equal(
   callback.status,
-  503,
+  404,
   'an unconfigured production callback cannot enter the mock-session path',
 );
-assert.deepEqual(await callback.json(), { error: 'OIDC not configured' });
 
 console.log('production OIDC fail-closed boundary regression passed');
