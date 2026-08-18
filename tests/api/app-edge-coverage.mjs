@@ -200,7 +200,8 @@ assert.equal(response.status, 200);
 assert.ok((await response.json()).analysis);
 assert.equal((await req('/api/projects/999999/ai/brief', { method: 'POST', headers: ownerAuth, body: body({}) })).status, 404);
 
-// Webhook retries are observable: HTTP failure -> transport failure -> success.
+// Each webhook delivery gets exactly one retry. Exercise HTTP and transport
+// failures independently so the test matches the production retry contract.
 response = await req(`/api/orgs/${orgId}/webhooks`, {
   method: 'POST',
   headers: ownerAuth,
@@ -210,13 +211,12 @@ assert.equal(response.status, 200);
 const webhookId = (await response.json()).id;
 const nativeFetch = globalThis.fetch;
 let webhookAttempts = 0;
-globalThis.fetch = async () => {
-  webhookAttempts += 1;
-  if (webhookAttempts === 1) return new Response('retry', { status: 503 });
-  if (webhookAttempts === 2) throw new Error('simulated transport reset');
-  return new Response(null, { status: 204 });
+const waitForWebhookAttempts = async (expected) => {
+  const retryDeadline = Date.now() + 2500;
+  while (webhookAttempts < expected && Date.now() < retryDeadline) await delay(50);
+  assert.equal(webhookAttempts, expected);
 };
-try {
+const triggerWebhook = async () => {
   loaded = await (await req(`/api/projects/${projectId}`, { headers: ownerAuth })).json();
   response = await req(`/api/projects/${projectId}`, {
     method: 'PUT',
@@ -224,15 +224,29 @@ try {
     body: body({ version: loaded.version }),
   });
   assert.equal(response.status, 200);
-  const retryDeadline = Date.now() + 2500;
-  while (webhookAttempts < 3 && Date.now() < retryDeadline) await delay(50);
+};
+globalThis.fetch = async () => {
+  webhookAttempts += 1;
+  if (webhookAttempts === 1) return new Response('retry', { status: 503 });
+  if (webhookAttempts === 3) throw new Error('simulated transport reset');
+  return new Response(null, { status: 204 });
+};
+try {
+  await triggerWebhook();
+  await waitForWebhookAttempts(2);
+  await triggerWebhook();
+  await waitForWebhookAttempts(4);
+  await delay(0);
 } finally {
   globalThis.fetch = nativeFetch;
 }
-assert.equal(webhookAttempts, 3);
 response = await req(`/api/orgs/${orgId}/webhooks/${webhookId}/deliveries`, { headers: ownerAuth });
 assert.equal(response.status, 200);
-assert.equal((await response.json()).deliveries.length, 3);
+const webhookDeliveries = (await response.json()).deliveries;
+assert.equal(webhookDeliveries.length, 4);
+assert.deepEqual(webhookDeliveries.map((item) => item.attempt), [2, 1, 2, 1]);
+assert.deepEqual(webhookDeliveries.map((item) => item.ok), [1, 0, 1, 0]);
+assert.deepEqual(webhookDeliveries.map((item) => item.statusCode), [204, null, 204, 503]);
 assert.equal((await req(`/api/orgs/${orgId}/webhooks/999999/deliveries`, { headers: ownerAuth })).status, 404);
 assert.equal((await req(`/api/orgs/${orgId}/webhooks/999999/rotate`, { method: 'POST', headers: ownerAuth })).status, 404);
 assert.equal((await req(`/api/orgs/${orgId}/webhooks/999999`, { method: 'DELETE', headers: ownerAuth })).status, 404);
