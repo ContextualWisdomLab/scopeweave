@@ -183,11 +183,47 @@ function pinnedLookup(address, family) {
   };
 }
 
+async function postToCandidate(destination, candidate, { headers, body, signal }, request) {
+  if (signal?.aborted) throw new WebhookTransportError();
+  const { address, family } = candidate;
+  const tlsHost = hostAddress(destination.hostname);
+  try {
+    return await withAbort(new Promise((resolve, reject) => {
+      let req;
+      try {
+        req = request(destination, {
+          method: 'POST',
+          headers,
+          signal,
+          agent: false,
+          lookup: pinnedLookup(address, family),
+          ...(isIP(tlsHost) ? {} : { servername: tlsHost }),
+        }, (response) => {
+          response.resume?.();
+          const status = Number(response.statusCode) || 0;
+          resolve({ status, ok: status >= 200 && status < 300 });
+        });
+      } catch {
+        reject(new WebhookTransportError());
+        return;
+      }
+      req.once?.('error', () => reject(new WebhookTransportError()));
+      req.end(body);
+    }), signal);
+  } catch (error) {
+    if (error instanceof WebhookTransportError) throw error;
+    throw new WebhookTransportError();
+  }
+}
+
 /**
  * Build the outbound webhook transport around injectable DNS and HTTPS seams.
- * Every post resolves afresh, rejects mixed/private answers, pins the socket to
- * the validated address, preserves the original hostname for Host/TLS, and
- * never follows redirects because Node's native HTTPS client does not do so.
+ * Every post resolves afresh, rejects mixed/private answers, pins each socket to
+ * a validated public candidate, preserves the original hostname for Host/TLS,
+ * and never follows redirects because Node's native HTTPS client does not do so.
+ * Connect/transport failure may fall through to another address from the same
+ * fully validated DNS answer set; an HTTP response is authoritative and returns
+ * immediately, while every later application retry performs fresh DNS again.
  */
 export function createWebhookTransport({ lookup = dnsLookup, request = httpsRequest } = {}) {
   if (typeof lookup !== 'function' || typeof request !== 'function') {
@@ -205,36 +241,22 @@ export function createWebhookTransport({ lookup = dnsLookup, request = httpsRequ
       }
 
       const candidates = await resolvePublicAddresses(destination, lookup, signal);
-      const { address, family } = candidates[0];
-      const tlsHost = hostAddress(destination.hostname);
-
-      try {
-        return await withAbort(new Promise((resolve, reject) => {
-          let req;
-          try {
-            req = request(destination, {
-              method: 'POST',
-              headers,
-              signal,
-              agent: false,
-              lookup: pinnedLookup(address, family),
-              ...(isIP(tlsHost) ? {} : { servername: tlsHost }),
-            }, (response) => {
-              response.resume?.();
-              const status = Number(response.statusCode) || 0;
-              resolve({ status, ok: status >= 200 && status < 300 });
-            });
-          } catch {
-            reject(new WebhookTransportError());
-            return;
-          }
-          req.once?.('error', () => reject(new WebhookTransportError()));
-          req.end(body);
-        }), signal);
-      } catch (error) {
-        if (error instanceof WebhookDestinationError || error instanceof WebhookTransportError) throw error;
-        throw new WebhookTransportError();
+      let lastError;
+      for (const candidate of candidates) {
+        try {
+          return await postToCandidate(
+            destination,
+            candidate,
+            { headers, body, signal },
+            request,
+          );
+        } catch (error) {
+          if (!(error instanceof WebhookTransportError)) throw error;
+          lastError = error;
+          if (signal?.aborted) throw error;
+        }
       }
+      throw lastError || new WebhookTransportError();
     },
   });
 }
