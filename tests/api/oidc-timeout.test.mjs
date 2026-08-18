@@ -40,6 +40,11 @@ globalThis.fetch = async (input, init) => {
   const request = input instanceof Request ? input : new Request(input, init);
   const url = request.url;
   if (url === `${issuer}/.well-known/openid-configuration`) {
+    assert.equal(
+      request.redirect,
+      'error',
+      'OIDC discovery must reject redirects instead of following provider-controlled locations',
+    );
     return Response.json({
       issuer,
       jwks_uri: `${issuer}/jwks`,
@@ -47,11 +52,21 @@ globalThis.fetch = async (input, init) => {
     });
   }
   if (url === `${issuer}/jwks`) {
+    assert.equal(
+      request.redirect,
+      'error',
+      'OIDC JWKS retrieval must reject redirects before trusting signing-key bytes',
+    );
     return Response.json({ keys: [publicJwk] });
   }
   if (url !== `${issuer}/token`) {
     throw new Error(`unexpected outbound fetch: ${url}`);
   }
+  assert.equal(
+    request.redirect,
+    'error',
+    'OIDC token exchange must not forward authorization code or client credentials across redirects',
+  );
 
   const form = new URLSearchParams(await request.clone().text());
   const code = form.get('code');
