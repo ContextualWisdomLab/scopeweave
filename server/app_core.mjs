@@ -1340,7 +1340,7 @@ app.post('/api/auth/logout-all', requireAuth, (c) => {
   const uid = c.get('user').sub;
   db.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?').run(uid);
   const u = db.prepare('SELECT email, token_version FROM users WHERE id = ?').get(uid);
-  return c.json({ ok: true, token: signToken({ sub: uid, email, tv: u.token_version }) });
+  return c.json({ ok: true, token: signToken({ sub: uid, email: u.email, tv: u.token_version }) });
 });
 
 // Change password (verifies the current one).
