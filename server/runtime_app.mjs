@@ -160,7 +160,8 @@ function isCalendarDay(value) {
 function nextCalendarDay(value) {
   const date = new Date(`${value}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + 1);
-  return date.toISOString().slice(0, 10).replaceAll('-', '');
+  const nextDay = date.toISOString().slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(nextDay) ? compactCalendarDay(nextDay) : null;
 }
 
 function renderCalendarFeed(project) {
@@ -183,11 +184,13 @@ function renderCalendarFeed(project) {
       !isCalendarDay(task?.plannedStartDate || '')
       || !isCalendarDay(task?.plannedEndDate || '')
     ) continue;
+    const exclusiveEnd = nextCalendarDay(task.plannedEndDate);
+    if (!exclusiveEnd) continue;
     lines.push(
       'BEGIN:VEVENT',
       `UID:scopeweave-${project.project_id}-${escapeCalendarText(task.id)}`,
       `DTSTART;VALUE=DATE:${compactCalendarDay(task.plannedStartDate)}`,
-      `DTEND;VALUE=DATE:${nextCalendarDay(task.plannedEndDate)}`,
+      `DTEND;VALUE=DATE:${exclusiveEnd}`,
       `SUMMARY:${escapeCalendarText(task.name || task.task || task.id)}`,
       'END:VEVENT',
     );
