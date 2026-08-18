@@ -56,6 +56,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Switched the repository-local OpenCode development configuration from GitHub
   Models to an NVIDIA NIM-only candidate set while preserving organization-level
   review-workflow ownership in `ContextualWisdomLab/.github`.
+- Production planning-analysis requests now combine tenant-bound, server-derived
+  contextual-orchestrator cost attribution with explicit `auto` orchestration
+  mode, delegating provider/model/topology policy to the shared service without
+  weakening ScopeWeave's authenticated, fail-closed transport or response
+  boundary controls.
 - Bound repository `Server Tests` to the exact pull-request contributor head (or
   exact protected-`develop` push SHA) and fail closed when the runner's actual
   checkout differs, preventing synthetic merge results from being mistaken for
