@@ -45,6 +45,8 @@ jobs:
         run: npm run test:unit
       - name: API tests (auth · tenancy · RBAC · billing · webhooks · rate limit)
         run: npm run test:api
+      - name: Install Playwright (chromium for coverage)
+        run: npx playwright install chromium --with-deps
       - name: Exact owned production coverage
         run: npm run test:coverage
       - name: Public docstring gate
