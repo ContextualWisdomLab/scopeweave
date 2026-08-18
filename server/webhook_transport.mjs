@@ -5,6 +5,7 @@ import { BlockList, isIP } from 'node:net';
 const DENIED_IPV4_BLOCKS = new BlockList();
 const DENIED_IPV6_BLOCKS = new BlockList();
 const PUBLIC_IPV6_UNICAST = new BlockList();
+const PUBLIC_HTTPS_RESPONSE_MAX_BYTES = 1024 * 1024;
 PUBLIC_IPV6_UNICAST.addSubnet('2000::', 3, 'ipv6');
 for (const [address, prefix, family] of [
   ['0.0.0.0', 8, 'ipv4'],
@@ -183,22 +184,27 @@ function pinnedLookup(address, family) {
   };
 }
 
+function pinnedRequestOptions(destination, candidate, options = {}) {
+  const tlsHost = hostAddress(destination.hostname);
+  return {
+    ...options,
+    agent: false,
+    lookup: pinnedLookup(candidate.address, candidate.family),
+    ...(isIP(tlsHost) ? {} : { servername: tlsHost }),
+  };
+}
+
 async function postToCandidate(destination, candidate, { headers, body, signal }, request) {
   if (signal?.aborted) throw new WebhookTransportError();
-  const { address, family } = candidate;
-  const tlsHost = hostAddress(destination.hostname);
   try {
     return await withAbort(new Promise((resolve, reject) => {
       let req;
       try {
-        req = request(destination, {
+        req = request(destination, pinnedRequestOptions(destination, candidate, {
           method: 'POST',
           headers,
           signal,
-          agent: false,
-          lookup: pinnedLookup(address, family),
-          ...(isIP(tlsHost) ? {} : { servername: tlsHost }),
-        }, (response) => {
+        }), (response) => {
           response.resume?.();
           const status = Number(response.statusCode) || 0;
           resolve({ status, ok: status >= 200 && status < 300 });
@@ -214,6 +220,148 @@ async function postToCandidate(destination, candidate, { headers, body, signal }
     if (error instanceof WebhookTransportError) throw error;
     throw new WebhookTransportError();
   }
+}
+
+function appendResponseHeaders(target, source) {
+  for (const [name, value] of Object.entries(source || {})) {
+    if (Array.isArray(value)) {
+      for (const item of value) target.append(name, String(item));
+    } else if (value !== undefined) {
+      target.append(name, String(value));
+    }
+  }
+}
+
+async function fetchFromCandidate(
+  destination,
+  candidate,
+  { method, headers, body, signal, maxResponseBytes },
+  request,
+) {
+  if (signal?.aborted) throw new WebhookTransportError();
+  try {
+    return await withAbort(new Promise((resolve, reject) => {
+      let settled = false;
+      const fail = () => {
+        if (settled) return;
+        settled = true;
+        reject(new WebhookTransportError());
+      };
+      let req;
+      try {
+        req = request(destination, pinnedRequestOptions(destination, candidate, {
+          method,
+          headers,
+          signal,
+        }), (response) => {
+          const chunks = [];
+          let totalBytes = 0;
+          response.on?.('data', (chunk) => {
+            if (settled) return;
+            const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+            totalBytes += bytes.byteLength;
+            if (totalBytes > maxResponseBytes) {
+              response.destroy?.();
+              fail();
+              return;
+            }
+            chunks.push(bytes);
+          });
+          response.once?.('error', fail);
+          response.once?.('end', () => {
+            if (settled) return;
+            const status = Number(response.statusCode) || 0;
+            if (status < 200 || status > 599) {
+              fail();
+              return;
+            }
+            const responseHeaders = new Headers();
+            appendResponseHeaders(responseHeaders, response.headers);
+            const responseBody = chunks.length ? Buffer.concat(chunks) : null;
+            try {
+              settled = true;
+              resolve(new Response(responseBody, { status, headers: responseHeaders }));
+            } catch {
+              fail();
+            }
+          });
+        });
+      } catch {
+        fail();
+        return;
+      }
+      req.once?.('error', fail);
+      if (body === undefined || body === null) {
+        req.end();
+      } else if (typeof body === 'string' || Buffer.isBuffer(body) || body instanceof Uint8Array) {
+        req.end(body);
+      } else if (body instanceof ArrayBuffer) {
+        req.end(new Uint8Array(body));
+      } else {
+        fail();
+      }
+    }), signal);
+  } catch (error) {
+    if (error instanceof WebhookTransportError) throw error;
+    throw new WebhookTransportError();
+  }
+}
+
+/**
+ * Build a bounded public-HTTPS fetch transport for server-side metadata flows.
+ * Each request resolves DNS afresh, fails closed if any answer is non-public,
+ * pins every socket to a validated candidate, preserves the original TLS SNI,
+ * disables pooling, never follows redirects, and bounds response buffering.
+ */
+export function createPublicHttpsTransport({ lookup = dnsLookup, request = httpsRequest } = {}) {
+  if (typeof lookup !== 'function' || typeof request !== 'function') {
+    throw new TypeError('public HTTPS transport dependencies must be functions');
+  }
+
+  return Object.freeze({
+    async fetch(url, {
+      method = 'GET',
+      headers = {},
+      body,
+      signal,
+      maxResponseBytes = PUBLIC_HTTPS_RESPONSE_MAX_BYTES,
+    } = {}) {
+      let destination;
+      try {
+        destination = new URL(validateWebhookRegistrationUrl(url));
+      } catch (error) {
+        if (error instanceof WebhookDestinationError) throw error;
+        throw new WebhookDestinationError();
+      }
+      if (!Number.isSafeInteger(maxResponseBytes) || maxResponseBytes <= 0) {
+        throw new TypeError('maxResponseBytes must be a positive safe integer');
+      }
+
+      const candidates = await resolvePublicAddresses(destination, lookup, signal);
+      let lastError;
+      for (const candidate of candidates) {
+        try {
+          return await fetchFromCandidate(
+            destination,
+            candidate,
+            {
+              method: String(method || 'GET').toUpperCase(),
+              headers,
+              body,
+              signal,
+              maxResponseBytes,
+            },
+            request,
+          );
+        } catch (error) {
+          if (!(error instanceof WebhookTransportError)) throw error;
+          lastError = error;
+          if (signal?.aborted) throw error;
+        }
+      }
+      throw lastError || new WebhookTransportError();
+    },
+  });
 }
 
 /**
@@ -261,7 +409,11 @@ export function createWebhookTransport({ lookup = dnsLookup, request = httpsRequ
   });
 }
 
+const publicHttpsTransport = createPublicHttpsTransport();
 const webhookTransport = createWebhookTransport();
+
+/** Fetch one bounded response through the production public-HTTPS transport. */
+export const fetchPublicHttps = (url, options) => publicHttpsTransport.fetch(url, options);
 
 /** Send one signed webhook attempt through the production SSRF-safe transport. */
 export const postWebhook = (url, options) => webhookTransport.post(url, options);
