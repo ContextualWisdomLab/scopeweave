@@ -28,6 +28,16 @@ assert.equal(response.status, 200, 'fixture owner can resolve organization');
 const me = await response.json();
 const organizationId = me.orgs[0].id;
 
+for (const headers of [{}, { authorization: 'Bearer invalid-token' }]) {
+  response = await request(`/api/orgs/${organizationId}/webhooks`, {
+    method: 'POST',
+    headers,
+    body: json({ url: 'http://127.0.0.1/private', events: ['project.updated'] }),
+  });
+  assert.equal(response.status, 401, 'destination policy never preempts authentication');
+  assert.deepEqual(await response.json(), { error: 'unauthorized' });
+}
+
 const deniedDestinations = [
   'http://example.com/hook',
   'https://localhost/hook',
