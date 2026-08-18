@@ -214,11 +214,13 @@ const candidateAnswers = [
   { address: '2606:4700:4700::1111', family: 6 },
 ];
 const candidateAttempts = [];
+const candidateOptions = [];
 const fallbackTransport = createWebhookTransport({
   lookup: async () => candidateAnswers,
   request: (_url, options, callback) => {
     const req = new EventEmitter();
     req.end = () => {
+      candidateOptions.push({ agent: options.agent, servername: options.servername });
       options.lookup('ignored.example', {}, (error, address, family) => {
         assert.equal(error, null);
         candidateAttempts.push({ address, family });
@@ -238,6 +240,14 @@ assert.deepEqual(
   'a later policy-validated address is attempted when the first address cannot connect',
 );
 assert.deepEqual(candidateAttempts, candidateAnswers);
+assert.deepEqual(
+  candidateOptions,
+  [
+    { agent: false, servername: 'hooks.example.com' },
+    { agent: false, servername: 'hooks.example.com' },
+  ],
+  'every fallback attempt disables pooling and preserves the original TLS authority',
+);
 
 const protocolCapture = {};
 const protocolFailureTransport = createWebhookTransport({
