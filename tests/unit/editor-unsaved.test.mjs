@@ -39,6 +39,8 @@ function loadApp() {
   const selectorQueries = [];
   const idQueries = [];
   const escapeCalls = [];
+  const taskRows = [];
+  const inlineProgressControls = [];
   let querySelectorImpl;
   let getElementByIdImpl;
 
@@ -90,7 +92,16 @@ function loadApp() {
       selectorQueries.push(selector);
       return querySelectorImpl(selector);
     },
-    querySelectorAll: () => [],
+    querySelectorAll(selector) {
+      selectorQueries.push(selector);
+      if (selector === 'tr[data-task-id]') {
+        return taskRows.slice();
+      }
+      if (selector === '[data-inline-progress]') {
+        return inlineProgressControls.slice();
+      }
+      return [];
+    },
     title: '',
   };
 
@@ -194,6 +205,12 @@ function loadApp() {
     setActiveElement: (element) => { documentStub.activeElement = element; },
     setQuerySelector: (fn) => { querySelectorImpl = fn; },
     setGetElementById: (fn) => { getElementByIdImpl = fn; },
+    setTaskRows: (rows) => {
+      taskRows.splice(0, taskRows.length, ...rows);
+    },
+    setInlineProgressControls: (controls) => {
+      inlineProgressControls.splice(0, inlineProgressControls.length, ...controls);
+    },
     setAnimationFrameDeferred: (value) => { deferAnimationFrames = Boolean(value); },
     flushAnimationFrames,
     focusEvents,
@@ -219,6 +236,8 @@ const {
   setActiveElement,
   setQuerySelector,
   setGetElementById,
+  setTaskRows,
+  setInlineProgressControls,
   setAnimationFrameDeferred,
   flushAnimationFrames,
   focusEvents,
@@ -354,9 +373,53 @@ setQuerySelector(() => ({ focus() { focusEvents.push('selector-focus'); } }));
 setGetElementById(() => ({ focus() { focusEvents.push('id-focus'); } }));
 setConfirm(() => true);
 
+function createFocusable(label) {
+  return {
+    focus() {
+      focusEvents.push(label);
+    },
+  };
+}
+
+function createTaskRow(taskId, actions) {
+  const buttons = actions.map((action) => {
+    const button = createFocusable(`row-focus:${action}`);
+    button.dataset = { action };
+    return button;
+  });
+  return {
+    dataset: { taskId },
+    querySelectorAll(selector) {
+      return selector === 'button[data-action]' ? buttons : [];
+    },
+  };
+}
+
+function createInlineControl(taskId) {
+  const control = createFocusable('inline-focus');
+  control.dataset = { inlineProgress: taskId };
+  return control;
+}
+
+function assertNoInterpolatedSelectors(queries, label) {
+  assert.ok(
+    !queries.some((selector) => selector.includes('"') && /data-(?:task-id|action|inline-progress)="/.test(selector)),
+    `${label} does not interpolate persisted IDs or actions into CSS selector syntax`,
+  );
+  assert.equal(escapeCalls.length, 0, `${label} never calls CSS.escape`);
+}
+
 const hostileTaskId = 'task\"] [data-action="delete';
 const inlineTask = { id: hostileTaskId, expanded: true, actualProgressStatus: '미착수(0%)' };
 taskById.set(hostileTaskId, inlineTask);
+setInlineProgressControls([
+  createInlineControl('unrelated-task'),
+  createInlineControl(hostileTaskId),
+]);
+setTaskRows([
+  createTaskRow('unrelated-task', ['toggle', 'edit', 'delete']),
+  createTaskRow(hostileTaskId, ['toggle', 'edit', 'delete']),
+]);
 handleInlineProgressChange({
   target: {
     dataset: { inlineProgress: hostileTaskId },
@@ -364,16 +427,17 @@ handleInlineProgressChange({
   },
 });
 assert.equal(inlineTask.actualProgressStatus, '진행(50%)', 'inline progress update is preserved');
-assert.ok(escapeCalls.includes(hostileTaskId), 'inline focus selector escapes persisted task IDs');
-assert.ok(selectorQueries.some((selector) => selector.includes('[data-inline-progress="safe-')), 'inline focus queries with escaped selector data');
+assert.ok(selectorQueries.includes('[data-inline-progress]'), 'inline focus enumerates fixed data-inline-progress controls');
+assertNoInterpolatedSelectors(selectorQueries, 'inline focus');
 assert.ok(persistCount >= 1 && renderCount >= 1, 'inline progress still persists and rerenders before focus restoration');
-assert.ok(focusEvents.includes('selector-focus'), 'inline progress restores focus to the rerendered control');
+assert.ok(focusEvents.includes('inline-focus'), 'inline progress restores focus to the rerendered control');
 
-const toggleEscapeCount = escapeCalls.length;
+const toggleQueryStart = selectorQueries.length;
 handleRowAction('toggle', hostileTaskId);
 assert.equal(inlineTask.expanded, false, 'toggle action still updates expansion state');
-assert.ok(escapeCalls.length > toggleEscapeCount, 'toggle focus selector escapes persisted task IDs');
-assert.ok(selectorQueries.some((selector) => selector.includes('button[data-action="toggle"]')), 'toggle restoration resolves the rerendered toggle button');
+assert.ok(selectorQueries.slice(toggleQueryStart).includes('tr[data-task-id]'), 'toggle restoration enumerates task rows with a fixed selector');
+assertNoInterpolatedSelectors(selectorQueries.slice(toggleQueryStart), 'toggle focus');
+assert.ok(focusEvents.includes('row-focus:toggle'), 'toggle restoration resolves the rerendered toggle button by dataset equality');
 
 const deleteTaskId = 'delete\"] button[data-action="edit';
 const successorTaskId = 'successor\"] button[data-action="toggle';
@@ -382,12 +446,22 @@ const successorTask = { id: successorTaskId, task: 'Keep me' };
 visibleTasks = [deleteTask, successorTask];
 taskById.set(deleteTaskId, deleteTask);
 taskById.set(successorTaskId, successorTask);
-const deleteEscapeCount = escapeCalls.length;
+setTaskRows([
+  createTaskRow(deleteTaskId, ['toggle', 'edit', 'delete']),
+  createTaskRow(successorTaskId, ['toggle', 'edit', 'delete']),
+]);
+const deleteQueryStart = selectorQueries.length;
+const deleteFocusStart = focusEvents.length;
 handleRowAction('delete', deleteTaskId);
 assert.deepEqual(visibleTasks.map((task) => task.id), [successorTaskId], 'delete path keeps the successor visible');
-assert.ok(escapeCalls.slice(deleteEscapeCount).includes(successorTaskId), 'delete-successor focus selector escapes the successor ID');
-assert.ok(selectorQueries.some((selector) => selector.includes('button[data-action="delete"]')), 'delete restoration resolves a successor delete button');
+assert.ok(selectorQueries.slice(deleteQueryStart).includes('tr[data-task-id]'), 'delete restoration enumerates task rows with a fixed selector');
+assertNoInterpolatedSelectors(selectorQueries.slice(deleteQueryStart), 'delete-successor focus');
+assert.ok(focusEvents.slice(deleteFocusStart).includes('row-focus:delete'), 'delete restoration resolves a successor delete button by dataset equality');
 
+setTaskRows([
+  createTaskRow('unrelated-task', ['toggle', 'edit', 'delete']),
+  createTaskRow(hostileTaskId, ['toggle', 'edit', 'delete']),
+]);
 const invokingControl = {
   id: 'edit-trigger',
   dataset: { action: 'edit' },
@@ -401,13 +475,12 @@ openEditor({ mode: 'create', parentId: null, depth: 1, draft: { task: 'Draft' } 
 assert.equal(state.previousFocus.id, 'edit-trigger', 'openEditor records the stable element ID');
 assert.equal(state.previousFocus.action, 'edit', 'openEditor records the stable action identity');
 assert.equal(state.previousFocus.taskId, hostileTaskId, 'openEditor records the owning task identity');
-const closeEscapeStart = escapeCalls.length;
+const closeQueryStart = selectorQueries.length;
+const closeFocusStart = focusEvents.length;
 closeEditor(true);
-assert.deepEqual(
-  escapeCalls.slice(closeEscapeStart),
-  [hostileTaskId, 'edit'],
-  'closeEditor escapes both persisted task and action selector data',
-);
+assert.ok(selectorQueries.slice(closeQueryStart).includes('tr[data-task-id]'), 'closeEditor enumerates task rows with a fixed selector');
+assertNoInterpolatedSelectors(selectorQueries.slice(closeQueryStart), 'closeEditor');
+assert.ok(focusEvents.slice(closeFocusStart).includes('row-focus:edit'), 'closeEditor restores the allowlisted edit button by dataset equality');
 assert.equal(state.previousFocus, null, 'closeEditor clears the stable focus descriptor after scheduling restoration');
 
 setActiveElement({
@@ -449,6 +522,14 @@ setGetElementById(() => ({ focus() { focusEvents.push('id-focus'); } }));
 state.previousFocus = { id: 'fallback-trigger', action: '', taskId: hostileTaskId };
 closeEditor(true);
 assert.ok(idQueries.includes('fallback-trigger'), 'missing action falls back to stable element ID even when a task ID exists');
+
+const disallowedAction = 'edit"] [data-action="delete';
+const disallowedQueryStart = selectorQueries.length;
+const disallowedFocusStart = focusEvents.length;
+state.previousFocus = { id: '', action: disallowedAction, taskId: hostileTaskId };
+closeEditor(true);
+assertNoInterpolatedSelectors(selectorQueries.slice(disallowedQueryStart), 'disallowed action');
+assert.equal(focusEvents.length, disallowedFocusStart, 'disallowed actions fail closed without restoring a row control');
 
 const focusCountBeforeMissing = focusEvents.length;
 setGetElementById((id) => (id === 'missing-trigger' ? null : { focus() { focusEvents.push('id-focus'); } }));

@@ -1085,6 +1085,50 @@ function renderEditorValidation() {
   });
 }
 
+const FOCUS_RESTORE_ACTIONS = Object.freeze(['toggle', 'edit', 'add-child', 'delete']);
+
+function findTaskRowByPersistedId(taskId) {
+  const expectedId = String(taskId);
+  const rows = document.querySelectorAll('tr[data-task-id]');
+  for (const row of rows) {
+    if (row.dataset.taskId === expectedId) {
+      return row;
+    }
+  }
+  return null;
+}
+
+function findAllowedRowActionButton(taskId, action) {
+  const allowedAction = FOCUS_RESTORE_ACTIONS.find((value) => value === action);
+  if (!allowedAction) {
+    return null;
+  }
+
+  const row = findTaskRowByPersistedId(taskId);
+  if (!row) {
+    return null;
+  }
+
+  const buttons = row.querySelectorAll('button[data-action]');
+  for (const button of buttons) {
+    if (button.dataset.action === allowedAction) {
+      return button;
+    }
+  }
+  return null;
+}
+
+function findInlineProgressControl(taskId) {
+  const expectedId = String(taskId);
+  const controls = document.querySelectorAll('[data-inline-progress]');
+  for (const control of controls) {
+    if (control.dataset.inlineProgress === expectedId) {
+      return control;
+    }
+  }
+  return null;
+}
+
 function handleInlineProgressChange(event) {
   const taskId = event.target.dataset.inlineProgress;
   const task = findTask(taskId);
@@ -1098,10 +1142,10 @@ function handleInlineProgressChange(event) {
   persistState();
   renderAll();
 
-  // 🎨 Palette: Restore focus to the dropdown after full DOM re-render. Persisted
-  // task IDs are untrusted selector data, so escape them before interpolation.
+  // 🎨 Palette: Restore focus after rerender by dataset equality, not by
+  // interpolating persisted IDs into CSS selector syntax.
   requestAnimationFrame(() => {
-    const dropdown = document.querySelector(`[data-inline-progress="${CSS.escape(taskId)}"]`);
+    const dropdown = findInlineProgressControl(taskId);
     if (dropdown) {
       dropdown.focus();
     }
@@ -1121,7 +1165,7 @@ function handleRowAction(action, taskId) {
 
     // 🎨 Palette: Restore focus to the toggle button after full DOM re-render.
     requestAnimationFrame(() => {
-      const toggleBtn = document.querySelector(`tr[data-task-id="${CSS.escape(taskId)}"] button[data-action="toggle"]`);
+      const toggleBtn = findAllowedRowActionButton(taskId, 'toggle');
       if (toggleBtn) {
         toggleBtn.focus();
       }
@@ -1160,7 +1204,7 @@ function handleRowAction(action, taskId) {
         if (visibleTasksAfter.length > 0) {
           const nextTargetIndex = Math.min(currentIndex, visibleTasksAfter.length - 1);
           const nextTargetId = visibleTasksAfter[nextTargetIndex].id;
-          const nextTargetBtn = document.querySelector(`tr[data-task-id="${CSS.escape(nextTargetId)}"] button[data-action="delete"]`);
+          const nextTargetBtn = findAllowedRowActionButton(nextTargetId, 'delete');
           if (nextTargetBtn) {
             nextTargetBtn.focus();
           }
@@ -1241,7 +1285,7 @@ function closeEditor(force = false) {
     requestAnimationFrame(() => {
       let targetEl = null;
       if (taskId && action) {
-        targetEl = document.querySelector(`tr[data-task-id="${CSS.escape(taskId)}"] button[data-action="${CSS.escape(action)}"]`);
+        targetEl = findAllowedRowActionButton(taskId, action);
       } else if (id) {
         targetEl = document.getElementById(id);
       }

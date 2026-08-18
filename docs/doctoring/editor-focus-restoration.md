@@ -12,6 +12,10 @@ For row actions, the stored identity contains the row's `data-task-id` and the
 control's `data-action`. For persistent page-level controls, the identity uses
 the element `id`. After the rerender, a `requestAnimationFrame()` callback looks
 up the new element and calls `focus()` only when a matching target exists.
+Persisted task IDs are never interpolated into CSS selector syntax: the lookup
+enumerates `tr[data-task-id]`, compares `row.dataset.taskId === taskId` as a
+string, and resolves the action button from a fixed allowlist. Page-level
+controls still use `getElementById(id)`. Missing targets are ignored.
 
 ## Accessibility contract
 

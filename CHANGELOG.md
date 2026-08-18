@@ -58,7 +58,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   review-workflow ownership in `ContextualWisdomLab/.github`.
 - Restored keyboard focus to the invoking Add or Edit control after the inline
   editor rerenders on save or cancel, including mobile/touch viewports, by
-  storing stable control identity rather than a detached DOM reference.
+  storing stable control identity rather than a detached DOM reference, then
+  resolving the rerendered control by dataset equality and an action allowlist
+  instead of interpolating persisted IDs into CSS selectors.
 - Accepted XML whitespace before exact Microsoft Project element delimiters
   while preserving the linear, regex-free import scanner and rejecting
   attributes, longer names, non-XML whitespace, nested unmatched blocks, and
