@@ -330,6 +330,9 @@ export async function cleanupWorkflowRegistry({
     fetchImpl, apiBase, repository, branch, token, preservePaths, sleepImpl, now,
   });
   if (after.default_branch_sha !== boundSha) throw new Error('protected branch moved before cleanup postcondition audit');
+  if (!Number.isSafeInteger(after.unresolved_count) || after.unresolved_count !== 0) {
+    throw new Error('cleanup postcondition failed: unresolved workflow identities remain');
+  }
   const targetIds = new Set(plan.targets.map((target) => target.workflow_id));
   const stillActive = after.classifications.filter(
     (item) => targetIds.has(item.workflow_id) && item.classification === 'active_orphan',
