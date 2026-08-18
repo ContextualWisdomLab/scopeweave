@@ -26,6 +26,7 @@ let discoveryMode = 'private-metadata';
 let observedTimeout = null;
 let callbackAbortController = null;
 let observedUpstreamAbort = null;
+let jwksFetches = 0;
 const originalTimeout = AbortSignal.timeout;
 const originalFetch = globalThis.fetch;
 
@@ -70,6 +71,7 @@ globalThis.fetch = async (input, init) => {
     });
   }
   if (url === jwksEndpoint) {
+    jwksFetches += 1;
     assert.equal(
       request.redirect,
       'error',
@@ -100,7 +102,7 @@ globalThis.fetch = async (input, init) => {
     exp: now + 300,
   };
 
-  if (code === 'valid-code') {
+  if (code === 'valid-code' || code === 'valid-code-cache') {
     return Response.json({ id_token: signIdToken(baseClaims) });
   }
   if (code === 'forged-code') {
@@ -169,6 +171,15 @@ try {
     3000,
     'OIDC provider calls use the bounded three-second provider budget',
   );
+  assert.equal(jwksFetches, 1, 'first verified login retrieves signing-key evidence once');
+
+  const cachedKeyLogin = await callback('valid-code-cache');
+  assert.equal(cachedKeyLogin.status, 302, 'a second correctly signed login remains valid');
+  assert.equal(
+    jwksFetches,
+    1,
+    'repeated logins with the same signing key reuse bounded JWKS evidence instead of amplifying provider traffic',
+  );
 
   const forged = await callback('forged-code');
   assert.equal(forged.status, 400, 'a forged ID-token signature is rejected');
@@ -220,4 +231,4 @@ try {
   delete process.env.SCOPEWEAVE_DEV;
 }
 
-console.log('oidc discovery, private-endpoint, validation, cancellation, redirect, timeout, and state-capacity regression passed');
+console.log('oidc discovery, private-endpoint, validation, cancellation, redirect, timeout, bounded JWKS reuse, and state-capacity regression passed');
