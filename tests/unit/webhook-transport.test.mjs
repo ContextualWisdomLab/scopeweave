@@ -209,12 +209,13 @@ assert.equal(
   'IP literals do not inject an SNI hostname',
 );
 
+const candidateAnswers = [
+  { address: '93.184.216.34', family: 4 },
+  { address: '2606:4700:4700::1111', family: 6 },
+];
 const candidateAttempts = [];
 const fallbackTransport = createWebhookTransport({
-  lookup: async () => [
-    { address: '93.184.216.34', family: 4 },
-    { address: '2606:4700:4700::1111', family: 6 },
-  ],
+  lookup: async () => candidateAnswers,
   request: (_url, options, callback) => {
     const req = new EventEmitter();
     req.end = () => {
@@ -236,10 +237,75 @@ assert.deepEqual(
   { status: 204, ok: true },
   'a later policy-validated address is attempted when the first address cannot connect',
 );
-assert.deepEqual(candidateAttempts, [
-  { address: '93.184.216.34', family: 4 },
-  { address: '2606:4700:4700::1111', family: 6 },
-]);
+assert.deepEqual(candidateAttempts, candidateAnswers);
+
+const protocolCapture = {};
+const protocolFailureTransport = createWebhookTransport({
+  lookup: async () => candidateAnswers,
+  request: responseRequest(503, protocolCapture),
+});
+assert.deepEqual(
+  await protocolFailureTransport.post('https://hooks.example.com/hook'),
+  { status: 503, ok: false },
+);
+assert.equal(
+  protocolCapture.calls,
+  1,
+  'an HTTP response is authoritative and must not replay the signed body to another address',
+);
+
+const exhaustedAttempts = [];
+const exhaustedTransport = createWebhookTransport({
+  lookup: async () => candidateAnswers,
+  request: (_url, options) => {
+    const req = new EventEmitter();
+    req.end = () => {
+      options.lookup('ignored.example', {}, (error, address, family) => {
+        assert.equal(error, null);
+        exhaustedAttempts.push({ address, family });
+        queueMicrotask(() => req.emit('error', new Error('candidate unavailable')));
+      });
+    };
+    return req;
+  },
+});
+await assert.rejects(
+  () => exhaustedTransport.post('https://hooks.example.com/hook'),
+  WebhookTransportError,
+);
+assert.deepEqual(
+  exhaustedAttempts,
+  candidateAnswers,
+  'all already-validated candidates are exhausted before the attempt fails',
+);
+
+const fallbackAbort = new AbortController();
+const abortAttempts = [];
+const abortingFallbackTransport = createWebhookTransport({
+  lookup: async () => candidateAnswers,
+  request: (_url, options) => {
+    const req = new EventEmitter();
+    req.end = () => {
+      options.lookup('ignored.example', {}, (error, address, family) => {
+        assert.equal(error, null);
+        abortAttempts.push({ address, family });
+        queueMicrotask(() => fallbackAbort.abort());
+      });
+    };
+    return req;
+  },
+});
+await assert.rejects(
+  () => abortingFallbackTransport.post('https://hooks.example.com/hook', {
+    signal: fallbackAbort.signal,
+  }),
+  WebhookTransportError,
+);
+assert.deepEqual(
+  abortAttempts,
+  [candidateAnswers[0]],
+  'an aborted delivery never falls through to another validated address',
+);
 
 const syncFailure = createWebhookTransport({
   lookup: async () => [{ address: '93.184.216.34', family: 4 }],
