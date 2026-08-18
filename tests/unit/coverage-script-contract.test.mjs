@@ -106,6 +106,11 @@ for (const specName of e2eSpecs) {
     /from\s*['"]@playwright\/test['"]/,
     `${specName} must not bypass the coverage-aware fixture with a direct Playwright test import`,
   );
+  assert.doesNotMatch(
+    specSource,
+    /page\.route\(\s*['"`][^'"`]*(?:app|cloud-sync)\.js[^'"`]*['"`]/,
+    `${specName} must not replace exact production script bytes while those bytes are coverage provenance evidence`,
+  );
 }
 
 const browserFixtureSource = readFileSync(new URL('../e2e/coverage-test.js', import.meta.url), 'utf8');
