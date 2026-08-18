@@ -1,6 +1,7 @@
 // This contract prevents a subtle CI regression: the central review gate may
 // invoke `test:coverage` directly, so that script itself must create Istanbul
-// JSON rather than merely execute tests without instrumentation.
+// JSON, enforce complete owned-production coverage, and execute the complete
+// deterministic unit/API suite rather than a hand-maintained test subset.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
@@ -24,6 +25,19 @@ assert.match(
   /--reporter=json-summary\b/,
   'test:coverage also creates the Istanbul JSON summary',
 );
+for (const requiredCoverageOption of [
+  '--check-coverage',
+  '--lines 100',
+  '--functions 100',
+  '--branches 100',
+  '--statements 100',
+]) {
+  assert.equal(
+    scripts['test:coverage'].includes(requiredCoverageOption),
+    true,
+    `test:coverage must enforce ${requiredCoverageOption}`,
+  );
+}
 assert.match(
   scripts['test:coverage'],
   /--include=server\/attachment_status\.mjs/,
@@ -34,10 +48,15 @@ assert.match(
   /--include=server\/clearfolio\.mjs/,
   'the abortable Clearfolio adapter is instrumented',
 );
-assert.match(
+assert.equal(
   scripts['test:coverage:cases'],
+  'npm run test:unit && npm run test:api',
+  'coverage must instrument the complete deterministic unit and API suites instead of a stale curated subset',
+);
+assert.match(
+  scripts['test:unit'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
-  'the Clearfolio signal and HTTP failure regression executes under c8',
+  'the complete unit suite retains the Clearfolio signal and HTTP failure regression',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
