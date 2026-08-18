@@ -53,7 +53,13 @@ export function downloadBlobSafely(blob, filename, { documentRef = document, url
     try {
       if (anchor) {
         const remove = Object.getPrototypeOf(anchor)?.remove;
-        if (typeof remove === 'function') remove.call(anchor);
+        if (typeof remove === 'function') {
+          try {
+            remove.call(anchor);
+          } catch {
+            // Drop cleanup failure so it does not replace the causal download failure
+          }
+        }
       }
     } finally {
       urlRef.revokeObjectURL(url);
