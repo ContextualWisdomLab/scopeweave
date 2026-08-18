@@ -5,7 +5,6 @@ process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 
 const { app } = await import('../../server/app.mjs');
-const { app: coreApp } = await import('../../server/app_core.mjs');
 const { db } = await import('../../server/db.mjs');
 
 const body = (value) => JSON.stringify(value);
@@ -32,18 +31,22 @@ async function createOwner(email) {
   return { token, user: payload.user, org: payload.orgs[0] };
 }
 
-test('webhook registration policy is enforced by the core route, not only an outer facade', async () => {
-  const { token, org } = await createOwner('core-webhook-policy@scopeweave.test');
-  const response = await coreApp.request(`/api/orgs/${org.id}/webhooks`, {
+test('signed webhook Request inputs stay behind the SSRF destination policy', async () => {
+  const signedRequest = new Request('https://127.0.0.1/internal', {
     method: 'POST',
     headers: {
       'content-type': 'application/json',
-      authorization: `Bearer ${token}`,
+      'x-scopeweave-event': 'project.update',
+      'x-scopeweave-signature': `sha256=${'a'.repeat(64)}`,
     },
-    body: body({ url: 'http://127.0.0.1:8080/internal', events: ['project.updated'] }),
+    body: body({ event: 'project.update' }),
   });
-  assert.equal(response.status, 400, 'core registration rejects an SSRF-capable loopback target');
-  assert.deepEqual(await response.json(), { error: 'valid public https webhook URL required' });
+
+  await assert.rejects(
+    globalThis.fetch(signedRequest),
+    (error) => error?.name === 'WebhookDestinationError',
+    'Request-object webhook sends must use the same fail-closed transport as URL+init sends',
+  );
 });
 
 test('signup and login use one canonical email identity', async () => {
