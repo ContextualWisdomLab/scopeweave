@@ -75,6 +75,40 @@ test('unauthenticated webhook registration rejects before consuming the request 
   );
 });
 
+test('invalid webhook credentials cannot force unbounded pre-auth body buffering', async () => {
+  let bodyPulls = 0;
+  const chunk = new Uint8Array(8 * 1024).fill(0x20);
+  const requestBody = new ReadableStream({
+    pull(controller) {
+      bodyPulls += 1;
+      if (bodyPulls > 20) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(chunk);
+    },
+  }, { highWaterMark: 0 });
+  const invalidCredentialRequest = new Request(
+    'http://localhost/api/orgs/not-authorized/webhooks',
+    {
+      method: 'POST',
+      headers: {
+        authorization: 'Bearer definitely-not-a-valid-session',
+        'content-type': 'application/json',
+      },
+      body: requestBody,
+      duplex: 'half',
+    },
+  );
+
+  const response = await app.request(invalidCredentialRequest);
+  assert.equal(response.status, 401, 'invalid credentials remain unauthorized');
+  assert.ok(
+    bodyPulls <= 3,
+    `pre-auth webhook parsing must stop at the bounded request budget; observed ${bodyPulls} pulls`,
+  );
+});
+
 test('signed webhook Request inputs stay behind the SSRF destination policy', async () => {
   const signedRequest = new Request('https://127.0.0.1/internal', {
     method: 'POST',
