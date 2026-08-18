@@ -4,3 +4,6 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+## 2026-08-18 - Optimize loop performance by replacing reduce/forEach with standard loops and Int32Array
+**Learning:** Using `Array.prototype.reduce`/`forEach` and `Map` incurs significant callback allocation, hash-lookup overhead, and garbage collection pauses in hot O(N) rendering paths.
+**Action:** Replace high-frequency mapping/reductions with standard `for` loops and typed arrays (like `Int32Array`) to bypass JavaScript engine overhead.

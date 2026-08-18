@@ -1370,21 +1370,26 @@ function validateDateRange(startLabel, startValue, endLabel, endValue, errors) {
 }
 
 function computeTaskMetrics() {
-  // ⚡ Bolt: Cache durationDays during total calculation to avoid recalculating for every task
-  const durationCache = new Map();
-  const totalDays = state.tasks.reduce((sum, task) => {
-    const duration = calculateDurationDays(task.plannedStartDate, task.plannedEndDate);
-    durationCache.set(task.id, duration);
-    return sum + duration;
-  }, 0);
+  // ⚡ Bolt: Use Int32Array and standard for-loops instead of Map and Array.reduce/forEach
+  // to eliminate JS callback allocation, Map hash-lookups, and garbage collection overhead.
+  const numTasks = state.tasks.length;
+  const durations = new Int32Array(numTasks);
+  let totalDays = 0;
+
+  for (let i = 0; i < numTasks; i++) {
+    const duration = calculateDurationDays(state.tasks[i].plannedStartDate, state.tasks[i].plannedEndDate);
+    durations[i] = duration;
+    totalDays += duration;
+  }
 
   const baseDate = state.baseDate;
   const byTask = new Map();
   let totalWeightedPlannedRatio = 0;
   let totalWeightedActualRatio = 0;
 
-  state.tasks.forEach((task) => {
-    const durationDays = durationCache.get(task.id);
+  for (let i = 0; i < numTasks; i++) {
+    const task = state.tasks[i];
+    const durationDays = durations[i];
     const weightRatio = totalDays > 0 ? durationDays / totalDays : 0;
     const plannedProgressRatio = calculatePlannedProgressRatio(baseDate, task.plannedStartDate, task.plannedEndDate, durationDays);
     const actualProgressRatio = (ACTUAL_PROGRESS_MAP[task.actualProgressStatus] || 0) / 100;
@@ -1408,7 +1413,7 @@ function computeTaskMetrics() {
       plannedDateWarning,
       actualDateWarning
     });
-  });
+  }
 
   return {
     totalDays,
