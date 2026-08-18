@@ -1340,7 +1340,7 @@ app.post('/api/auth/logout-all', requireAuth, (c) => {
   const uid = c.get('user').sub;
   db.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?').run(uid);
   const u = db.prepare('SELECT email, token_version FROM users WHERE id = ?').get(uid);
-  return c.json({ ok: true, token: signToken({ sub: uid, email: u.email, tv: u.token_version }) });
+  return c.json({ ok: true, token: signToken({ sub: uid, email, tv: u.token_version }) });
 });
 
 // Change password (verifies the current one).
@@ -1378,7 +1378,7 @@ app.get('/api/health', (c) => c.json({ ok: true }));
 
 // Static client — strict allowlist so server/, data.db, package.json etc. are
 // never served. Anything not listed → 404.
-const STATIC = {
+const STATIC = Object.assign(Object.create(null), {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
   '/404.html': ['404.html', 'text/html; charset=utf-8'],
@@ -1394,7 +1394,7 @@ const STATIC = {
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
   '/toast-state.css': ['toast-state.css', 'text/css; charset=utf-8'],
   '/wbs.json': ['wbs.json', 'application/json; charset=utf-8'],
-};
+});
 app.get('*', async (c) => {
   const entry = STATIC[c.req.path];
   if (!entry) return c.notFound();
