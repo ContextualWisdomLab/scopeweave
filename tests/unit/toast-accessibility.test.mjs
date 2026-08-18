@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
+process.env.SCOPEWEAVE_DB = ':memory:';
+
 const indexHtml = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
 const toastStateCss = readFileSync(new URL('../../toast-state.css', import.meta.url), 'utf8');
 const cloudSyncJs = readFileSync(new URL('../../cloud-sync.js', import.meta.url), 'utf8');
@@ -34,7 +36,7 @@ test('sync status uses the same explicit advisory status semantics', () => {
   assert.doesNotMatch(syncStatus, /\btabindex\s*=/i, 'sync feedback does not become a synthetic keyboard stop');
 });
 
-test('cloud toast stylesheet is on every production serve path', () => {
+test('cloud toast stylesheet is on every production serve path', async () => {
   const serverFacade = readFileSync(new URL('../../server/app.mjs', import.meta.url), 'utf8');
   const serverCore = readFileSync(new URL('../../server/app_core.mjs', import.meta.url), 'utf8');
   const pagesWorkflow = readFileSync(new URL('../../.github/workflows/pages.yml', import.meta.url), 'utf8');
@@ -45,10 +47,18 @@ test('cloud toast stylesheet is on every production serve path', () => {
     /import\s+\{\s*app\s+as\s+coreApp\s*\}\s+from\s+['"]\.\/app_core\.mjs['"]/,
     'SaaS security facade delegates to the route graph that owns static assets',
   );
+  const { app } = await import('../../server/app.mjs');
+  const stylesheetResponse = await app.request('/toast-state.css');
+  assert.equal(stylesheetResponse.status, 200, 'SaaS security facade serves the toast stylesheet');
   assert.match(
-    serverFacade,
-    /return\s+coreApp\.fetch\(request,\s*\.\.\.rest\)/,
-    'SaaS security facade preserves the core static-asset request path',
+    stylesheetResponse.headers.get('content-type') || '',
+    /^text\/css\b/i,
+    'SaaS security facade preserves the stylesheet media type',
+  );
+  assert.equal(
+    await stylesheetResponse.text(),
+    toastStateCss,
+    'SaaS security facade preserves the exact core static-asset response',
   );
   assert.match(serverCore, /['"]\/toast-state\.css['"]/, 'SaaS allowlist serves the cloud toast stylesheet');
   assert.match(pagesWorkflow, /\btoast-state\.css\b/, 'GitHub Pages stages the cloud toast stylesheet');
