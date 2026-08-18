@@ -8,6 +8,8 @@ process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 const probePath = '/prototype-pollution-probe';
 Object.defineProperty(Object.prototype, probePath, {
   configurable: true,
+  enumerable: true,
+  writable: true,
   value: ['package.json', 'application/json; charset=utf-8'],
 });
 
