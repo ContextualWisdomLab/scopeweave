@@ -3,16 +3,17 @@ import { createSign, generateKeyPairSync } from 'node:crypto';
 
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
-process.env.OIDC_ISSUER = 'https://idp.example.test';
+process.env.SCOPEWEAVE_DEV = '1';
+process.env.OIDC_ISSUER = 'http://127.0.0.1:19001';
 process.env.OIDC_CLIENT_ID = 'scopeweave-test';
 process.env.OIDC_CLIENT_SECRET = 'scopeweave-secret';
 process.env.OIDC_REDIRECT_URI = 'http://localhost/api/auth/oidc/callback';
 
 const issuer = process.env.OIDC_ISSUER;
 const clientId = process.env.OIDC_CLIENT_ID;
-const authorizationEndpoint = 'https://login.example.test/oauth2/authorize';
-const tokenEndpoint = 'https://tokens.example.test/oauth2/token';
-const jwksEndpoint = 'https://keys.example.test/jwks';
+const authorizationEndpoint = 'http://127.0.0.1:19002/oauth2/authorize';
+const tokenEndpoint = 'http://127.0.0.1:19003/oauth2/token';
+const jwksEndpoint = 'http://127.0.0.1:19004/jwks';
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const publicJwk = {
   ...publicKey.export({ format: 'jwk' }),
@@ -21,6 +22,7 @@ const publicJwk = {
   use: 'sig',
 };
 const expectedNonceByCode = new Map();
+let discoveryMode = 'private-metadata';
 let observedTimeout = null;
 let callbackAbortController = null;
 let observedUpstreamAbort = null;
@@ -50,6 +52,15 @@ globalThis.fetch = async (input, init) => {
       'error',
       'OIDC discovery must reject redirects instead of following provider-controlled locations',
     );
+    if (discoveryMode === 'private-metadata') {
+      return Response.json({
+        issuer,
+        authorization_endpoint: authorizationEndpoint,
+        token_endpoint: 'https://127.0.0.1/internal-token',
+        jwks_uri: 'https://[::1]/internal-jwks',
+        id_token_signing_alg_values_supported: ['RS256'],
+      });
+    }
     return Response.json({
       issuer,
       authorization_endpoint: authorizationEndpoint,
@@ -117,6 +128,14 @@ globalThis.fetch = async (input, init) => {
 try {
   const { app } = await import('../../server/app.mjs');
 
+  const unsafeMetadata = await app.request('/api/auth/oidc/start');
+  assert.equal(
+    unsafeMetadata.status,
+    502,
+    'OIDC discovery metadata cannot redirect server-side token or JWKS requests to private HTTPS addresses',
+  );
+  discoveryMode = 'valid';
+
   const startFlow = async (code) => {
     const start = await app.request('/api/auth/oidc/start');
     assert.equal(start.status, 302, 'OIDC authorization flow starts');
@@ -178,6 +197,7 @@ try {
 } finally {
   AbortSignal.timeout = originalTimeout;
   globalThis.fetch = originalFetch;
+  delete process.env.SCOPEWEAVE_DEV;
 }
 
-console.log('oidc discovery, validation, cancellation, redirect, and timeout regression passed');
+console.log('oidc discovery, private-endpoint, validation, cancellation, redirect, and timeout regression passed');
