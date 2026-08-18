@@ -13,6 +13,10 @@ const osvWorkflow = readFileSync(
   new URL('../../.github/workflows/osvscanner.yml', import.meta.url),
   'utf8',
 );
+const packageJson = JSON.parse(
+  readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
+);
+const coverageScript = packageJson.scripts?.['test:coverage'] ?? '';
 
 const exactHeadRef = 'ref: ${{ github.event.pull_request.head.sha || github.sha }}';
 const expectedShaEnv = 'EXPECTED_CHECKOUT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}';
@@ -42,6 +46,29 @@ assert.doesNotMatch(
   /\bpull_request_target\s*:/,
   'exact-head testing must not gain the privileged pull_request_target trust context',
 );
+assert.match(
+  serverTestsWorkflow,
+  /- name: Exact owned production coverage[\s\S]*?run: npm run test:coverage\b/,
+  'Server Tests must execute the exact-head owned-production coverage gate',
+);
+assert.match(
+  serverTestsWorkflow,
+  /- name: Public docstring gate[\s\S]*?run: npm run check:python-docstrings\b/,
+  'Server Tests must execute the public docstring applicability gate',
+);
+for (const requiredCoverageOption of [
+  '--check-coverage',
+  '--lines 100',
+  '--functions 100',
+  '--branches 100',
+  '--statements 100',
+]) {
+  assert.equal(
+    coverageScript.includes(requiredCoverageOption),
+    true,
+    `test:coverage must enforce ${requiredCoverageOption}`,
+  );
+}
 
 assert.match(
   codeqlWorkflow,
