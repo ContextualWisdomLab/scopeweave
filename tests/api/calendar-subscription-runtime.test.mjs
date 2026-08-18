@@ -70,6 +70,12 @@ response = await req(`/api/projects/${project.id}`, {
         plannedStartDate: '2026-02-30',
         plannedEndDate: '2026-02-30',
       },
+      {
+        id: 'calendar-task-6',
+        name: 'Unrepresentable exclusive end date',
+        plannedStartDate: '9999-12-31',
+        plannedEndDate: '9999-12-31',
+      },
     ],
   }),
 });
@@ -129,6 +135,8 @@ assert.match(feed, /SUMMARY:Fallback task label/);
 assert.doesNotMatch(feed, /calendar-task-3/, 'non-date task values are omitted from the feed');
 assert.doesNotMatch(feed, /calendar-task-4/, 'impossible calendar months are omitted from the feed');
 assert.doesNotMatch(feed, /calendar-task-5/, 'impossible calendar days are omitted from the feed');
+assert.doesNotMatch(feed, /calendar-task-6/, 'events whose exclusive end cannot be represented are omitted');
+assert.doesNotMatch(feed, /\+01000001/, 'the feed never emits an extended-year value as an RFC 5545 DATE');
 
 response = await req(`${created.feedPath}&token=${encodeURIComponent(currentToken)}`);
 assert.equal(response.status, 401, 'mixed subscription and session-query credentials fail closed');
