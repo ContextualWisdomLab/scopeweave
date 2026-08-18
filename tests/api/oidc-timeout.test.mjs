@@ -194,10 +194,30 @@ try {
     true,
     'OIDC token exchange preserves callback cancellation while retaining its timeout budget',
   );
+
+  for (let index = 0; index < 256; index += 1) {
+    const pending = await app.request('/api/auth/oidc/start');
+    assert.equal(
+      pending.status,
+      302,
+      'OIDC state capacity must admit flows until the bounded in-memory state budget is full',
+    );
+  }
+  const saturated = await app.request('/api/auth/oidc/start');
+  assert.equal(
+    saturated.status,
+    503,
+    'OIDC state capacity must fail closed instead of allowing unbounded in-memory growth',
+  );
+  assert.deepEqual(
+    await saturated.json(),
+    { error: 'OIDC temporarily unavailable' },
+    'capacity exhaustion returns a stable non-secret degraded-mode response',
+  );
 } finally {
   AbortSignal.timeout = originalTimeout;
   globalThis.fetch = originalFetch;
   delete process.env.SCOPEWEAVE_DEV;
 }
 
-console.log('oidc discovery, private-endpoint, validation, cancellation, redirect, and timeout regression passed');
+console.log('oidc discovery, private-endpoint, validation, cancellation, redirect, timeout, and state-capacity regression passed');
