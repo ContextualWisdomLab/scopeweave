@@ -278,14 +278,14 @@ async function coreFetchWithOidcBinding(request, rest) {
  * rate-limit, and request middleware before this facade returns a policy error.
  * The deliberately empty URL reaches the old route's own URL validation but can
  * never be persisted or delivered, so denied destinations do not bypass or
- * reorder the authoritative authorization boundary.
+ * reorder the authoritative authorization boundary. A 400 is therefore the
+ * controlled probe's explicit "authorization passed; URL rejected" outcome;
+ * authentication and tenant-role failures return before that point.
  */
 async function deniedRegistrationAuthorization(request, rest) {
   const probe = requestWithJson(request, { url: '' });
   const response = await coreApp.fetch(probe, ...rest);
-  if (response.status !== 400) return response;
-  const payload = await response.clone().json().catch(() => null);
-  return payload?.error === 'valid http(s) url required' ? null : response;
+  return response.status === 400 ? null : response;
 }
 
 function canonicalRegistrationRequest(request, payload, canonicalUrl) {
