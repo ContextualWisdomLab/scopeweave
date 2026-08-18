@@ -16,6 +16,10 @@ const webhookFetchBoundaryKey = Symbol.for('scopeweave.webhook-fetch-boundary');
 const WEBHOOK_REGISTRATION_PATH = /^\/api\/orgs\/[^/]+\/webhooks$/;
 const AUDIT_PATH = /^\/api\/orgs\/[^/]+\/audit$/;
 const AUTH_EMAIL_PATH = /^\/api\/auth\/(?:signup|login)$/;
+const OIDC_TOKEN_URL = process.env.OIDC_ISSUER
+  ? `${process.env.OIDC_ISSUER.replace(/\/$/, '')}/token`
+  : null;
+const OIDC_TOKEN_TIMEOUT_MS = 3000;
 
 function isSignedWebhookRequest(request) {
   if (request.method.toUpperCase() !== 'POST') return false;
@@ -25,6 +29,12 @@ function isSignedWebhookRequest(request) {
         request.headers.get('x-scopeweave-signature') || '',
       ),
   );
+}
+
+function isOidcTokenRequest(request) {
+  return OIDC_TOKEN_URL !== null
+    && request.method.toUpperCase() === 'POST'
+    && request.url === OIDC_TOKEN_URL;
 }
 
 async function protectedWebhookFetch(request) {
@@ -45,18 +55,28 @@ async function protectedWebhookFetch(request) {
   return Response.error();
 }
 
-// Install exactly once per process. Only the server's own signed webhook POSTs
-// are routed through the SSRF-safe transport; OIDC, Clearfolio, billing, and all
-// other fetch users retain native fetch semantics. Constructing an effective
-// Request first makes Request-object inputs and init overrides follow the same
-// security decision as URL+init calls.
+function boundedOidcFetch(request) {
+  return nativeFetch(new Request(request, {
+    signal: AbortSignal.timeout(OIDC_TOKEN_TIMEOUT_MS),
+  }));
+}
+
+// Install exactly once per process. The server's signed webhook POSTs are
+// routed through the SSRF-safe transport, and the configured OIDC token exchange
+// gets a bounded provider budget. Clearfolio, billing, and unrelated fetch users
+// retain native fetch semantics. Constructing an effective Request first makes
+// Request-object inputs and init overrides follow the same security decision as
+// URL+init calls.
 if (!globalThis[webhookFetchBoundaryKey]) {
   globalThis.fetch = async (input, init = undefined) => {
     const effectiveRequest = new Request(input, init);
-    if (!isSignedWebhookRequest(effectiveRequest)) {
-      return nativeFetch(input, init);
+    if (isSignedWebhookRequest(effectiveRequest)) {
+      return protectedWebhookFetch(effectiveRequest);
     }
-    return protectedWebhookFetch(effectiveRequest);
+    if (isOidcTokenRequest(effectiveRequest)) {
+      return boundedOidcFetch(effectiveRequest);
+    }
+    return nativeFetch(input, init);
   };
   Object.defineProperty(globalThis, webhookFetchBoundaryKey, {
     value: true,
