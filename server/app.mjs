@@ -24,10 +24,12 @@ const OIDC_ISSUER = process.env.OIDC_ISSUER
 const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID || '';
 const OIDC_TOKEN_URL = OIDC_ISSUER ? `${OIDC_ISSUER}/token` : null;
 const OIDC_TOKEN_TIMEOUT_MS = 3000;
+const OIDC_DISCOVERY_TTL_MS = 60 * 1000;
 const OIDC_STATE_TTL_MS = 5 * 60 * 1000;
 const OIDC_CLOCK_SKEW_SECONDS = 60;
 const oidcNonceByState = new Map();
 const oidcNonceByCode = new Map();
+let oidcDiscoveryCache = null;
 
 function isSignedWebhookRequest(request) {
   if (request.method.toUpperCase() !== 'POST') return false;
@@ -88,7 +90,39 @@ async function oidcProviderJson(url) {
   return payload;
 }
 
-async function verifyOidcIdToken(idToken, expectedNonce) {
+function validateOidcEndpoint(value, label) {
+  let endpoint;
+  try {
+    endpoint = new URL(String(value || ''));
+  } catch {
+    throw new Error(`invalid ${label}`);
+  }
+  if (
+    (endpoint.protocol !== 'https:' && !isDevelopmentLoopbackHttp(endpoint))
+    || endpoint.username
+    || endpoint.password
+    || endpoint.hash
+  ) throw new Error(`invalid ${label}`);
+  return endpoint.toString();
+}
+
+async function loadOidcDiscovery(now = Date.now()) {
+  if (oidcDiscoveryCache && oidcDiscoveryCache.expiresAt > now) {
+    return oidcDiscoveryCache.value;
+  }
+  const discovery = await oidcProviderJson(`${OIDC_ISSUER}/.well-known/openid-configuration`);
+  if (discovery.issuer !== OIDC_ISSUER) throw new Error('invalid discovery');
+  const value = Object.freeze({
+    ...discovery,
+    authorization_endpoint: validateOidcEndpoint(discovery.authorization_endpoint, 'authorization endpoint'),
+    token_endpoint: validateOidcEndpoint(discovery.token_endpoint, 'token endpoint'),
+    jwks_uri: validateOidcEndpoint(discovery.jwks_uri, 'jwks url'),
+  });
+  oidcDiscoveryCache = { value, expiresAt: now + OIDC_DISCOVERY_TTL_MS };
+  return value;
+}
+
+async function verifyOidcIdToken(idToken, expectedNonce, discovery) {
   const parts = String(idToken || '').split('.');
   if (parts.length !== 3) throw new Error('invalid token');
   const [encodedHeader, encodedClaims, encodedSignature] = parts;
@@ -96,11 +130,7 @@ async function verifyOidcIdToken(idToken, expectedNonce) {
   const claims = parseJwtObject(encodedClaims);
   if (header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid) throw new Error('invalid algorithm');
 
-  const discovery = await oidcProviderJson(`${OIDC_ISSUER}/.well-known/openid-configuration`);
-  if (discovery.issuer !== OIDC_ISSUER || typeof discovery.jwks_uri !== 'string') throw new Error('invalid discovery');
-  const jwksUrl = new URL(discovery.jwks_uri);
-  if (jwksUrl.protocol !== 'https:' || jwksUrl.username || jwksUrl.password || jwksUrl.hash) throw new Error('invalid jwks url');
-  const jwks = await oidcProviderJson(jwksUrl);
+  const jwks = await oidcProviderJson(discovery.jwks_uri);
   const keyData = Array.isArray(jwks.keys)
     ? jwks.keys.find((candidate) => (
       candidate
@@ -128,22 +158,29 @@ async function verifyOidcIdToken(idToken, expectedNonce) {
 }
 
 async function boundedOidcFetch(request) {
-  const form = new URLSearchParams(await request.clone().text());
+  const body = await request.clone().arrayBuffer();
+  const form = new URLSearchParams(new TextDecoder().decode(body));
   const code = form.get('code');
   const expectedNonce = code ? oidcNonceByCode.get(code) : null;
   if (!expectedNonce || expectedNonce.exp < Date.now()) throw new Error('OIDC flow binding unavailable');
+  const discovery = await loadOidcDiscovery();
   const signal = AbortSignal.any([
     request.signal,
     expectedNonce.callbackSignal,
     AbortSignal.timeout(OIDC_TOKEN_TIMEOUT_MS),
   ]);
-  const response = await nativeFetch(new Request(request, {
+  const headers = new Headers(request.headers);
+  headers.delete('content-length');
+  const response = await nativeFetch(new Request(discovery.token_endpoint, {
+    method: request.method,
+    headers,
+    body,
     redirect: 'error',
     signal,
   }));
   if (!response.ok) return response;
   const tokenPayload = await response.clone().json();
-  await verifyOidcIdToken(tokenPayload.id_token, expectedNonce.nonce);
+  await verifyOidcIdToken(tokenPayload.id_token, expectedNonce.nonce, discovery);
   return response;
 }
 
@@ -238,12 +275,16 @@ function cleanupOidcNonces(now = Date.now()) {
   }
 }
 
-function bindOidcStartNonce(request, response) {
+function bindOidcStartNonce(request, response, discovery) {
   if (!OIDC_ISSUER || request.method !== 'GET' || new URL(request.url).pathname !== '/api/auth/oidc/start') return response;
   if (response.status !== 302) return response;
   const location = response.headers.get('location');
   if (!location) return response;
-  const authorization = new URL(location);
+  const generatedAuthorization = new URL(location);
+  const authorization = new URL(discovery.authorization_endpoint);
+  for (const [name, value] of generatedAuthorization.searchParams.entries()) {
+    authorization.searchParams.set(name, value);
+  }
   const state = authorization.searchParams.get('state');
   if (!state) return response;
   cleanupOidcNonces();
@@ -256,14 +297,26 @@ function bindOidcStartNonce(request, response) {
 }
 
 async function coreFetchWithOidcBinding(request, rest) {
-  if (!OIDC_ISSUER || request.method !== 'GET' || new URL(request.url).pathname !== '/api/auth/oidc/callback') {
+  if (!OIDC_ISSUER || request.method !== 'GET') {
+    return coreApp.fetch(request, ...rest);
+  }
+  const requestUrl = new URL(request.url);
+  if (requestUrl.pathname === '/api/auth/oidc/start') {
+    let discovery;
+    try {
+      discovery = await loadOidcDiscovery();
+    } catch {
+      return Response.json({ error: 'OIDC provider unavailable' }, { status: 502 });
+    }
     const response = await coreApp.fetch(request, ...rest);
-    return bindOidcStartNonce(request, response);
+    return bindOidcStartNonce(request, response, discovery);
+  }
+  if (requestUrl.pathname !== '/api/auth/oidc/callback') {
+    return coreApp.fetch(request, ...rest);
   }
 
-  const url = new URL(request.url);
-  const state = url.searchParams.get('state');
-  const code = url.searchParams.get('code');
+  const state = requestUrl.searchParams.get('state');
+  const code = requestUrl.searchParams.get('code');
   const record = state ? oidcNonceByState.get(state) : null;
   if (state) oidcNonceByState.delete(state);
   if (code && record && record.exp >= Date.now()) {
