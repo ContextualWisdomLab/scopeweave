@@ -131,9 +131,14 @@ async function boundedOidcFetch(request) {
   const code = form.get('code');
   const expectedNonce = code ? oidcNonceByCode.get(code) : null;
   if (!expectedNonce || expectedNonce.exp < Date.now()) throw new Error('OIDC flow binding unavailable');
+  const signal = AbortSignal.any([
+    request.signal,
+    expectedNonce.callbackSignal,
+    AbortSignal.timeout(OIDC_TOKEN_TIMEOUT_MS),
+  ]);
   const response = await nativeFetch(new Request(request, {
     redirect: 'error',
-    signal: AbortSignal.timeout(OIDC_TOKEN_TIMEOUT_MS),
+    signal,
   }));
   if (!response.ok) return response;
   const tokenPayload = await response.clone().json();
@@ -258,7 +263,9 @@ async function coreFetchWithOidcBinding(request, rest) {
   const code = url.searchParams.get('code');
   const record = state ? oidcNonceByState.get(state) : null;
   if (state) oidcNonceByState.delete(state);
-  if (code && record && record.exp >= Date.now()) oidcNonceByCode.set(code, record);
+  if (code && record && record.exp >= Date.now()) {
+    oidcNonceByCode.set(code, { ...record, callbackSignal: request.signal });
+  }
   try {
     return await coreApp.fetch(request, ...rest);
   } finally {
