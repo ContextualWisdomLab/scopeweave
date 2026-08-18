@@ -4,6 +4,7 @@
 // policy can be added without rewriting unrelated tenant, auth, billing, or
 // Clearfolio behavior. Every production server and in-process caller imports
 // this facade; app_core.mjs is an implementation module, not a public entrypoint.
+import { createPublicKey, randomBytes, verify as verifySignature } from 'node:crypto';
 import { app as coreApp } from './app_core.mjs';
 import {
   WebhookDestinationError,
@@ -16,10 +17,16 @@ const webhookFetchBoundaryKey = Symbol.for('scopeweave.webhook-fetch-boundary');
 const WEBHOOK_REGISTRATION_PATH = /^\/api\/orgs\/[^/]+\/webhooks$/;
 const AUDIT_PATH = /^\/api\/orgs\/[^/]+\/audit$/;
 const AUTH_EMAIL_PATH = /^\/api\/auth\/(?:signup|login)$/;
-const OIDC_TOKEN_URL = process.env.OIDC_ISSUER
-  ? `${process.env.OIDC_ISSUER.replace(/\/$/, '')}/token`
+const OIDC_ISSUER = process.env.OIDC_ISSUER
+  ? process.env.OIDC_ISSUER.replace(/\/$/, '')
   : null;
+const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID || '';
+const OIDC_TOKEN_URL = OIDC_ISSUER ? `${OIDC_ISSUER}/token` : null;
 const OIDC_TOKEN_TIMEOUT_MS = 3000;
+const OIDC_STATE_TTL_MS = 5 * 60 * 1000;
+const OIDC_CLOCK_SKEW_SECONDS = 60;
+const oidcNonceByState = new Map();
+const oidcNonceByCode = new Map();
 
 function isSignedWebhookRequest(request) {
   if (request.method.toUpperCase() !== 'POST') return false;
@@ -55,18 +62,89 @@ async function protectedWebhookFetch(request) {
   return Response.error();
 }
 
-function boundedOidcFetch(request) {
-  return nativeFetch(new Request(request, {
+function parseJwtObject(segment) {
+  const value = JSON.parse(Buffer.from(String(segment || ''), 'base64url').toString('utf8'));
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('invalid token');
+  return value;
+}
+
+function audienceMatches(claims) {
+  if (typeof claims.aud === 'string') return claims.aud === OIDC_CLIENT_ID;
+  if (!Array.isArray(claims.aud) || !claims.aud.includes(OIDC_CLIENT_ID)) return false;
+  return claims.aud.length === 1
+    ? (!claims.azp || claims.azp === OIDC_CLIENT_ID)
+    : claims.azp === OIDC_CLIENT_ID;
+}
+
+async function oidcProviderJson(url) {
+  const response = await nativeFetch(new Request(url, {
     signal: AbortSignal.timeout(OIDC_TOKEN_TIMEOUT_MS),
   }));
+  if (!response.ok) throw new Error('provider unavailable');
+  const payload = await response.json();
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('invalid provider response');
+  return payload;
+}
+
+async function verifyOidcIdToken(idToken, expectedNonce) {
+  const parts = String(idToken || '').split('.');
+  if (parts.length !== 3) throw new Error('invalid token');
+  const [encodedHeader, encodedClaims, encodedSignature] = parts;
+  const header = parseJwtObject(encodedHeader);
+  const claims = parseJwtObject(encodedClaims);
+  if (header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid) throw new Error('invalid algorithm');
+
+  const discovery = await oidcProviderJson(`${OIDC_ISSUER}/.well-known/openid-configuration`);
+  if (discovery.issuer !== OIDC_ISSUER || typeof discovery.jwks_uri !== 'string') throw new Error('invalid discovery');
+  const jwksUrl = new URL(discovery.jwks_uri);
+  if (jwksUrl.protocol !== 'https:' || jwksUrl.username || jwksUrl.password || jwksUrl.hash) throw new Error('invalid jwks url');
+  const jwks = await oidcProviderJson(jwksUrl);
+  const keyData = Array.isArray(jwks.keys)
+    ? jwks.keys.find((candidate) => (
+      candidate
+        && candidate.kid === header.kid
+        && candidate.kty === 'RSA'
+        && (!candidate.use || candidate.use === 'sig')
+        && (!candidate.alg || candidate.alg === 'RS256')
+    ))
+    : null;
+  if (!keyData) throw new Error('signing key unavailable');
+  const key = createPublicKey({ key: keyData, format: 'jwk' });
+  if (!verifySignature(
+    'RSA-SHA256',
+    Buffer.from(`${encodedHeader}.${encodedClaims}`),
+    key,
+    Buffer.from(encodedSignature, 'base64url'),
+  )) throw new Error('invalid signature');
+
+  const now = Math.floor(Date.now() / 1000);
+  if (claims.iss !== OIDC_ISSUER || !audienceMatches(claims)) throw new Error('invalid token binding');
+  if (!Number.isInteger(claims.exp) || claims.exp <= now - OIDC_CLOCK_SKEW_SECONDS) throw new Error('expired token');
+  if (!Number.isInteger(claims.iat) || claims.iat > now + OIDC_CLOCK_SKEW_SECONDS) throw new Error('invalid issued-at');
+  if (typeof claims.sub !== 'string' || !claims.sub || claims.nonce !== expectedNonce) throw new Error('invalid subject or nonce');
+  if (typeof claims.email !== 'string' || !claims.email.trim()) throw new Error('missing email');
+}
+
+async function boundedOidcFetch(request) {
+  const form = new URLSearchParams(await request.clone().text());
+  const code = form.get('code');
+  const expectedNonce = code ? oidcNonceByCode.get(code) : null;
+  if (!expectedNonce || expectedNonce.exp < Date.now()) throw new Error('OIDC flow binding unavailable');
+  const response = await nativeFetch(new Request(request, {
+    signal: AbortSignal.timeout(OIDC_TOKEN_TIMEOUT_MS),
+  }));
+  if (!response.ok) return response;
+  const tokenPayload = await response.clone().json();
+  await verifyOidcIdToken(tokenPayload.id_token, expectedNonce.nonce);
+  return response;
 }
 
 // Install exactly once per process. The server's signed webhook POSTs are
 // routed through the SSRF-safe transport, and the configured OIDC token exchange
-// gets a bounded provider budget. Clearfolio, billing, and unrelated fetch users
-// retain native fetch semantics. Constructing an effective Request first makes
-// Request-object inputs and init overrides follow the same security decision as
-// URL+init calls.
+// gets a bounded provider budget plus signature/issuer/audience/nonce validation.
+// Clearfolio, billing, and unrelated fetch users retain native fetch semantics.
+// Constructing an effective Request first makes Request-object inputs and init
+// overrides follow the same security decision as URL+init calls.
 if (!globalThis[webhookFetchBoundaryKey]) {
   globalThis.fetch = async (input, init = undefined) => {
     const effectiveRequest = new Request(input, init);
@@ -144,6 +222,48 @@ async function canonicalInboundRequest(request) {
   return request;
 }
 
+function cleanupOidcNonces(now = Date.now()) {
+  for (const [state, record] of oidcNonceByState.entries()) {
+    if (record.exp < now) oidcNonceByState.delete(state);
+  }
+}
+
+function bindOidcStartNonce(request, response) {
+  if (!OIDC_ISSUER || request.method !== 'GET' || new URL(request.url).pathname !== '/api/auth/oidc/start') return response;
+  if (response.status !== 302) return response;
+  const location = response.headers.get('location');
+  if (!location) return response;
+  const authorization = new URL(location);
+  const state = authorization.searchParams.get('state');
+  if (!state) return response;
+  cleanupOidcNonces();
+  const nonce = randomBytes(16).toString('base64url');
+  oidcNonceByState.set(state, { nonce, exp: Date.now() + OIDC_STATE_TTL_MS });
+  authorization.searchParams.set('nonce', nonce);
+  const headers = new Headers(response.headers);
+  headers.set('location', authorization.toString());
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+async function coreFetchWithOidcBinding(request, rest) {
+  if (!OIDC_ISSUER || request.method !== 'GET' || new URL(request.url).pathname !== '/api/auth/oidc/callback') {
+    const response = await coreApp.fetch(request, ...rest);
+    return bindOidcStartNonce(request, response);
+  }
+
+  const url = new URL(request.url);
+  const state = url.searchParams.get('state');
+  const code = url.searchParams.get('code');
+  const record = state ? oidcNonceByState.get(state) : null;
+  if (state) oidcNonceByState.delete(state);
+  if (code && record && record.exp >= Date.now()) oidcNonceByCode.set(code, record);
+  try {
+    return await coreApp.fetch(request, ...rest);
+  } finally {
+    if (code) oidcNonceByCode.delete(code);
+  }
+}
+
 /**
  * Ask the existing route graph to run its real authentication, tenant-role,
  * rate-limit, and request middleware before this facade returns a policy error.
@@ -199,7 +319,7 @@ async function secureFetch(request, ...rest) {
   const canonicalRequest = await canonicalInboundRequest(request);
   const policy = await registrationPolicyResult(canonicalRequest, rest);
   if (policy?.response) return policy.response;
-  return coreApp.fetch(policy?.request || canonicalRequest, ...rest);
+  return coreFetchWithOidcBinding(policy?.request || canonicalRequest, rest);
 }
 
 async function secureRequest(input, init, ...rest) {
