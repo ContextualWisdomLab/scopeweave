@@ -54,10 +54,10 @@ const ownerId = ownerMe.user.id;
 const orgId = ownerMe.orgs[0].id;
 db.prepare("UPDATE orgs SET plan = 'pro' WHERE id = ?").run(orgId);
 
-// An older valid JWT without token-version metadata remains compatible with
-// version-zero accounts; this covers the explicit legacy-token fallback.
-const legacyToken = signToken({ sub: ownerId, email: ownerMe.user.email });
-await status(200, req('/api/me', { headers: authHeaders(legacyToken) }), 'legacy JWT');
+// Version-zero accounts still exercise the explicit `payload.tv || 0` branch,
+// while the hardened signer/verifier contract requires token-version metadata.
+const versionZeroToken = signToken({ sub: ownerId, email: ownerMe.user.email, tv: 0 });
+await status(200, req('/api/me', { headers: authHeaders(versionZeroToken) }), 'version-zero JWT');
 
 response = await req('/api/auth/signup', {
   method: 'POST',
