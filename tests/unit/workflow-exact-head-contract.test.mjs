@@ -68,6 +68,7 @@ assert.match(
   'Server Tests must execute the public docstring applicability gate',
 );
 for (const requiredCoverageOption of [
+  '--all',
   '--check-coverage',
   '--per-file',
   '--lines 100',
