@@ -97,6 +97,8 @@ async function expectRejectedEverywhere(projectId, token, label) {
  * exact token-version query instead of weakening production verification. The
  * first read remains the real durable value used by `verifyToken`; the second
  * read reports the next version, as an external writer could after verification.
+ * All other statement methods are delegated to the real SQLite statement so
+ * the fault seam cannot accidentally narrow the adapter surface under test.
  *
  * @param {() => Promise<Response>} runRequest - Request that authenticates one JWT.
  * @param {string} label - Diagnostic label for assertions.
@@ -110,16 +112,22 @@ async function expectPostVerificationRevocationRejected(runRequest, label) {
     const statement = originalPrepare.call(this, sql);
     if (sql !== 'SELECT token_version FROM users WHERE id = ?') return statement;
 
-    return {
-      get(...args) {
-        const row = statement.get(...args);
-        tokenVersionReads += 1;
-        if (tokenVersionReads === 2 && row) {
-          return { ...row, token_version: row.token_version + 1 };
+    return new Proxy(statement, {
+      get(target, property) {
+        if (property === 'get') {
+          return (...args) => {
+            const row = target.get(...args);
+            tokenVersionReads += 1;
+            if (tokenVersionReads === 2 && row) {
+              return { ...row, token_version: row.token_version + 1 };
+            }
+            return row;
+          };
         }
-        return row;
+        const value = Reflect.get(target, property, target);
+        return typeof value === 'function' ? value.bind(target) : value;
       },
-    };
+    });
   };
 
   try {
