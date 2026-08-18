@@ -8,12 +8,13 @@ assert.equal(routeTokenPathSegment('../admin?force=true'), '');
 assert.equal(routeTokenPathSegment('https://example.test/api'), '');
 assert.equal(routeTokenPathSegment('short'), '');
 
-function createDownloadHarness({ clickError = null } = {}) {
+function createDownloadHarness({ clickError = null, cleanupError = null } = {}) {
   const events = [];
   const anchorPrototype = {
     remove() {
       events.push('prototype-remove');
       this.parentNode = null;
+      if (cleanupError) throw cleanupError;
     },
   };
   const anchor = Object.create(anchorPrototype);
@@ -92,6 +93,33 @@ function createDownloadHarness({ clickError = null } = {}) {
   }
 
   assert.equal(observedError, causalError);
+  assert.equal(anchor.parentNode, null);
+  assert.deepEqual(events, [
+    'create-url',
+    'create-anchor',
+    'append-anchor',
+    'click',
+    'prototype-remove',
+    'revoke-url',
+  ]);
+}
+
+{
+  const causalError = new Error('browser download dispatch failed');
+  const cleanupError = new Error('browser anchor cleanup failed');
+  const { anchor, documentRef, events, urlRef } = createDownloadHarness({
+    clickError: causalError,
+    cleanupError,
+  });
+  let observedError = null;
+
+  try {
+    downloadBlobSafely(new Blob(['calendar export']), 'scopeweave.ics', { documentRef, urlRef });
+  } catch (error) {
+    observedError = error;
+  }
+
+  assert.equal(observedError, causalError, 'cleanup failure must not replace the causal download failure');
   assert.equal(anchor.parentNode, null);
   assert.deepEqual(events, [
     'create-url',
