@@ -1,4 +1,5 @@
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { readFile, readdir, rm, mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -89,9 +90,15 @@ if (testRun.status !== 0) {
       if (!expectedBrowserSources.includes(browserPath)) continue;
       observedSources.add(browserPath);
       const localPath = path.join(repositoryRoot, browserPath);
-      const localSource = await readFile(localPath, 'utf8');
-      if (entry.source != null && entry.source !== localSource) {
-        throw new Error(`Browser coverage source does not match checked-out ${browserPath}.`);
+      const localBytes = await readFile(localPath);
+      const localSource = localBytes.toString('utf8');
+      const localSourceSha256 = createHash('sha256').update(localBytes).digest('hex');
+      const servedSourceSha256 = payload.servedSourceSha256?.[`/${browserPath}`];
+      if (typeof servedSourceSha256 !== 'string') {
+        throw new Error(`Browser coverage lacks served-source identity for ${browserPath}.`);
+      }
+      if (servedSourceSha256 !== localSourceSha256) {
+        throw new Error(`Browser served source does not match checked-out ${browserPath}.`);
       }
       if (!Array.isArray(entry.functions)) {
         throw new Error(`Browser coverage lacks V8 function ranges for ${browserPath}.`);
