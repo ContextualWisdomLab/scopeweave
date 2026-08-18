@@ -4,6 +4,8 @@ import { BlockList, isIP } from 'node:net';
 
 const DENIED_IPV4_BLOCKS = new BlockList();
 const DENIED_IPV6_BLOCKS = new BlockList();
+const PUBLIC_IPV6_UNICAST = new BlockList();
+PUBLIC_IPV6_UNICAST.addSubnet('2000::', 3, 'ipv6');
 for (const [address, prefix, family] of [
   ['0.0.0.0', 8, 'ipv4'],
   ['10.0.0.0', 8, 'ipv4'],
@@ -13,8 +15,11 @@ for (const [address, prefix, family] of [
   ['172.16.0.0', 12, 'ipv4'],
   ['192.0.0.0', 24, 'ipv4'],
   ['192.0.2.0', 24, 'ipv4'],
+  ['192.31.196.0', 24, 'ipv4'],
+  ['192.52.193.0', 24, 'ipv4'],
   ['192.88.99.0', 24, 'ipv4'],
   ['192.168.0.0', 16, 'ipv4'],
+  ['192.175.48.0', 24, 'ipv4'],
   ['198.18.0.0', 15, 'ipv4'],
   ['198.51.100.0', 24, 'ipv4'],
   ['203.0.113.0', 24, 'ipv4'],
@@ -30,6 +35,8 @@ for (const [address, prefix, family] of [
   ['2001::', 23, 'ipv6'],
   ['2001:db8::', 32, 'ipv6'],
   ['2002::', 16, 'ipv6'],
+  ['2620:4f:8000::', 48, 'ipv6'],
+  ['3ffe::', 16, 'ipv6'],
   ['3fff::', 20, 'ipv6'],
   ['5f00::', 16, 'ipv6'],
   ['fc00::', 7, 'ipv6'],
@@ -76,14 +83,16 @@ function isLocalHostname(hostname) {
 
 /**
  * Return whether an IP address is safe for an Internet-facing webhook target.
- * Unknown strings and special/private address space fail closed.
+ * IPv4 special-purpose space is denied. IPv6 must be in IANA's ordinary
+ * 2000::/3 global-unicast envelope and outside every denied special-use block.
+ * Unknown strings and exceptional/reserved address space fail closed.
  */
 export function isPublicWebhookAddress(address) {
   const family = isIP(address);
   if (!family) return false;
-  return !(family === 4
-    ? DENIED_IPV4_BLOCKS.check(address, 'ipv4')
-    : DENIED_IPV6_BLOCKS.check(address, 'ipv6'));
+  if (family === 4) return !DENIED_IPV4_BLOCKS.check(address, 'ipv4');
+  return PUBLIC_IPV6_UNICAST.check(address, 'ipv6')
+    && !DENIED_IPV6_BLOCKS.check(address, 'ipv6');
 }
 
 /**
