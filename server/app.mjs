@@ -76,7 +76,7 @@ if (!globalThis[webhookFetchBoundaryKey]) {
     if (isOidcTokenRequest(effectiveRequest)) {
       return boundedOidcFetch(effectiveRequest);
     }
-    return nativeFetch(input, init);
+    return nativeFetch(effectiveRequest);
   };
   Object.defineProperty(globalThis, webhookFetchBoundaryKey, {
     value: true,
