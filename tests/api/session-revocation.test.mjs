@@ -12,6 +12,7 @@ process.env.SCOPEWEAVE_JWT_SECRET = JWT_SECRET;
 
 const { app } = await import('../../server/app.mjs');
 const { signToken } = await import('../../server/auth.mjs');
+const { db } = await import('../../server/db.mjs');
 
 const req = (path, opts = {}) =>
   app.request(path, {
@@ -86,6 +87,52 @@ async function expectRejectedEverywhere(projectId, token, label) {
   await expectCalendarStatus(projectId, token, 401, `calendar rejects ${label}`);
   await expectStreamStatus(projectId, token, 401, `SSE rejects ${label}`);
   await expectAttachmentViewStatus(projectId, token, 401, `attachment view rejects ${label}`);
+}
+
+/**
+ * Fault-inject a token-version change between the verifier read and a transport's
+ * defense-in-depth read, modeling a concurrent logout-all from another process.
+ *
+ * Both reads are synchronous in this process, so the test interposes only the
+ * exact token-version query instead of weakening production verification. The
+ * first read remains the real durable value used by `verifyToken`; the second
+ * read reports the next version, as an external writer could after verification.
+ *
+ * @param {() => Promise<Response>} runRequest - Request that authenticates one JWT.
+ * @param {string} label - Diagnostic label for assertions.
+ * @returns {Promise<void>} Resolves after the request is proven fail-closed.
+ */
+async function expectPostVerificationRevocationRejected(runRequest, label) {
+  const originalPrepare = db.prepare;
+  let tokenVersionReads = 0;
+
+  db.prepare = function prepareWithRevocationFault(sql) {
+    const statement = originalPrepare.call(this, sql);
+    if (sql !== 'SELECT token_version FROM users WHERE id = ?') return statement;
+
+    return {
+      get(...args) {
+        const row = statement.get(...args);
+        tokenVersionReads += 1;
+        if (tokenVersionReads === 2 && row) {
+          return { ...row, token_version: row.token_version + 1 };
+        }
+        return row;
+      },
+    };
+  };
+
+  try {
+    const response = await runRequest();
+    assert.equal(response.status, 401, `${label} rejects post-verification revocation`);
+    assert.equal(
+      tokenVersionReads,
+      2,
+      `${label} performs verifier and transport token-version reads`,
+    );
+  } finally {
+    db.prepare = originalPrepare;
+  }
 }
 
 test('session signer rejects malformed claims before minting a token', () => {
@@ -186,6 +233,20 @@ test('logout-all and strict JWT validation cover every session transport', async
   // boundary directly rather than relying only on the later logout transition.
   const mismatchedVersionToken = signToken({ sub: userId, tv: 1 });
   await expectRejectedEverywhere(projectId, mismatchedVersionToken, 'signed token with mismatched token version');
+
+  // Model a separate ScopeWeave process committing logout-all after this process
+  // completes verification but before its transport-specific second read. Both
+  // bearer middleware and attachment query-token access must fail closed.
+  await expectPostVerificationRevocationRejected(
+    () => req('/api/me', { headers: authA }),
+    'bearer middleware',
+  );
+  await expectPostVerificationRevocationRejected(
+    () => req(
+      `/api/projects/${projectId}/attachments/missing/view?token=${encodeURIComponent(tokenA)}`,
+    ),
+    'attachment query-token route',
+  );
 
   await expectBearerStatus(tokenA, 200, 'bearer accepts token A before revocation');
   await expectBearerStatus(tokenB, 200, 'bearer accepts token B before revocation');
