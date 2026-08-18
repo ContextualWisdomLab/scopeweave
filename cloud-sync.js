@@ -42,6 +42,7 @@ export function routeTokenPathSegment(value) {
 export function downloadBlobSafely(blob, filename, { documentRef = document, urlRef = URL } = {}) {
   const url = urlRef.createObjectURL(blob);
   let anchor = null;
+  let causalError = null;
   try {
     anchor = documentRef.createElement('a');
     anchor.href = url;
@@ -49,6 +50,8 @@ export function downloadBlobSafely(blob, filename, { documentRef = document, url
     anchor.rel = 'noopener noreferrer';
     documentRef.body.appendChild(anchor);
     anchor.click();
+  } catch (error) {
+    causalError = error;
   } finally {
     try {
       if (anchor) {
@@ -56,15 +59,20 @@ export function downloadBlobSafely(blob, filename, { documentRef = document, url
         if (typeof remove === 'function') {
           try {
             remove.call(anchor);
-          } catch {
-            // Drop cleanup failure so it does not replace the causal download failure
+          } catch (cleanupError) {
+            if (!causalError) causalError = cleanupError;
           }
         }
       }
     } finally {
-      urlRef.revokeObjectURL(url);
+      try {
+        urlRef.revokeObjectURL(url);
+      } catch (revokeError) {
+        if (!causalError) causalError = revokeError;
+      }
     }
   }
+  if (causalError) throw causalError;
 }
 
 function safeApiPath(path) {
