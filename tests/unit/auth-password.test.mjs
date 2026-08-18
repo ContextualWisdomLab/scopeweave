@@ -28,8 +28,8 @@ for (const malformed of [null, undefined, '', 'salt-only', 'salt:', ':hash']) {
   assert.equal(verifyPassword('correct-horse', malformed), false, 'missing salt/hash never verifies');
 }
 const [salt] = stored.split(':');
-assert.equal(verifyPassword('correct-horse', `${salt}:00`), false, 'wrong digest length fails closed');
-assert.equal(verifyPassword('correct-horse', `${salt}:not-hex`), false, 'invalid hex digest fails closed');
+assert.equal(verifyPassword('correct-horse', salt + ':00'), false, 'wrong digest length fails closed');
+assert.equal(verifyPassword('correct-horse', salt + ':not-hex'), false, 'invalid hex digest fails closed');
 
 // Empty string is a distinct string path; non-strings must not verify against it.
 const empty = hashPassword('');
