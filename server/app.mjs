@@ -67,7 +67,26 @@ function isDevelopmentLoopbackHttp(value) {
   }
 }
 
-async function registrationPolicyResponse(request) {
+/**
+ * Ask the existing route graph to run its real authentication, tenant-role,
+ * rate-limit, and request middleware before this facade returns a policy error.
+ * The deliberately empty URL reaches the old route's own URL validation but can
+ * never be persisted or delivered, so denied destinations do not bypass or
+ * reorder the authoritative authorization boundary.
+ */
+async function deniedRegistrationAuthorization(request, rest) {
+  const headers = new Headers(request.headers);
+  headers.delete('content-length');
+  const probe = new Request(request.url, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ url: '' }),
+  });
+  const response = await coreApp.fetch(probe, ...rest);
+  return response.status === 400 ? null : response;
+}
+
+async function registrationPolicyResponse(request, rest) {
   const url = new URL(request.url);
   if (request.method !== 'POST' || !WEBHOOK_REGISTRATION_PATH.test(url.pathname)) {
     return null;
@@ -83,12 +102,14 @@ async function registrationPolicyResponse(request) {
     if (error instanceof WebhookDestinationError && isDevelopmentLoopbackHttp(payload.url)) {
       return null;
     }
+    const authorization = await deniedRegistrationAuthorization(request, rest);
+    if (authorization) return authorization;
     return Response.json({ error: 'valid public https webhook URL required' }, { status: 400 });
   }
 }
 
 async function secureFetch(request, ...rest) {
-  const denied = await registrationPolicyResponse(request);
+  const denied = await registrationPolicyResponse(request, rest);
   if (denied) return denied;
   return coreApp.fetch(request, ...rest);
 }
