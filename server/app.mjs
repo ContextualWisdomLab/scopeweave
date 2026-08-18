@@ -8,6 +8,7 @@ import { createPublicKey, randomBytes, verify as verifySignature } from 'node:cr
 import { app as coreApp } from './app_core.mjs';
 import {
   WebhookDestinationError,
+  fetchPublicHttps,
   postWebhook,
   validateWebhookRegistrationUrl,
 } from './webhook_transport.mjs';
@@ -79,17 +80,6 @@ function audienceMatches(claims) {
     : claims.azp === OIDC_CLIENT_ID;
 }
 
-async function oidcProviderJson(url) {
-  const response = await nativeFetch(new Request(url, {
-    redirect: 'error',
-    signal: AbortSignal.timeout(OIDC_TOKEN_TIMEOUT_MS),
-  }));
-  if (!response.ok) throw new Error('provider unavailable');
-  const payload = await response.json();
-  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('invalid provider response');
-  return payload;
-}
-
 function validateOidcEndpoint(value, label) {
   let endpoint;
   try {
@@ -97,13 +87,49 @@ function validateOidcEndpoint(value, label) {
   } catch {
     throw new Error(`invalid ${label}`);
   }
-  if (
-    (endpoint.protocol !== 'https:' && !isDevelopmentLoopbackHttp(endpoint))
-    || endpoint.username
-    || endpoint.password
-    || endpoint.hash
-  ) throw new Error(`invalid ${label}`);
-  return endpoint.toString();
+  if (endpoint.username || endpoint.password || endpoint.hash || !endpoint.hostname) {
+    throw new Error(`invalid ${label}`);
+  }
+  if (isDevelopmentLoopbackHttp(endpoint)) return endpoint.toString();
+  if (endpoint.protocol !== 'https:') throw new Error(`invalid ${label}`);
+  try {
+    return validateWebhookRegistrationUrl(endpoint.toString());
+  } catch {
+    throw new Error(`invalid ${label}`);
+  }
+}
+
+async function fetchOidcEndpoint(
+  value,
+  label,
+  { method = 'GET', headers = {}, body, signal } = {},
+) {
+  const endpoint = validateOidcEndpoint(value, label);
+  if (isDevelopmentLoopbackHttp(endpoint)) {
+    return nativeFetch(new Request(endpoint, {
+      method,
+      headers,
+      body,
+      redirect: 'error',
+      signal,
+    }));
+  }
+  return fetchPublicHttps(endpoint, {
+    method,
+    headers,
+    body,
+    signal,
+  });
+}
+
+async function oidcProviderJson(url) {
+  const response = await fetchOidcEndpoint(url, 'provider endpoint', {
+    signal: AbortSignal.timeout(OIDC_TOKEN_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error('provider unavailable');
+  const payload = await response.json();
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('invalid provider response');
+  return payload;
 }
 
 async function loadOidcDiscovery(now = Date.now()) {
@@ -171,13 +197,12 @@ async function boundedOidcFetch(request) {
   ]);
   const headers = new Headers(request.headers);
   headers.delete('content-length');
-  const response = await nativeFetch(new Request(discovery.token_endpoint, {
+  const response = await fetchOidcEndpoint(discovery.token_endpoint, 'token endpoint', {
     method: request.method,
-    headers,
-    body,
-    redirect: 'error',
+    headers: Object.fromEntries(headers.entries()),
+    body: new Uint8Array(body),
     signal,
-  }));
+  });
   if (!response.ok) return response;
   const tokenPayload = await response.clone().json();
   await verifyOidcIdToken(tokenPayload.id_token, expectedNonce.nonce, discovery);
