@@ -8,7 +8,7 @@ assert.equal(routeTokenPathSegment('../admin?force=true'), '');
 assert.equal(routeTokenPathSegment('https://example.test/api'), '');
 assert.equal(routeTokenPathSegment('short'), '');
 
-function createDownloadHarness({ clickError = null, cleanupError = null } = {}) {
+function createDownloadHarness({ clickError = null, cleanupError = null, revokeError = null } = {}) {
   const events = [];
   const anchorPrototype = {
     remove() {
@@ -57,11 +57,21 @@ function createDownloadHarness({ clickError = null, cleanupError = null } = {}) 
     revokeObjectURL(url) {
       assert.equal(url, 'blob:scopeweave-test');
       events.push('revoke-url');
+      if (revokeError) throw revokeError;
     },
   };
 
   return { anchor, documentRef, events, urlRef };
 }
+
+const expectedLifecycle = [
+  'create-url',
+  'create-anchor',
+  'append-anchor',
+  'click',
+  'prototype-remove',
+  'revoke-url',
+];
 
 {
   const { anchor, documentRef, events, urlRef } = createDownloadHarness();
@@ -71,14 +81,7 @@ function createDownloadHarness({ clickError = null, cleanupError = null } = {}) 
   assert.equal(anchor.href, 'blob:scopeweave-test');
   assert.equal(anchor.rel, 'noopener noreferrer');
   assert.equal(anchor.parentNode, null);
-  assert.deepEqual(events, [
-    'create-url',
-    'create-anchor',
-    'append-anchor',
-    'click',
-    'prototype-remove',
-    'revoke-url',
-  ]);
+  assert.deepEqual(events, expectedLifecycle);
 }
 
 {
@@ -92,16 +95,25 @@ function createDownloadHarness({ clickError = null, cleanupError = null } = {}) 
     observedError = error;
   }
 
-  assert.equal(observedError, null, 'cleanup-only failure must be observable as null from caller perspective when swallowed');
+  assert.equal(observedError, cleanupError, 'cleanup-only failure remains observable');
   assert.equal(anchor.parentNode, null);
-  assert.deepEqual(events, [
-    'create-url',
-    'create-anchor',
-    'append-anchor',
-    'click',
-    'prototype-remove',
-    'revoke-url',
-  ]);
+  assert.deepEqual(events, expectedLifecycle);
+}
+
+{
+  const revokeError = new Error('browser object-url revoke failed');
+  const { anchor, documentRef, events, urlRef } = createDownloadHarness({ revokeError });
+  let observedError = null;
+
+  try {
+    downloadBlobSafely(new Blob(['schedule export']), 'schedule.json', { documentRef, urlRef });
+  } catch (error) {
+    observedError = error;
+  }
+
+  assert.equal(observedError, revokeError, 'revoke-only failure remains observable');
+  assert.equal(anchor.parentNode, null);
+  assert.deepEqual(events, expectedLifecycle);
 }
 
 {
@@ -117,22 +129,17 @@ function createDownloadHarness({ clickError = null, cleanupError = null } = {}) 
 
   assert.equal(observedError, causalError);
   assert.equal(anchor.parentNode, null);
-  assert.deepEqual(events, [
-    'create-url',
-    'create-anchor',
-    'append-anchor',
-    'click',
-    'prototype-remove',
-    'revoke-url',
-  ]);
+  assert.deepEqual(events, expectedLifecycle);
 }
 
 {
   const causalError = new Error('browser download dispatch failed');
   const cleanupError = new Error('browser anchor cleanup failed');
+  const revokeError = new Error('browser object-url revoke failed');
   const { anchor, documentRef, events, urlRef } = createDownloadHarness({
     clickError: causalError,
     cleanupError,
+    revokeError,
   });
   let observedError = null;
 
@@ -142,14 +149,24 @@ function createDownloadHarness({ clickError = null, cleanupError = null } = {}) 
     observedError = error;
   }
 
-  assert.equal(observedError, causalError, 'cleanup failure must not replace the causal download failure');
+  assert.equal(observedError, causalError, 'cleanup failures must not replace the first download failure');
   assert.equal(anchor.parentNode, null);
-  assert.deepEqual(events, [
-    'create-url',
-    'create-anchor',
-    'append-anchor',
-    'click',
-    'prototype-remove',
-    'revoke-url',
-  ]);
+  assert.deepEqual(events, expectedLifecycle, 'all cleanup steps still run after the first failure');
+}
+
+{
+  const cleanupError = new Error('browser anchor cleanup failed');
+  const revokeError = new Error('browser object-url revoke failed');
+  const { anchor, documentRef, events, urlRef } = createDownloadHarness({ cleanupError, revokeError });
+  let observedError = null;
+
+  try {
+    downloadBlobSafely(new Blob(['portfolio export']), 'portfolio.json', { documentRef, urlRef });
+  } catch (error) {
+    observedError = error;
+  }
+
+  assert.equal(observedError, cleanupError, 'the first cleanup failure wins over later revocation failure');
+  assert.equal(anchor.parentNode, null);
+  assert.deepEqual(events, expectedLifecycle);
 }
