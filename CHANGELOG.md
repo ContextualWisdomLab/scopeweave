@@ -45,10 +45,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   before authoritative lifecycle reconciliation.
 - Persisted a tenant/price-scoped Stripe Checkout attempt identity and opaque
   idempotency key before live Session creation, reusing unresolved identity only
-  inside a 23-hour safety window; network/abort and Stripe 5xx outcomes remain
-  pending to avoid duplicate side effects, while known 4xx and invalid successful
-  responses close the attempt before a later deliberate Checkout receives fresh
-  authority.
+  inside a 23-hour safety window; network/abort, Stripe 5xx, malformed or
+  untrusted successful responses, and local success-persistence failures remain
+  pending for same-key retry or reconciliation, while known Stripe 4xx outcomes
+  close the attempt before a later deliberate Checkout receives fresh authority.
 - Bounded hosted Stripe Checkout provider calls to one 15-second, no-retry
   attempt with a 1 MiB response ceiling before JSON parsing until durable
   idempotency exists; validated returned destinations as exact HTTPS
@@ -89,6 +89,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Accepted XML whitespace before exact Microsoft Project element delimiters
+  while preserving the linear, regex-free import scanner and rejecting
+  attributes, longer names, non-XML whitespace, nested unmatched blocks, and
+  truncated input.
 - Attachment-list status refresh now removes the per-row database lookup,
   uses a configurable bounded worker pool with per-item abortable timeouts and
   a request-wide latency budget, preserves stale status after downstream,
@@ -96,6 +100,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conversion identifiers from responses, reports attempted, changed, failed,
   skipped-data, and deferred-budget counters separately, and exposes fixed
   low-cardinality timeout, lookup, validation, and persistence failure counters.
+- Toast notifications and synchronization feedback now expose advisory updates
+  as explicit polite, atomic WAI-ARIA status regions without adding keyboard
+  stops, and cloud toast feedback now has a shipped visual state so the same
+  message remains visible to sighted users.
+- GitHub Pages, both Docker images, and the SaaS static allowlist now ship
+  `cloud-sync.js`, `analytics.js`, and `toast-state.css` with the documents
+  that load them, so share-error and cloud status toasts stay visible after
+  deploy.
 - 프로젝트 이름 입력 필드에 입력 예시(placeholder)를 추가하여 사용자 편의성을 개선했습니다.
 - 데이터 테이블의 반복되는 액션 버튼에 컨텍스트 정보(작업명)를 포함한 명시적인 ARIA 레이블을 추가하고, 유효성 검사 에러를 폼 필드에 연결하여 접근성을 개선했습니다.
 - `createGanttBarElement`, `renderGantt`, `buildWeekdayTimeline`에서 반복적으로 호출되던 `compareDateStrings`를 직접적인 문자열 비교 연산(`>=`, `<=`)으로 교체하여 O(N*D) 복잡도의 캐시 스레싱과 정규식 검사를 방지했습니다.
@@ -122,4 +134,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.1] - 2026-06-25
 ### 성능 개선 (Performance)
-- 드래그 앤 드롭 동작 중 `dragover` 이벤트에서 발생하던 O(N) 작업 리스트 검색 성능 병목 문제를, O(1) 해시맵(Map) 기반의 캐싱 조회 로직으로 개선하여 큰 크기의 WBS 리스트에서의 버벅임 현상을 해결했습니다.
+- 드래그 앤 드롭 동작 중 `dragover` 이벤트에서 발생하는 O(N) 작업 리스트 검색 성능 병목 문제를, O(1) 해시맵(Map) 기반의 캐싱 조회 로직으로 개선하여 큰 크기의 WBS 리스트에서의 버벅임 현상을 해결했습니다.
