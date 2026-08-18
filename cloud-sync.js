@@ -494,9 +494,10 @@ async function exportOrg() {
     const a = document.createElement('a');
     a.href = url;
     a.download = `scopeweave-org-${currentOrgId}.json`;
+    a.rel = 'noopener noreferrer';
     document.body.appendChild(a);
     a.click();
-    a.remove();
+    Element.prototype.remove.call(a);
     URL.revokeObjectURL(url);
     toast('워크스페이스 데이터를 내보냈습니다.');
   } catch {
@@ -1585,7 +1586,10 @@ async function openBaselineModal() {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = `scopeweave-${pid}.ics`;
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
       a.click();
+      Element.prototype.remove.call(a);
       URL.revokeObjectURL(a.href);
       toast('캘린더 파일(.ics)을 내려받았습니다.');
     } catch { toast('캘린더 내보내기에 실패했습니다.'); }
@@ -2098,7 +2102,10 @@ async function renderAudit(body) {
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
       a.download = `scopeweave-audit-${currentOrgId}.csv`;
+      a.rel = 'noopener noreferrer';
+      document.body.appendChild(a);
       a.click();
+      Element.prototype.remove.call(a);
       URL.revokeObjectURL(a.href);
       toast('감사 로그 CSV를 내려받았습니다.');
     } catch { toast('감사 로그 내보내기에 실패했습니다.'); }
