@@ -78,6 +78,7 @@ function audienceMatches(claims) {
 
 async function oidcProviderJson(url) {
   const response = await nativeFetch(new Request(url, {
+    redirect: 'error',
     signal: AbortSignal.timeout(OIDC_TOKEN_TIMEOUT_MS),
   }));
   if (!response.ok) throw new Error('provider unavailable');
@@ -131,6 +132,7 @@ async function boundedOidcFetch(request) {
   const expectedNonce = code ? oidcNonceByCode.get(code) : null;
   if (!expectedNonce || expectedNonce.exp < Date.now()) throw new Error('OIDC flow binding unavailable');
   const response = await nativeFetch(new Request(request, {
+    redirect: 'error',
     signal: AbortSignal.timeout(OIDC_TOKEN_TIMEOUT_MS),
   }));
   if (!response.ok) return response;
