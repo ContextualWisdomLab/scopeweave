@@ -8,7 +8,7 @@ process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_DEV = '1';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '2';
-process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS = '2';
+process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS = '500';
 delete process.env.ORCHESTRATOR_URL;
 delete process.env.CLEARFOLIO_URL;
 delete process.env.OIDC_ISSUER;
@@ -40,7 +40,7 @@ const rateHeaders = { 'x-forwarded-for': '198.51.100.9' };
 assert.equal((await req('/api/metrics', { headers: rateHeaders })).status, 200);
 assert.equal((await req('/api/metrics', { headers: rateHeaders })).status, 200);
 assert.equal((await req('/api/metrics', { headers: rateHeaders })).status, 429);
-await delay(5);
+await delay(510);
 assert.equal((await req('/api/metrics', { headers: rateHeaders })).status, 200);
 
 // Owner account and its personal workspace.
