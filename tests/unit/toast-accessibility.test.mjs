@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 process.env.SCOPEWEAVE_DB = ':memory:';
+process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 
 const indexHtml = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
 const toastStateCss = readFileSync(new URL('../../toast-state.css', import.meta.url), 'utf8');
