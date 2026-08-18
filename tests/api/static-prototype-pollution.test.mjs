@@ -6,10 +6,13 @@ process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 
 const probePath = '/prototype-pollution-probe';
+// Keep this inherited property non-enumerable so the regression isolates the
+// static allowlist lookup itself. An enumerable slash-prefixed Object.prototype
+// key is consumed by Hono/Undici's header-object machinery before routing and
+// fails there as an invalid HTTP header name, which does not exercise the
+// ScopeWeave static-map boundary this test is designed to protect.
 Object.defineProperty(Object.prototype, probePath, {
   configurable: true,
-  enumerable: true,
-  writable: true,
   value: ['package.json', 'application/json; charset=utf-8'],
 });
 
