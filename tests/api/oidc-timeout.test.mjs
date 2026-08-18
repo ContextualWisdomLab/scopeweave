@@ -10,6 +10,9 @@ process.env.OIDC_REDIRECT_URI = 'http://localhost/api/auth/oidc/callback';
 
 const issuer = process.env.OIDC_ISSUER;
 const clientId = process.env.OIDC_CLIENT_ID;
+const authorizationEndpoint = 'https://login.example.test/oauth2/authorize';
+const tokenEndpoint = 'https://tokens.example.test/oauth2/token';
+const jwksEndpoint = 'https://keys.example.test/jwks';
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const publicJwk = {
   ...publicKey.export({ format: 'jwk' }),
@@ -49,11 +52,13 @@ globalThis.fetch = async (input, init) => {
     );
     return Response.json({
       issuer,
-      jwks_uri: `${issuer}/jwks`,
+      authorization_endpoint: authorizationEndpoint,
+      token_endpoint: tokenEndpoint,
+      jwks_uri: jwksEndpoint,
       id_token_signing_alg_values_supported: ['RS256'],
     });
   }
-  if (url === `${issuer}/jwks`) {
+  if (url === jwksEndpoint) {
     assert.equal(
       request.redirect,
       'error',
@@ -61,7 +66,7 @@ globalThis.fetch = async (input, init) => {
     );
     return Response.json({ keys: [publicJwk] });
   }
-  if (url !== `${issuer}/token`) {
+  if (url !== tokenEndpoint) {
     throw new Error(`unexpected outbound fetch: ${url}`);
   }
   assert.equal(
@@ -118,6 +123,11 @@ try {
     const location = start.headers.get('location');
     assert.ok(location, 'authorization redirect is present');
     const authorization = new URL(location);
+    assert.equal(
+      `${authorization.origin}${authorization.pathname}`,
+      authorizationEndpoint,
+      'OIDC authorization uses the provider-discovered authorization endpoint rather than guessing an issuer-relative path',
+    );
     const state = authorization.searchParams.get('state');
     const nonce = authorization.searchParams.get('nonce');
     assert.ok(state, 'authorization redirect carries state');
@@ -170,4 +180,4 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-console.log('oidc validation, cancellation, redirect, and timeout regression passed');
+console.log('oidc discovery, validation, cancellation, redirect, and timeout regression passed');
