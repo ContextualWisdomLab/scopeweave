@@ -44,6 +44,37 @@ async function createOwner(email) {
   return { token, user: payload.user, org: payload.orgs[0] };
 }
 
+test('unauthenticated webhook registration rejects before consuming the request body', async () => {
+  let bodyPulls = 0;
+  const requestBody = new ReadableStream({
+    pull(controller) {
+      bodyPulls += 1;
+      controller.enqueue(new TextEncoder().encode(body({
+        url: 'http://127.0.0.1/private',
+        events: ['project.update'],
+      })));
+      controller.close();
+    },
+  }, { highWaterMark: 0 });
+  const unauthenticated = new Request(
+    'http://localhost/api/orgs/not-authorized/webhooks',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: requestBody,
+      duplex: 'half',
+    },
+  );
+
+  const response = await app.request(unauthenticated);
+  assert.equal(response.status, 401, 'authentication rejects the request');
+  assert.equal(
+    bodyPulls,
+    0,
+    'the webhook payload is not parsed or buffered before authentication succeeds',
+  );
+});
+
 test('signed webhook Request inputs stay behind the SSRF destination policy', async () => {
   const signedRequest = new Request('https://127.0.0.1/internal', {
     method: 'POST',
