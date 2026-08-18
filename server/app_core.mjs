@@ -12,6 +12,9 @@ import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
+/** Stable machine code for the authorized webhook registration URL boundary. */
+export const WEBHOOK_URL_REQUIRED_ERROR_CODE = 'webhook_url_required';
+
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
 
 // Append-only audit trail. Never throws into the request path.
@@ -215,15 +218,17 @@ app.post('/api/orgs', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const { name } = await c.req.json().catch(() => ({}));
   if (!name || !String(name).trim()) return c.json({ error: 'name required' }, 400);
-  let oid;
-  db.exec('BEGIN');
-  try {
-    oid = rowid(db.prepare('INSERT INTO orgs(name,owner_id) VALUES(?,?)').run(String(name).trim().slice(0, 120), uid));
-    db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)').run(oid, uid, 'owner');
-    db.exec('COMMIT');
-  } catch (e) { db.exec('ROLLBACK'); throw e; }
-  logAudit(oid, uid, 'org.create', 'org', oid, { name });
-  return c.json({ id: oid, name: String(name).trim(), role: 'owner' });
+  const org = orgId
+    ? db.prepare('SELECT o.id FROM orgs o JOIN memberships m ON m.org_id = o.id WHERE o.id = ? AND m.user_id = ?').get(orgId, uid)
+    : db.prepare('SELECT o.id FROM orgs o JOIN memberships m ON m.org_id = o.id WHERE m.user_id = ? ORDER BY o.id LIMIT 1').get(uid);
+  if (!org) return c.json({ error: 'no accessible org' }, 400);
+  if (wouldExceed(db, getOrg(org.id), 'projects')) {
+    return c.json({ error: 'project limit reached on the Free plan', upgrade: true, limit: PLANS.free.limits.projects }, 402);
+  }
+  const id = rowid(db.prepare('INSERT INTO projects(org_id,name,created_by) VALUES(?,?,?)').run(org.id, name, uid));
+  metrics.projectsCreated++;
+  logAudit(org.id, uid, 'project.create', 'project', id, { name });
+  return c.json({ id, name, version: 1 });
 });
 
 app.get('/api/projects', requireAuth, (c) => {
@@ -276,7 +281,6 @@ app.put('/api/projects/:id', requireAuth, async (c) => {
     "UPDATE projects SET name=?, base_date=?, tasks_json=?, version=?, methodology=?, updated_at=datetime('now') WHERE id=?"
   ).run(body.name ?? p.name, body.baseDate ?? p.base_date, JSON.stringify(tasks), version, methodology, id);
   logAudit(p.org_id, uid, 'project.update', 'project', id, { version, tasks: tasks.length });
-  // Revision history: snapshot every save, keep the last 20 per project.
   try {
     db.prepare('INSERT OR REPLACE INTO project_revisions(project_id,version,name,base_date,tasks_json,saved_by) VALUES(?,?,?,?,?,?)')
       .run(id, version, body.name ?? p.name, body.baseDate ?? p.base_date, JSON.stringify(tasks), uid);
@@ -287,8 +291,6 @@ app.put('/api/projects/:id', requireAuth, async (c) => {
   return c.json({ version });
 });
 
-// Task comments: discussion bound to a project (optionally a task). All roles
-// can read; write roles can post; author or manage can delete.
 app.get('/api/projects/:id/comments', requireAuth, (c) => {
   const p = projectAccess(c.get('user').sub, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
@@ -330,7 +332,6 @@ app.delete('/api/projects/:id/comments/:cid', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// Revision history: list, inspect, restore.
 app.get('/api/projects/:id/revisions', requireAuth, (c) => {
   const p = projectAccess(c.get('user').sub, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
@@ -350,7 +351,6 @@ app.get('/api/projects/:id/revisions/:version', requireAuth, (c) => {
   return c.json({ version: r.version, name: r.name, baseDate: r.baseDate, tasks: JSON.parse(r.tasks_json) });
 });
 
-// Restore = write the old snapshot as a NEW version (history stays linear).
 app.post('/api/projects/:id/revisions/:version/restore', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const id = c.req.param('id');
@@ -372,9 +372,6 @@ app.post('/api/projects/:id/revisions/:version/restore', requireAuth, (c) => {
   return c.json({ version });
 });
 
-// iCalendar feed: planned tasks as all-day VEVENTs — subscribable from
-// Google/Outlook. Calendar apps can't send headers, so accept ?token= (same
-// pattern + ceiling as /stream). PATs work via the Authorization header.
 app.get('/api/projects/:id/calendar.ics', (c) => {
   const header = c.req.header('authorization') || '';
   const raw = header.startsWith('Bearer ') ? header.slice(7) : (c.req.query('token') || '');
@@ -400,7 +397,7 @@ app.get('/api/projects/:id/calendar.ics', (c) => {
       'BEGIN:VEVENT',
       `UID:scopeweave-${p.id}-${esc(t.id)}`,
       `DTSTART;VALUE=DATE:${day(t.plannedStartDate)}`,
-      `DTEND;VALUE=DATE:${nextDay(t.plannedEndDate)}`, // DTEND is exclusive
+      `DTEND;VALUE=DATE:${nextDay(t.plannedEndDate)}`,
       `SUMMARY:${esc(t.name || t.task || t.id)}`,
       'END:VEVENT'
     );
@@ -413,9 +410,6 @@ app.get('/api/projects/:id/calendar.ics', (c) => {
 });
 
 app.get('/api/projects/:id/stream', (c) => {
-  // EventSource can't send an Authorization header, so accept a query token
-  // here only. Ceiling: issue a short-lived stream-scoped token before prod so
-  // full JWTs don't land in URLs / access logs.
   const header = c.req.header('authorization') || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : (c.req.query('token') || '');
   let user;
@@ -439,8 +433,6 @@ app.get('/api/projects/:id/stream', (c) => {
   });
 });
 
-// --------------------------------------------------------------- teams / RBAC
-// List members of an org (any member may view the roster).
 app.get('/api/orgs/:id/members', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -456,7 +448,6 @@ app.get('/api/orgs/:id/members', requireAuth, (c) => {
   return c.json({ members, invites });
 });
 
-// Revoke a pending invite (owner/admin). The token stops working immediately.
 app.delete('/api/orgs/:id/invites/:inviteId', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -468,7 +459,6 @@ app.delete('/api/orgs/:id/invites/:inviteId', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// Invite by email (owner/admin only). Returns the token (prod: email a link).
 app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -487,7 +477,6 @@ app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
   return c.json({ token, email, role: inviteRole });
 });
 
-// Accept an invite (any authenticated user holding the token). Idempotent.
 app.post('/api/invites/:token/accept', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const inv = db.prepare('SELECT * FROM invites WHERE token = ?').get(c.req.param('token'));
@@ -505,7 +494,6 @@ app.post('/api/invites/:token/accept', requireAuth, (c) => {
   return c.json({ orgId: inv.org_id, role: existing || inv.role });
 });
 
-// Change a member's role (owner/admin). Cannot touch an owner or set owner.
 app.patch('/api/orgs/:id/members/:userId', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -522,7 +510,6 @@ app.patch('/api/orgs/:id/members/:userId', requireAuth, async (c) => {
   return c.json({ userId: Number(targetId), role: newRole });
 });
 
-// Remove a member (owner/admin). Cannot remove an owner.
 app.delete('/api/orgs/:id/members/:userId', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -536,8 +523,6 @@ app.delete('/api/orgs/:id/members/:userId', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// Leave a workspace voluntarily (any non-owner member). Owners must transfer or
-// delete the org instead — an org can never be left ownerless.
 app.post('/api/orgs/:id/leave', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -549,8 +534,6 @@ app.post('/api/orgs/:id/leave', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// Transfer workspace ownership to an existing member (owner only). The old
-// owner becomes an admin; orgs.owner_id follows. Transactional.
 app.post('/api/orgs/:id/transfer', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -570,7 +553,6 @@ app.post('/api/orgs/:id/transfer', requireAuth, async (c) => {
   return c.json({ ok: true, newOwnerId: Number(userId) });
 });
 
-// Rename a workspace (owner only).
 app.patch('/api/orgs/:id', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -582,7 +564,6 @@ app.patch('/api/orgs/:id', requireAuth, async (c) => {
   return c.json({ id: Number(orgId), name: String(name).trim() });
 });
 
-// ------------------------------------------------------------------- billing
 app.get('/api/orgs/:id/billing', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -601,8 +582,6 @@ app.post('/api/orgs/:id/checkout', requireAuth, async (c) => {
   return c.json(session);
 });
 
-// Stripe webhook (stub). Live mode should verify the signature with
-// STRIPE_WEBHOOK_SECRET before trusting the event — named ceiling.
 app.post('/api/stripe/webhook', async (c) => {
   const event = await c.req.json().catch(() => ({}));
   if (event?.type === 'checkout.session.completed') {
@@ -612,8 +591,6 @@ app.post('/api/stripe/webhook', async (c) => {
   return c.json({ received: true });
 });
 
-// Dev-only: simulate a successful checkout upgrading the org to Pro.
-// Disabled unless SCOPEWEAVE_DEV=1 (never reachable in production).
 app.post('/api/orgs/:id/_dev/activate-pro', requireAuth, (c) => {
   if (process.env.SCOPEWEAVE_DEV !== '1') return c.json({ error: 'not found' }, 404);
   const uid = c.get('user').sub;
@@ -625,13 +602,12 @@ app.post('/api/orgs/:id/_dev/activate-pro', requireAuth, (c) => {
   return c.json({ plan: 'pro' });
 });
 
-// ------------------------------------------------- personal access tokens (PAT)
 app.get('/api/tokens', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const tokens = db.prepare(
     'SELECT id, name, prefix, last_used AS lastUsed, created_at AS createdAt FROM api_tokens WHERE user_id = ? ORDER BY id DESC'
   ).all(uid);
-  return c.json({ tokens }); // never the secret or hash
+  return c.json({ tokens });
 });
 
 app.post('/api/tokens', requireAuth, async (c) => {
@@ -640,7 +616,6 @@ app.post('/api/tokens', requireAuth, async (c) => {
   const t = generateApiToken();
   const id = rowid(db.prepare('INSERT INTO api_tokens(user_id,name,token_hash,prefix) VALUES(?,?,?,?)')
     .run(uid, String(name || 'token').slice(0, 60), t.hash, t.prefix));
-  // Full secret returned ONCE — never retrievable again.
   return c.json({ id, name: name || 'token', prefix: t.prefix, token: t.full });
 });
 
@@ -651,7 +626,6 @@ app.delete('/api/tokens/:id', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// Audit trail — owner/admin only. Enterprise requirement.
 app.get('/api/orgs/:id/audit', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -665,10 +639,6 @@ app.get('/api/orgs/:id/audit', requireAuth, (c) => {
   ).all(orgId, limit);
   const events = rows.map((r) => ({ ...r, meta: r.meta ? JSON.parse(r.meta) : null }));
   if (c.req.query('format') === 'csv') {
-    // Compliance deliverable. Formula-injection-safe: values that (after optional
-    // leading whitespace) start with = + - @ | are prefixed with ' so
-    // spreadsheets treat them as text. Leading whitespace alone used to bypass
-    // /^[=+\-@|]/ — match the client-side CSV_FORMULA_PREFIX_PATTERN.
     const csvCell = (v) => {
       let s = v == null ? '' : String(v);
       if (/^\s*[=+\-@|]/.test(s)) s = `'${s}`;
@@ -687,8 +657,6 @@ app.get('/api/orgs/:id/audit', requireAuth, (c) => {
   return c.json({ events });
 });
 
-// Full workspace export (owner only) — data portability / GDPR. Everything the
-// org holds, as one JSON document.
 app.get('/api/orgs/:id/export', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -711,24 +679,20 @@ app.get('/api/orgs/:id/export', requireAuth, (c) => {
   }, 200, { 'Content-Disposition': `attachment; filename="scopeweave-org-${orgId}.json"` });
 });
 
-// Operational metrics (JSON). Ceiling: expose Prometheus text format + gate
-// behind an internal token before prod if scraped externally.
 app.get('/api/metrics', (c) => {
   const sseActive = [...streams.values()].reduce((n, s) => n + s.size, 0);
   const all = { ...metrics, sseActive, uptimeSec: Math.round(process.uptime()) };
   if (c.req.query('format') !== 'prometheus') return c.json(all);
-  // Prometheus text exposition format (0.0.4) — scrape-ready for Grafana/Alerting.
   const gauge = new Set(['sseActive', 'uptimeSec']);
   const lines = [];
   for (const [k, v] of Object.entries(all)) {
-    if (typeof v !== 'number') continue; // startedAt etc.
+    if (typeof v !== 'number') continue;
     const name = `scopeweave_${k.replace(/([A-Z])/g, '_$1').toLowerCase()}`;
     lines.push(`# TYPE ${name} ${gauge.has(k) ? 'gauge' : 'counter'}`, `${name} ${v}`);
   }
   return c.text(lines.join('\n') + '\n', 200, { 'content-type': 'text/plain; version=0.0.4; charset=utf-8' });
 });
 
-// ------------------------------------------------------------------- webhooks
 app.get('/api/orgs/:id/webhooks', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -738,7 +702,7 @@ app.get('/api/orgs/:id/webhooks', requireAuth, (c) => {
        (SELECT ok FROM webhook_deliveries d WHERE d.webhook_id = w.id ORDER BY d.id DESC LIMIT 1) AS lastOk,
        (SELECT created_at FROM webhook_deliveries d WHERE d.webhook_id = w.id ORDER BY d.id DESC LIMIT 1) AS lastAt
      FROM webhooks w WHERE w.org_id = ? ORDER BY w.id DESC`
-  ).all(orgId); // secret never returned
+  ).all(orgId);
   return c.json({ webhooks });
 });
 
@@ -747,12 +711,17 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   const orgId = c.req.param('id');
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
-  if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  if (!/^https?:\/\//.test(String(url || ''))) {
+    return c.json({
+      error: 'valid http(s) url required',
+      error_code: WEBHOOK_URL_REQUIRED_ERROR_CODE,
+    }, 400);
+  }
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
   logAudit(orgId, uid, 'webhook.create', 'webhook', id, { url, events: evs });
-  return c.json({ id, url, events: evs, secret }); // secret shown once for signature verification
+  return c.json({ id, url, events: evs, secret });
 });
 
 app.get('/api/orgs/:id/webhooks/:whId/deliveries', requireAuth, (c) => {
@@ -767,8 +736,6 @@ app.get('/api/orgs/:id/webhooks/:whId/deliveries', requireAuth, (c) => {
   return c.json({ deliveries });
 });
 
-// Rotate a webhook's signing secret (leak response / periodic hygiene). The new
-// secret is returned ONCE; old signatures stop validating immediately.
 app.post('/api/orgs/:id/webhooks/:whId/rotate', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -777,7 +744,7 @@ app.post('/api/orgs/:id/webhooks/:whId/rotate', requireAuth, (c) => {
   const info = db.prepare('UPDATE webhooks SET secret = ? WHERE id = ? AND org_id = ?').run(secret, c.req.param('whId'), orgId);
   if (!info.changes) return c.json({ error: 'not found' }, 404);
   logAudit(orgId, uid, 'webhook.rotate', 'webhook', c.req.param('whId'), {});
-  return c.json({ id: Number(c.req.param('whId')), secret }); // shown once
+  return c.json({ id: Number(c.req.param('whId')), secret });
 });
 
 app.delete('/api/orgs/:id/webhooks/:whId', requireAuth, (c) => {
@@ -789,9 +756,6 @@ app.delete('/api/orgs/:id/webhooks/:whId', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// ------------------------------------------------------------ SSO (OIDC)
-// Real IdP via env (OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI). When
-// unset, a built-in mock provider makes the whole flow self-contained + testable.
 const OIDC = {
   issuer: process.env.OIDC_ISSUER,
   clientId: process.env.OIDC_CLIENT_ID,
@@ -799,8 +763,8 @@ const OIDC = {
   redirectUri: process.env.OIDC_REDIRECT_URI,
 };
 const oidcMock = !OIDC.issuer;
-const oidcStates = new Map(); // state -> { verifier, exp }
-const oidcCodes = new Map();  // mock only: code -> email
+const oidcStates = new Map();
+const oidcCodes = new Map();
 
 function upsertSsoUser(email) {
   let user = db.prepare('SELECT id, email, token_version FROM users WHERE email = ?').get(email);
@@ -843,7 +807,6 @@ app.get('/api/auth/oidc/start', (c) => {
   return c.redirect(u.toString());
 });
 
-// Built-in mock IdP authorize — instantly issues a code (dev/test only).
 app.get('/api/auth/oidc/mock/authorize', (c) => {
   if (!oidcMock) return c.json({ error: 'mock disabled' }, 404);
   const state = c.req.query('state');
@@ -877,21 +840,15 @@ app.get('/api/auth/oidc/callback', async (c) => {
     }).catch(() => null);
     const tok = tokenRes ? await tokenRes.json().catch(() => ({})) : {};
     if (!tok.id_token) return c.json({ error: 'token exchange failed' }, 400);
-    // Ceiling: verify the id_token signature via the issuer JWKS before prod.
     const claims = JSON.parse(Buffer.from(String(tok.id_token).split('.')[1] || '', 'base64url').toString() || '{}');
     email = claims.email;
     if (!email) return c.json({ error: 'no email claim' }, 400);
   }
   const user = upsertSsoUser(email);
   const token = signToken({ sub: user.id, email, tv: user.token_version || 0 });
-  // Return the token in the URL fragment (not query → not logged); the client
-  // stores it and cleans the URL.
   return c.redirect(`/#token=${token}`);
 });
 
-// Cross-project search: project names + task names, membership-scoped (tenant
-// isolation via the same JOIN as projectAccess).
-// ponytail: LIKE over tasks_json text; move to FTS5 if search gets heavy.
 app.get('/api/search', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const q = String(c.req.query('q') || '').trim();
@@ -920,8 +877,6 @@ app.get('/api/search', requireAuth, (c) => {
   return c.json({ query: q, results });
 });
 
-// Portfolio dashboard: executive rollup across every project in a workspace —
-// weighted planned/actual progress, SPI + status, overdue-task counts.
 app.get('/api/orgs/:id/portfolio', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -947,8 +902,8 @@ app.get('/api/orgs/:id/portfolio', requireAuth, (c) => {
       name: p.name,
       archived: Boolean(p.archived),
       tasks: tasks.length,
-      planned: Math.round(evm.pv * 1000) / 10,   // %
-      actual: Math.round(evm.ev * 1000) / 10,    // %
+      planned: Math.round(evm.pv * 1000) / 10,
+      actual: Math.round(evm.ev * 1000) / 10,
       spi: evm.spi === null ? null : Math.round(evm.spi * 100) / 100,
       status: evm.status,
       label: evm.label,
@@ -959,9 +914,6 @@ app.get('/api/orgs/:id/portfolio', requireAuth, (c) => {
   return c.json({ projects });
 });
 
-// AI 브리핑: 프로젝트 스냅샷(요약 지표 + 지연/차주 작업)을 contextual-
-// orchestrator(LLM)로 보내 경영진용 리스크 분석을 생성. 원문 데이터는 서버가
-// 요약해 전송하며, LLM 자격은 서버 환경변수에만 존재.
 app.post('/api/projects/:id/ai/brief', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
@@ -1003,24 +955,13 @@ app.post('/api/projects/:id/ai/brief', requireAuth, async (c) => {
   }
 });
 
-// 산출물 첨부(Clearfolio 통합 문서 뷰어 프록시): 업로드→변환 잡, 목록(+상태
-// 갱신), 서명 아티팩트 열람(302), 삭제. 테넌트 = 조직, 브라우저에는 Clearfolio
-// 자격이 절대 노출되지 않음.
 const ATTACH_MAX_BYTES = 10 * 1024 * 1024;
-
-const ATTACH_STATUS_CONCURRENCY = normalizeAttachmentStatusConcurrency(
-  process.env.SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY,
-);
-const ATTACH_STATUS_TIMEOUT_MS = normalizeAttachmentStatusTimeoutMs(
-  process.env.SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS,
-);
-const ATTACH_STATUS_BUDGET_MS = normalizeAttachmentStatusBudgetMs(
-  process.env.SCOPEWEAVE_ATTACHMENT_STATUS_BUDGET_MS,
-);
+const ATTACH_STATUS_CONCURRENCY = normalizeAttachmentStatusConcurrency(process.env.SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY);
+const ATTACH_STATUS_TIMEOUT_MS = normalizeAttachmentStatusTimeoutMs(process.env.SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS);
+const ATTACH_STATUS_BUDGET_MS = normalizeAttachmentStatusBudgetMs(process.env.SCOPEWEAVE_ATTACHMENT_STATUS_BUDGET_MS);
 const ATTACHMENT_LIST_COLUMNS = `a.id, a.task_id AS taskId, a.name, a.mime, a.size,
   a.job_id AS jobId, a.status, a.created_at AS createdAt, u.email AS uploadedBy`;
-const ATTACHMENT_LIST_FROM =
-  'FROM attachments a LEFT JOIN users u ON u.id = a.created_by';
+const ATTACHMENT_LIST_FROM = 'FROM attachments a LEFT JOIN users u ON u.id = a.created_by';
 const listAttachmentsStatement = db.prepare(
   `SELECT ${ATTACHMENT_LIST_COLUMNS} ${ATTACHMENT_LIST_FROM}
    WHERE a.project_id = ? ORDER BY a.id DESC`,
@@ -1029,9 +970,8 @@ const listTaskAttachmentsStatement = db.prepare(
   `SELECT ${ATTACHMENT_LIST_COLUMNS} ${ATTACHMENT_LIST_FROM}
    WHERE a.project_id = ? AND a.task_id = ? ORDER BY a.id DESC`,
 );
-const updateAttachmentStatusStatement = db.prepare(
-  'UPDATE attachments SET status = ? WHERE id = ?',
-);
+const updateAttachmentStatusStatement = db.prepare('UPDATE attachments SET status = ? WHERE id = ?');
+
 app.post('/api/projects/:id/attachments', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
@@ -1061,7 +1001,6 @@ app.get('/api/projects/:id/attachments', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
-
   const taskId = c.req.query('taskId');
   const rows = taskId
     ? listTaskAttachmentsStatement.all(p.id, taskId)
@@ -1070,8 +1009,7 @@ app.get('/api/projects/:id/attachments', requireAuth, async (c) => {
     orgId: p.org_id,
     userId: uid,
     jobStatus,
-    updateStatus: (status, attachmentId) =>
-      updateAttachmentStatusStatement.run(status, attachmentId),
+    updateStatus: (status, attachmentId) => updateAttachmentStatusStatement.run(status, attachmentId),
     concurrency: ATTACH_STATUS_CONCURRENCY,
     timeoutMs: ATTACH_STATUS_TIMEOUT_MS,
     budgetMs: ATTACH_STATUS_BUDGET_MS,
@@ -1081,7 +1019,6 @@ app.get('/api/projects/:id/attachments', requireAuth, async (c) => {
   return c.json({ attachments });
 });
 
-// 열람: 서명 아티팩트 URL로 302. 새 탭 열기용으로 ?token=도 허용(ics/stream 패턴).
 app.get('/api/projects/:id/attachments/:aid/view', (c) => {
   const header = c.req.header('authorization') || '';
   const raw = header.startsWith('Bearer ') ? header.slice(7) : (c.req.query('token') || '');
@@ -1120,7 +1057,6 @@ app.delete('/api/projects/:id/attachments/:aid', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// mock Clearfolio 아티팩트 서빙(dev/test 전용)
 if (clearfolioMock) {
   app.get('/api/mock-clearfolio/:jobId', (c) => {
     const doc = mockArtifact(c.req.param('jobId'));
@@ -1132,8 +1068,6 @@ if (clearfolioMock) {
   });
 }
 
-// Public read-only share links: a random token grants VIEW access to one
-// project (no account needed) — revocable. Never exposes org/member data.
 app.post('/api/projects/:id/shares', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
@@ -1167,7 +1101,6 @@ app.delete('/api/projects/:id/shares/:sid', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// Anonymous read via share token — project content only.
 app.get('/api/shared/:token', (c) => {
   const row = db.prepare(
     `SELECT p.name, p.base_date AS baseDate, p.tasks_json FROM share_tokens s
@@ -1177,8 +1110,6 @@ app.get('/api/shared/:token', (c) => {
   return c.json({ name: row.name, baseDate: row.baseDate, tasks: JSON.parse(row.tasks_json), readOnly: true });
 });
 
-// Unseen-activity notifications: per project, count others' saves + comments
-// newer than my last-seen mark. Opening a project marks it seen.
 app.get('/api/notifications', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const rows = db.prepare(
@@ -1208,7 +1139,6 @@ app.post('/api/projects/:id/seen', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// Archive / restore a project (write roles): declutter without deleting.
 app.post('/api/projects/:id/archive', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
@@ -1221,8 +1151,6 @@ app.post('/api/projects/:id/archive', requireAuth, async (c) => {
   return c.json({ id: p.id, archived: Boolean(flag) });
 });
 
-// Duplicate a project (template use: copy tasks + base date into a new project
-// in the same org). Plan caps apply like any create.
 app.post('/api/projects/:id/duplicate', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
@@ -1240,10 +1168,6 @@ app.post('/api/projects/:id/duplicate', requireAuth, async (c) => {
   return c.json({ id: nid, name: newName, version: 1 });
 });
 
-// -------------------------------------------------------------- sprints
-// Agile/Hybrid: 시간상자(스프린트) CRUD. 작업은 task.sprint(이름)로 배정되고
-// task.storyPoints로 추정된다 — 지표(커밋/완료 포인트, 벨로시티)는 클라이언트
-// 순수 함수(computeSprintStats)가 계산한다.
 app.post('/api/projects/:id/sprints', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
@@ -1277,9 +1201,6 @@ app.delete('/api/projects/:id/sprints/:sid', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// ------------------------------------------------------------- baselines
-// Snapshot a project's current plan as a named baseline (schedule-control:
-// compare actuals against the frozen plan later).
 app.post('/api/projects/:id/baselines', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const id = c.req.param('id');
@@ -1320,8 +1241,6 @@ app.delete('/api/projects/:id/baselines/:bid', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// ------------------------------------------------------ account & lifecycle
-// Delete a project (write roles). tasks live in the row, so this fully removes it.
 app.delete('/api/projects/:id', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const id = c.req.param('id');
@@ -1334,8 +1253,6 @@ app.delete('/api/projects/:id', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// Log out everywhere: bump token_version → every existing JWT dies. Returns a
-// fresh token so THIS device stays signed in. PATs are unaffected.
 app.post('/api/auth/logout-all', requireAuth, (c) => {
   const uid = c.get('user').sub;
   db.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?').run(uid);
@@ -1343,7 +1260,6 @@ app.post('/api/auth/logout-all', requireAuth, (c) => {
   return c.json({ ok: true, token: signToken({ sub: uid, email: u.email, tv: u.token_version }) });
 });
 
-// Change password (verifies the current one).
 app.post('/api/auth/change-password', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const { oldPassword, newPassword } = await c.req.json().catch(() => ({}));
@@ -1356,8 +1272,6 @@ app.post('/api/auth/change-password', requireAuth, async (c) => {
   return c.json({ ok: true });
 });
 
-// Delete account (GDPR). Removes owned workspaces (cascading their data) and the
-// user. Requires the current password to confirm.
 app.delete('/api/account', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const { password } = await c.req.json().catch(() => ({}));
@@ -1367,8 +1281,8 @@ app.delete('/api/account', requireAuth, async (c) => {
   }
   db.exec('BEGIN');
   try {
-    db.prepare('DELETE FROM orgs WHERE owner_id = ?').run(uid); // cascades projects/members/webhooks/invites/audit
-    db.prepare('DELETE FROM users WHERE id = ?').run(uid);       // cascades memberships/tokens
+    db.prepare('DELETE FROM orgs WHERE owner_id = ?').run(uid);
+    db.prepare('DELETE FROM users WHERE id = ?').run(uid);
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
   return c.json({ ok: true });
@@ -1376,8 +1290,6 @@ app.delete('/api/account', requireAuth, async (c) => {
 
 app.get('/api/health', (c) => c.json({ ok: true }));
 
-// Static client — strict allowlist so server/, data.db, package.json etc. are
-// never served. Anything not listed → 404.
 const STATIC = Object.assign(Object.create(null), {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
