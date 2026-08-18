@@ -173,7 +173,7 @@ await status(200, req(`/api/projects/${projectId}/ai/brief`, {
 }), 'AI briefing corrupt task fallback');
 db.prepare('UPDATE projects SET tasks_json = ? WHERE id = ?').run('[]', projectId);
 
-// Attachment guards cover inaccessible projects, query/PAT/JWT auth, empty file
+// Attachment guards cover inaccessible projects, query/PAT/JWT auth, empty MIME
 // metadata, uploader-vs-manager authorization, and mock artifact MIME fallback.
 const missingProjectForm = new FormData();
 missingProjectForm.append('file', new Blob(['missing']), 'missing.pdf');
@@ -181,10 +181,10 @@ await status(404, app.request('/api/projects/999999/attachments', {
   method: 'POST', headers: ownerAuth, body: missingProjectForm,
 }), 'attachment missing project');
 
-const emptyMetadata = new FormData();
-emptyMetadata.append('file', new File(['empty metadata'], '', { type: '' }));
+const emptyMime = new FormData();
+emptyMime.append('file', new File(['empty metadata'], 'empty-mime.bin', { type: '' }));
 response = await app.request(`/api/projects/${projectId}/attachments`, {
-  method: 'POST', headers: ownerAuth, body: emptyMetadata,
+  method: 'POST', headers: ownerAuth, body: emptyMime,
 });
 assert.equal(response.status, 200);
 const emptyAttachmentId = (await response.json()).id;
