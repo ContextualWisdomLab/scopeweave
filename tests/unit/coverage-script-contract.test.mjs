@@ -35,9 +35,29 @@ assert.match(
   'the abortable Clearfolio adapter is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/app_core\.mjs/,
+  'the moved SaaS route graph remains instrumented after the security facade split',
+);
+assert.match(
+  scripts['test:coverage'],
+  /--include=server\/webhook_transport\.mjs/,
+  'the outbound webhook SSRF transport is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/webhook-transport\.test\.mjs/,
+  'the webhook DNS/pinning/redirect regression executes under c8',
+);
+assert.match(
+  scripts['test:api'],
+  /tests\/api\/webhook-destination-policy\.test\.mjs/,
+  'the production webhook registration regression executes in the canonical API suite',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
