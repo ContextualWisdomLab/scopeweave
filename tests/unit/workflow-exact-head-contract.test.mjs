@@ -59,6 +59,11 @@ assert.match(
 );
 assert.match(
   serverTestsWorkflow,
+  /- name: Coverage failure diagnostics[\s\S]*?if: failure\(\)[\s\S]*?run: node scripts\/ci\/coverage_diagnostics\.mjs/,
+  'coverage failures must emit exact missed statements, functions, and branch locations without making the gate pass',
+);
+assert.match(
+  serverTestsWorkflow,
   /- name: Public docstring gate[\s\S]*?run: npm run check:python-docstrings\b/,
   'Server Tests must execute the public docstring applicability gate',
 );
