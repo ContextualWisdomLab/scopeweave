@@ -423,7 +423,7 @@ async function secureFetch(request, ...rest) {
 
 async function secureRequest(input, init, ...rest) {
   const request = input instanceof Request
-    ? new Request(input, init)
+    ? (init === undefined ? input : new Request(input, init))
     : new Request(new URL(String(input), 'http://localhost'), init);
   return secureFetch(request, ...rest);
 }
