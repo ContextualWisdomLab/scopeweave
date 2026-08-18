@@ -232,10 +232,16 @@ function appendResponseHeaders(target, source) {
   }
 }
 
+function identityEncodedHeaders(headers) {
+  const normalized = Object.fromEntries(new Headers(headers).entries());
+  normalized['accept-encoding'] = 'identity';
+  return normalized;
+}
+
 async function fetchFromCandidate(
   destination,
   candidate,
-  { method, headers, body, signal, maxResponseBytes },
+  { method, headers, body, signal, maxResponseBytes, attempt },
   request,
 ) {
   if (signal?.aborted) throw new WebhookTransportError();
@@ -254,6 +260,7 @@ async function fetchFromCandidate(
           headers,
           signal,
         }), (response) => {
+          if (attempt) attempt.responseStarted = true;
           const chunks = [];
           let totalBytes = 0;
           response.on?.('data', (chunk) => {
@@ -338,25 +345,28 @@ export function createPublicHttpsTransport({ lookup = dnsLookup, request = https
       }
 
       const candidates = await resolvePublicAddresses(destination, lookup, signal);
+      const requestHeaders = identityEncodedHeaders(headers);
       let lastError;
       for (const candidate of candidates) {
+        const attempt = { responseStarted: false };
         try {
           return await fetchFromCandidate(
             destination,
             candidate,
             {
               method: String(method || 'GET').toUpperCase(),
-              headers,
+              headers: requestHeaders,
               body,
               signal,
               maxResponseBytes,
+              attempt,
             },
             request,
           );
         } catch (error) {
           if (!(error instanceof WebhookTransportError)) throw error;
           lastError = error;
-          if (signal?.aborted) throw error;
+          if (signal?.aborted || attempt.responseStarted) throw error;
         }
       }
       throw lastError || new WebhookTransportError();
