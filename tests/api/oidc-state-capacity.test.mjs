@@ -36,15 +36,15 @@ try {
     'capacity exhaustion returns a stable non-secret response',
   );
 
-  now += (5 * 60 * 1000) + 1;
-  const afterExpiry = await app.request('/api/auth/oidc/start');
+  now += 5 * 60 * 1000;
+  const atExpiry = await app.request('/api/auth/oidc/start');
   assert.equal(
-    afterExpiry.status,
+    atExpiry.status,
     302,
-    'expired state entries are reclaimed before applying the capacity limit',
+    'state entries expiring at the current instant are reclaimed before applying the capacity limit',
   );
 } finally {
   Date.now = originalNow;
 }
 
-console.log('core OIDC state capacity and expiry reclamation regression passed');
+console.log('core OIDC state capacity and inclusive expiry reclamation regression passed');
