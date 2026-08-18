@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './coverage-test.js';
 
 test.describe('Inline editor unsaved-change guards', () => {
   test('Escape on dirty editor prompts before discard', async ({ page }) => {

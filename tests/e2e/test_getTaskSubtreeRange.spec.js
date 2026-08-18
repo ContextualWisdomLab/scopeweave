@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './coverage-test.js';
 
 test.describe('getTaskSubtreeRange function tests', () => {
   test('should return correct range for root task, sub task and non-existent task', async ({ page }) => {

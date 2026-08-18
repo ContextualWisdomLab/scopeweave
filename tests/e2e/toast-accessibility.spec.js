@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './coverage-test.js';
 
 test('cloud status feedback is visibly rendered as a non-focus-taking live status', async ({ page }) => {
   await page.goto('/?share=ABCDEFGHIJKLMNOP');
