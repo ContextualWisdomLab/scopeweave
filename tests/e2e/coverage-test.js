@@ -5,13 +5,16 @@ import { test as base, expect } from '@playwright/test';
 
 const expectedBrowserSources = new Set(['/app.js', '/cloud-sync.js']);
 
-const isRequiredSource = (url) => {
+const requiredSourcePath = (url) => {
   try {
-    return expectedBrowserSources.has(decodeURIComponent(new URL(url).pathname));
+    const pathname = decodeURIComponent(new URL(url).pathname);
+    return expectedBrowserSources.has(pathname) ? pathname : null;
   } catch {
-    return false;
+    return null;
   }
 };
+
+const isRequiredSource = (url) => requiredSourcePath(url) !== null;
 
 const test = base.extend({
   page: async ({ page }, use, testInfo) => {
@@ -26,12 +29,31 @@ const test = base.extend({
       throw new Error('SCOPEWEAVE_BROWSER_COVERAGE_DIR is required when browser coverage is enabled.');
     }
 
+    const servedSourceSha256 = Object.create(null);
+    const responseEvidence = [];
+    const responseListener = (response) => {
+      const sourcePath = requiredSourcePath(response.url());
+      if (!sourcePath || response.status() !== 200) return;
+      responseEvidence.push((async () => {
+        const body = await response.body();
+        const sourceDigest = createHash('sha256').update(body).digest('hex');
+        const previousDigest = servedSourceSha256[sourcePath];
+        if (previousDigest && previousDigest !== sourceDigest) {
+          throw new Error(`Browser received inconsistent bytes for ${sourcePath}.`);
+        }
+        servedSourceSha256[sourcePath] = sourceDigest;
+      })());
+    };
+    page.on('response', responseListener);
+
     await page.coverage.startJSCoverage({ resetOnNavigation: false });
     let coverageEntries;
     try {
       await use(page);
     } finally {
       coverageEntries = await page.coverage.stopJSCoverage();
+      page.off('response', responseListener);
+      await Promise.all(responseEvidence);
     }
 
     const entries = coverageEntries.filter((entry) => isRequiredSource(entry.url));
@@ -40,7 +62,7 @@ const test = base.extend({
     const digest = createHash('sha256').update(identity).digest('hex');
     await writeFile(
       path.join(coverageDirectory, `${digest}.json`),
-      `${JSON.stringify({ entries })}\n`,
+      `${JSON.stringify({ entries, servedSourceSha256 })}\n`,
       'utf8',
     );
   },
