@@ -26,12 +26,14 @@ const OIDC_CLIENT_ID = process.env.OIDC_CLIENT_ID || '';
 const OIDC_TOKEN_URL = OIDC_ISSUER ? `${OIDC_ISSUER}/token` : null;
 const OIDC_TOKEN_TIMEOUT_MS = 3000;
 const OIDC_DISCOVERY_TTL_MS = 60 * 1000;
+const OIDC_JWKS_TTL_MS = 60 * 1000;
 const OIDC_STATE_TTL_MS = 5 * 60 * 1000;
 const OIDC_STATE_MAX_ENTRIES = 256;
 const OIDC_CLOCK_SKEW_SECONDS = 60;
 const oidcNonceByState = new Map();
 const oidcNonceByCode = new Map();
 let oidcDiscoveryCache = null;
+let oidcSigningKeyCache = null;
 
 function isSignedWebhookRequest(request) {
   if (request.method.toUpperCase() !== 'POST') return false;
@@ -149,6 +151,37 @@ async function loadOidcDiscovery(now = Date.now()) {
   return value;
 }
 
+async function loadOidcSigningKey(discovery, kid, now = Date.now()) {
+  if (
+    oidcSigningKeyCache
+    && oidcSigningKeyCache.expiresAt > now
+    && oidcSigningKeyCache.jwksUri === discovery.jwks_uri
+    && oidcSigningKeyCache.kid === kid
+  ) {
+    return oidcSigningKeyCache.key;
+  }
+
+  const jwks = await oidcProviderJson(discovery.jwks_uri);
+  const keyData = Array.isArray(jwks.keys)
+    ? jwks.keys.find((candidate) => (
+      candidate
+        && candidate.kid === kid
+        && candidate.kty === 'RSA'
+        && (!candidate.use || candidate.use === 'sig')
+        && (!candidate.alg || candidate.alg === 'RS256')
+    ))
+    : null;
+  if (!keyData) throw new Error('signing key unavailable');
+  const key = createPublicKey({ key: keyData, format: 'jwk' });
+  oidcSigningKeyCache = {
+    jwksUri: discovery.jwks_uri,
+    kid,
+    key,
+    expiresAt: now + OIDC_JWKS_TTL_MS,
+  };
+  return key;
+}
+
 async function verifyOidcIdToken(idToken, expectedNonce, discovery) {
   const parts = String(idToken || '').split('.');
   if (parts.length !== 3) throw new Error('invalid token');
@@ -157,18 +190,7 @@ async function verifyOidcIdToken(idToken, expectedNonce, discovery) {
   const claims = parseJwtObject(encodedClaims);
   if (header.alg !== 'RS256' || typeof header.kid !== 'string' || !header.kid) throw new Error('invalid algorithm');
 
-  const jwks = await oidcProviderJson(discovery.jwks_uri);
-  const keyData = Array.isArray(jwks.keys)
-    ? jwks.keys.find((candidate) => (
-      candidate
-        && candidate.kid === header.kid
-        && candidate.kty === 'RSA'
-        && (!candidate.use || candidate.use === 'sig')
-        && (!candidate.alg || candidate.alg === 'RS256')
-    ))
-    : null;
-  if (!keyData) throw new Error('signing key unavailable');
-  const key = createPublicKey({ key: keyData, format: 'jwk' });
+  const key = await loadOidcSigningKey(discovery, header.kid);
   if (!verifySignature(
     'RSA-SHA256',
     Buffer.from(`${encodedHeader}.${encodedClaims}`),
