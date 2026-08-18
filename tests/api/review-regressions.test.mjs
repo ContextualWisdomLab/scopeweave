@@ -4,6 +4,18 @@ import assert from 'node:assert/strict';
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 
+const forwardedFetches = [];
+globalThis.fetch = async (input, init) => {
+  const forwarded = new Request(input, init);
+  const forwardedBody = forwarded.body ? await forwarded.text() : '';
+  forwardedFetches.push({
+    url: forwarded.url,
+    method: forwarded.method,
+    body: forwardedBody,
+  });
+  return new Response(forwardedBody, { status: 200 });
+};
+
 const { app } = await import('../../server/app.mjs');
 const { db } = await import('../../server/db.mjs');
 
@@ -46,6 +58,27 @@ test('signed webhook Request inputs stay behind the SSRF destination policy', as
     globalThis.fetch(signedRequest),
     (error) => error?.name === 'WebhookDestinationError',
     'Request-object webhook sends must use the same fail-closed transport as URL+init sends',
+  );
+});
+
+test('non-webhook Request inputs preserve their body through the fetch facade', async () => {
+  const upstream = new Request('https://api.example.test/echo', {
+    method: 'POST',
+    headers: { 'content-type': 'text/plain' },
+    body: 'request-body-must-survive',
+  });
+
+  const response = await globalThis.fetch(upstream);
+  assert.equal(response.status, 200, 'the underlying fetch receives a usable Request');
+  assert.equal(await response.text(), 'request-body-must-survive');
+  assert.deepEqual(
+    forwardedFetches.at(-1),
+    {
+      url: 'https://api.example.test/echo',
+      method: 'POST',
+      body: 'request-body-must-survive',
+    },
+    'fallback fetch receives the effective Request instead of the already-consumed original',
   );
 });
 
