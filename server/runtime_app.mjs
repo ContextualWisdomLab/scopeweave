@@ -150,6 +150,13 @@ function compactCalendarDay(value) {
   return String(value).replaceAll('-', '');
 }
 
+function isCalendarDay(value) {
+  const text = String(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const date = new Date(`${text}T00:00:00Z`);
+  return !Number.isNaN(date.getTime()) && date.toISOString().slice(0, 10) === text;
+}
+
 function nextCalendarDay(value) {
   const date = new Date(`${value}T00:00:00Z`);
   date.setUTCDate(date.getUTCDate() + 1);
@@ -173,8 +180,8 @@ function renderCalendarFeed(project) {
   ];
   for (const task of tasks) {
     if (
-      !/^\d{4}-\d{2}-\d{2}$/.test(task?.plannedStartDate || '')
-      || !/^\d{4}-\d{2}-\d{2}$/.test(task?.plannedEndDate || '')
+      !isCalendarDay(task?.plannedStartDate || '')
+      || !isCalendarDay(task?.plannedEndDate || '')
     ) continue;
     lines.push(
       'BEGIN:VEVENT',
