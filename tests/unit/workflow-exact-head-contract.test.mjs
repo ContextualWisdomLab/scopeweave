@@ -16,7 +16,8 @@ const osvWorkflow = readFileSync(
 const packageJson = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 );
-const coverageScript = packageJson.scripts?.['test:coverage'] ?? '';
+const serverCoverageScript = packageJson.scripts?.['test:coverage:server'] ?? '';
+const browserCoverageScript = packageJson.scripts?.['test:coverage:browser'] ?? '';
 
 const exactHeadRef = 'ref: ${{ github.event.pull_request.head.sha || github.sha }}';
 const expectedShaEnv = 'EXPECTED_CHECKOUT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}';
@@ -48,6 +49,11 @@ assert.doesNotMatch(
 );
 assert.match(
   serverTestsWorkflow,
+  /- name: Install Playwright \(chromium for coverage\)[\s\S]*?run: npx playwright install chromium --with-deps[\s\S]*?- name: Exact owned production coverage/,
+  'the unit-and-api coverage lane must install the real Chromium runtime before browser coverage executes',
+);
+assert.match(
+  serverTestsWorkflow,
   /- name: Exact owned production coverage[\s\S]*?run: npm run test:coverage\b/,
   'Server Tests must execute the exact-head owned-production coverage gate',
 );
@@ -58,17 +64,23 @@ assert.match(
 );
 for (const requiredCoverageOption of [
   '--check-coverage',
+  '--per-file',
   '--lines 100',
   '--functions 100',
   '--branches 100',
   '--statements 100',
 ]) {
   assert.equal(
-    coverageScript.includes(requiredCoverageOption),
+    serverCoverageScript.includes(requiredCoverageOption),
     true,
-    `test:coverage must enforce ${requiredCoverageOption}`,
+    `test:coverage:server must enforce ${requiredCoverageOption}`,
   );
 }
+assert.equal(
+  browserCoverageScript,
+  'node scripts/ci/browser_coverage.mjs',
+  'test:coverage:browser must execute the repository-owned real-browser collector',
+);
 
 assert.match(
   codeqlWorkflow,
