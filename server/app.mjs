@@ -1,8 +1,9 @@
 // ScopeWeave API security facade.
 //
-// The historical Hono route graph remains in app_core.mjs so this bounded
-// security repair can interpose one explicit outbound-webhook policy boundary
-// without rewriting unrelated tenant, auth, billing, or Clearfolio behavior.
+// The historical Hono route graph remains in app_core.mjs so bounded security
+// policy can be added without rewriting unrelated tenant, auth, billing, or
+// Clearfolio behavior. Every production server and in-process caller imports
+// this facade; app_core.mjs is an implementation module, not a public entrypoint.
 import { app as coreApp } from './app_core.mjs';
 import {
   WebhookDestinationError,
@@ -13,6 +14,8 @@ import {
 const nativeFetch = globalThis.fetch.bind(globalThis);
 const webhookFetchBoundaryKey = Symbol.for('scopeweave.webhook-fetch-boundary');
 const WEBHOOK_REGISTRATION_PATH = /^\/api\/orgs\/[^/]+\/webhooks$/;
+const AUDIT_PATH = /^\/api\/orgs\/[^/]+\/audit$/;
+const AUTH_EMAIL_PATH = /^\/api\/auth\/(?:signup|login)$/;
 
 function normalizedHeaders(headers) {
   try {
@@ -22,27 +25,46 @@ function normalizedHeaders(headers) {
   }
 }
 
-function isSignedWebhookRequest(init) {
-  if (String(init?.method || '').toUpperCase() !== 'POST') return false;
-  const headers = normalizedHeaders(init?.headers);
+function isSignedWebhookRequest(request) {
+  if (request.method.toUpperCase() !== 'POST') return false;
   return Boolean(
-    headers.get('x-scopeweave-event')
-      && /^sha256=[0-9a-f]{64}$/i.test(headers.get('x-scopeweave-signature') || ''),
+    request.headers.get('x-scopeweave-event')
+      && /^sha256=[0-9a-f]{64}$/i.test(
+        request.headers.get('x-scopeweave-signature') || '',
+      ),
   );
 }
 
+async function protectedWebhookFetch(request) {
+  const body = request.body
+    ? new Uint8Array(await request.clone().arrayBuffer())
+    : '';
+  const result = await postWebhook(request.url, {
+    headers: Object.fromEntries(request.headers.entries()),
+    body,
+    signal: request.signal,
+  });
+  // Preserve fetch's Response contract for callers. Informational/invalid
+  // status codes cannot construct a standard Response and are represented as a
+  // network-style error response instead of leaking a transport-only object.
+  if (result.status >= 200 && result.status <= 599) {
+    return new Response(null, { status: result.status });
+  }
+  return Response.error();
+}
+
 // Install exactly once per process. Only the server's own signed webhook POSTs
-// are routed through the SSRF-safe transport; OIDC, Clearfolio, billing, and
-// all other fetch users retain the native implementation.
+// are routed through the SSRF-safe transport; OIDC, Clearfolio, billing, and all
+// other fetch users retain native fetch semantics. Constructing an effective
+// Request first makes Request-object inputs and init overrides follow the same
+// security decision as URL+init calls.
 if (!globalThis[webhookFetchBoundaryKey]) {
-  globalThis.fetch = (input, init = {}) => {
-    if (!isSignedWebhookRequest(init)) return nativeFetch(input, init);
-    const headers = normalizedHeaders(init.headers);
-    return postWebhook(input instanceof Request ? input.url : input, {
-      headers: Object.fromEntries(headers.entries()),
-      body: init.body ?? '',
-      signal: init.signal,
-    });
+  globalThis.fetch = async (input, init = undefined) => {
+    const effectiveRequest = new Request(input, init);
+    if (!isSignedWebhookRequest(effectiveRequest)) {
+      return nativeFetch(input, init);
+    }
+    return protectedWebhookFetch(effectiveRequest);
   };
   Object.defineProperty(globalThis, webhookFetchBoundaryKey, {
     value: true,
@@ -67,6 +89,49 @@ function isDevelopmentLoopbackHttp(value) {
   }
 }
 
+function requestWithJson(request, payload) {
+  const headers = new Headers(request.headers);
+  headers.delete('content-length');
+  headers.set('content-type', 'application/json');
+  return new Request(request, {
+    headers,
+    body: JSON.stringify(payload),
+  });
+}
+
+async function canonicalInboundRequest(request) {
+  const url = new URL(request.url);
+
+  if (request.method === 'POST' && AUTH_EMAIL_PATH.test(url.pathname)) {
+    const payload = await request.clone().json().catch(() => null);
+    if (
+      payload
+      && typeof payload === 'object'
+      && !Array.isArray(payload)
+      && typeof payload.email === 'string'
+    ) {
+      const email = payload.email.trim().toLowerCase();
+      if (email !== payload.email) return requestWithJson(request, { ...payload, email });
+    }
+  }
+
+  if (request.method === 'GET' && AUDIT_PATH.test(url.pathname)) {
+    const rawLimit = url.searchParams.get('limit');
+    if (rawLimit !== null) {
+      const requested = Number(rawLimit);
+      const limit = Number.isFinite(requested) && requested > 0
+        ? Math.min(Math.floor(requested), 500)
+        : 100;
+      if (String(limit) !== rawLimit) {
+        url.searchParams.set('limit', String(limit));
+        return new Request(url, request);
+      }
+    }
+  }
+
+  return request;
+}
+
 /**
  * Ask the existing route graph to run its real authentication, tenant-role,
  * rate-limit, and request middleware before this facade returns a policy error.
@@ -75,25 +140,15 @@ function isDevelopmentLoopbackHttp(value) {
  * reorder the authoritative authorization boundary.
  */
 async function deniedRegistrationAuthorization(request, rest) {
-  const headers = new Headers(request.headers);
-  headers.delete('content-length');
-  const probe = new Request(request.url, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify({ url: '' }),
-  });
+  const probe = requestWithJson(request, { url: '' });
   const response = await coreApp.fetch(probe, ...rest);
-  return response.status === 400 ? null : response;
+  if (response.status !== 400) return response;
+  const payload = await response.clone().json().catch(() => null);
+  return payload?.error === 'valid http(s) url required' ? null : response;
 }
 
 function canonicalRegistrationRequest(request, payload, canonicalUrl) {
-  const headers = new Headers(request.headers);
-  headers.delete('content-length');
-  return new Request(request.url, {
-    method: request.method,
-    headers,
-    body: JSON.stringify({ ...payload, url: canonicalUrl }),
-  });
+  return requestWithJson(request, { ...payload, url: canonicalUrl });
 }
 
 async function registrationPolicyResult(request, rest) {
@@ -111,7 +166,10 @@ async function registrationPolicyResult(request, rest) {
     // Preserve the existing dev-only localhost failure-path smoke fixture. The
     // outbound transport still refuses HTTP, so this exception cannot create a
     // server-side connection and production never inherits it.
-    if (error instanceof WebhookDestinationError && isDevelopmentLoopbackHttp(payload.url)) {
+    if (
+      error instanceof WebhookDestinationError
+      && isDevelopmentLoopbackHttp(payload.url)
+    ) {
       return { request };
     }
     const authorization = await deniedRegistrationAuthorization(request, rest);
@@ -126,21 +184,22 @@ async function registrationPolicyResult(request, rest) {
 }
 
 async function secureFetch(request, ...rest) {
-  const policy = await registrationPolicyResult(request, rest);
+  const canonicalRequest = await canonicalInboundRequest(request);
+  const policy = await registrationPolicyResult(canonicalRequest, rest);
   if (policy?.response) return policy.response;
-  return coreApp.fetch(policy?.request || request, ...rest);
+  return coreApp.fetch(policy?.request || canonicalRequest, ...rest);
 }
 
-async function secureRequest(input, init) {
+async function secureRequest(input, init, ...rest) {
   const request = input instanceof Request
-    ? input
+    ? new Request(input, init)
     : new Request(new URL(String(input), 'http://localhost'), init);
-  return secureFetch(request);
+  return secureFetch(request, ...rest);
 }
 
 // Proxying preserves Hono route/introspection properties for existing callers
 // while forcing both server fetches and in-process app.request tests through the
-// registration policy above.
+// registration, identity, and request-boundary policies above.
 export const app = new Proxy(coreApp, {
   get(target, property) {
     if (property === 'fetch') return secureFetch;
