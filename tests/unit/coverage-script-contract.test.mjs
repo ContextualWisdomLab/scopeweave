@@ -108,4 +108,45 @@ for (const specName of e2eSpecs) {
   );
 }
 
+const browserFixtureSource = readFileSync(new URL('../e2e/coverage-test.js', import.meta.url), 'utf8');
+const browserCollectorSource = readFileSync(
+  new URL('../../scripts/ci/browser_coverage.mjs', import.meta.url),
+  'utf8',
+);
+assert.match(
+  browserFixtureSource,
+  /page\.on\(['"]response['"]/,
+  'browser coverage must observe the actual network responses that supplied covered production scripts',
+);
+assert.match(
+  browserFixtureSource,
+  /response\.body\(\)/,
+  'browser coverage must hash served response bytes rather than trusting CDP source-text normalization',
+);
+assert.match(
+  browserFixtureSource,
+  /createHash\(['"]sha256['"]\)/,
+  'browser coverage must bind served production source evidence with SHA-256',
+);
+assert.match(
+  browserFixtureSource,
+  /servedSourceSha256/,
+  'raw browser evidence must carry served-source digests alongside V8 coverage ranges',
+);
+assert.match(
+  browserCollectorSource,
+  /servedSourceSha256/,
+  'the collector must consume the served-source digest evidence',
+);
+assert.match(
+  browserCollectorSource,
+  /createHash\(['"]sha256['"]\)/,
+  'the collector must independently hash checked-out production source bytes',
+);
+assert.doesNotMatch(
+  browserCollectorSource,
+  /entry\.source\s*!=\s*null\s*&&\s*entry\.source\s*!==\s*localSource/,
+  'the collector must not reject browser-equivalent source solely because CDP normalized source text',
+);
+
 console.log('✓ coverage script contract tests passed');
