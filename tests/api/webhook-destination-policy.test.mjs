@@ -30,12 +30,17 @@ const organizationId = me.orgs[0].id;
 
 const deniedDestinations = [
   'http://example.com/hook',
+  'https://localhost/hook',
+  'https://api.localhost/hook',
   'https://127.0.0.1/hook',
+  'https://2130706433/hook',
+  'https://0x7f000001/hook',
   'https://169.254.169.254/latest/meta-data',
   'https://10.0.0.8/hook',
   'https://192.168.50.12/hook',
   'https://[::1]/hook',
   'https://[fc00::1]/hook',
+  'https://[::ffff:127.0.0.1]/hook',
   'https://user:password@example.com/hook',
   'https://example.com/hook#fragment',
 ];
@@ -47,6 +52,11 @@ for (const url of deniedDestinations) {
     body: json({ url, events: ['project.updated'] }),
   });
   assert.equal(response.status, 400, `production webhook registration rejects unsafe destination ${url}`);
+  assert.deepEqual(
+    await response.json(),
+    { error: 'valid public https webhook URL required' },
+    'registration failure stays stable and does not disclose resolver or address details',
+  );
 }
 
 response = await request(`/api/orgs/${organizationId}/webhooks`, {

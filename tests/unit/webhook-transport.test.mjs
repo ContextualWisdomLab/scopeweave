@@ -15,8 +15,8 @@ for (const address of [
   '169.254.169.254', '172.16.0.1', '192.0.2.10', '192.168.1.1',
   '198.18.0.1', '198.51.100.2', '203.0.113.9', '224.0.0.1',
   '255.255.255.255', '::', '::1', '::ffff:127.0.0.1', '64:ff9b::1',
-  '100::1', '2001:2::1', '2001:db8::1', '2002::1', '3fff::1', '5f00::1',
-  'fc00::1', 'fe80::1', 'ff00::1',
+  '100::1', '100:0:0:1::1', '2001::1', '2001:2::1', '2001:db8::1',
+  '2002::1', '3fff::1', '5f00::1', 'fc00::1', 'fe80::1', 'ff00::1',
 ]) {
   assert.equal(isPublicWebhookAddress(address), false, `${address} is denied`);
 }
@@ -35,6 +35,7 @@ for (const url of [
   'https://user:pass@example.com/hook', 'https://example.com/hook#fragment',
   'https://localhost/hook', 'https://api.localhost/hook', 'https://printer.local/hook',
   'https://home.arpa/hook', 'https://svc.home.arpa/hook', 'https://127.0.0.1/hook',
+  'https://2130706433/hook', 'https://0x7f000001/hook',
   'https://[::1]/hook', 'https://[::ffff:127.0.0.1]/hook',
 ]) {
   assert.throws(
