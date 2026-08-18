@@ -59,8 +59,18 @@ assert.match(
 );
 assert.match(
   serverTestsWorkflow,
-  /- name: Coverage failure diagnostics[\s\S]*?if: failure\(\)[\s\S]*?run: node scripts\/ci\/coverage_diagnostics\.mjs/,
+  /- name: Coverage failure diagnostics[\s\S]*?if: failure\(\)[\s\S]*?node scripts\/ci\/coverage_diagnostics\.mjs "\$report"/,
   'coverage failures must emit exact missed statements, functions, and branch locations without making the gate pass',
+);
+assert.match(
+  serverTestsWorkflow,
+  /for report in coverage\/coverage-final\.json coverage\/browser\/coverage-final\.json/,
+  'coverage failure diagnostics must inspect both server and browser Istanbul reports when they exist',
+);
+assert.match(
+  serverTestsWorkflow,
+  /if \[ -f "\$report" \]; then[\s\S]*?node scripts\/ci\/coverage_diagnostics\.mjs "\$report"/,
+  'coverage diagnostics must tolerate a server-side failure before the browser report exists',
 );
 assert.match(
   serverTestsWorkflow,
