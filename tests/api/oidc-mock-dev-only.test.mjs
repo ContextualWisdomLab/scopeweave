@@ -9,7 +9,7 @@ delete process.env.OIDC_CLIENT_ID;
 delete process.env.OIDC_CLIENT_SECRET;
 delete process.env.OIDC_REDIRECT_URI;
 
-const { app } = await import('../../server/app_core.mjs');
+const { app } = await import('../../server/app.mjs');
 
 test('built-in OIDC mock cannot authenticate when development mode is disabled', async () => {
   let response = await app.request('http://localhost/api/auth/oidc/start?email=attacker@scopeweave.test');
