@@ -273,19 +273,28 @@ async function coreFetchWithOidcBinding(request, rest) {
   }
 }
 
+function authorizationProbeRequest(request) {
+  const headers = new Headers(request.headers);
+  headers.delete('content-length');
+  headers.delete('content-type');
+  return new Request(request.url, {
+    method: 'GET',
+    headers,
+    signal: request.signal,
+  });
+}
+
 /**
- * Ask the existing route graph to run its real authentication, tenant-role,
- * rate-limit, and request middleware before this facade returns a policy error.
- * The deliberately empty URL reaches the old route's own URL validation but can
- * never be persisted or delivered, so denied destinations do not bypass or
- * reorder the authoritative authorization boundary. A 400 is therefore the
- * controlled probe's explicit "authorization passed; URL rejected" outcome;
- * authentication and tenant-role failures return before that point.
+ * Ask the existing read-only webhook collection route to run the same real
+ * authentication, tenant-role, rate-limit, and request middleware before this
+ * facade returns a destination-policy error. Authorized managers receive the
+ * collection route's explicit 200 result; every denial, rate limit, malformed
+ * request, or internal failure is propagated unchanged. This avoids classifying
+ * an arbitrary 400 from the legacy POST route as authorization success.
  */
 async function deniedRegistrationAuthorization(request, rest) {
-  const probe = requestWithJson(request, { url: '' });
-  const response = await coreApp.fetch(probe, ...rest);
-  return response.status === 400 ? null : response;
+  const response = await coreApp.fetch(authorizationProbeRequest(request), ...rest);
+  return response.status === 200 ? null : response;
 }
 
 function canonicalRegistrationRequest(request, payload, canonicalUrl) {
