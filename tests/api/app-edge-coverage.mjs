@@ -157,7 +157,7 @@ assert.match(response.headers.get('location') || '', /mock-clearfolio/);
 // Stripe completion accepts both documented organization-id locations.
 for (const event of [
   { type: 'checkout.session.completed', data: { object: { client_reference_id: String(orgId) } } },
-  { type: 'checkout.session.completed', data: { object: { metadata: { orgId: String(secondaryOrgId) } } } },
+  { type: 'checkout.session.completed', data: { object: { metadata: { orgId: String(secondaryOrgId) } } },
   { type: 'ignored.event', data: { object: {} } },
 ]) {
   assert.equal((await req('/api/stripe/webhook', { method: 'POST', body: body(event) })).status, 200);
@@ -224,7 +224,8 @@ try {
     body: body({ version: loaded.version }),
   });
   assert.equal(response.status, 200);
-  await delay(1150);
+  const retryDeadline = Date.now() + 2500;
+  while (webhookAttempts < 3 && Date.now() < retryDeadline) await delay(50);
 } finally {
   globalThis.fetch = nativeFetch;
 }
