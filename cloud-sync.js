@@ -26,6 +26,41 @@ export function routeTokenPathSegment(value) {
   return ROUTE_TOKEN_RE.test(token) ? token : '';
 }
 
+/**
+ * Download a Blob through a temporary anchor and always release resources.
+ *
+ * The anchor is attached before dispatch so Firefox-compatible download paths
+ * work, its instance `remove` property is never trusted, and the object URL is
+ * revoked even when the browser rejects the synthetic click.
+ *
+ * @param {Blob} blob - File payload to offer to the browser.
+ * @param {string} filename - Customer-visible download filename.
+ * @param {object} [environment] - Injectable DOM/URL APIs for deterministic tests.
+ * @param {Document} [environment.documentRef=document] - Document that owns the temporary anchor.
+ * @param {URL} [environment.urlRef=URL] - URL API used to create and revoke the object URL.
+ */
+export function downloadBlobSafely(blob, filename, { documentRef = document, urlRef = URL } = {}) {
+  const url = urlRef.createObjectURL(blob);
+  let anchor = null;
+  try {
+    anchor = documentRef.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.rel = 'noopener noreferrer';
+    documentRef.body.appendChild(anchor);
+    anchor.click();
+  } finally {
+    try {
+      if (anchor) {
+        const remove = Object.getPrototypeOf(anchor)?.remove;
+        if (typeof remove === 'function') remove.call(anchor);
+      }
+    } finally {
+      urlRef.revokeObjectURL(url);
+    }
+  }
+}
+
 function safeApiPath(path) {
   if (typeof path !== 'string' || !path.startsWith('/api/')) throw new Error('invalid api path');
   const origin = typeof location !== 'undefined' ? location.origin : 'http://localhost';
@@ -490,15 +525,7 @@ async function exportOrg() {
     if (res.status === 403) return toast('소유자만 데이터를 내보낼 수 있습니다.');
     if (!res.ok) return toast('내보내기에 실패했습니다.');
     const blob = await res.blob();
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `scopeweave-org-${currentOrgId}.json`;
-    a.rel = 'noopener noreferrer';
-    document.body.appendChild(a);
-    a.click();
-    Element.prototype.remove.call(a);
-    URL.revokeObjectURL(url);
+    downloadBlobSafely(blob, `scopeweave-org-${currentOrgId}.json`);
     toast('워크스페이스 데이터를 내보냈습니다.');
   } catch {
     toast('내보내기에 실패했습니다.');
@@ -1583,14 +1610,7 @@ async function openBaselineModal() {
       const res = await fetch(`/api/projects/${pid}/calendar.ics`, { headers: { authorization: `Bearer ${getToken()}` } });
       if (!res.ok) return toast('캘린더 내보내기에 실패했습니다.');
       const blob = await res.blob();
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `scopeweave-${pid}.ics`;
-      a.rel = 'noopener noreferrer';
-      document.body.appendChild(a);
-      a.click();
-      Element.prototype.remove.call(a);
-      URL.revokeObjectURL(a.href);
+      downloadBlobSafely(blob, `scopeweave-${pid}.ics`);
       toast('캘린더 파일(.ics)을 내려받았습니다.');
     } catch { toast('캘린더 내보내기에 실패했습니다.'); }
   });
@@ -2099,14 +2119,7 @@ async function renderAudit(body) {
       const res = await fetch(`/api/orgs/${currentOrgId}/audit?format=csv&limit=500`, { headers: { authorization: `Bearer ${getToken()}` } });
       if (!res.ok) return toast('감사 로그 내보내기에 실패했습니다.');
       const blob = await res.blob();
-      const a = document.createElement('a');
-      a.href = URL.createObjectURL(blob);
-      a.download = `scopeweave-audit-${currentOrgId}.csv`;
-      a.rel = 'noopener noreferrer';
-      document.body.appendChild(a);
-      a.click();
-      Element.prototype.remove.call(a);
-      URL.revokeObjectURL(a.href);
+      downloadBlobSafely(blob, `scopeweave-audit-${currentOrgId}.csv`);
       toast('감사 로그 CSV를 내려받았습니다.');
     } catch { toast('감사 로그 내보내기에 실패했습니다.'); }
   });
