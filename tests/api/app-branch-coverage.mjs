@@ -36,6 +36,14 @@ const status = async (expected, promise, label) => {
   return response;
 };
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const waitFor = async (predicate, label, timeoutMs = 2000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await delay(5);
+  }
+  throw new Error(`timeout waiting for ${label}`);
+};
 
 // JSON parse failures are user-input branches, not exceptional test setup.
 await status(400, malformedJson('/api/auth/signup', 'POST'), 'malformed signup');
@@ -199,7 +207,12 @@ await status(403, req(`/api/orgs/${orgId}/export`, { headers: memberAuth }), 'me
 // Webhook event-subscription alternatives: wildcard delivers, unrelated events
 // skip, string events are accepted, and delivery-record failures are contained.
 const nativeFetch = globalThis.fetch;
-globalThis.fetch = async () => new Response(null, { status: 204 });
+let webhookFetches = 0;
+globalThis.fetch = async (url) => {
+  webhookFetches += 1;
+  if (String(url).endsWith('/string')) await delay(20);
+  return new Response(null, { status: 204 });
+};
 response = await req(`/api/orgs/${orgId}/webhooks`, {
   method: 'POST', headers: ownerAuth, body: jsonBody({ url: 'https://hooks.example.test/wildcard' }),
 });
@@ -212,16 +225,23 @@ await req(`/api/orgs/${orgId}/webhooks`, {
   method: 'POST', headers: ownerAuth, body: jsonBody({ url: 'https://hooks.example.test/skip', events: ['member.join'] }),
 });
 await status(400, malformedJson(`/api/orgs/${orgId}/webhooks`, 'POST', ownerAuth), 'malformed webhook');
-db.exec("CREATE TEMP TRIGGER fail_delivery_insert BEFORE INSERT ON webhook_deliveries BEGIN SELECT RAISE(ABORT, 'forced delivery record failure'); END");
+const stringDeliveriesBefore = db.prepare('SELECT COUNT(*) AS count FROM webhook_deliveries WHERE webhook_id = ?').get(stringWebhook.id).count;
+db.exec(`CREATE TEMP TRIGGER fail_delivery_insert BEFORE INSERT ON webhook_deliveries
+  WHEN NEW.webhook_id = ${Number(wildcardWebhook.id)}
+  BEGIN SELECT RAISE(ABORT, 'forced delivery record failure'); END`);
 project = await (await req(`/api/projects/${projectId}`, { headers: ownerAuth })).json();
 await status(200, req(`/api/projects/${projectId}`, {
   method: 'PUT', headers: ownerAuth, body: jsonBody({ version: project.version }),
 }), 'webhook record failure is contained');
-await delay(10);
+await waitFor(
+  () => db.prepare('SELECT COUNT(*) AS count FROM webhook_deliveries WHERE webhook_id = ?').get(stringWebhook.id).count > stringDeliveriesBefore,
+  'sibling webhook delivery after injected record failure',
+);
 db.exec('DROP TRIGGER fail_delivery_insert');
 
 // Force only the delivery lookup boundary to disappear. The project update is
 // still authoritative and must succeed because webhook delivery is best-effort.
+const fetchesBeforeUnavailable = webhookFetches;
 db.exec('ALTER TABLE webhooks RENAME TO webhooks_temporarily_unavailable');
 try {
   project = await (await req(`/api/projects/${projectId}`, { headers: ownerAuth })).json();
@@ -231,7 +251,7 @@ try {
 } finally {
   db.exec('ALTER TABLE webhooks_temporarily_unavailable RENAME TO webhooks');
 }
-await delay(10);
+assert.equal(webhookFetches, fetchesBeforeUnavailable, 'missing webhook table schedules no delivery');
 globalThis.fetch = nativeFetch;
 await status(404, req(`/api/orgs/${orgId}/webhooks/999999/deliveries`, { headers: ownerAuth }), 'unknown delivery history');
 await status(200, req(`/api/orgs/${orgId}/webhooks/${wildcardWebhook.id}`, { method: 'DELETE', headers: ownerAuth }), 'delete wildcard webhook');
