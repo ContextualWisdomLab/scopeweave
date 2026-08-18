@@ -209,6 +209,38 @@ assert.equal(
   'IP literals do not inject an SNI hostname',
 );
 
+const candidateAttempts = [];
+const fallbackTransport = createWebhookTransport({
+  lookup: async () => [
+    { address: '93.184.216.34', family: 4 },
+    { address: '2606:4700:4700::1111', family: 6 },
+  ],
+  request: (_url, options, callback) => {
+    const req = new EventEmitter();
+    req.end = () => {
+      options.lookup('ignored.example', {}, (error, address, family) => {
+        assert.equal(error, null);
+        candidateAttempts.push({ address, family });
+        if (candidateAttempts.length === 1) {
+          queueMicrotask(() => req.emit('error', new Error('first public address unreachable')));
+          return;
+        }
+        queueMicrotask(() => callback({ statusCode: 204, resume() {} }));
+      });
+    };
+    return req;
+  },
+});
+assert.deepEqual(
+  await fallbackTransport.post('https://hooks.example.com/hook'),
+  { status: 204, ok: true },
+  'a later policy-validated address is attempted when the first address cannot connect',
+);
+assert.deepEqual(candidateAttempts, [
+  { address: '93.184.216.34', family: 4 },
+  { address: '2606:4700:4700::1111', family: 6 },
+]);
+
 const syncFailure = createWebhookTransport({
   lookup: async () => [{ address: '93.184.216.34', family: 4 }],
   request: () => { throw new Error('secret network detail'); },
