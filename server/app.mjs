@@ -329,10 +329,19 @@ function bindOidcStartNonce(request, response, discovery) {
 }
 
 async function coreFetchWithOidcBinding(request, rest) {
-  if (!OIDC_ISSUER || request.method !== 'GET') {
+  const requestUrl = new URL(request.url);
+  if (!OIDC_ISSUER) {
+    if (
+      process.env.SCOPEWEAVE_DEV !== '1'
+      && requestUrl.pathname.startsWith('/api/auth/oidc/')
+    ) {
+      return Response.json({ error: 'not found' }, { status: 404 });
+    }
     return coreApp.fetch(request, ...rest);
   }
-  const requestUrl = new URL(request.url);
+  if (request.method !== 'GET') {
+    return coreApp.fetch(request, ...rest);
+  }
   if (requestUrl.pathname === '/api/auth/oidc/start') {
     let discovery;
     try {
