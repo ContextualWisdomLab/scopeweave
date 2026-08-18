@@ -30,6 +30,7 @@ assert.match(
   'server coverage also creates the Istanbul JSON summary',
 );
 for (const requiredCoverageOption of [
+  '--all',
   '--check-coverage',
   '--per-file',
   '--lines 100',
