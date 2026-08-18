@@ -86,32 +86,49 @@ async function deniedRegistrationAuthorization(request, rest) {
   return response.status === 400 ? null : response;
 }
 
-async function registrationPolicyResponse(request, rest) {
+function canonicalRegistrationRequest(request, payload, canonicalUrl) {
+  const headers = new Headers(request.headers);
+  headers.delete('content-length');
+  return new Request(request.url, {
+    method: request.method,
+    headers,
+    body: JSON.stringify({ ...payload, url: canonicalUrl }),
+  });
+}
+
+async function registrationPolicyResult(request, rest) {
   const url = new URL(request.url);
   if (request.method !== 'POST' || !WEBHOOK_REGISTRATION_PATH.test(url.pathname)) {
     return null;
   }
   const payload = await request.clone().json().catch(() => ({}));
   try {
-    validateWebhookRegistrationUrl(payload.url);
-    return null;
+    const canonicalUrl = validateWebhookRegistrationUrl(payload.url);
+    return canonicalUrl === payload.url
+      ? { request }
+      : { request: canonicalRegistrationRequest(request, payload, canonicalUrl) };
   } catch (error) {
     // Preserve the existing dev-only localhost failure-path smoke fixture. The
     // outbound transport still refuses HTTP, so this exception cannot create a
     // server-side connection and production never inherits it.
     if (error instanceof WebhookDestinationError && isDevelopmentLoopbackHttp(payload.url)) {
-      return null;
+      return { request };
     }
     const authorization = await deniedRegistrationAuthorization(request, rest);
-    if (authorization) return authorization;
-    return Response.json({ error: 'valid public https webhook URL required' }, { status: 400 });
+    if (authorization) return { response: authorization };
+    return {
+      response: Response.json(
+        { error: 'valid public https webhook URL required' },
+        { status: 400 },
+      ),
+    };
   }
 }
 
 async function secureFetch(request, ...rest) {
-  const denied = await registrationPolicyResponse(request, rest);
-  if (denied) return denied;
-  return coreApp.fetch(request, ...rest);
+  const policy = await registrationPolicyResult(request, rest);
+  if (policy?.response) return policy.response;
+  return coreApp.fetch(policy?.request || request, ...rest);
 }
 
 async function secureRequest(input, init) {
