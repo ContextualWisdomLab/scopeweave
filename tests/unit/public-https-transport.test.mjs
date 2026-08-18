@@ -34,6 +34,8 @@ const transport = createPublicHttpsTransport({
           agent: options.agent,
           servername: options.servername,
           method: options.method,
+          acceptEncoding: options.headers?.get?.('accept-encoding')
+            ?? options.headers?.['accept-encoding'],
         });
         if (address === PUBLIC_A.address) {
           queueMicrotask(() => req.emit('error', new Error('simulated first-address failure')));
@@ -67,15 +69,17 @@ assert.deepEqual(
       agent: false,
       servername: 'idp.example.test',
       method: 'GET',
+      acceptEncoding: 'identity',
     },
     {
       ...PUBLIC_B,
       agent: false,
       servername: 'idp.example.test',
       method: 'GET',
+      acceptEncoding: 'identity',
     },
   ],
-  'every fallback attempt is pinned to a validated address with pooling disabled and original SNI preserved',
+  'every fallback attempt is pinned, disables pooling, preserves SNI, and requests identity encoding',
 );
 
 const oversized = createPublicHttpsTransport({
@@ -99,6 +103,48 @@ await assert.rejects(
   'provider responses larger than the configured memory budget fail closed',
 );
 
+let responseStartedAttempts = 0;
+const noReplayAfterResponse = createPublicHttpsTransport({
+  lookup: async () => [PUBLIC_A, PUBLIC_B],
+  request: (_url, options, callback) => {
+    responseStartedAttempts += 1;
+    const req = new EventEmitter();
+    req.end = () => {
+      options.lookup('ignored.example', {}, (error, address) => {
+        assert.ifError(error);
+        const response = new EventEmitter();
+        response.statusCode = 200;
+        response.headers = { 'content-type': 'application/json' };
+        response.destroy = () => {};
+        callback(response);
+        queueMicrotask(() => {
+          if (address === PUBLIC_A.address) {
+            response.emit('data', Buffer.alloc(9));
+            return;
+          }
+          response.emit('data', Buffer.from('{}'));
+          response.emit('end');
+        });
+      });
+    };
+    return req;
+  },
+});
+await assert.rejects(
+  noReplayAfterResponse.fetch('https://idp.example.test/token', {
+    method: 'POST',
+    body: 'grant_type=authorization_code',
+    maxResponseBytes: 8,
+  }),
+  WebhookTransportError,
+  'a response-stream failure must not replay an already-sent POST to another address',
+);
+assert.equal(
+  responseStartedAttempts,
+  1,
+  'only connection-establishment failures may advance to another validated address',
+);
+
 await assert.rejects(
   transport.fetch('https://idp.example.test/jwks', { maxResponseBytes: 0 }),
   /positive safe integer/,
@@ -108,4 +154,4 @@ assert.throws(
   /dependencies must be functions/,
 );
 
-console.log('public HTTPS DNS pinning, fallback, and response-bound regressions passed');
+console.log('public HTTPS DNS pinning, identity encoding, fallback, and response-bound regressions passed');
