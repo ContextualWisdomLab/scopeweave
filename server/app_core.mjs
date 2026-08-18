@@ -799,8 +799,16 @@ const OIDC = {
   redirectUri: process.env.OIDC_REDIRECT_URI,
 };
 const oidcMock = !OIDC.issuer;
+const OIDC_STATE_TTL_MS = 5 * 60 * 1000;
+const OIDC_STATE_MAX_ENTRIES = 256;
 const oidcStates = new Map(); // state -> { verifier, exp }
 const oidcCodes = new Map();  // mock only: code -> email
+
+function cleanupOidcStates(now = Date.now()) {
+  for (const [state, record] of oidcStates.entries()) {
+    if (record.exp < now) oidcStates.delete(state);
+  }
+}
 
 function upsertSsoUser(email) {
   let user = db.prepare('SELECT id, email, token_version FROM users WHERE email = ?').get(email);
@@ -818,11 +826,16 @@ function upsertSsoUser(email) {
 }
 
 app.get('/api/auth/oidc/start', (c) => {
+  const now = Date.now();
+  cleanupOidcStates(now);
+  if (oidcStates.size >= OIDC_STATE_MAX_ENTRIES) {
+    return c.json({ error: 'OIDC temporarily unavailable' }, 503);
+  }
   const origin = new URL(c.req.url).origin;
   const state = randomBytes(16).toString('hex');
   const verifier = randomBytes(32).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
-  oidcStates.set(state, { verifier, exp: Date.now() + 5 * 60 * 1000 });
+  oidcStates.set(state, { verifier, exp: now + OIDC_STATE_TTL_MS });
   const redirectUri = OIDC.redirectUri || `${origin}/api/auth/oidc/callback`;
   if (oidcMock) {
     const email = c.req.query('email') || 'sso-user@example.com';
@@ -861,7 +874,10 @@ app.get('/api/auth/oidc/callback', async (c) => {
   const state = c.req.query('state');
   const code = c.req.query('code');
   const s = oidcStates.get(state);
-  if (!s || s.exp < Date.now()) return c.json({ error: 'invalid or expired state' }, 400);
+  if (!s || s.exp < Date.now()) {
+    if (s) oidcStates.delete(state);
+    return c.json({ error: 'invalid or expired state' }, 400);
+  }
   oidcStates.delete(state);
   let email;
   if (oidcMock) {
