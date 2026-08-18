@@ -17,7 +17,6 @@ globalThis.fetch = async (input, init) => {
 };
 
 const { app } = await import('../../server/app.mjs');
-const { app: coreApp } = await import('../../server/app_core.mjs');
 const { db } = await import('../../server/db.mjs');
 
 const body = (value) => JSON.stringify(value);
@@ -135,35 +134,39 @@ test('audit pagination rejects non-positive limits instead of expanding to the f
   assert.equal(events.length, 100, 'invalid negative limit falls back to the bounded default');
 });
 
-test('webhook URL validation exposes a stable internal authorization code', async () => {
-  const { token, org } = await createOwner('webhook-code@scopeweave.test');
-  const authorization = `Bearer ${token}`;
+test('webhook authorization probing is independent from internal validation copy', async () => {
+  const { token, org } = await createOwner('webhook-copy@scopeweave.test');
+  const target = `/api/orgs/${org.id}/webhooks`;
 
-  const coreResponse = await coreApp.request(`/api/orgs/${org.id}/webhooks`, {
+  const denied = await request(target, {
     method: 'POST',
-    headers: {
-      authorization,
-      'content-type': 'application/json',
-    },
-    body: body({ url: '', events: ['project.update'] }),
-  });
-  assert.equal(coreResponse.status, 400);
-  const corePayload = await coreResponse.json();
-  assert.equal(
-    corePayload.error_code,
-    'webhook_url_required',
-    'the facade must classify the authorized core validation boundary by machine code rather than customer-facing copy',
-  );
-
-  const facadeResponse = await request(`/api/orgs/${org.id}/webhooks`, {
-    method: 'POST',
-    headers: { authorization },
     body: body({ url: 'http://127.0.0.1/private', events: ['project.update'] }),
   });
+  assert.equal(denied.status, 401, 'destination validation never bypasses authentication');
+
+  const originalResponseJson = Response.prototype.json;
+  let facadeResponse;
+  Response.prototype.json = async function changedInternalCopy() {
+    const payload = await originalResponseJson.call(this);
+    if (payload?.error === 'valid http(s) url required') {
+      return { ...payload, error: 'internal webhook URL copy changed' };
+    }
+    return payload;
+  };
+  try {
+    facadeResponse = await request(target, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}` },
+      body: body({ url: 'http://127.0.0.1/private', events: ['project.update'] }),
+    });
+  } finally {
+    Response.prototype.json = originalResponseJson;
+  }
+
   assert.equal(facadeResponse.status, 400);
   assert.deepEqual(
     await facadeResponse.json(),
     { error: 'valid public https webhook URL required' },
-    'the public facade keeps its actionable destination-policy response independent from the internal authorization probe code',
+    'the public policy result must not depend on presentation text from the internal authorization probe',
   );
 });
