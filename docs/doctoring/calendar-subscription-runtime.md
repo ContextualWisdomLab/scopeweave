@@ -36,6 +36,8 @@ A subscription feed request is accepted only when all of these are true:
 
 Successful subscription-feed responses set `Cache-Control: private, no-store`, `Referrer-Policy: no-referrer`, and `X-Content-Type-Options: nosniff`. The application does not log request bodies or credential values. Calendar values are escaped for RFC 5545 text and all-day `DTEND` remains exclusive.
 
+Project task persistence predates the calendar runtime and can contain malformed or impossible date strings. Feed rendering therefore treats persisted task dates as untrusted input: a task is emitted only when both dates are canonical real `YYYY-MM-DD` UTC calendar days and its exclusive next-day `DTEND` is itself representable by RFC 5545's four-digit basic `DATE` form. Invalid months, normalized impossible days, and the `9999-12-31` upper boundary are omitted rather than causing HTTP 500 responses, silently changing the scheduled day, or emitting an extended-year value such as `+01000001`.
+
 ## Revocation and recovery
 
 Rotation atomically replaces the current stored hash, so the previous feed URL stops working immediately. Explicit revocation preserves first-transition semantics from the parent domain/adapter.
@@ -54,6 +56,8 @@ The next product slice is the reviewed customer management interaction from the 
 
 The runtime API contract was committed before the production composition existed. The first test registered `tests/api/calendar-subscription-runtime.test.mjs` in the canonical API suite while the tested management routes were absent from `server/app.mjs`, establishing the RED boundary before the wrapper implementation.
 
+Two later feed-validity repairs were also established with executed RED evidence before production changes. Test-only `44eec30eb31f43ce9658c97d99af12f4f4d09ac0` persisted `2026-13-01` and `2026-02-30`; Server Tests run `32088800210`, job `95566742208`, reproduced the `RangeError: Invalid time value` feed failure before `isCalendarDay()` was hardened. Test-only `fa55b6f535d6f2c2f5a3420d31f1ae3425b38173` then persisted `9999-12-31`; Server Tests run `32089288786`, job `95568160158`, proved the feed emitted the malformed `DTEND;VALUE=DATE:+01000001` before exclusive-end rendering was bounded. Production commit `f25941198928ad285a2165f7785f27c0fba3bc71` made the second regression GREEN; Server Tests run `32089452553` completed successfully with both `unit-and-api` and `cloud-e2e` passing, while Dependency Review `32089452544` and OSV Scanner `32089452867` also passed on that contributor head. These runs are causal evidence, not final merge authority after later head movement.
+
 The current regression covers:
 
 - unauthenticated and cross-tenant management rejection;
@@ -61,6 +65,7 @@ The current regression covers:
 - create/list and one-time secret disclosure;
 - project/purpose/audience-bound feed authorization;
 - private/no-store/no-referrer/nosniff response policy;
+- malformed, impossible, and unrepresentable-exclusive-end task-date omission;
 - mixed-credential fail-closed behavior;
 - rotation and immediate previous-secret invalidation;
 - explicit revocation;
@@ -69,7 +74,7 @@ The current regression covers:
 - staged legacy query-token compatibility through current database-backed session authority; and
 - coverage-script registration for the production composition module.
 
-Hosted exact-head CI remains authoritative for full statement/branch coverage and broad regression evidence. No predecessor-head result transfers after this branch or any prerequisite head moves.
+Hosted exact-head CI remains authoritative for full statement/branch coverage and broad regression evidence. Repository Server Tests still use GitHub's synthetic pull-request merge ref until the exact-head workflow repair in #523 is protected-integrated, so the bound contributor SHA plus the synthetic checkout identity must both be retained when interpreting current evidence. No predecessor-head result transfers after this branch or any prerequisite head moves.
 
 ## Rollback
 
