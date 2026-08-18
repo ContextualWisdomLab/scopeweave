@@ -181,6 +181,12 @@ test('logout-all and strict JWT validation cover every session transport', async
   const missingUserToken = signToken({ sub: userId + 1_000_000, tv: 0 });
   await expectRejectedEverywhere(projectId, missingUserToken, 'signed token for a missing user');
 
+  // A cryptographically valid token for a real user must still fail closed when
+  // its version does not equal the durable account version. Exercise this
+  // boundary directly rather than relying only on the later logout transition.
+  const mismatchedVersionToken = signToken({ sub: userId, tv: 1 });
+  await expectRejectedEverywhere(projectId, mismatchedVersionToken, 'signed token with mismatched token version');
+
   await expectBearerStatus(tokenA, 200, 'bearer accepts token A before revocation');
   await expectBearerStatus(tokenB, 200, 'bearer accepts token B before revocation');
   await expectCalendarStatus(projectId, tokenA, 200, 'calendar accepts token A before revocation');
