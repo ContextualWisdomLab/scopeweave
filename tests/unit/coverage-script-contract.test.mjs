@@ -1,7 +1,6 @@
-// This contract prevents a subtle CI regression: the central review gate may
-// invoke `test:coverage` directly, so that script itself must create Istanbul
-// JSON, enforce complete owned-production coverage, and execute the complete
-// deterministic unit/API suite rather than a hand-maintained test subset.
+// This contract prevents coverage evidence from silently omitting either runtime.
+// ScopeWeave owns browser code and Node/server code; each runtime must enforce
+// exact 100% Istanbul statement/branch/function/line coverage on the same PR head.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
@@ -13,45 +12,65 @@ const scripts = packageJson.scripts;
 assert.equal(
   scripts.coverage,
   'npm run test:coverage',
-  'the public coverage command delegates to the canonical coverage producer',
+  'the public coverage command delegates to the canonical complete coverage producer',
+);
+assert.equal(
+  scripts['test:coverage'],
+  'npm run test:coverage:server && npm run test:coverage:browser',
+  'canonical coverage must prove both Node/server and real-browser production code',
 );
 assert.match(
-  scripts['test:coverage'],
+  scripts['test:coverage:server'],
   /\bc8\b.*--reporter=json(?![-\w]).*npm run test:coverage:cases/,
-  'test:coverage creates Istanbul JSON before executing coverage cases',
+  'server coverage creates Istanbul JSON before executing deterministic cases',
 );
 assert.match(
-  scripts['test:coverage'],
+  scripts['test:coverage:server'],
   /--reporter=json-summary\b/,
-  'test:coverage also creates the Istanbul JSON summary',
+  'server coverage also creates the Istanbul JSON summary',
 );
 for (const requiredCoverageOption of [
   '--check-coverage',
+  '--per-file',
   '--lines 100',
   '--functions 100',
   '--branches 100',
   '--statements 100',
 ]) {
   assert.equal(
-    scripts['test:coverage'].includes(requiredCoverageOption),
+    scripts['test:coverage:server'].includes(requiredCoverageOption),
     true,
-    `test:coverage must enforce ${requiredCoverageOption}`,
+    `server coverage must enforce ${requiredCoverageOption}`,
   );
 }
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/attachment_status\.mjs/,
-  'the bounded refresh module is instrumented',
+for (const requiredServerModule of [
+  'scripts/ci/static_coverage_evidence.mjs',
+  'server/attachment_status.mjs',
+  'server/app.mjs',
+  'server/auth.mjs',
+  'server/clearfolio.mjs',
+  'server/orchestrator.mjs',
+]) {
+  assert.equal(
+    scripts['test:coverage:server'].includes(`--include=${requiredServerModule}`),
+    true,
+    `server coverage must instrument ${requiredServerModule}`,
+  );
+}
+assert.doesNotMatch(
+  scripts['test:coverage:server'],
+  /--include=(?:app|cloud-sync)\.js\b/,
+  'browser production must not be scored from a Node VM that cannot observe real browser execution',
 );
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/clearfolio\.mjs/,
-  'the abortable Clearfolio adapter is instrumented',
+assert.equal(
+  scripts['test:coverage:browser'],
+  'node scripts/ci/browser_coverage.mjs',
+  'browser coverage must use the repository-owned Chromium/Istanbul collector',
 );
 assert.equal(
   scripts['test:coverage:cases'],
   'npm run test:unit && npm run test:api',
-  'coverage must instrument the complete deterministic unit and API suites instead of a stale curated subset',
+  'server coverage instruments the complete deterministic unit and API suites instead of a stale curated subset',
 );
 assert.match(
   scripts['test:unit'],
