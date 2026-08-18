@@ -74,6 +74,11 @@ assert.equal(
   'server coverage instruments the complete deterministic unit and API suites instead of a stale curated subset',
 );
 assert.match(
+  scripts['test:api'],
+  /tests\/api\/app-branch-coverage\.mjs/,
+  'the complete API suite must retain branch-oriented production coverage cases',
+);
+assert.match(
   scripts['test:unit'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the complete unit suite retains the Clearfolio signal and HTTP failure regression',
