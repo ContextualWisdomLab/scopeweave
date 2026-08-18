@@ -180,16 +180,19 @@ function renderCalendarFeed(project) {
     `X-WR-CALNAME:${escapeCalendarText(project.name)}`,
   ];
   for (const task of tasks) {
+    const startDay = String(task?.plannedStartDate || '');
+    const endDay = String(task?.plannedEndDate || '');
     if (
-      !isCalendarDay(task?.plannedStartDate || '')
-      || !isCalendarDay(task?.plannedEndDate || '')
+      !isCalendarDay(startDay)
+      || !isCalendarDay(endDay)
+      || endDay < startDay
     ) continue;
-    const exclusiveEnd = nextCalendarDay(task.plannedEndDate);
+    const exclusiveEnd = nextCalendarDay(endDay);
     if (!exclusiveEnd) continue;
     lines.push(
       'BEGIN:VEVENT',
       `UID:scopeweave-${project.project_id}-${escapeCalendarText(task.id)}`,
-      `DTSTART;VALUE=DATE:${compactCalendarDay(task.plannedStartDate)}`,
+      `DTSTART;VALUE=DATE:${compactCalendarDay(startDay)}`,
       `DTEND;VALUE=DATE:${exclusiveEnd}`,
       `SUMMARY:${escapeCalendarText(task.name || task.task || task.id)}`,
       'END:VEVENT',
