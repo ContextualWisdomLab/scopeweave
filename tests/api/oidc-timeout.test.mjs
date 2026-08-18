@@ -19,6 +19,8 @@ const publicJwk = {
 };
 const expectedNonceByCode = new Map();
 let observedTimeout = null;
+let callbackAbortController = null;
+let observedUpstreamAbort = null;
 const originalTimeout = AbortSignal.timeout;
 const originalFetch = globalThis.fetch;
 
@@ -99,6 +101,11 @@ globalThis.fetch = async (input, init) => {
   if (code === 'wrong-nonce-code') {
     return Response.json({ id_token: signIdToken({ ...baseClaims, nonce: 'attacker-nonce' }) });
   }
+  if (code === 'cancelled-code') {
+    callbackAbortController.abort();
+    observedUpstreamAbort = request.signal.aborted;
+    throw new Error('simulated cancelled identity-provider request');
+  }
   throw new Error(`unexpected authorization code: ${code}`);
 };
 
@@ -145,9 +152,22 @@ try {
 
   const wrongNonce = await callback('wrong-nonce-code');
   assert.equal(wrongNonce.status, 400, 'an ID token from another authorization flow is rejected');
+
+  const cancelledState = await startFlow('cancelled-code');
+  callbackAbortController = new AbortController();
+  const cancelled = await app.request(new Request(
+    `http://localhost/api/auth/oidc/callback?state=${encodeURIComponent(cancelledState)}&code=cancelled-code`,
+    { signal: callbackAbortController.signal },
+  ));
+  assert.equal(cancelled.status, 400, 'an upstream-cancelled provider exchange does not create a session');
+  assert.equal(
+    observedUpstreamAbort,
+    true,
+    'OIDC token exchange preserves callback cancellation while retaining its timeout budget',
+  );
 } finally {
   AbortSignal.timeout = originalTimeout;
   globalThis.fetch = originalFetch;
 }
 
-console.log('oidc validation and timeout regression passed');
+console.log('oidc validation, cancellation, redirect, and timeout regression passed');
