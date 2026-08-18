@@ -49,6 +49,9 @@ jobs:
         run: npx playwright install chromium --with-deps
       - name: Exact owned production coverage
         run: npm run test:coverage
+      - name: Coverage failure diagnostics
+        if: failure()
+        run: node scripts/ci/coverage_diagnostics.mjs
       - name: Public docstring gate
         run: npm run check:python-docstrings
       - name: app.js stays eval-safe (no top-level import/export)
