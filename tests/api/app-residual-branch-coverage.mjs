@@ -71,9 +71,9 @@ response = await req('/api/projects', {
 assert.equal(response.status, 200);
 const projectId = (await response.json()).id;
 
-// Legacy/null methodology remains readable and an invalid update still resolves
-// to the documented waterfall fallback rather than persisting an unknown mode.
-db.prepare('UPDATE projects SET methodology = NULL WHERE id = ?').run(projectId);
+// A blank legacy methodology is schema-valid and still exercises the documented
+// waterfall fallback; an invalid update must not persist an unknown mode.
+db.prepare("UPDATE projects SET methodology = '' WHERE id = ?").run(projectId);
 response = await req(`/api/projects/${projectId}`, { headers: ownerAuth });
 assert.equal((await response.json()).methodology, 'waterfall');
 let project = await (await req(`/api/projects/${projectId}`, { headers: ownerAuth })).json();
@@ -132,7 +132,7 @@ await status(403, req(`/api/orgs/${orgId}/members/${ownerId}`, {
 await status(404, req('/api/orgs/999999/leave', { method: 'POST', headers: ownerAuth }), 'leave unknown org');
 await status(404, req('/api/orgs/999999/billing', { headers: ownerAuth }), 'billing unknown org');
 
-// Non-managers cannot inspect or mutate webhook controls. A legacy/null event
+// Non-managers cannot inspect or mutate webhook controls. A blank event
 // subscription must be treated as no subscription and never trigger delivery.
 await status(403, req(`/api/orgs/${orgId}/webhooks`, {
   method: 'POST', headers: memberAuth, body: jsonBody({ url: 'https://hooks.example.test/denied' }),
@@ -141,14 +141,14 @@ await status(403, req(`/api/orgs/${orgId}/webhooks/1/deliveries`, { headers: mem
 await status(403, req(`/api/orgs/${orgId}/webhooks/1/rotate`, { method: 'POST', headers: memberAuth }), 'viewer webhook rotate');
 await status(403, req(`/api/orgs/${orgId}/webhooks/1`, { method: 'DELETE', headers: memberAuth }), 'viewer webhook delete');
 response = await req(`/api/orgs/${orgId}/webhooks`, {
-  method: 'POST', headers: ownerAuth, body: jsonBody({ url: 'https://hooks.example.test/null-events', events: ['project.update'] }),
+  method: 'POST', headers: ownerAuth, body: jsonBody({ url: 'https://hooks.example.test/blank-events', events: ['project.update'] }),
 });
-const nullEventsWebhook = await response.json();
-db.prepare('UPDATE webhooks SET events = NULL WHERE id = ?').run(nullEventsWebhook.id);
+const blankEventsWebhook = await response.json();
+db.prepare("UPDATE webhooks SET events = '' WHERE id = ?").run(blankEventsWebhook.id);
 project = await (await req(`/api/projects/${projectId}`, { headers: ownerAuth })).json();
 await status(200, req(`/api/projects/${projectId}`, {
   method: 'PUT', headers: ownerAuth, body: jsonBody({ version: project.version }),
-}), 'null webhook subscriptions are skipped');
+}), 'blank webhook subscriptions are skipped');
 
 // The mock OIDC user-creation transaction must roll back atomically if its
 // membership insert fails.
@@ -214,7 +214,7 @@ await status(200, req(`/api/projects/${projectId}/attachments/${memberAttachment
 }), 'attachment uploader delete');
 
 // Share, sprint, and baseline routes preserve tenant and read-only guards on
-// every operation, including legacy null methodology/default metadata paths.
+// every operation, including legacy blank methodology/default metadata paths.
 db.prepare("UPDATE memberships SET role = 'viewer' WHERE org_id = ? AND user_id = ?").run(orgId, memberId);
 await status(404, req('/api/projects/999999/shares', { method: 'POST', headers: ownerAuth }), 'share create missing project');
 response = await req(`/api/projects/${projectId}/shares`, { method: 'POST', headers: ownerAuth });
@@ -225,7 +225,7 @@ await status(403, req(`/api/projects/${projectId}/shares/${shareId}`, { method: 
 await status(404, req(`/api/projects/999999/shares/${shareId}`, { method: 'DELETE', headers: ownerAuth }), 'share revoke missing project');
 
 await status(404, req('/api/projects/999999/sprints', { headers: ownerAuth }), 'sprint list missing project');
-db.prepare('UPDATE projects SET methodology = NULL WHERE id = ?').run(projectId);
+db.prepare("UPDATE projects SET methodology = '' WHERE id = ?").run(projectId);
 response = await req(`/api/projects/${projectId}/sprints`, { headers: ownerAuth });
 assert.equal(response.status, 200);
 assert.equal((await response.json()).methodology, 'waterfall');
