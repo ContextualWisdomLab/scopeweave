@@ -17,6 +17,7 @@ globalThis.fetch = async (input, init) => {
 };
 
 const { app } = await import('../../server/app.mjs');
+const { app: coreApp } = await import('../../server/app_core.mjs');
 const { db } = await import('../../server/db.mjs');
 
 const body = (value) => JSON.stringify(value);
@@ -132,4 +133,37 @@ test('audit pagination rejects non-positive limits instead of expanding to the f
   assert.equal(response.status, 200);
   const { events } = await response.json();
   assert.equal(events.length, 100, 'invalid negative limit falls back to the bounded default');
+});
+
+test('webhook URL validation exposes a stable internal authorization code', async () => {
+  const { token, org } = await createOwner('webhook-code@scopeweave.test');
+  const authorization = `Bearer ${token}`;
+
+  const coreResponse = await coreApp.request(`/api/orgs/${org.id}/webhooks`, {
+    method: 'POST',
+    headers: {
+      authorization,
+      'content-type': 'application/json',
+    },
+    body: body({ url: '', events: ['project.update'] }),
+  });
+  assert.equal(coreResponse.status, 400);
+  const corePayload = await coreResponse.json();
+  assert.equal(
+    corePayload.error_code,
+    'webhook_url_required',
+    'the facade must classify the authorized core validation boundary by machine code rather than customer-facing copy',
+  );
+
+  const facadeResponse = await request(`/api/orgs/${org.id}/webhooks`, {
+    method: 'POST',
+    headers: { authorization },
+    body: body({ url: 'http://127.0.0.1/private', events: ['project.update'] }),
+  });
+  assert.equal(facadeResponse.status, 400);
+  assert.deepEqual(
+    await facadeResponse.json(),
+    { error: 'valid public https webhook URL required' },
+    'the public facade keeps its actionable destination-policy response independent from the internal authorization probe code',
+  );
 });
