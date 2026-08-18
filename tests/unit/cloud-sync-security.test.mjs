@@ -10,29 +10,30 @@ assert.equal(routeTokenPathSegment('short'), '');
 
 function createDownloadHarness({ clickError = null } = {}) {
   const events = [];
-  const anchor = {
-    parentNode: null,
-    click() {
-      events.push('click');
-      if (clickError) throw clickError;
-    },
+  const anchorPrototype = {
     remove() {
-      throw new Error('download cleanup must not trust the anchor remove method');
+      events.push('prototype-remove');
+      this.parentNode = null;
     },
   };
+  const anchor = Object.create(anchorPrototype);
+  anchor.parentNode = null;
+  anchor.click = () => {
+    events.push('click');
+    if (clickError) throw clickError;
+  };
+  Object.defineProperty(anchor, 'remove', {
+    configurable: true,
+    value() {
+      throw new Error('download cleanup must not trust the anchor remove method');
+    },
+  });
 
   const body = {
     appendChild(node) {
       assert.equal(node, anchor);
       events.push('append-anchor');
       anchor.parentNode = body;
-      return anchor;
-    },
-    removeChild(node) {
-      assert.equal(node, anchor);
-      assert.equal(anchor.parentNode, body);
-      events.push('remove-anchor');
-      anchor.parentNode = null;
       return anchor;
     },
   };
@@ -74,7 +75,7 @@ function createDownloadHarness({ clickError = null } = {}) {
     'create-anchor',
     'append-anchor',
     'click',
-    'remove-anchor',
+    'prototype-remove',
     'revoke-url',
   ]);
 }
@@ -97,7 +98,7 @@ function createDownloadHarness({ clickError = null } = {}) {
     'create-anchor',
     'append-anchor',
     'click',
-    'remove-anchor',
+    'prototype-remove',
     'revoke-url',
   ]);
 }
