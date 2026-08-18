@@ -43,6 +43,24 @@ try {
     302,
     'state entries expiring at the current instant are reclaimed before applying the capacity limit',
   );
+
+  const replacementState = new URL(atExpiry.headers.get('location')).searchParams.get('state');
+  assert.ok(replacementState, 'the replacement flow exposes a state value through the authorization redirect');
+
+  now += 5 * 60 * 1000;
+  const expiredCallback = await app.request(
+    `/api/auth/oidc/callback?state=${encodeURIComponent(replacementState)}&code=unused`,
+  );
+  assert.equal(
+    expiredCallback.status,
+    400,
+    'a state expiring at the current instant is rejected before token exchange',
+  );
+  assert.deepEqual(
+    await expiredCallback.json(),
+    { error: 'invalid or expired state' },
+    'inclusive callback expiry returns the stable fail-closed response',
+  );
 } finally {
   Date.now = originalNow;
 }
