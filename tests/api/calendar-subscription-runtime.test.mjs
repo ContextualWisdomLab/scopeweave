@@ -58,6 +58,18 @@ response = await req(`/api/projects/${project.id}`, {
         plannedStartDate: 'not-a-date',
         plannedEndDate: '2026-08-21',
       },
+      {
+        id: 'calendar-task-4',
+        name: 'Impossible calendar month',
+        plannedStartDate: '2026-13-01',
+        plannedEndDate: '2026-13-01',
+      },
+      {
+        id: 'calendar-task-5',
+        name: 'Impossible calendar day',
+        plannedStartDate: '2026-02-30',
+        plannedEndDate: '2026-02-30',
+      },
     ],
   }),
 });
@@ -105,7 +117,7 @@ assert.ok(!('secret' in listed.subscriptions[0]));
 assert.ok(!('secret_hash' in listed.subscriptions[0]));
 
 response = await req(created.feedPath);
-assert.equal(response.status, 200, 'subscription secret authorizes only the calendar feed');
+assert.equal(response.status, 200, 'invalid persisted task dates must not make the calendar feed fail');
 assert.match(response.headers.get('content-type') || '', /^text\/calendar/);
 assert.equal(response.headers.get('cache-control'), 'private, no-store');
 assert.equal(response.headers.get('referrer-policy'), 'no-referrer');
@@ -114,7 +126,9 @@ const feed = await response.text();
 assert.match(feed, /BEGIN:VCALENDAR/);
 assert.match(feed, /SUMMARY:Ship calendar runtime/);
 assert.match(feed, /SUMMARY:Fallback task label/);
-assert.doesNotMatch(feed, /calendar-task-3/, 'invalid task dates are omitted from the feed');
+assert.doesNotMatch(feed, /calendar-task-3/, 'non-date task values are omitted from the feed');
+assert.doesNotMatch(feed, /calendar-task-4/, 'impossible calendar months are omitted from the feed');
+assert.doesNotMatch(feed, /calendar-task-5/, 'impossible calendar days are omitted from the feed');
 
 response = await req(`${created.feedPath}&token=${encodeURIComponent(currentToken)}`);
 assert.equal(response.status, 401, 'mixed subscription and session-query credentials fail closed');
