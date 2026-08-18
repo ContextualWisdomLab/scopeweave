@@ -14,10 +14,11 @@ delete process.env.ORCHESTRATOR_URL;
 delete process.env.CLEARFOLIO_URL;
 delete process.env.OIDC_ISSUER;
 
-const [{ app }, { db }, { submitJob }] = await Promise.all([
+const [{ app }, { db }, { submitJob }, { signToken }] = await Promise.all([
   import('../../server/app.mjs'),
   import('../../server/db.mjs'),
   import('../../server/clearfolio.mjs'),
+  import('../../server/auth.mjs'),
 ]);
 
 const jsonBody = (value) => JSON.stringify(value);
@@ -46,6 +47,17 @@ const ownerMe = await (await req('/api/me', { headers: ownerAuth })).json();
 const ownerId = ownerMe.user.id;
 const orgId = ownerMe.orgs[0].id;
 db.prepare("UPDATE orgs SET plan = 'pro' WHERE id = ?").run(orgId);
+
+// A cryptographically valid token for an account that no longer exists must
+// fail closed. This is the realistic stale-session boundary after account
+// deletion and exercises the short-circuit user lookup in authenticated routes.
+const deletedAccountToken = signToken({
+  sub: 999999,
+  email: 'deleted-account@example.com',
+  tv: 0,
+});
+const deletedAccountAuth = authHeaders(deletedAccountToken);
+await status(401, req('/api/me', { headers: deletedAccountAuth }), 'deleted account bearer token');
 
 response = await req('/api/auth/signup', {
   method: 'POST',
@@ -102,6 +114,11 @@ assert.equal(response.status, 200);
 const untypedAttachmentId = (await response.json()).id;
 response = await req(`/api/projects/${projectId}/attachments/${untypedAttachmentId}/view?token=${encodeURIComponent(ownerToken)}`);
 assert.equal(response.status, 302);
+await status(
+  401,
+  req(`/api/projects/${projectId}/attachments/${untypedAttachmentId}/view?token=${encodeURIComponent(deletedAccountToken)}`),
+  'deleted account attachment-view token',
+);
 await status(404, req(`/api/projects/${projectId}/attachments/999999`, {
   method: 'DELETE',
   headers: ownerAuth,
