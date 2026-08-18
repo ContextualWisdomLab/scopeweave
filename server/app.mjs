@@ -17,14 +17,6 @@ const WEBHOOK_REGISTRATION_PATH = /^\/api\/orgs\/[^/]+\/webhooks$/;
 const AUDIT_PATH = /^\/api\/orgs\/[^/]+\/audit$/;
 const AUTH_EMAIL_PATH = /^\/api\/auth\/(?:signup|login)$/;
 
-function normalizedHeaders(headers) {
-  try {
-    return new Headers(headers || {});
-  } catch {
-    return new Headers();
-  }
-}
-
 function isSignedWebhookRequest(request) {
   if (request.method.toUpperCase() !== 'POST') return false;
   return Boolean(
