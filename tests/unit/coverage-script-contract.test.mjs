@@ -2,7 +2,7 @@
 // ScopeWeave owns browser code and Node/server code; each runtime must enforce
 // exact 100% Istanbul statement/branch/function/line coverage on the same PR head.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 
 const packageJson = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
@@ -82,5 +82,24 @@ assert.doesNotMatch(
   /npm run (?:coverage|test:coverage)(?:\s|$)/,
   'coverage cases never recursively invoke a coverage wrapper',
 );
+
+const e2eDirectory = new URL('../e2e/', import.meta.url);
+const e2eSpecs = readdirSync(e2eDirectory)
+  .filter((name) => name.endsWith('.spec.js'))
+  .sort();
+assert.ok(e2eSpecs.length > 0, 'real-browser coverage requires executable Playwright specs');
+for (const specName of e2eSpecs) {
+  const specSource = readFileSync(new URL(specName, e2eDirectory), 'utf8');
+  assert.match(
+    specSource,
+    /import\s*\{\s*test\s*,\s*expect\s*\}\s*from\s*['"]\.\/coverage-test\.js['"];/,
+    `${specName} must use the coverage-aware Playwright fixture so browser coverage cannot run without raw evidence`,
+  );
+  assert.doesNotMatch(
+    specSource,
+    /from\s*['"]@playwright\/test['"]/,
+    `${specName} must not bypass the coverage-aware fixture with a direct Playwright test import`,
+  );
+}
 
 console.log('✓ coverage script contract tests passed');
