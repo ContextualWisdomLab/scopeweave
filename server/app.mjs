@@ -27,6 +27,7 @@ const OIDC_TOKEN_URL = OIDC_ISSUER ? `${OIDC_ISSUER}/token` : null;
 const OIDC_TOKEN_TIMEOUT_MS = 3000;
 const OIDC_DISCOVERY_TTL_MS = 60 * 1000;
 const OIDC_STATE_TTL_MS = 5 * 60 * 1000;
+const OIDC_STATE_MAX_ENTRIES = 256;
 const OIDC_CLOCK_SKEW_SECONDS = 60;
 const oidcNonceByState = new Map();
 const oidcNonceByCode = new Map();
@@ -313,6 +314,12 @@ function bindOidcStartNonce(request, response, discovery) {
   const state = authorization.searchParams.get('state');
   if (!state) return response;
   cleanupOidcNonces();
+  if (oidcNonceByState.size >= OIDC_STATE_MAX_ENTRIES) {
+    return Response.json(
+      { error: 'OIDC temporarily unavailable' },
+      { status: 503 },
+    );
+  }
   const nonce = randomBytes(16).toString('base64url');
   oidcNonceByState.set(state, { nonce, exp: Date.now() + OIDC_STATE_TTL_MS });
   authorization.searchParams.set('nonce', nonce);
