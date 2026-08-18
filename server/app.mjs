@@ -15,6 +15,7 @@ import {
 const nativeFetch = globalThis.fetch.bind(globalThis);
 const webhookFetchBoundaryKey = Symbol.for('scopeweave.webhook-fetch-boundary');
 const WEBHOOK_REGISTRATION_PATH = /^\/api\/orgs\/[^/]+\/webhooks$/;
+const WEBHOOK_REGISTRATION_BODY_MAX_BYTES = 16 * 1024;
 const AUDIT_PATH = /^\/api\/orgs\/[^/]+\/audit$/;
 const AUTH_EMAIL_PATH = /^\/api\/auth\/(?:signup|login)$/;
 const OIDC_ISSUER = process.env.OIDC_ISSUER
@@ -190,9 +191,11 @@ function requestWithJson(request, payload) {
   const headers = new Headers(request.headers);
   headers.delete('content-length');
   headers.set('content-type', 'application/json');
-  return new Request(request, {
+  return new Request(request.url, {
+    method: request.method,
     headers,
     body: JSON.stringify(payload),
+    signal: request.signal,
   });
 }
 
@@ -297,6 +300,60 @@ async function deniedRegistrationAuthorization(request, rest) {
   return response.status === 200 ? null : response;
 }
 
+function declaredRegistrationBodyTooLarge(request) {
+  const rawLength = request.headers.get('content-length');
+  if (rawLength === null) return false;
+  const declaredLength = Number(rawLength);
+  return Number.isFinite(declaredLength)
+    && declaredLength > WEBHOOK_REGISTRATION_BODY_MAX_BYTES;
+}
+
+/**
+ * Read one webhook-registration payload with an explicit memory budget.
+ *
+ * The original request stream is consumed directly instead of cloning it: a
+ * cloned stream can let the unread tee branch buffer attacker-controlled data.
+ * Callers reconstruct the small JSON request only after this bounded read.
+ */
+async function readBoundedRegistrationJson(request) {
+  if (!request.body) return { payload: {}, tooLarge: false };
+  const reader = request.body.getReader();
+  const chunks = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+      totalBytes += chunk.byteLength;
+      if (totalBytes > WEBHOOK_REGISTRATION_BODY_MAX_BYTES) {
+        await reader.cancel().catch(() => {});
+        return { payload: {}, tooLarge: true };
+      }
+      chunks.push(chunk);
+    }
+  } catch {
+    return { payload: {}, tooLarge: false };
+  } finally {
+    try { reader.releaseLock(); } catch { /* already released/cancelled */ }
+  }
+
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return {
+      payload: JSON.parse(new TextDecoder().decode(bytes)),
+      tooLarge: false,
+    };
+  } catch {
+    return { payload: {}, tooLarge: false };
+  }
+}
+
 function canonicalRegistrationRequest(request, payload, canonicalUrl) {
   return requestWithJson(request, { ...payload, url: canonicalUrl });
 }
@@ -306,21 +363,45 @@ async function registrationPolicyResult(request, rest) {
   if (request.method !== 'POST' || !WEBHOOK_REGISTRATION_PATH.test(url.pathname)) {
     return null;
   }
-  const payload = await request.clone().json().catch(() => ({}));
+
+  // Requests with no credential material can be rejected by the core
+  // requireAuth middleware without touching their body at all. Credential-bearing
+  // requests may still be forged, so any pre-auth policy read remains bounded.
+  if (!request.headers.get('authorization')) return { request };
+
+  let payload;
+  let tooLarge = declaredRegistrationBodyTooLarge(request);
+  if (!tooLarge) {
+    const parsed = await readBoundedRegistrationJson(request);
+    payload = parsed.payload;
+    tooLarge = parsed.tooLarge;
+  }
+
+  if (tooLarge) {
+    const authorization = await deniedRegistrationAuthorization(request, rest);
+    if (authorization) return { response: authorization };
+    return {
+      response: Response.json(
+        { error: 'webhook registration body too large' },
+        { status: 413 },
+      ),
+    };
+  }
+
   try {
-    const canonicalUrl = validateWebhookRegistrationUrl(payload.url);
-    return canonicalUrl === payload.url
-      ? { request }
-      : { request: canonicalRegistrationRequest(request, payload, canonicalUrl) };
+    const canonicalUrl = validateWebhookRegistrationUrl(payload?.url);
+    return {
+      request: canonicalRegistrationRequest(request, payload, canonicalUrl),
+    };
   } catch (error) {
     // Preserve the existing dev-only localhost failure-path smoke fixture. The
     // outbound transport still refuses HTTP, so this exception cannot create a
     // server-side connection and production never inherits it.
     if (
       error instanceof WebhookDestinationError
-      && isDevelopmentLoopbackHttp(payload.url)
+      && isDevelopmentLoopbackHttp(payload?.url)
     ) {
-      return { request };
+      return { request: requestWithJson(request, payload) };
     }
     const authorization = await deniedRegistrationAuthorization(request, rest);
     if (authorization) return { response: authorization };
