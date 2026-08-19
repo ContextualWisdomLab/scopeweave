@@ -15,9 +15,44 @@ export const PLANS = {
   pro: { name: 'Pro', limits: { projects: null, members: null }, priceKrw: 19000 }, // null = unlimited
 };
 
-/** Return the stored/manual plan definition for an organization-like record. */
-export function planOf(org) {
+let billingEntitlementDatabase = null;
+
+function storedPlanOf(org) {
   return PLANS[org?.plan] || PLANS.free;
+}
+
+/**
+ * Bind the bootstrapped billing database used by synchronous plan-reporting
+ * consumers. The binding is server-owned and never accepts caller-selected
+ * claim or observation identities.
+ *
+ * @param {object} database SQLite-like database with prepare/get support
+ * @returns {void}
+ */
+export function configureBillingEntitlementDatabase(database) {
+  if (!database || typeof database.prepare !== 'function') {
+    throw new TypeError('database must provide SQLite prepare operations');
+  }
+  billingEntitlementDatabase = database;
+}
+
+/**
+ * Return the plan currently visible to existing synchronous plan consumers.
+ *
+ * Explicit stored Pro remains a manual/non-Stripe override. For a stored Free
+ * organization with a valid ID, a bootstrap-configured claim database can
+ * upgrade the returned plan only while current Stripe claim evidence is both
+ * entitled and unexpired. Claim storage failure or malformed legacy caller data
+ * fails closed to the stored plan.
+ */
+export function planOf(org) {
+  const stored = storedPlanOf(org);
+  if (stored === PLANS.pro || billingEntitlementDatabase == null) return stored;
+  try {
+    return effectivePlanOf(billingEntitlementDatabase, org);
+  } catch {
+    return stored;
+  }
 }
 
 function requireEffectivePlanAuthority(db, org, nowSec) {
@@ -65,7 +100,7 @@ function hasCurrentStripeProClaim(db, organizationId, nowSec) {
  */
 export function effectivePlanOf(db, org, { nowSec = Math.floor(Date.now() / 1000) } = {}) {
   requireEffectivePlanAuthority(db, org, nowSec);
-  const stored = planOf(org);
+  const stored = storedPlanOf(org);
   if (stored === PLANS.pro) return PLANS.pro;
   return hasCurrentStripeProClaim(db, org.id, nowSec) ? PLANS.pro : stored;
 }
