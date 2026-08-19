@@ -72,6 +72,18 @@ assert.match(
   /if \[ -f "\$report" \]; then[\s\S]*?node scripts\/ci\/coverage_diagnostics\.mjs "\$report"/,
   'coverage diagnostics must tolerate a server-side failure before the browser report exists',
 );
+const coverageArtifactPin =
+  'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1';
+assert.equal(
+  serverTestsWorkflow.split(coverageArtifactPin).length - 1,
+  1,
+  'coverage failure evidence must use the reviewed immutable upload-artifact revision',
+);
+assert.match(
+  serverTestsWorkflow,
+  /- name: Preserve exact coverage failure evidence[\s\S]*?if: failure\(\)[\s\S]*?name: scopeweave-coverage-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}[\s\S]*?coverage\/coverage-final\.json[\s\S]*?coverage\/coverage-summary\.json[\s\S]*?coverage\/browser-coverage-final\.json[\s\S]*?coverage\/browser-coverage-summary\.json[\s\S]*?if-no-files-found: error[\s\S]*?retention-days: 3/,
+  'failed coverage runs must retain exact server and browser Istanbul evidence for causal repair',
+);
 assert.match(
   serverTestsWorkflow,
   /- name: Public docstring gate[\s\S]*?run: npm run check:python-docstrings\b/,
