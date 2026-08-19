@@ -49,8 +49,8 @@ assert.doesNotMatch(
 );
 assert.match(
   serverTestsWorkflow,
-  /- name: Install Playwright \(chromium for coverage\)[\s\S]*?run: npx playwright install chromium --with-deps[\s\S]*?- name: Exact owned production coverage/,
-  'the unit-and-api coverage lane must install the real Chromium runtime before browser coverage executes',
+  /- name: Install Playwright \(chromium for coverage\)\r?\n\s+timeout-minutes: 10\r?\n\s+run: npx playwright install chromium(?:\r?\n|$)[\s\S]*?- name: Exact owned production coverage/,
+  'the unit-and-api coverage lane must install the real Chromium runtime with its bounded non-apt path before browser coverage executes',
 );
 assert.match(
   serverTestsWorkflow,
