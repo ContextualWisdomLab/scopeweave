@@ -11,7 +11,7 @@ const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url))
 const rawRoot = path.join(repositoryRoot, '.coverage-browser');
 const rawDirectory = path.join(rawRoot, 'raw');
 const reportDirectory = path.join(repositoryRoot, 'coverage');
-const expectedBrowserSources = ['app.js', 'cloud-sync.js', 'modal-controls.js'];
+const expectedBrowserSources = ['app.js', 'cloud-sync.js'];
 
 const normalizeBrowserPath = (url) => {
   try {

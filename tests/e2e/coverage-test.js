@@ -3,7 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { test as base, expect } from '@playwright/test';
 
-const expectedBrowserSources = new Set(['/app.js', '/cloud-sync.js', '/modal-controls.js']);
+const expectedBrowserSources = new Set(['/app.js', '/cloud-sync.js']);
 
 const requiredSourcePath = (url) => {
   try {
