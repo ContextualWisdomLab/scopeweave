@@ -179,7 +179,11 @@ const appJsPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 
 function loadLocalDownloadFile({ clickError = null, cleanupError = null, revokeError = null } = {}) {
   let source = fs.readFileSync(appJsPath, 'utf8');
-  source = source.replace(/^\s*bootstrap\(\);\s*$/m, ';');
+  const withoutBootstrap = source.replace(/^\s*bootstrap\(\);\s*$/m, ';');
+  if (withoutBootstrap === source) {
+    throw new Error('Failed to strip the bootstrap() call from app.js');
+  }
+  source = withoutBootstrap;
   source += '\n;globalThis.__downloadFile = downloadFile;\n';
 
   const events = [];
