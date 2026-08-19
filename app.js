@@ -643,9 +643,7 @@ function createTableCell(className, content) {
   return cell;
 }
 
-// ⚡ Bolt: Cache unattached DOM elements as templates to eliminate repetitive
-// document.createElement() JS-to-C++ allocation overhead during O(N) table rendering loops.
-// Using cloneNode() is measurably faster when creating thousands of rows.
+// ⚡ Bolt: Cache static DOM structures to avoid JS-to-C++ instantiation overhead during O(N) table rendering loops.
 let taskRowTemplate = null;
 let actionCellTemplate = null;
 let actionStackTemplate = null;
@@ -2367,7 +2365,7 @@ function createGanttMetaTable() {
       createTableCell('', createTextCellContent(task.categoryLarge)),
       createTableCell('', createTextCellContent(task.categoryMedium)),
       createTableCell('', createTextCellContent(task.documentName)),
-      createTableCell('', createTextCellContent(task.owner)),
+      createTableCell('', createOwnerCellContent(task.owner)),
       createTableCell('', createTextCellContent(task.supportTeam)),
       createTableCell('', createTextCellContent(task.plannedStartDate)),
       createTableCell('', createTextCellContent(task.plannedEndDate)),
@@ -2568,6 +2566,7 @@ function downloadFile(content, fileName, mimeType) {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
   let link = null;
+  let causalError = null;
   try {
     link = document.createElement('a');
     link.href = url;
@@ -2576,6 +2575,8 @@ function downloadFile(content, fileName, mimeType) {
     link.rel = 'noopener noreferrer';
     document.body.appendChild(link);
     link.click();
+  } catch (error) {
+    causalError = error;
   } finally {
     try {
       if (link) {
@@ -2583,15 +2584,20 @@ function downloadFile(content, fileName, mimeType) {
         if (typeof remove === 'function') {
           try {
             remove.call(link);
-          } catch {
-            // Drop cleanup failure so it does not replace the causal download failure
+          } catch (cleanupError) {
+            if (!causalError) causalError = cleanupError;
           }
         }
       }
     } finally {
-      URL.revokeObjectURL(url);
+      try {
+        URL.revokeObjectURL(url);
+      } catch (revokeError) {
+        if (!causalError) causalError = revokeError;
+      }
     }
   }
+  if (causalError) throw causalError;
 }
 
 function csvEscape(value) {
