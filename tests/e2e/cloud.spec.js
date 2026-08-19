@@ -271,7 +271,11 @@ test('sprint workflow persists methodology and renders a real burndown', async (
   await expect(page.locator('#sprint-panel .cpm-summary')).toContainText('벨로시티');
 
   await page.selectOption('#methodology-select', 'hybrid');
-  await expect(page.locator('#toast')).toContainText('Hybrid');
+  await expect(page.locator('#methodology-select')).toHaveValue('hybrid');
+  await expect.poll(async () => {
+    const saved = await api('/api/projects/1', { tok: token });
+    return saved.methodology;
+  }).toBe('hybrid');
   await page.click('#sprint-panel button:has-text("번다운")');
   await expect(page.locator('#burndown-holder')).toContainText('커밋 13pt');
   await expect(page.locator('#burndown-holder svg')).toHaveCount(1);
@@ -289,6 +293,8 @@ test('share and attachment modals expose actionable empty states without hidden 
   await page.click('#share-panel button:has-text("철회")');
   await expect(page.locator('#share-panel')).toContainText('활성 공유 링크가 없습니다.');
 
+  await page.click('#share-panel button[aria-label="공유 닫기"]');
+  await expect(page.locator('#share-modal')).toHaveClass(/hidden/);
   await page.click('#cloud-auth button:has-text("산출물")');
   await expect(page.locator('#attachments-panel')).toContainText('첨부된 산출물이 없습니다.');
 });
