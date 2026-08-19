@@ -50,9 +50,8 @@ async function loginAndOpen(page, token = ownerToken, id = projectId) {
 async function closeCloudModal(page, panelSelector, accessibleName) {
   const panel = page.locator(panelSelector);
   const close = panel.getByRole('button', { name: accessibleName });
-  if (await close.count()) {
-    await close.click();
-  }
+  await expect(close).toHaveCount(1);
+  await close.click();
 }
 
 test.beforeAll(async () => {
