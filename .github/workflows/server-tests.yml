@@ -53,7 +53,7 @@ jobs:
         if: failure()
         run: |
           found_report=0
-          for report in coverage/coverage-final.json coverage/browser/coverage-final.json; do
+          for report in coverage/coverage-final.json coverage/browser-coverage-final.json; do
             if [ -f "$report" ]; then
               found_report=1
               node scripts/ci/coverage_diagnostics.mjs "$report"
