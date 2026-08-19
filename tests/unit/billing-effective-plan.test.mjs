@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
-import { PLANS, effectivePlanOf, wouldExceed } from '../../server/billing.mjs';
+import {
+  PLANS,
+  configureBillingEntitlementDatabase,
+  effectivePlanOf,
+  planOf,
+  wouldExceed,
+} from '../../server/billing.mjs';
 
 function database({ withClaims = true } = {}) {
   const db = new DatabaseSync(':memory:');
@@ -102,8 +108,27 @@ test('missing or unreadable claim tables fail closed to the stored plan rather t
   db.close();
 });
 
+test('configured claim database makes existing planOf consumers report the same reversible effective plan', () => {
+  const db = database();
+  db.exec(`
+    INSERT INTO billing_stripe_entitlement_decisions VALUES(1,'sub_42',1,4102444800);
+    INSERT INTO billing_stripe_entitlement_claim_heads VALUES('sub_42',1);
+  `);
+  configureBillingEntitlementDatabase(db);
+  assert.equal(planOf(freeOrg()), PLANS.pro);
+  assert.equal(planOf({ id: 42, plan: 'pro' }), PLANS.pro);
+  assert.equal(planOf({ plan: 'free' }), PLANS.free);
+  db.exec(`
+    INSERT INTO billing_stripe_entitlement_decisions VALUES(2,'sub_42',0,NULL);
+    UPDATE billing_stripe_entitlement_claim_heads SET decision_id=2 WHERE subscription_id='sub_42';
+  `);
+  assert.equal(planOf(freeOrg()), PLANS.free);
+  db.close();
+});
+
 test('effective-plan authority and clock inputs are bounded before entitlement lookup', () => {
   const db = database();
+  assert.throws(() => configureBillingEntitlementDatabase(null), TypeError);
   for (const org of [null, {}, { id: 0, plan: 'free' }, { id: '42', plan: 'free' }]) {
     assert.throws(() => effectivePlanOf(db, org, { nowSec: 1000 }), TypeError);
   }
