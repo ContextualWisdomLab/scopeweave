@@ -31,6 +31,11 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage'],
+  /--include=server\/application_routes\.mjs/,
+  'the mounted production application route graph is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
   /--include=server\/clearfolio\.mjs/,
   'the abortable Clearfolio adapter is instrumented',
 );
@@ -68,6 +73,11 @@ assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/orchestrator-coverage\.test\.mjs/,
   'the contextual-orchestrator edge coverage regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/orchestrator-attribution\.test\.mjs/,
+  'the contextual-orchestrator attribution regression executes under c8',
 );
 assert.match(
   scripts['test:coverage:cases'],
