@@ -264,6 +264,39 @@ assert.equal(
   'an HTTP response is authoritative and must not replay the signed body to another address',
 );
 
+let postHandshakeAttempts = 0;
+const noReplayAfterSecureConnect = createWebhookTransport({
+  lookup: async () => candidateAnswers,
+  request: (_url, options) => {
+    postHandshakeAttempts += 1;
+    const req = new EventEmitter();
+    req.end = () => {
+      options.lookup('ignored.example', {}, (error) => {
+        assert.equal(error, null);
+        const socket = new EventEmitter();
+        req.emit('socket', socket);
+        queueMicrotask(() => {
+          socket.emit('secureConnect');
+          queueMicrotask(() => req.emit('error', new Error('peer closed after TLS handshake')));
+        });
+      });
+    };
+    return req;
+  },
+});
+await assert.rejects(
+  () => noReplayAfterSecureConnect.post('https://hooks.example.com/hook', {
+    body: '{"signed":"payload"}',
+  }),
+  WebhookTransportError,
+  'a signed webhook must not replay after TLS is established even without response headers',
+);
+assert.equal(
+  postHandshakeAttempts,
+  1,
+  'post-handshake delivery is ambiguous and must stop within the current webhook attempt',
+);
+
 const exhaustedAttempts = [];
 const exhaustedTransport = createWebhookTransport({
   lookup: async () => candidateAnswers,
