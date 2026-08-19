@@ -54,6 +54,57 @@ test.describe('browser residual production behavior', () => {
     expect(result.nullValidation).toEqual([]);
   });
 
+  test('keeps empty-plan actions useful and bounded instead of silently doing nothing', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
+        projectName: 'Empty residual plan',
+        baseDate: '2026-08-19',
+        tasks: [],
+      }));
+    });
+    await page.goto('/');
+
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(0);
+    const exportButton = page.getByRole('button', { name: 'CSV 내보내기' });
+    await exportButton.click();
+    await expect(page.locator('#toast')).toContainText('내보낼 작업이 없습니다');
+
+    const ganttButton = page.getByRole('button', { name: '간트차트보기' });
+    await ganttButton.click();
+    await expect(page.locator('#toast')).toContainText('간트 차트로 표시할 작업이 없습니다');
+
+    const emptyState = page.locator('.table-empty');
+    await emptyState.getByRole('button', { name: '최상위 작업 추가' }).click();
+    await expect(page.locator('.editor-panel')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('.editor-panel')).toHaveCount(0);
+    await expect(emptyState).toBeVisible();
+
+    const chooserPromise = page.waitForEvent('filechooser');
+    await emptyState.getByRole('button', { name: 'CSV 가져오기' }).click();
+    const chooser = await chooserPromise;
+    expect(chooser.isMultiple()).toBe(false);
+  });
+
+  test('normalizes oversized project metadata and an emptied base date through the visible inputs', async ({ page }) => {
+    await page.goto('/');
+    const longName = 'P'.repeat(121);
+
+    await page.getByTestId('project-name-input').evaluate((input, value) => {
+      input.value = value;
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    }, longName);
+    await expect(page.getByTestId('project-name-input')).toHaveValue('P'.repeat(120));
+    await expect(page).toHaveTitle(`${'P'.repeat(120)} - ScopeWeave Planner`);
+
+    const baseDate = page.getByTestId('base-date-input');
+    await baseDate.evaluate((input) => {
+      input.value = '';
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await expect(baseDate).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
   test('returns focus when the Gantt dialog closes and isolates persistence failures', async ({ page }) => {
     await page.route('**/wbs.json', (route) => route.fulfill({
       contentType: 'application/json',
