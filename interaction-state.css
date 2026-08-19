@@ -1,4 +1,0 @@
-.close-button > [aria-hidden="true"],
-[data-team-close="true"] > [aria-hidden="true"] {
-  pointer-events: none;
-}
