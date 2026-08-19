@@ -153,5 +153,20 @@ assert.doesNotMatch(
   /entry\.source\s*!=\s*null\s*&&\s*entry\.source\s*!==\s*localSource/,
   'the collector must not reject browser-equivalent source solely because CDP normalized source text',
 );
+assert.doesNotMatch(
+  browserCollectorSource,
+  /if \(testRun\.status !== 0\) \{[\s\S]*?\}\s*else\s*\{\s*const rawFiles/,
+  'a failing Playwright suite must not skip conversion of already-emitted raw browser coverage evidence',
+);
+assert.match(
+  browserCollectorSource,
+  /if \(testRun\.status !== 0\) \{[\s\S]*?process\.exitCode = testRun\.status \?\? 1;[\s\S]*?\}\s*const rawFiles =/,
+  'the collector must preserve a non-passing Playwright result while continuing into raw coverage processing',
+);
+assert.match(
+  browserCollectorSource,
+  /if \(rawFiles\.length === 0\) \{[\s\S]*?if \(testRun\.status !== 0\)/,
+  'when tests fail before emitting raw evidence the collector must preserve that test failure rather than inventing coverage evidence',
+);
 
 console.log('✓ coverage script contract tests passed');
