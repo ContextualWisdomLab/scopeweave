@@ -31,6 +31,11 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage'],
+  /--include=server\/application_routes\.mjs/,
+  'the mounted production application route graph is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
   /--include=server\/clearfolio\.mjs/,
   'the abortable Clearfolio adapter is instrumented',
 );
@@ -57,7 +62,7 @@ assert.match(
 assert.match(
   scripts['test:coverage'],
   /--include=server\/stripe_subscription_provider\.mjs/,
-  'the authoritative Stripe subscription provider boundary is instrumented',
+  'the authoritative Stripe subscription reader is instrumented',
 );
 assert.match(
   scripts['test:coverage:cases'],
@@ -73,6 +78,11 @@ assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/orchestrator-coverage\.test\.mjs/,
   'the contextual-orchestrator edge coverage regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/orchestrator-attribution\.test\.mjs/,
+  'the contextual-orchestrator attribution regression executes under c8',
 );
 assert.match(
   scripts['test:coverage:cases'],
@@ -105,29 +115,19 @@ assert.match(
   'the verified-event recorder integration regression executes under c8',
 );
 assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/stripe-subscription-provider\.test\.mjs/,
-  'the authoritative Stripe subscription provider regression executes under c8',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/stripe-subscription-metadata-propagation\.test\.mjs/,
-  'the Checkout-to-Subscription tenant metadata regression executes under c8',
-);
-assert.match(
   scripts['test:unit'],
   /tests\/unit\/stripe-webhook-recorder-integration\.test\.mjs/,
   'normal unit CI executes the verified-event recorder integration regression',
 );
 assert.match(
-  scripts['test:unit'],
+  scripts['test:coverage:cases'],
   /tests\/unit\/stripe-subscription-provider\.test\.mjs/,
-  'normal unit CI executes the authoritative Stripe subscription provider regression',
+  'the authoritative Stripe subscription reader regression executes under c8',
 );
 assert.match(
-  scripts['test:unit'],
+  scripts['test:coverage:cases'],
   /tests\/unit\/stripe-subscription-metadata-propagation\.test\.mjs/,
-  'normal unit CI executes the Checkout-to-Subscription tenant metadata regression',
+  'the subscription tenant-metadata propagation regression executes under c8',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],

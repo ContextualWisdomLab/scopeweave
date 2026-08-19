@@ -49,6 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   canonical public origin instead of request authority, rejected partial or
   ambiguous billing configuration at startup, and confined successful mock
   checkout to explicit development mode.
+- Made live Stripe Checkout fail closed on network errors, provider non-2xx
+  responses, malformed JSON, missing hosted URLs, plaintext redirect URLs, and
+  URL credentials, returning a stable non-leaking HTTP 502 retry/operator action
+  instead of treating provider error documents as successful sessions.
 - Made `SCOPEWEAVE_JWT_SECRET` mandatory at startup and rejected weak or
   unexpanded placeholder values so production deployments fail closed.
 - Neutralized audit-log CSV formulas even when executable prefixes are hidden
@@ -79,6 +83,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Switched the repository-local OpenCode development configuration from GitHub
+  Models to an NVIDIA NIM-only candidate set while preserving organization-level
+  review-workflow ownership in `ContextualWisdomLab/.github`.
+- Production planning-analysis requests now combine tenant-bound, server-derived
+  contextual-orchestrator cost attribution with explicit `auto` orchestration
+  mode, delegating provider/model/topology policy to the shared service without
+  weakening ScopeWeave's authenticated, fail-closed transport or response
+  boundary controls.
 - Accepted XML whitespace before exact Microsoft Project element delimiters
   while preserving the linear, regex-free import scanner and rejecting
   attributes, longer names, non-XML whitespace, nested unmatched blocks, and
@@ -124,4 +136,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.1] - 2026-06-25
 ### 성능 개선 (Performance)
-- 드래그 앤 드롭 동작 중 `dragover` 이벤트에서 발생하는 O(N) 작업 리스트 검색 성능 병목 문제를, O(1) 해시맵(Map) 기반의 캐싱 조회 로직으로 개선하여 큰 크기의 WBS 리스트에서의 버벅임 현상을 해결했습니다.
+- 드래그 앤 드롭 동작 중 `dragover` 이벤트에서 발생하던 O(N) 작업 리스트 검색 성능 병목 문제를, O(1) 해시맵(Map) 기반의 캐싱 조회 로직으로 개선하여 큰 크기의 WBS 리스트에서의 버벅임 현상을 해결했습니다.
