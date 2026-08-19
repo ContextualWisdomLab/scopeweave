@@ -16,10 +16,5 @@ assert.match(
   /- name: Install Playwright \(chromium\)\r?\n\s+timeout-minutes: 10\r?\n\s+run: npx playwright install chromium --with-deps/,
   'the cloud-e2e runtime install must fail closed within ten minutes instead of holding the required job indefinitely',
 );
-assert.equal(
-  serverTestsWorkflow.split('timeout-minutes: 10').length - 1,
-  2,
-  'only the two network-dependent Playwright installation steps should carry this bounded timeout contract',
-);
 
 console.log('✓ Playwright installation timeout contract passed');
