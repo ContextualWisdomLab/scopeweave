@@ -6,12 +6,3 @@
   opacity: 1;
   transform: translateY(0);
 }
-
-/* Cloud tools inject long-running governance and delivery dialogs at runtime.
- * Keep every non-Gantt dialog usable at bounded desktop and mobile heights
- * instead of allowing controls below the viewport to become unreachable. */
-.modal-panel:not(.gantt-panel) {
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  -webkit-overflow-scrolling: touch;
-}
