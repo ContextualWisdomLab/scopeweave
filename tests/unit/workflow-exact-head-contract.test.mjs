@@ -64,8 +64,8 @@ assert.match(
 );
 assert.match(
   serverTestsWorkflow,
-  /for report in coverage\/coverage-final\.json coverage\/browser\/coverage-final\.json/,
-  'coverage failure diagnostics must inspect both server and browser Istanbul reports when they exist',
+  /for report in coverage\/coverage-final\.json coverage\/browser-coverage-final\.json/,
+  'coverage failure diagnostics must inspect the actual server and browser Istanbul reports emitted by the coverage producers',
 );
 assert.match(
   serverTestsWorkflow,
