@@ -643,7 +643,9 @@ function createTableCell(className, content) {
   return cell;
 }
 
-// ⚡ Bolt: Cache static DOM structures to avoid JS-to-C++ instantiation overhead during O(N) table rendering loops.
+// ⚡ Bolt: Cache unattached DOM elements as templates to eliminate repetitive
+// document.createElement() JS-to-C++ allocation overhead during O(N) table rendering loops.
+// Using cloneNode() is measurably faster when creating thousands of rows.
 let taskRowTemplate = null;
 let actionCellTemplate = null;
 let actionStackTemplate = null;
@@ -2365,7 +2367,7 @@ function createGanttMetaTable() {
       createTableCell('', createTextCellContent(task.categoryLarge)),
       createTableCell('', createTextCellContent(task.categoryMedium)),
       createTableCell('', createTextCellContent(task.documentName)),
-      createTableCell('', createOwnerCellContent(task.owner)),
+      createTableCell('', createTextCellContent(task.owner)),
       createTableCell('', createTextCellContent(task.supportTeam)),
       createTableCell('', createTextCellContent(task.plannedStartDate)),
       createTableCell('', createTextCellContent(task.plannedEndDate)),
