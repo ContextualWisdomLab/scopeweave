@@ -236,7 +236,7 @@ export function classifyWorkflows(workflows, protectedPaths, preservePaths = [])
   }
   return workflows.map((workflow) => {
     const { id, path, state } = workflow || {};
-    if (!Number.isSafeInteger(id) || typeof path !== 'string' || typeof state !== 'string') {
+    if (!Number.isSafeInteger(id) || id <= 0 || typeof path !== 'string' || typeof state !== 'string') {
       throw new Error('workflow registry contains an invalid identity');
     }
     let classification;
