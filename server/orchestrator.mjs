@@ -9,6 +9,17 @@ const MAX_CONTENT_LENGTH = 100_000;
 const MAX_PROVIDER_RESPONSE_BYTES = 1024 * 1024;
 // WHATWG URL serializes an IPv6 hostname with brackets (`[::1]`).
 const LOOPBACK_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]']);
+const MAX_ATTRIBUTION_VALUE_LENGTH = 256;
+const ATTRIBUTION_DIMENSIONS = new Set([
+  'account',
+  'service',
+  'upstream_api',
+  'model_name',
+  'team',
+  'group',
+  'company',
+  'provider',
+]);
 
 export const orchestratorMock = process.env.SCOPEWEAVE_DEV === '1' && !OC_URL;
 
@@ -135,6 +146,55 @@ function validatedMessages(messages) {
     }
     return { role: message.role, content: message.content };
   });
+}
+
+/**
+ * Copy optional cost-attribution labels into the exact orchestrator allowlist.
+ *
+ * Unknown dimensions and empty values are omitted rather than forwarded to the
+ * strict contextual-orchestrator request validator. Values must be strings or
+ * finite numeric identifiers before normalization to bounded strings; complex
+ * objects and non-finite numbers fail closed instead of becoming misleading
+ * labels through implicit JavaScript string coercion. Execution model/provider
+ * identity remains controlled by the top-level request model and the
+ * orchestrator's own provider routing evidence; this object is business
+ * cost-allocation metadata only.
+ *
+ * @param {unknown} attribution optional business cost-attribution mapping
+ * @returns {Record<string, string>|undefined} bounded allowed labels or undefined
+ */
+function sanitizedAttribution(attribution) {
+  if (attribution === undefined || attribution === null) return undefined;
+  if (typeof attribution !== 'object' || Array.isArray(attribution)) {
+    throw new OrchestratorConfigurationError(
+      'orchestrator_attribution_invalid',
+      'Orchestrator attribution must be an object when provided.',
+    );
+  }
+
+  const safe = Object.create(null);
+  for (const [key, value] of Object.entries(attribution)) {
+    if (!ATTRIBUTION_DIMENSIONS.has(key) || value === undefined || value === null) continue;
+    if (
+      typeof value !== 'string'
+      && (typeof value !== 'number' || !Number.isFinite(value))
+    ) {
+      throw new OrchestratorConfigurationError(
+        'orchestrator_attribution_invalid',
+        'Orchestrator attribution values must be strings or finite numbers.',
+      );
+    }
+    const text = String(value).trim();
+    if (!text) continue;
+    if (text.length > MAX_ATTRIBUTION_VALUE_LENGTH) {
+      throw new OrchestratorConfigurationError(
+        'orchestrator_attribution_invalid',
+        'Orchestrator attribution value is outside the accepted boundary.',
+      );
+    }
+    safe[key] = text;
+  }
+  return Object.keys(safe).length ? safe : undefined;
 }
 
 /**
@@ -275,11 +335,13 @@ async function rejectProviderResponse(response) {
 /**
  * Generate one AI briefing through contextual-orchestrator.
  * @param {unknown} messages OpenAI-compatible messages
+ * @param {unknown} [attribution] optional bounded business cost-attribution labels
  * @returns {Promise<string>}
  */
-export async function chat(messages) {
+export async function chat(messages, attribution) {
   const configuration = orchestratorConfiguration();
   const safeMessages = validatedMessages(messages);
+  const safeAttribution = sanitizedAttribution(attribution);
   if (configuration.mock) {
     const user = safeMessages
       .filter((message) => message.role === 'user')
@@ -303,7 +365,12 @@ export async function chat(messages) {
         'content-type': 'application/json',
         authorization: `Bearer ${configuration.token}`,
       },
-      body: JSON.stringify({ model: OC_MODEL, messages: safeMessages }),
+      body: JSON.stringify({
+        model: OC_MODEL,
+        orchestration_mode: 'auto',
+        messages: safeMessages,
+        ...(safeAttribution ? { attribution: safeAttribution } : {}),
+      }),
       signal: AbortSignal.timeout(ORCHESTRATOR_TIMEOUT_MS),
     });
   } catch {
