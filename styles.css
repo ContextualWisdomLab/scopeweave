@@ -653,6 +653,14 @@ select[data-inline-progress]:focus {
   box-shadow: 0 25px 50px -12px rgba(15, 23, 42, 0.25);
 }
 
+/* Cloud tools inject long-running governance and delivery dialogs at runtime.
+ * Keep every non-Gantt dialog usable at bounded desktop and mobile heights
+ * instead of allowing controls below the viewport to become unreachable. */
+.modal-panel:not(.gantt-panel) {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
 .modal-header {
   display: flex;
   align-items: center;
