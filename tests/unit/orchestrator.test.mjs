@@ -98,6 +98,7 @@ try {
   assert.ok(calls[0].init.signal instanceof AbortSignal);
   assert.deepEqual(JSON.parse(calls[0].init.body), {
     model: 'nvidia/nemotron-3-super-120b-a12b',
+    orchestration_mode: 'auto',
     messages: [{ role: 'user', content: 'status' }],
   });
 
