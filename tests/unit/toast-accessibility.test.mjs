@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const indexHtml = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+const stylesCss = readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
 const toastStateCss = readFileSync(new URL('../../toast-state.css', import.meta.url), 'utf8');
 const cloudSyncJs = readFileSync(new URL('../../cloud-sync.js', import.meta.url), 'utf8');
 
@@ -60,5 +61,23 @@ test('cloud toast state is visibly rendered by a shipped stylesheet', () => {
     toastStateCss,
     /\.toast\.visible\s*\{[^}]*\bopacity\s*:\s*1\s*;[^}]*\btransform\s*:\s*translateY\(0\)\s*;/s,
     'the shipped cloud toast state becomes visually observable',
+  );
+});
+
+test('modal overflow behavior stays with modal layout styles', () => {
+  assert.match(
+    stylesCss,
+    /\.modal-panel:not\(\.gantt-panel\)\s*\{[^}]*\boverflow-y\s*:\s*auto\s*;[^}]*\boverscroll-behavior\s*:\s*contain\s*;/s,
+    'styles.css owns bounded scrolling for non-Gantt modal panels',
+  );
+  assert.doesNotMatch(
+    toastStateCss,
+    /\.modal-panel:not\(\.gantt-panel\)/,
+    'toast-state.css remains scoped to toast presentation rather than modal layout',
+  );
+  assert.doesNotMatch(
+    `${stylesCss}\n${toastStateCss}`,
+    /-webkit-overflow-scrolling\s*:/,
+    'shipped modal scrolling does not depend on the obsolete WebKit overflow extension',
   );
 });
