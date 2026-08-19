@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import vm from 'node:vm';
+import { fileURLToPath } from 'node:url';
 
 import { downloadBlobSafely, routeTokenPathSegment } from '../../cloud-sync.js';
 
@@ -169,4 +173,175 @@ const expectedLifecycle = [
   assert.equal(observedError, cleanupError, 'the first cleanup failure wins over later revocation failure');
   assert.equal(anchor.parentNode, null);
   assert.deepEqual(events, expectedLifecycle);
+}
+
+const appJsPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'app.js');
+
+function loadLocalDownloadFile({ clickError = null, cleanupError = null, revokeError = null } = {}) {
+  let source = fs.readFileSync(appJsPath, 'utf8');
+  source = source.replace(/^\s*bootstrap\(\);\s*$/m, ';');
+  source += '\n;globalThis.__downloadFile = downloadFile;\n';
+
+  const events = [];
+  const anchorPrototype = {
+    remove() {
+      events.push('prototype-remove');
+      this.parentNode = null;
+      if (cleanupError) throw cleanupError;
+    },
+  };
+  const anchor = Object.create(anchorPrototype);
+  anchor.parentNode = null;
+  anchor.click = () => {
+    events.push('click');
+    if (clickError) throw clickError;
+  };
+  Object.defineProperty(anchor, 'remove', {
+    configurable: true,
+    value() {
+      throw new Error('local download cleanup must not trust the anchor remove method');
+    },
+  });
+
+  const classList = {
+    contains: () => false,
+    add() {},
+    remove() {},
+    toggle() {},
+  };
+  const dummyElement = new Proxy(
+    { classList, style: {}, value: '', textContent: '', innerHTML: '', checked: false },
+    {
+      get(target, prop) {
+        if (prop in target) return target[prop];
+        return () => dummyElement;
+      },
+      set(target, prop, value) {
+        target[prop] = value;
+        return true;
+      },
+    },
+  );
+  const body = {
+    appendChild(node) {
+      assert.equal(node, anchor);
+      events.push('append-anchor');
+      anchor.parentNode = body;
+      return anchor;
+    },
+  };
+  const documentRef = {
+    body,
+    getElementById: () => dummyElement,
+    createElement(tagName) {
+      if (tagName === 'a') {
+        events.push('create-anchor');
+        return anchor;
+      }
+      return dummyElement;
+    },
+    addEventListener() {},
+    querySelector: () => dummyElement,
+    querySelectorAll: () => [],
+  };
+  class SandboxURL extends URL {}
+  SandboxURL.createObjectURL = (blob) => {
+    assert.ok(blob instanceof Blob);
+    events.push('create-url');
+    return 'blob:scopeweave-local-test';
+  };
+  SandboxURL.revokeObjectURL = (url) => {
+    assert.equal(url, 'blob:scopeweave-local-test');
+    events.push('revoke-url');
+    if (revokeError) throw revokeError;
+  };
+  const windowStub = {
+    addEventListener() {},
+    removeEventListener() {},
+    confirm: () => true,
+    setTimeout: () => 0,
+    clearTimeout: () => undefined,
+  };
+  const sandbox = {
+    window: windowStub,
+    self: windowStub,
+    document: documentRef,
+    localStorage: {
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    },
+    fetch: () => Promise.reject(new Error('fetch disabled in local download harness')),
+    AbortController: globalThis.AbortController,
+    Blob,
+    crypto: globalThis.crypto,
+    Uint32Array,
+    console,
+    setTimeout: () => 0,
+    clearTimeout: () => undefined,
+    requestAnimationFrame: (callback) => callback(),
+    Date,
+    Math,
+    JSON,
+    Object,
+    Array,
+    Set,
+    Map,
+    WeakMap,
+    Symbol,
+    String,
+    Number,
+    Boolean,
+    RegExp,
+    Error,
+    TypeError,
+    parseInt,
+    parseFloat,
+    isNaN,
+    isFinite,
+    URL: SandboxURL,
+    Proxy,
+    Reflect,
+    Promise,
+  };
+  sandbox.globalThis = sandbox;
+  windowStub.window = windowStub;
+
+  vm.runInContext(source, vm.createContext(sandbox), { filename: appJsPath });
+  if (typeof sandbox.__downloadFile !== 'function') {
+    throw new Error('Failed to extract downloadFile from app.js');
+  }
+  return { downloadFile: sandbox.__downloadFile, events };
+}
+
+{
+  const causalError = new Error('local download dispatch failed');
+  const revokeError = new Error('local object-url revoke failed');
+  const { downloadFile, events } = loadLocalDownloadFile({ clickError: causalError, revokeError });
+  let observedError = null;
+
+  try {
+    downloadFile('buyer csv', 'wbs.csv', 'text/csv');
+  } catch (error) {
+    observedError = error;
+  }
+
+  assert.equal(observedError, causalError, 'local CSV export must preserve the click failure over revoke cleanup');
+  assert.deepEqual(events, expectedLifecycle, 'local CSV export still attempts every cleanup step after click failure');
+}
+
+{
+  const cleanupError = new Error('local anchor cleanup failed');
+  const revokeError = new Error('local object-url revoke failed');
+  const { downloadFile, events } = loadLocalDownloadFile({ cleanupError, revokeError });
+  let observedError = null;
+
+  try {
+    downloadFile('buyer csv', 'wbs.csv', 'text/csv');
+  } catch (error) {
+    observedError = error;
+  }
+
+  assert.equal(observedError, cleanupError, 'local CSV export must surface the first cleanup failure');
+  assert.deepEqual(events, expectedLifecycle, 'local CSV export attempts object-url revocation after cleanup failure');
 }
