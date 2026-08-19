@@ -35,6 +35,42 @@ test.describe('browser residual production behavior', () => {
     await expect(page.locator('tr[data-task-id="valid-explicit-depth"]')).toHaveClass(/depth-2/);
   });
 
+  test('collapses nested work and restores descendant editing without losing hierarchy', async ({ page }) => {
+    await page.route('**/wbs.json', (route) => route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify([
+        { __id: 'phase-a', __depth: 1, phase: 'Phase A' },
+        { __id: 'activity-a', __parentId: 'phase-a', __depth: 2, phase: 'Phase A', activity: 'Activity A' },
+        { __id: 'task-a', __parentId: 'activity-a', __depth: 3, phase: 'Phase A', activity: 'Activity A', task: 'Task A' },
+      ]),
+    }));
+    await page.goto('/');
+
+    const phaseRow = page.locator('tr[data-task-id="phase-a"]');
+    const activityRow = page.locator('tr[data-task-id="activity-a"]');
+    const taskRow = page.locator('tr[data-task-id="task-a"]');
+    await expect(phaseRow).toBeVisible();
+    await expect(activityRow).toBeVisible();
+    await expect(taskRow).toBeVisible();
+
+    await phaseRow.getByRole('button', { name: /접기/ }).click();
+    await expect(activityRow).toHaveCount(0);
+    await expect(taskRow).toHaveCount(0);
+    await expect(phaseRow.getByRole('button', { name: /펼치기/ })).toHaveAttribute('aria-expanded', 'false');
+
+    await phaseRow.getByRole('button', { name: /펼치기/ }).click();
+    await expect(activityRow).toBeVisible();
+    await expect(taskRow).toBeVisible();
+    await expect(phaseRow.getByRole('button', { name: /접기/ })).toHaveAttribute('aria-expanded', 'true');
+
+    await taskRow.locator('td').nth(3).click();
+    await expect(page.locator('.editor-panel')).toBeVisible();
+    await expect(page.getByTestId('editor-task')).toHaveValue('Task A');
+    await page.getByRole('button', { name: '취소', exact: true }).click();
+    await expect(page.locator('.editor-panel')).toHaveCount(0);
+    await expect(taskRow).toBeVisible();
+  });
+
   test('renders warning badges through the public browser test seam', async ({ page }) => {
     await page.goto('/');
 
