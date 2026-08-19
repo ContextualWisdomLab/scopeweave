@@ -47,7 +47,7 @@ assert.equal(
   'default CodeQL analysis must use the reviewed immutable v4.37.7 action revision',
 );
 assert.equal(
-  workflow.includes(supersededCodeQLSha),
+  workflow.includes(supersededCodeqlSha),
   false,
   'default CodeQL must not regress to the superseded v4.36.2 action revision',
 );
