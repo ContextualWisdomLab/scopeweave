@@ -18,7 +18,7 @@ assert.match(
 );
 assert.doesNotMatch(
   serverTestsWorkflow,
-  /npx playwright install chromium --with-deps/,
+  /npx playwright install[^\r\n]*--with-deps/,
   'required Server Tests must not re-enter the Ubuntu package-manager path that can stall on runner mirror availability',
 );
 

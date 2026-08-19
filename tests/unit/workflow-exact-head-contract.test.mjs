@@ -49,18 +49,18 @@ assert.doesNotMatch(
 );
 assert.match(
   serverTestsWorkflow,
-  /- name: Install Playwright \(chromium for coverage\)\r?\n\s+timeout-minutes: 10\r?\n\s+run: npx playwright install chromium(?:\r?\n|$)[\s\S]*?- name: Exact owned production coverage/,
+  /- name: Install Playwright \(chromium for coverage\)\r?\n\s+timeout-minutes: 10\r?\n\s+run: npx playwright install chromium\r?\n[\s\S]*?- name: Exact owned production coverage/,
   'the unit-and-api coverage lane must install the real Chromium runtime with its bounded non-apt path before browser coverage executes',
 );
 assert.match(
   serverTestsWorkflow,
-  /- name: Exact owned production coverage[\s\S]*?run: npm run test:coverage\b/,
-  'Server Tests must execute the exact-head owned-production coverage gate',
+  /- name: Exact owned production coverage\r?\n\s+id: coverage\r?\n\s+run: npm run test:coverage\b/,
+  'Server Tests must execute and identify the exact-head owned-production coverage gate',
 );
 assert.match(
   serverTestsWorkflow,
-  /- name: Coverage failure diagnostics[\s\S]*?if: failure\(\)[\s\S]*?node scripts\/ci\/coverage_diagnostics\.mjs "\$report"/,
-  'coverage failures must emit exact missed statements, functions, and branch locations without making the gate pass',
+  /- name: Coverage failure diagnostics[\s\S]*?if: \$\{\{ failure\(\) && steps\.coverage\.conclusion == 'failure' \}\}[\s\S]*?node scripts\/ci\/coverage_diagnostics\.mjs "\$report"/,
+  'coverage diagnostics must run only when the exact coverage step itself fails',
 );
 assert.match(
   serverTestsWorkflow,
@@ -81,8 +81,8 @@ assert.equal(
 );
 assert.match(
   serverTestsWorkflow,
-  /- name: Preserve exact coverage failure evidence[\s\S]*?if: failure\(\)[\s\S]*?name: scopeweave-coverage-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}[\s\S]*?coverage\/coverage-final\.json[\s\S]*?coverage\/coverage-summary\.json[\s\S]*?coverage\/browser-coverage-final\.json[\s\S]*?coverage\/browser-coverage-summary\.json[\s\S]*?if-no-files-found: error[\s\S]*?retention-days: 3/,
-  'failed coverage runs must retain exact server and browser Istanbul evidence for causal repair',
+  /- name: Preserve exact coverage failure evidence[\s\S]*?if: \$\{\{ failure\(\) && steps\.coverage\.conclusion == 'failure' \}\}[\s\S]*?name: scopeweave-coverage-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}[\s\S]*?coverage\/coverage-final\.json[\s\S]*?coverage\/coverage-summary\.json[\s\S]*?coverage\/browser-coverage-final\.json[\s\S]*?coverage\/browser-coverage-summary\.json[\s\S]*?if-no-files-found: error[\s\S]*?retention-days: 3/,
+  'failed coverage runs must retain exact server and browser Istanbul evidence only for coverage-step failures',
 );
 assert.match(
   serverTestsWorkflow,

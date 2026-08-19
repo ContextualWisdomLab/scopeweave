@@ -49,9 +49,10 @@ jobs:
         timeout-minutes: 10
         run: npx playwright install chromium
       - name: Exact owned production coverage
+        id: coverage
         run: npm run test:coverage
       - name: Coverage failure diagnostics
-        if: failure()
+        if: ${{ failure() && steps.coverage.conclusion == 'failure' }}
         run: |
           found_report=0
           for report in coverage/coverage-final.json coverage/browser-coverage-final.json; do
@@ -65,7 +66,7 @@ jobs:
             exit 1
           fi
       - name: Preserve exact coverage failure evidence
-        if: failure()
+        if: ${{ failure() && steps.coverage.conclusion == 'failure' }}
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: scopeweave-coverage-${{ github.run_id }}-${{ github.run_attempt }}
