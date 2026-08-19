@@ -97,7 +97,7 @@ test.describe('browser residual production behavior', () => {
       const probe = document.createElement('script');
       probe.textContent = `
         window.__scopeweaveResidualTextSafety = {
-          escaped: escapeHtml('<script>alert("x")</script> & \'quoted\''),
+          escaped: escapeHtml('<>&' + String.fromCharCode(34, 39)),
           kebab: toKebab('actualProgress_status')
         };
       `;
@@ -108,7 +108,7 @@ test.describe('browser residual production behavior', () => {
       return captured;
     });
 
-    expect(result.escaped).toBe('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;quoted&#39;');
+    expect(result.escaped).toBe('&lt;&gt;&amp;&quot;&#39;');
     expect(result.kebab).toBe('actual-progress-status');
   });
 
