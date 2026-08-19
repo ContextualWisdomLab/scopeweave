@@ -52,6 +52,7 @@ async function closeCloudModal(page, panelSelector, accessibleName) {
   const close = panel.getByRole('button', { name: accessibleName });
   await expect(close).toHaveCount(1);
   await close.click();
+  await expect(panel).toBeHidden();
 }
 
 test.beforeAll(async () => {
@@ -197,7 +198,7 @@ test('team governance actions exercise revocation, webhook rotation, and audit e
   await webhookSection.getByRole('button', { name: '웹훅 추가', exact: true }).click();
   await expect(webhookSection).toContainText('https://example.com/scopeweave-residual');
 
-  await page.locator('#team-modal button[aria-label="닫기"]').click();
+  await closeCloudModal(page, '#team-modal', '닫기');
   await page.click('#cloud-auth button:has-text("팀")');
   await page.waitForSelector('#team-body');
 
