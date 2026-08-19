@@ -8,13 +8,18 @@ const serverTestsWorkflow = readFileSync(
 
 assert.match(
   serverTestsWorkflow,
-  /- name: Install Playwright \(chromium for coverage\)\r?\n\s+timeout-minutes: 10\r?\n\s+run: npx playwright install chromium --with-deps/,
-  'the browser-coverage runtime install must fail closed within ten minutes instead of holding the required job indefinitely',
+  /- name: Install Playwright \(chromium for coverage\)\r?\n\s+timeout-minutes: 10\r?\n\s+run: npx playwright install chromium(?:\r?\n|$)/,
+  'the browser-coverage runtime install must be bounded and avoid apt-backed --with-deps network work in the required lane',
 );
 assert.match(
   serverTestsWorkflow,
-  /- name: Install Playwright \(chromium\)\r?\n\s+timeout-minutes: 10\r?\n\s+run: npx playwright install chromium --with-deps/,
-  'the cloud-e2e runtime install must fail closed within ten minutes instead of holding the required job indefinitely',
+  /- name: Install Playwright \(chromium\)\r?\n\s+timeout-minutes: 10\r?\n\s+run: npx playwright install chromium(?:\r?\n|$)/,
+  'the cloud-e2e runtime install must be bounded and avoid apt-backed --with-deps network work in the required lane',
+);
+assert.doesNotMatch(
+  serverTestsWorkflow,
+  /npx playwright install chromium --with-deps/,
+  'required Server Tests must not re-enter the Ubuntu package-manager path that can stall on runner mirror availability',
 );
 
-console.log('✓ Playwright installation timeout contract passed');
+console.log('✓ Playwright installation reliability contract passed');
