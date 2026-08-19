@@ -23,6 +23,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { DatabaseSync } from 'node:sqlite';
 
 const MAX_SCHEMA_OBJECTS = 100_000;
+const MAX_SCHEMA_BYTES = 8 * 1024 * 1024;
 const SCHEMA_QUERY_LIMIT = MAX_SCHEMA_OBJECTS + 1;
 
 /** Stable public error used by the backup operator boundary. */
@@ -121,7 +122,13 @@ export function inspectOpenSqliteDatabase(database, prefix) {
   const schema = database.prepare(
     `SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name LIMIT ${SCHEMA_QUERY_LIMIT}`,
   ).all().map((row) => ({ ...row }));
-  if (schema.length > MAX_SCHEMA_OBJECTS) throw fail(`${prefix}_schema_too_large`);
+  const schemaBytes = schema.reduce(
+    (total, row) => total + Buffer.byteLength(JSON.stringify(row), 'utf8'),
+    0,
+  );
+  if (schema.length > MAX_SCHEMA_OBJECTS || schemaBytes > MAX_SCHEMA_BYTES) {
+    throw fail(`${prefix}_schema_too_large`);
+  }
 
   return { applicationId, userVersion, schema };
 }
