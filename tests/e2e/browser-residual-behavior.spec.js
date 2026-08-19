@@ -102,11 +102,17 @@ test.describe('browser residual production behavior', () => {
 
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(0);
     const exportButton = page.getByRole('button', { name: 'CSV 내보내기' });
-    await exportButton.click();
+    await expect(exportButton).toHaveAttribute('aria-disabled', 'true');
+    await expect(exportButton).toHaveAttribute('title', /내보낼 작업이 없습니다/);
+    await exportButton.focus();
+    await page.keyboard.press('Enter');
     await expect(page.locator('#toast')).toContainText('내보낼 작업이 없습니다');
 
     const ganttButton = page.getByRole('button', { name: '간트차트보기' });
-    await ganttButton.click();
+    await expect(ganttButton).toHaveAttribute('aria-disabled', 'true');
+    await expect(ganttButton).toHaveAttribute('title', /표시할 작업이 없습니다/);
+    await ganttButton.focus();
+    await page.keyboard.press('Enter');
     await expect(page.locator('#toast')).toContainText('간트 차트로 표시할 작업이 없습니다');
 
     const emptyState = page.locator('.table-empty');
