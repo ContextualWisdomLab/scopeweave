@@ -21,6 +21,8 @@ const browserCoverageScript = packageJson.scripts?.['test:coverage:browser'] ?? 
 
 const exactHeadRef = 'ref: ${{ github.event.pull_request.head.sha || github.sha }}';
 const expectedShaEnv = 'EXPECTED_CHECKOUT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}';
+const codeqlActionV4377Sha = 'ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd';
+const supersededCodeqlActionV4362Sha = '8aad20d150bbac5944a9f9d289da16a4b0d87c1e';
 
 assert.equal(
   serverTestsWorkflow.split(exactHeadRef).length - 1,
@@ -145,6 +147,21 @@ assert.equal(
   1,
   'CodeQL exact-head checkout must not persist repository credentials',
 );
+assert.equal(
+  codeqlWorkflow.split(`github/codeql-action/init@${codeqlActionV4377Sha} # v4.37.7`).length - 1,
+  1,
+  'CodeQL initialization must use the reviewed immutable v4.37.7 action revision',
+);
+assert.equal(
+  codeqlWorkflow.split(`github/codeql-action/analyze@${codeqlActionV4377Sha} # v4.37.7`).length - 1,
+  1,
+  'CodeQL analysis must use the reviewed immutable v4.37.7 action revision',
+);
+assert.equal(
+  codeqlWorkflow.includes(supersededCodeqlActionV4362Sha),
+  false,
+  'CodeQL Required must not regress to the superseded v4.36.2 action revision',
+);
 assert.match(
   codeqlWorkflow,
   /\bupload:\s*never\b/,
@@ -230,10 +247,15 @@ assert.doesNotMatch(
   /8dc09193bb540e09b23da07ad7e30bd33bf87018|# v2\.3\.8/,
   'OSV must not regress to the superseded v2.3.8 action revision or annotation',
 );
-assert.match(
-  osvWorkflow,
-  /github\/codeql-action\/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e/,
-  'OSV must publish candidate-head SARIF through the repository-trusted pinned upload action',
+assert.equal(
+  osvWorkflow.split(`github/codeql-action/upload-sarif@${codeqlActionV4377Sha} # v4.37.7`).length - 1,
+  1,
+  'OSV must publish candidate-head SARIF through the reviewed immutable CodeQL v4.37.7 action revision',
+);
+assert.equal(
+  osvWorkflow.includes(supersededCodeqlActionV4362Sha),
+  false,
+  'OSV SARIF publication must not regress to the superseded CodeQL v4.36.2 action revision',
 );
 assert.doesNotMatch(
   osvWorkflow,
