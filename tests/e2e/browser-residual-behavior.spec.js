@@ -11,7 +11,9 @@ test.describe('browser residual production behavior', () => {
 
     const connect = page.getByRole('button', { name: /wbs\.json/ });
     await expect(connect).toHaveAttribute('aria-disabled', 'true');
-    await connect.click();
+    await expect(connect).toHaveAttribute('title', /지원하지 않습니다/);
+    await connect.focus();
+    await page.keyboard.press('Enter');
     await expect(page.locator('#toast')).toContainText('지원하지 않습니다');
   });
 
