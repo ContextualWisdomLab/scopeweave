@@ -19,181 +19,44 @@ assert.match(
   /\bc8\b.*--reporter=json(?![-\w]).*npm run test:coverage:cases/,
   'test:coverage creates Istanbul JSON before executing coverage cases',
 );
-assert.match(
-  scripts['test:coverage'],
-  /--reporter=json-summary\b/,
-  'test:coverage also creates the Istanbul JSON summary',
-);
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/attachment_status\.mjs/,
-  'the bounded refresh module is instrumented',
-);
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/application_routes\.mjs/,
-  'the mounted production application route graph is instrumented',
-);
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/clearfolio\.mjs/,
-  'the abortable Clearfolio adapter is instrumented',
-);
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/orchestrator\.mjs/,
-  'the contextual-orchestrator production boundary is instrumented',
-);
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/billing_checkout_attempt\.mjs/,
-  'the durable Checkout-attempt repository is instrumented',
-);
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/stripe_webhook\.mjs/,
-  'the Stripe webhook trust boundary is instrumented',
-);
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/stripe_webhook_event_ledger\.mjs/,
-  'the verified Stripe webhook event ledger is instrumented',
-);
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/stripe_subscription_provider\.mjs/,
-  'the authoritative Stripe subscription reader is instrumented',
-);
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/stripe_subscription_observation_ledger\.mjs/,
-  'the authoritative Stripe subscription observation ledger is instrumented',
-);
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/stripe_subscription_current_projection\.mjs/,
-  'the current authoritative Stripe subscription projection is instrumented',
-);
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/stripe_entitlement_policy\.mjs/,
-  'the monotonic Stripe entitlement policy is instrumented',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
-  'the Clearfolio signal and HTTP failure regression executes under c8',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/orchestrator\.test\.mjs/,
-  'the contextual-orchestrator behavior regression executes under c8',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/orchestrator-coverage\.test\.mjs/,
-  'the contextual-orchestrator edge coverage regression executes under c8',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/orchestrator-attribution\.test\.mjs/,
-  'the contextual-orchestrator attribution regression executes under c8',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/billing-checkout-attempt\.test\.mjs/,
-  'the durable Checkout-attempt regression executes under c8',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/billing-checkout-reconciliation\.test\.mjs/,
-  'the Checkout reconciliation operator regression executes under c8',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/billing-provider-boundary\.test\.mjs/,
-  'the Stripe provider trust and transport regression executes under c8',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/stripe-webhook-boundary\.test\.mjs/,
-  'the Stripe webhook trust regression executes under c8',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/stripe-webhook-event-ledger\.test\.mjs/,
-  'the durable Stripe webhook event-ledger regression executes under c8',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/stripe-webhook-recorder-integration\.test\.mjs/,
-  'the verified-event recorder integration regression executes under c8',
-);
-assert.match(
-  scripts['test:unit'],
-  /tests\/unit\/stripe-webhook-recorder-integration\.test\.mjs/,
-  'normal unit CI executes the verified-event recorder integration regression',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/stripe-subscription-provider\.test\.mjs/,
-  'the authoritative Stripe subscription reader regression executes under c8',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/stripe-subscription-metadata-propagation\.test\.mjs/,
-  'the subscription tenant-metadata propagation regression executes under c8',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/stripe-subscription-observation-ledger\.test\.mjs/,
-  'the authoritative Stripe subscription observation regression executes under c8',
-);
-assert.match(
-  scripts['test:unit'],
-  /tests\/unit\/stripe-subscription-observation-ledger\.test\.mjs/,
-  'normal unit CI executes the authoritative Stripe subscription observation regression',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/stripe-subscription-current-projection\.test\.mjs/,
-  'the current authoritative Stripe subscription projection regression executes under c8',
-);
-assert.match(
-  scripts['test:unit'],
-  /tests\/unit\/stripe-subscription-current-projection\.test\.mjs/,
-  'normal unit CI executes the current authoritative Stripe subscription projection regression',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/stripe-entitlement-policy\.test\.mjs/,
-  'the Stripe entitlement behavior regression executes under c8',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/stripe-entitlement-policy-edge\.test\.mjs/,
-  'the Stripe entitlement edge regression executes under c8',
-);
-assert.match(
-  scripts['test:coverage:cases'],
-  /tests\/unit\/stripe-entitlement-policy-duplicate-claims\.test\.mjs/,
-  'duplicate subscription-claim corruption is exercised under c8',
-);
-assert.match(
-  scripts['test:unit'],
-  /tests\/unit\/stripe-entitlement-policy\.test\.mjs/,
-  'normal unit CI executes the Stripe entitlement behavior regression',
-);
-assert.match(
-  scripts['test:unit'],
-  /tests\/unit\/stripe-entitlement-policy-edge\.test\.mjs/,
-  'normal unit CI executes the Stripe entitlement edge regression',
-);
-assert.match(
-  scripts['test:unit'],
-  /tests\/unit\/stripe-entitlement-policy-duplicate-claims\.test\.mjs/,
-  'normal unit CI executes duplicate subscription-claim corruption regression',
-);
+assert.match(scripts['test:coverage'], /--reporter=json-summary\b/, 'test:coverage also creates the Istanbul JSON summary');
+assert.match(scripts['test:coverage'], /--include=server\/attachment_status\.mjs/, 'the bounded refresh module is instrumented');
+assert.match(scripts['test:coverage'], /--include=server\/application_routes\.mjs/, 'the mounted production application route graph is instrumented');
+assert.match(scripts['test:coverage'], /--include=server\/clearfolio\.mjs/, 'the abortable Clearfolio adapter is instrumented');
+assert.match(scripts['test:coverage'], /--include=server\/orchestrator\.mjs/, 'the contextual-orchestrator production boundary is instrumented');
+assert.match(scripts['test:coverage'], /--include=server\/billing_checkout_attempt\.mjs/, 'the durable Checkout-attempt repository is instrumented');
+assert.match(scripts['test:coverage'], /--include=server\/stripe_webhook\.mjs/, 'the Stripe webhook trust boundary is instrumented');
+assert.match(scripts['test:coverage'], /--include=server\/stripe_webhook_event_ledger\.mjs/, 'the verified Stripe webhook event ledger is instrumented');
+assert.match(scripts['test:coverage'], /--include=server\/stripe_subscription_provider\.mjs/, 'the authoritative Stripe subscription reader is instrumented');
+assert.match(scripts['test:coverage'], /--include=server\/stripe_subscription_observation_ledger\.mjs/, 'the authoritative Stripe subscription observation ledger is instrumented');
+assert.match(scripts['test:coverage'], /--include=server\/stripe_subscription_current_projection\.mjs/, 'the current authoritative Stripe subscription projection is instrumented');
+assert.match(scripts['test:coverage'], /--include=server\/stripe_entitlement_policy\.mjs/, 'the monotonic Stripe entitlement policy is instrumented');
+assert.match(scripts['test:coverage'], /--include=server\/stripe_invoice_provider\.mjs/, 'the authoritative Stripe invoice reader is instrumented');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/clearfolio-status-signal\.test\.mjs/, 'the Clearfolio signal and HTTP failure regression executes under c8');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/orchestrator\.test\.mjs/, 'the contextual-orchestrator behavior regression executes under c8');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/orchestrator-coverage\.test\.mjs/, 'the contextual-orchestrator edge coverage regression executes under c8');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/orchestrator-attribution\.test\.mjs/, 'the contextual-orchestrator attribution regression executes under c8');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/billing-checkout-attempt\.test\.mjs/, 'the durable Checkout-attempt regression executes under c8');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/billing-checkout-reconciliation\.test\.mjs/, 'the Checkout reconciliation operator regression executes under c8');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/billing-provider-boundary\.test\.mjs/, 'the Stripe provider trust and transport regression executes under c8');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/stripe-webhook-boundary\.test\.mjs/, 'the Stripe webhook trust regression executes under c8');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/stripe-webhook-event-ledger\.test\.mjs/, 'the durable Stripe webhook event-ledger regression executes under c8');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/stripe-webhook-recorder-integration\.test\.mjs/, 'the verified-event recorder integration regression executes under c8');
+assert.match(scripts['test:unit'], /tests\/unit\/stripe-webhook-recorder-integration\.test\.mjs/, 'normal unit CI executes the verified-event recorder integration regression');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/stripe-subscription-provider\.test\.mjs/, 'the authoritative Stripe subscription reader regression executes under c8');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/stripe-subscription-metadata-propagation\.test\.mjs/, 'the subscription tenant-metadata propagation regression executes under c8');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/stripe-subscription-observation-ledger\.test\.mjs/, 'the authoritative Stripe subscription observation regression executes under c8');
+assert.match(scripts['test:unit'], /tests\/unit\/stripe-subscription-observation-ledger\.test\.mjs/, 'normal unit CI executes the authoritative Stripe subscription observation regression');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/stripe-subscription-current-projection\.test\.mjs/, 'the current authoritative Stripe subscription projection regression executes under c8');
+assert.match(scripts['test:unit'], /tests\/unit\/stripe-subscription-current-projection\.test\.mjs/, 'normal unit CI executes the current authoritative Stripe subscription projection regression');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/stripe-entitlement-policy\.test\.mjs/, 'the Stripe entitlement behavior regression executes under c8');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/stripe-entitlement-policy-edge\.test\.mjs/, 'the Stripe entitlement edge regression executes under c8');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/stripe-entitlement-policy-duplicate-claims\.test\.mjs/, 'duplicate subscription-claim corruption is exercised under c8');
+assert.match(scripts['test:unit'], /tests\/unit\/stripe-entitlement-policy\.test\.mjs/, 'normal unit CI executes the Stripe entitlement behavior regression');
+assert.match(scripts['test:unit'], /tests\/unit\/stripe-entitlement-policy-edge\.test\.mjs/, 'normal unit CI executes the Stripe entitlement edge regression');
+assert.match(scripts['test:unit'], /tests\/unit\/stripe-entitlement-policy-duplicate-claims\.test\.mjs/, 'normal unit CI executes duplicate subscription-claim corruption regression');
+assert.match(scripts['test:coverage:cases'], /tests\/unit\/stripe-invoice-provider\.test\.mjs/, 'the authoritative Stripe invoice reader regression executes under c8');
+assert.match(scripts['test:unit'], /tests\/unit\/stripe-invoice-provider\.test\.mjs/, 'normal unit CI executes the authoritative Stripe invoice reader regression');
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
   /npm run (?:coverage|test:coverage)(?:\s|$)/,
