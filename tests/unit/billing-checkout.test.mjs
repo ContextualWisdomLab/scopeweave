@@ -6,6 +6,16 @@ import { createCheckout } from '../../server/billing.mjs';
 const disabledConfiguration = { mode: 'disabled', publicOrigin: null };
 const mockConfiguration = { mode: 'mock', publicOrigin: 'http://127.0.0.1:8787' };
 const liveConfiguration = { mode: 'live', publicOrigin: 'https://planner.example.com' };
+const providerFailurePayloads = Object.freeze({
+  billing_provider_unavailable: {
+    error: 'billing_provider_unavailable',
+    action: 'Retry checkout. If the problem persists, verify Stripe connectivity and service health before retrying.',
+  },
+  billing_provider_invalid_response: {
+    error: 'billing_provider_invalid_response',
+    action: 'Retry checkout. If the problem persists, verify the Stripe Checkout provider configuration and service health.',
+  },
+});
 
 async function withDefaultStripeTransport(responseFactory, assertion) {
   const previousSecret = process.env.STRIPE_SECRET_KEY;
@@ -26,7 +36,7 @@ async function withDefaultStripeTransport(responseFactory, assertion) {
   }
 }
 
-async function assertProviderFailure(runCheckout) {
+async function assertProviderFailure(runCheckout, expectedCode = 'billing_provider_unavailable') {
   let rejectedError;
   await assert.rejects(
     runCheckout(),
@@ -43,15 +53,18 @@ async function assertProviderFailure(runCheckout) {
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(response.headers.get('content-type'), 'application/json; charset=UTF-8');
   const payload = await response.json();
-  assert.deepEqual(payload, {
-    error: 'billing_provider_unavailable',
-    action: 'Checkout could not be started. Retry later; if the problem persists, contact your ScopeWeave operator.',
-  });
+  assert.deepEqual(payload, providerFailurePayloads[expectedCode]);
 }
 
-async function expectSafeProviderFailure(responseFactory) {
+async function expectSafeProviderFailure(
+  responseFactory,
+  expectedCode = 'billing_provider_unavailable',
+) {
   await withDefaultStripeTransport(responseFactory, async () => {
-    await assertProviderFailure(() => createCheckout({ orgId: 91, configuration: liveConfiguration }));
+    await assertProviderFailure(
+      () => createCheckout({ orgId: 91, configuration: liveConfiguration }),
+      expectedCode,
+    );
   });
 }
 
@@ -207,27 +220,36 @@ test('default live provider transport rejects network failures without leaking p
 });
 
 test('default live provider transport rejects malformed successful session payloads', async () => {
-  await expectSafeProviderFailure(async () => new Response(JSON.stringify({
-    id: 'cs_test_missing_url',
-    object: 'checkout.session',
-  }), {
-    status: 200,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
-  }));
+  await expectSafeProviderFailure(
+    async () => new Response(JSON.stringify({
+      id: 'cs_test_missing_url',
+      object: 'checkout.session',
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+    }),
+    'billing_provider_invalid_response',
+  );
 
-  await expectSafeProviderFailure(async () => new Response('{not-json', {
-    status: 200,
-    headers: { 'content-type': 'application/json; charset=utf-8' },
-  }));
+  await expectSafeProviderFailure(
+    async () => new Response('{not-json', {
+      status: 200,
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+    }),
+    'billing_provider_invalid_response',
+  );
 });
 
 test('live checkout rejects absent and blank provider redirect shapes', async () => {
   for (const session of [null, {}, { url: null }, { url: '' }, { url: '   ' }]) {
-    await assertProviderFailure(() => createCheckout({
-      orgId: 92,
-      configuration: liveConfiguration,
-      stripeClientFactory: fixedSessionFactory(session),
-    }));
+    await assertProviderFailure(
+      () => createCheckout({
+        orgId: 92,
+        configuration: liveConfiguration,
+        stripeClientFactory: fixedSessionFactory(session),
+      }),
+      'billing_provider_invalid_response',
+    );
   }
 });
 
@@ -238,11 +260,14 @@ test('live checkout rejects unsafe or malformed provider redirect URLs', async (
     'https://:password@checkout.stripe.com/c/pay/cs_test_password',
     'not a URL',
   ]) {
-    await assertProviderFailure(() => createCheckout({
-      orgId: 92,
-      configuration: liveConfiguration,
-      stripeClientFactory: fixedSessionFactory({ url }),
-    }));
+    await assertProviderFailure(
+      () => createCheckout({
+        orgId: 92,
+        configuration: liveConfiguration,
+        stripeClientFactory: fixedSessionFactory({ url }),
+      }),
+      'billing_provider_invalid_response',
+    );
   }
 });
 
