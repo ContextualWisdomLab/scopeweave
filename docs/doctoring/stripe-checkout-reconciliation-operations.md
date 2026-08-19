@@ -3,7 +3,7 @@
 ## Status and scope
 
 This document describes **active stacked PR #516**, based on active PR #511 at
-`d0a826ccc654288b6d096ef4e199d0e4da5b9b1b`. It is not protected-`develop`
+`2743a58c9ac65ab125c3898ec94370a7dc91f095`. It is not protected-`develop`
 shipped truth and it is not a billing-release claim.
 
 PR #511 deliberately moves stale or clock-ambiguous unresolved Checkout attempts

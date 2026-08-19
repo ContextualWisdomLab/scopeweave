@@ -31,6 +31,11 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage'],
+  /--include=server\/application_routes\.mjs/,
+  'the mounted production application route graph is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
   /--include=server\/clearfolio\.mjs/,
   'the abortable Clearfolio adapter is instrumented',
 );
