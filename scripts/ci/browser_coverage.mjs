@@ -72,12 +72,16 @@ const testRun = spawnSync(process.execPath, [playwrightCli, 'test'], {
 if (testRun.error) throw testRun.error;
 if (testRun.status !== 0) {
   process.exitCode = testRun.status ?? 1;
-} else {
-  const rawFiles = (await readdir(rawDirectory)).filter((name) => name.endsWith('.json')).sort();
-  if (rawFiles.length === 0) {
+}
+
+const rawFiles = (await readdir(rawDirectory)).filter((name) => name.endsWith('.json')).sort();
+if (rawFiles.length === 0) {
+  if (testRun.status !== 0) {
+    console.error('Browser tests failed before any raw browser coverage evidence was emitted.');
+  } else {
     throw new Error('Browser coverage produced no raw evidence files.');
   }
-
+} else {
   const coverageMap = createCoverageMap({});
   const observedSources = new Set();
   for (const rawFile of rawFiles) {
