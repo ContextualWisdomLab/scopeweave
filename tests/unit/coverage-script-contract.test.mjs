@@ -85,6 +85,11 @@ assert.match(
   'the authoritative Stripe invoice reader is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/stripe_invoice_observation_ledger\.mjs/,
+  'the authoritative Stripe invoice observation ledger is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
@@ -218,6 +223,16 @@ assert.match(
   scripts['test:unit'],
   /tests\/unit\/stripe-invoice-provider-edge\.test\.mjs/,
   'normal unit CI executes the authoritative Stripe invoice edge regression',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/stripe-invoice-observation-ledger\.test\.mjs/,
+  'the authoritative Stripe invoice observation regression executes under c8',
+);
+assert.match(
+  scripts['test:unit'],
+  /tests\/unit\/stripe-invoice-observation-ledger\.test\.mjs/,
+  'normal unit CI executes the authoritative Stripe invoice observation regression',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],

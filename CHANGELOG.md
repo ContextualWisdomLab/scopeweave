@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Persist authoritative Stripe Invoice reads as normalized append-only evidence
+  linked to the exact accepted Subscription observation that named the Invoice;
+  tenant/customer/subscription/invoice rebinding fails closed, local observation
+  order stays monotonic under clock rollback, and no Invoice row carries raw
+  provider payloads or entitlement state.
 - Added a bounded authoritative Stripe Invoice reader that verifies exact tenant-
   bound Invoice, Customer, and Subscription identities, supports current Basil
   and legacy Subscription provenance without trusting metadata alone, bounds
