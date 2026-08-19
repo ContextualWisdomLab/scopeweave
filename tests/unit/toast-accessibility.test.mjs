@@ -65,19 +65,18 @@ test('cloud toast state is visibly rendered by a shipped stylesheet', () => {
 });
 
 test('modal overflow behavior stays with modal layout styles', () => {
-  assert.match(
-    stylesCss,
-    /\.modal-panel:not\(\.gantt-panel\)\s*\{[^}]*\boverflow-y\s*:\s*auto\s*;[^}]*\boverscroll-behavior\s*:\s*contain\s*;/s,
-    'styles.css owns bounded scrolling for non-Gantt modal panels',
+  const modalScrollRule = stylesCss.match(/\.modal-panel:not\(\.gantt-panel\)\s*\{[^}]*\}/s)?.[0] ?? '';
+  assert.notEqual(modalScrollRule, '', 'styles.css owns the non-Gantt modal scrolling rule');
+  assert.match(modalScrollRule, /\boverflow-y\s*:\s*auto\s*;/, 'non-Gantt dialogs remain vertically scrollable');
+  assert.match(modalScrollRule, /\boverscroll-behavior\s*:\s*contain\s*;/, 'non-Gantt dialogs contain scroll chaining');
+  assert.doesNotMatch(
+    modalScrollRule,
+    /-webkit-overflow-scrolling\s*:/,
+    'non-Gantt modal scrolling does not depend on the obsolete WebKit overflow extension',
   );
   assert.doesNotMatch(
     toastStateCss,
     /\.modal-panel:not\(\.gantt-panel\)/,
     'toast-state.css remains scoped to toast presentation rather than modal layout',
-  );
-  assert.doesNotMatch(
-    `${stylesCss}\n${toastStateCss}`,
-    /-webkit-overflow-scrolling\s*:/,
-    'shipped modal scrolling does not depend on the obsolete WebKit overflow extension',
   );
 });
