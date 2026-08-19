@@ -151,13 +151,15 @@ test('project-list and notification outages keep authenticated onboarding usable
   await expect(page.locator('#cloud-auth select')).toContainText('프로젝트 없음');
 });
 
-test('optimistic-concurrency conflict reloads the server winner instead of overwriting it', async ({ page }) => {
+test('optimistic-concurrency conflict reloads the server winner when realtime delivery is unavailable', async ({ page }) => {
+  await page.route(`**/api/projects/${projectId}/stream**`, (route) => route.abort());
   await loginAndOpen(page);
   await replaceProject({ name: 'Server Winner' });
 
   await page.locator('#project-name').fill('Stale Client Edit');
   await expect(page.locator('#toast')).toContainText('다른 사용자가 먼저 저장하여 최신본을 불러왔습니다', { timeout: 5000 });
   await expect(page.locator('#project-name')).toHaveValue('Server Winner');
+  await expect.poll(async () => (await api(`/api/projects/${projectId}`)).data.name).toBe('Server Winner');
 });
 
 test('cloud write failure preserves the local edit and tells the buyer what happened', async ({ page }) => {
