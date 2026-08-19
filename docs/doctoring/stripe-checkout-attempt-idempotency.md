@@ -3,7 +3,7 @@
 ## Status and decision
 
 This document describes **active stacked PR #511**, based on PR #507 at
-`770e69f009985ce8f0f186c946ef2282cdbe0c1e`. It is not protected-`develop`
+`f1ca84bab7603cb0882c1a5b4d822c5714daacdb`. It is not protected-`develop`
 shipped truth and it is not a production-readiness claim. The slice exists to
 make an uncertain Checkout Session creation retryable without silently creating
 a second provider object.
