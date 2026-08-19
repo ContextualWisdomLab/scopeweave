@@ -7,14 +7,13 @@ process.env.CLEARFOLIO_URL = '';
 
 const { app } = await import('../../server/app.mjs');
 const { db } = await import('../../server/db.mjs');
-const { mockArtifact } = await import('../../server/clearfolio.mjs');
 
 const jsonRequest = (path, options = {}) => app.request(path, {
   ...options,
   headers: { 'content-type': 'application/json', ...(options.headers || {}) },
 });
 
-test('unnamed attachment uploads preserve the shipped document metadata fallback', async () => {
+test('empty multipart filenames are rejected before attachment metadata is persisted', async () => {
   let response = await jsonRequest('/api/auth/signup', {
     method: 'POST',
     body: JSON.stringify({
@@ -43,14 +42,12 @@ test('unnamed attachment uploads preserve the shipped document metadata fallback
     headers: auth,
     body: form,
   });
-  assert.equal(response.status, 200);
-  const payload = await response.json();
 
-  const stored = db.prepare(
-    'SELECT name, mime, job_id AS jobId FROM attachments WHERE id = ?',
-  ).get(payload.id);
-  assert.equal(stored.name, 'document');
-  assert.equal(stored.mime, 'text/plain');
-  assert.equal(mockArtifact(stored.jobId)?.name, 'document');
-  assert.equal(mockArtifact(stored.jobId)?.mime, 'text/plain');
+  assert.equal(response.status, 400);
+  assert.deepEqual(await response.json(), { error: 'multipart file required' });
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS count FROM attachments WHERE project_id = ?').get(projectId).count,
+    0,
+    'a multipart field without a filename must never create attachment metadata',
+  );
 });
