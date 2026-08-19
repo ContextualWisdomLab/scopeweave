@@ -133,7 +133,7 @@ test('owner can change a member role and remove the member through the team surf
   await expect(page.locator('#toast')).toContainText('managed-member@scopeweave.test → 뷰어');
   await memberRow.getByRole('button', { name: '제거', exact: true }).click();
   await expect(page.locator('#toast')).toContainText('managed-member@scopeweave.test 제거됨');
-  await expect(page.locator('#team-body')).not.toContainText('managed-member@scopeweave.test');
+  await expect(memberRow).toHaveCount(0);
 });
 
 test('account controls change a password and preserve the current device across global logout', async ({ page }) => {
