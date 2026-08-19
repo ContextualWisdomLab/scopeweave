@@ -15,9 +15,59 @@ export const PLANS = {
   pro: { name: 'Pro', limits: { projects: null, members: null }, priceKrw: 19000 }, // null = unlimited
 };
 
-/** Return the effective plan definition for an organization-like record. */
+/** Return the stored/manual plan definition for an organization-like record. */
 export function planOf(org) {
   return PLANS[org?.plan] || PLANS.free;
+}
+
+function requireEffectivePlanAuthority(db, org, nowSec) {
+  if (!db || typeof db.prepare !== 'function') throw new TypeError('db must provide SQLite prepare operations');
+  if (!org || !Number.isSafeInteger(org.id) || org.id <= 0) throw new TypeError('org.id must be a positive safe integer');
+  if (!Number.isSafeInteger(nowSec) || nowSec < 0) throw new TypeError('nowSec must be a non-negative safe integer');
+}
+
+function hasCurrentStripeProClaim(db, organizationId, nowSec) {
+  try {
+    return Boolean(db.prepare(`
+      SELECT 1 AS active
+      FROM billing_stripe_entitlement_claim_heads h
+      JOIN billing_stripe_entitlement_decisions d ON d.decision_id = h.decision_id
+      JOIN billing_stripe_subscriptions s ON s.subscription_id = h.subscription_id
+      JOIN billing_stripe_customers c ON c.customer_id = s.customer_id
+      WHERE c.organization_id = ?
+        AND d.entitled = 1
+        AND d.valid_until_sec IS NOT NULL
+        AND d.valid_until_sec > ?
+      LIMIT 1
+    `).get(organizationId, nowSec));
+  } catch {
+    // Claim storage can be absent during rolling migration or unavailable during
+    // an incident. Never manufacture paid authority from missing evidence; fall
+    // back to the explicit stored/manual plan instead.
+    return false;
+  }
+}
+
+/**
+ * Return the plan that currently authorizes resource-limit behavior.
+ *
+ * An explicit stored Pro plan remains a non-Stripe/manual override. Otherwise a
+ * free organization becomes Pro only while at least one current Stripe claim head
+ * is both entitled and unexpired. Revocation or expiry therefore re-locks Pro
+ * limits without mutating `orgs.plan`. Claim-table absence or read failure fails
+ * closed to the stored plan and never creates paid authority.
+ *
+ * @param {object} db SQLite-like database with prepare/get support
+ * @param {{id:number, plan?:string}} org organization authority
+ * @param {{nowSec?:number}} [options] deterministic current epoch seconds
+ * @returns {{name:string,limits:{projects:number|null,members:number|null},priceKrw:number}}
+ *   effective plan definition
+ */
+export function effectivePlanOf(db, org, { nowSec = Math.floor(Date.now() / 1000) } = {}) {
+  requireEffectivePlanAuthority(db, org, nowSec);
+  const stored = planOf(org);
+  if (stored === PLANS.pro) return PLANS.pro;
+  return hasCurrentStripeProClaim(db, org.id, nowSec) ? PLANS.pro : stored;
 }
 
 /** Return current project/member counts for one organization. */
@@ -27,9 +77,9 @@ export function orgUsage(db, orgId) {
   return { projects, members };
 }
 
-/** Return whether adding one resource would exceed the organization's plan limit. */
-export function wouldExceed(db, org, kind) {
-  const limit = planOf(org).limits[kind];
+/** Return whether adding one resource would exceed the organization's effective plan limit. */
+export function wouldExceed(db, org, kind, options = {}) {
+  const limit = effectivePlanOf(db, org, options).limits[kind];
   if (limit == null) return false; // unlimited
   return orgUsage(db, org.id)[kind] >= limit;
 }
