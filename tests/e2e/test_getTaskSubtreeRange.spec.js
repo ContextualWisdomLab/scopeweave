@@ -73,10 +73,13 @@ async function dragTaskAfter(page, draggedId, targetId) {
   }, { draggedId, targetId });
 }
 
-async function persistedTaskIds(page) {
-  return page.evaluate(() => JSON.parse(
-    localStorage.getItem('scopeweave:planner-state:v1'),
-  ).tasks.map((task) => task.id));
+function persistedTaskIds(page) {
+  return expect.poll(() => page.evaluate(() => {
+    const raw = localStorage.getItem('scopeweave:planner-state:v1');
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed?.tasks) ? parsed.tasks.map((task) => task.id) : [];
+  }));
 }
 
 test.describe('task subtree range behavior', () => {
@@ -86,7 +89,7 @@ test.describe('task subtree range behavior', () => {
 
     await dragTaskAfter(page, '1', '5');
 
-    expect(await persistedTaskIds(page)).toEqual(['5', '6', '1', '2', '3', '7', '4']);
+    await persistedTaskIds(page).toEqual(['5', '6', '1', '2', '3', '7', '4']);
   });
 
   test('moves a middle-level task together with its nested leaves', async ({ page }) => {
@@ -95,7 +98,7 @@ test.describe('task subtree range behavior', () => {
 
     await dragTaskAfter(page, '2', '4');
 
-    expect(await persistedTaskIds(page)).toEqual(['1', '4', '2', '3', '7', '5', '6']);
+    await persistedTaskIds(page).toEqual(['1', '4', '2', '3', '7', '5', '6']);
   });
 
   test('moves a leaf without consuming its sibling', async ({ page }) => {
@@ -104,7 +107,7 @@ test.describe('task subtree range behavior', () => {
 
     await dragTaskAfter(page, '3', '7');
 
-    expect(await persistedTaskIds(page)).toEqual(['1', '2', '7', '3', '4', '5', '6']);
+    await persistedTaskIds(page).toEqual(['1', '2', '7', '3', '4', '5', '6']);
   });
 
   test('fails closed when cloud hydration removes a dragged subtree before drop', async ({ page }) => {
@@ -151,6 +154,6 @@ test.describe('task subtree range behavior', () => {
       }));
     });
 
-    expect(await persistedTaskIds(page)).toEqual(['5']);
+    await persistedTaskIds(page).toEqual(['5']);
   });
 });
