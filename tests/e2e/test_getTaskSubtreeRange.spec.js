@@ -52,11 +52,18 @@ async function dragTaskAfter(page, draggedId, targetId) {
       dataTransfer: transfer,
     }));
     const targetRect = target.getBoundingClientRect();
+    const clientY = targetRect.bottom - 1;
+    target.dispatchEvent(new DragEvent('dragover', {
+      bubbles: true,
+      cancelable: true,
+      dataTransfer: transfer,
+      clientY,
+    }));
     target.dispatchEvent(new DragEvent('drop', {
       bubbles: true,
       cancelable: true,
       dataTransfer: transfer,
-      clientY: targetRect.bottom - 1,
+      clientY,
     }));
     source.dispatchEvent(new DragEvent('dragend', {
       bubbles: true,
@@ -124,11 +131,18 @@ test.describe('task subtree range behavior', () => {
       });
 
       const targetRect = target.getBoundingClientRect();
+      const clientY = targetRect.bottom - 1;
+      target.dispatchEvent(new DragEvent('dragover', {
+        bubbles: true,
+        cancelable: true,
+        dataTransfer: transfer,
+        clientY,
+      }));
       target.dispatchEvent(new DragEvent('drop', {
         bubbles: true,
         cancelable: true,
         dataTransfer: transfer,
-        clientY: targetRect.bottom - 1,
+        clientY,
       }));
       source.dispatchEvent(new DragEvent('dragend', {
         bubbles: true,
