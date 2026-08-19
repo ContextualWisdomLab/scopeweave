@@ -20,7 +20,7 @@
     "test:coverage:cases": "npm run test:unit && npm run test:api",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:cloud": "playwright install chromium && playwright test tests/e2e/cloud.spec.js tests/e2e/toast-accessibility.spec.js",
+    "test:e2e:cloud": "playwright test tests/e2e/cloud.spec.js tests/e2e/toast-accessibility.spec.js",
     "test:fuzz": "playwright install chromium && playwright test tests/e2e/csv_formula_fuzz.spec.js",
     "fuzz": "node --test tests/fuzz/*.mjs"
   },
