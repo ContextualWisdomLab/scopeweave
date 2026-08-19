@@ -36,16 +36,13 @@ async function seedPlanner(page, tasks = hierarchy, { captureHost = false } = {}
   }, { storageKey: STORAGE_KEY, seedTasks: tasks, shouldCaptureHost: captureHost });
 }
 
-function dragEventPayload() {
-  return { bubbles: true, cancelable: true, dataTransfer: new DataTransfer() };
-}
-
 test.describe('browser defensive coverage boundaries', () => {
   test('fails closed for stale table events while preserving valid drag behavior', async ({ page }) => {
     await seedPlanner(page);
     await page.goto('/');
 
     const result = await page.evaluate(() => {
+      const dragEventPayload = () => ({ bubbles: true, cancelable: true, dataTransfer: new DataTransfer() });
       const tbody = document.querySelector('#task-table-body');
       const rootA = document.querySelector('tr[data-task-id="root-a"]');
       const activity = document.querySelector('tr[data-task-id="activity-a"]');
