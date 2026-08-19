@@ -145,6 +145,40 @@ assert.equal(
   'only connection-establishment failures may advance to another validated address',
 );
 
+let postTlsAttempts = 0;
+const noReplayAfterSecureConnect = createPublicHttpsTransport({
+  lookup: async () => [PUBLIC_A, PUBLIC_B],
+  request: (_url, options) => {
+    postTlsAttempts += 1;
+    const req = new EventEmitter();
+    req.end = () => {
+      options.lookup('ignored.example', {}, (error) => {
+        assert.ifError(error);
+        const socket = new EventEmitter();
+        req.emit('socket', socket);
+        queueMicrotask(() => {
+          socket.emit('secureConnect');
+          queueMicrotask(() => req.emit('error', new Error('peer closed after TLS handshake')));
+        });
+      });
+    };
+    return req;
+  },
+});
+await assert.rejects(
+  noReplayAfterSecureConnect.fetch('https://idp.example.test/token', {
+    method: 'POST',
+    body: 'grant_type=authorization_code',
+  }),
+  WebhookTransportError,
+  'a non-idempotent request must not replay after TLS is established even without response headers',
+);
+assert.equal(
+  postTlsAttempts,
+  1,
+  'a post-handshake failure is ambiguous and must not consume an authorization code twice',
+);
+
 await assert.rejects(
   transport.fetch('https://idp.example.test/jwks', { maxResponseBytes: 0 }),
   /positive safe integer/,
