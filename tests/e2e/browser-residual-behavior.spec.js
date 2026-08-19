@@ -90,6 +90,28 @@ test.describe('browser residual production behavior', () => {
     expect(result.nullValidation).toEqual([]);
   });
 
+  test('executes shipped classic-script text normalization helpers against hostile text', async ({ page }) => {
+    await page.goto('/');
+
+    const result = await page.evaluate(() => {
+      const probe = document.createElement('script');
+      probe.textContent = `
+        window.__scopeweaveResidualTextSafety = {
+          escaped: escapeHtml('<script>alert("x")</script> & \'quoted\''),
+          kebab: toKebab('actualProgress_status')
+        };
+      `;
+      document.body.appendChild(probe);
+      probe.remove();
+      const captured = window.__scopeweaveResidualTextSafety;
+      delete window.__scopeweaveResidualTextSafety;
+      return captured;
+    });
+
+    expect(result.escaped).toBe('&lt;script&gt;alert(&quot;x&quot;)&lt;/script&gt; &amp; &#39;quoted&#39;');
+    expect(result.kebab).toBe('actual-progress-status');
+  });
+
   test('keeps empty-plan actions useful and bounded instead of silently doing nothing', async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
