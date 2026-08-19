@@ -56,6 +56,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Switched the repository-local OpenCode development configuration from GitHub
   Models to an NVIDIA NIM-only candidate set while preserving organization-level
   review-workflow ownership in `ContextualWisdomLab/.github`.
+- Production planning-analysis requests now combine tenant-bound, server-derived
+  contextual-orchestrator cost attribution with explicit `auto` orchestration
+  mode, delegating provider/model/topology policy to the shared service without
+  weakening ScopeWeave's authenticated, fail-closed transport or response
+  boundary controls.
 - Kept invalid editor save actions keyboard-discoverable with
   `aria-disabled="true"` and an explicit `aria-describedby` relationship while
   preserving synchronous submit-time validation as the only persistence gate;
