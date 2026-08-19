@@ -194,7 +194,16 @@ function pinnedRequestOptions(destination, candidate, options = {}) {
   };
 }
 
-async function postToCandidate(destination, candidate, { headers, body, signal }, request) {
+function trackSecureConnect(request, attempt) {
+  if (!attempt || typeof request?.once !== 'function') return;
+  request.once('socket', (socket) => {
+    socket?.once?.('secureConnect', () => {
+      attempt.secureConnected = true;
+    });
+  });
+}
+
+async function postToCandidate(destination, candidate, { headers, body, signal, attempt }, request) {
   if (signal?.aborted) throw new WebhookTransportError();
   try {
     return await withAbort(new Promise((resolve, reject) => {
@@ -213,6 +222,7 @@ async function postToCandidate(destination, candidate, { headers, body, signal }
         reject(new WebhookTransportError());
         return;
       }
+      trackSecureConnect(req, attempt);
       req.once?.('error', () => reject(new WebhookTransportError()));
       req.end(body);
     }), signal);
@@ -297,6 +307,7 @@ async function fetchFromCandidate(
         fail();
         return;
       }
+      trackSecureConnect(req, attempt);
       req.once?.('error', fail);
       if (body === undefined || body === null) {
         req.end();
@@ -314,11 +325,17 @@ async function fetchFromCandidate(
   }
 }
 
+function methodMayReplay(method) {
+  return method === 'GET' || method === 'HEAD';
+}
+
 /**
  * Build a bounded public-HTTPS fetch transport for server-side metadata flows.
  * Each request resolves DNS afresh, fails closed if any answer is non-public,
  * pins every socket to a validated candidate, preserves the original TLS SNI,
  * disables pooling, never follows redirects, and bounds response buffering.
+ * GET/HEAD may fail over after a post-handshake transport error; mutating
+ * requests stop after TLS establishment because their delivery is ambiguous.
  */
 export function createPublicHttpsTransport({ lookup = dnsLookup, request = httpsRequest } = {}) {
   if (typeof lookup !== 'function' || typeof request !== 'function') {
@@ -346,15 +363,16 @@ export function createPublicHttpsTransport({ lookup = dnsLookup, request = https
 
       const candidates = await resolvePublicAddresses(destination, lookup, signal);
       const requestHeaders = identityEncodedHeaders(headers);
+      const requestMethod = String(method || 'GET').toUpperCase();
       let lastError;
       for (const candidate of candidates) {
-        const attempt = { responseStarted: false };
+        const attempt = { responseStarted: false, secureConnected: false };
         try {
           return await fetchFromCandidate(
             destination,
             candidate,
             {
-              method: String(method || 'GET').toUpperCase(),
+              method: requestMethod,
               headers: requestHeaders,
               body,
               signal,
@@ -366,7 +384,11 @@ export function createPublicHttpsTransport({ lookup = dnsLookup, request = https
         } catch (error) {
           if (!(error instanceof WebhookTransportError)) throw error;
           lastError = error;
-          if (signal?.aborted || attempt.responseStarted) throw error;
+          if (
+            signal?.aborted
+            || attempt.responseStarted
+            || (attempt.secureConnected && !methodMayReplay(requestMethod))
+          ) throw error;
         }
       }
       throw lastError || new WebhookTransportError();
@@ -379,9 +401,10 @@ export function createPublicHttpsTransport({ lookup = dnsLookup, request = https
  * Every post resolves afresh, rejects mixed/private answers, pins each socket to
  * a validated public candidate, preserves the original hostname for Host/TLS,
  * and never follows redirects because Node's native HTTPS client does not do so.
- * Connect/transport failure may fall through to another address from the same
- * fully validated DNS answer set; an HTTP response is authoritative and returns
- * immediately, while every later application retry performs fresh DNS again.
+ * Pre-handshake connect failure may fall through to another address from the
+ * same fully validated DNS answer set. Once TLS succeeds, delivery is ambiguous
+ * and the same signed body is never replayed to another candidate; a later
+ * application retry performs fresh DNS again.
  */
 export function createWebhookTransport({ lookup = dnsLookup, request = httpsRequest } = {}) {
   if (typeof lookup !== 'function' || typeof request !== 'function') {
@@ -401,17 +424,18 @@ export function createWebhookTransport({ lookup = dnsLookup, request = httpsRequ
       const candidates = await resolvePublicAddresses(destination, lookup, signal);
       let lastError;
       for (const candidate of candidates) {
+        const attempt = { secureConnected: false };
         try {
           return await postToCandidate(
             destination,
             candidate,
-            { headers, body, signal },
+            { headers, body, signal, attempt },
             request,
           );
         } catch (error) {
           if (!(error instanceof WebhookTransportError)) throw error;
           lastError = error;
-          if (signal?.aborted) throw error;
+          if (signal?.aborted || attempt.secureConnected) throw error;
         }
       }
       throw lastError || new WebhookTransportError();
