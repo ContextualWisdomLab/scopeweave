@@ -17,7 +17,7 @@ The command performs the following fail-closed sequence:
 1. Resolve the source and destination parent to canonical filesystem paths and reject source/destination aliasing.
 2. Require the source to be a regular file and the destination parent to be an existing directory.
 3. Open the source connection read-only, then run `PRAGMA integrity_check` and `PRAGMA foreign_key_check` against the source.
-4. Capture `application_id`, `user_version`, and a canonical ordered `sqlite_schema` snapshot while bounding schema materialization to 100,001 rows and rejecting more than 100,000 non-internal schema objects.
+4. Capture `application_id`, `user_version`, and a canonical ordered `sqlite_schema` snapshot by streaming rows with `StatementSync.iterate()`. The collector rejects before retaining more than 100,000 non-internal schema objects or exceeding an 8 MiB UTF-8 budget for the exact serialized JSON array, including brackets and separators.
 5. Reserve a unique temporary destination with owner-only `0600` permissions.
 6. Execute parameterized `VACUUM INTO` against that temporary path while SQLite owns consistency across the live database/WAL state.
 7. Verify the produced database independently with integrity and foreign-key checks, positive file size, and exact metadata/schema comparison.
@@ -66,6 +66,6 @@ Do not claim a recovery-time objective, recovery-point objective, or disaster-re
 
 ## Verification evidence
 
-The owning regression suite covers a populated relational database, live WAL with an open writer connection, source and backup integrity/FK checks, bounded schema inspection, schema/version matching, destination collisions and aliases, caller-visible parent-symlink retargeting, a competing process that wins the destination name, malformed/corrupt inputs, invalid foreign keys, metadata mismatch, incomplete-snapshot cleanup, owner-only permissions, stable CLI output, and direct CLI invocation. The new module is registered in normal unit CI and the repository's instrumented coverage command.
+The owning regression suite covers a populated relational database, live WAL with an open writer connection, source and backup integrity/FK checks, streaming object/serialized-byte schema bounds, schema/version matching, destination collisions and aliases, caller-visible parent-symlink retargeting, a competing process that wins the destination name, malformed/corrupt inputs, invalid foreign keys, metadata mismatch, incomplete-snapshot cleanup, owner-only permissions, stable CLI output, and direct CLI invocation. The new module is registered in normal unit CI and the repository's instrumented coverage command.
 
 See `docs/doctoring/sqlite-backup-recovery.md` for the primary-source basis and requirement-to-test traceability.
