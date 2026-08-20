@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.SCOPEWEAVE_DB = ':memory:';
+process.env.SCOPEWEAVE_DEV = '1';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 process.env.SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY = '2';
 process.env.SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS = '500';

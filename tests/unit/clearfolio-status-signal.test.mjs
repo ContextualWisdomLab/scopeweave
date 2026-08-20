@@ -1,7 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+const HMAC_SECRET = 'clearfolio-shared-secret-32-bytes!!';
 process.env.CLEARFOLIO_URL = 'https://clearfolio.example';
+process.env.CLEARFOLIO_HMAC_SECRET = HMAC_SECRET;
 const originalFetch = globalThis.fetch;
 let observedUrl;
 let observedOptions;
@@ -40,6 +42,8 @@ async function expectSanitizedFailure(operation, expectedMessage, forbiddenPatte
 test.after(() => {
   globalThis.fetch = originalFetch;
   delete process.env.CLEARFOLIO_URL;
+  delete process.env.CLEARFOLIO_HMAC_SECRET;
+  delete process.env.SCOPEWEAVE_DEV;
 });
 
 test('jobStatus enforces endpoint, signal, transport, HTTP, and status contracts', async () => {
@@ -49,6 +53,7 @@ test('jobStatus enforces endpoint, signal, transport, HTTP, and status contracts
   assert.equal(status, 'RUNNING');
   assert.equal(observedUrl, 'https://clearfolio.example/api/v1/convert/jobs/job-1');
   assert.equal(observedOptions.signal, controller.signal);
+  assert.equal(observedOptions.redirect, 'error');
 
   setNetworkError(new Error('connect ECONNREFUSED https://private-clearfolio.internal'));
   await expectSanitizedFailure(
@@ -120,6 +125,7 @@ test('submitJob rejects transport details and malformed successful responses', a
   );
   assert.equal(observedUrl, 'https://clearfolio.example/api/v1/convert/jobs');
   assert.equal(observedOptions.method, 'POST');
+  assert.equal(observedOptions.redirect, 'error');
   assert.ok(observedOptions.body instanceof FormData);
 
   const malformedPayloads = [
@@ -185,6 +191,7 @@ test('artifactUrl validates links and never exposes transport or response text',
     'https://clearfolio.example/api/v1/viewer/job-1/artifact-links',
   );
   assert.equal(observedOptions.method, 'POST');
+  assert.equal(observedOptions.redirect, 'error');
 
   const malformedPayloads = [
     {
@@ -200,6 +207,10 @@ test('artifactUrl validates links and never exposes transport or response text',
     { label: 'malformed URL', json: async () => ({ artifactUrl: 'http://[' }) },
     { label: 'unsupported URL scheme', json: async () => ({ artifactUrl: 'javascript:alert(1)' }) },
     { label: 'HTTPS downgrade', json: async () => ({ artifactUrl: 'http://cdn.example/file.pdf' }) },
+    { label: 'foreign HTTPS origin', json: async () => ({ artifactUrl: 'https://cdn.example/file.pdf' }) },
+    { label: 'protocol-relative foreign origin', json: async () => ({ artifactUrl: '//evil.example/file.pdf' }) },
+    { label: 'credentialed same origin', json: async () => ({ artifactUrl: 'https://user@clearfolio.example/file.pdf' }) },
+    { label: 'fragmented same origin', json: async () => ({ artifactUrl: 'https://clearfolio.example/file.pdf#viewer-state' }) },
   ];
 
   for (const malformed of malformedPayloads) {
@@ -217,10 +228,13 @@ test('artifactUrl validates links and never exposes transport or response text',
     'https://clearfolio.example/signed/file.pdf',
   );
 
-  setResponse({ json: async () => ({ url: 'https://cdn.example/file.pdf' }) });
+  setResponse({ json: async () => ({
+    signedUrl: 'https://clearfolio.example/file.pdf?artifactToken=same%20origin',
+  }) });
   assert.equal(
     await artifactUrl(4, 5, 'job-1'),
-    'https://cdn.example/file.pdf',
+    'https://clearfolio.example/viewer/job-1?artifactToken=same%20origin',
+    'same-origin artifact tokens may be translated into the trusted viewer route',
   );
 
   setResponse({
@@ -228,24 +242,27 @@ test('artifactUrl validates links and never exposes transport or response text',
       signedUrl: 'https://cdn.example/file.pdf?artifactToken=token%20value',
     }),
   });
-  assert.equal(
-    await artifactUrl(4, 5, 'job-1'),
-    'https://clearfolio.example/viewer/job-1?artifactToken=token%20value',
+  await expectSanitizedFailure(
+    () => artifactUrl(4, 5, 'job-1'),
+    'clearfolio artifact-link response invalid',
   );
 });
 
-test('artifactUrl permits HTTP only when the configured Clearfolio endpoint is HTTP', async () => {
-  process.env.CLEARFOLIO_URL = 'http://clearfolio.local';
+test('artifactUrl permits HTTP only for explicit loopback development', async () => {
+  process.env.SCOPEWEAVE_DEV = '1';
+  process.env.CLEARFOLIO_URL = 'http://127.0.0.1:8080';
+  process.env.CLEARFOLIO_HMAC_SECRET = HMAC_SECRET;
   try {
     const { artifactUrl: httpArtifactUrl } = await import(
       '../../server/clearfolio.mjs?http-artifact-contract-test=1'
     );
-    setResponse({ json: async () => ({ artifactUrl: 'http://cdn.local/file.pdf' }) });
+    setResponse({ json: async () => ({ artifactUrl: 'http://127.0.0.1:8080/file.pdf' }) });
     assert.equal(
       await httpArtifactUrl(4, 5, 'job-http'),
-      'http://cdn.local/file.pdf',
+      'http://127.0.0.1:8080/file.pdf',
     );
   } finally {
     process.env.CLEARFOLIO_URL = 'https://clearfolio.example';
+    delete process.env.SCOPEWEAVE_DEV;
   }
 });

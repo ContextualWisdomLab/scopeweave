@@ -1,0 +1,51 @@
+# Clearfolio production configuration boundary
+
+## Decision
+
+ScopeWeave treats Clearfolio as an optional production capability, not as an implicit successful mock. The in-memory converter is available only when `SCOPEWEAVE_DEV=1` and no provider URL is configured. Outside that explicit development boundary, an absent provider produces the stable `clearfolio_not_configured` failure and the mock artifact route is not registered.
+
+A configured production provider must be a root HTTPS origin. ScopeWeave parses the operator value with the platform `URL` implementation and rejects URL credentials, query strings, fragments, and configured paths before building any downstream endpoint. HTTP is limited to explicit development mode on `localhost`, `127.0.0.1`, or `::1`. The tenant-claim HMAC secret is mandatory with a configured provider and must contain at least 32 non-whitespace characters.
+
+This boundary prevents configuration text from becoming an arbitrary downstream request prefix and prevents a production deployment from persisting fake `SUCCEEDED` conversion state merely because an integration is absent. It also preserves independent ScopeWeave operation: planning functionality remains available while document conversion/viewing fails closed with an actionable configuration error.
+
+## Provider redirect and artifact-origin rule
+
+Every tenant-signed submit, status, and artifact-link fetch uses `redirect: "error"`. A provider redirect therefore becomes the existing sanitized transport failure instead of allowing the runtime to replay tenant HMAC headers onto an untrusted `Location` target.
+
+Artifact links returned by this root configuration slice must resolve to the configured Clearfolio origin, must contain no URL credentials, and must contain no fragment. Protocol-relative or absolute foreign-host links fail closed, including token-free links that would otherwise become the browser's attachment-view redirect target. If a same-origin link contains an `artifactToken`, ScopeWeave rewrites that token into the trusted Clearfolio viewer route. A token is never transplanted into another origin.
+
+This root slice deliberately does not invent a cross-origin artifact-host allowlist. A later reviewed policy may admit explicitly configured canonical origins, but until that policy is present the secure default is same-origin only. Issue #489 remains open after this slice. Subsequent bounded work must still add the reviewed artifact-origin allowlist if cross-origin delivery is required, streaming response-size/media-type limits, a provider-wide request budget, and the remaining resource/lifecycle acceptance criteria before the Clearfolio adapter can be described as fully production-complete.
+
+## Executable evidence
+
+`tests/unit/clearfolio-adapter-mock-hmac.test.mjs` proves:
+
+- production without `CLEARFOLIO_URL` does not enable the mock and fails submit/status/artifact operations closed;
+- the mock works only under explicit `SCOPEWEAVE_DEV=1`;
+- unsupported schemes, remote HTTP, URL credentials, query strings, fragments, configured paths, and weak HMAC secrets are rejected;
+- loopback HTTP is accepted only under explicit development mode; and
+- signed tenant headers retain the documented canonical HMAC contract.
+
+`tests/unit/clearfolio-status-signal.test.mjs` exercises sanitized transport/HTTP/JSON/status/artifact failures and now requires all three tenant-signed fetch paths to disable redirects. It rejects token-free CDN links, protocol-relative foreign links, credential-bearing same-origin links, fragmented same-origin links, and cross-origin token-bearing links while retaining same-origin relative links and the trusted viewer rewrite. `tests/api/attachment-status.test.mjs` makes its test-only in-memory provider explicit instead of relying on an unset production URL.
+
+The shipped `server/clearfolio.mjs` remains in the canonical c8 production coverage target, so the new configuration branches execute under the repository coverage gate rather than a documentation-only path.
+
+## Standards and threat rationale
+
+The WHATWG URL Standard defines URL components, including credentials, queries, and fragments, and provides the common parsing model used by the JavaScript `URL` API. ScopeWeave parses first and then applies component-level policy instead of relying on string-prefix validation.
+
+OWASP's SSRF Prevention guidance recommends strict allowlisting and warns that redirects and attacker-controlled complete URLs can bypass URL validation. This slice narrows operator configuration to a provider origin, disables redirect following for tenant-signed calls, and keeps browser redirect authority same-origin until an explicit reviewed allowlist exists.
+
+NIST SSDF 1.1 recommends identifying and maintaining software security requirements and producing well-secured software through repeatable verification. The fail-closed configuration contract, executable negative tests, and explicit remaining-gap statement provide acquisition-review evidence without claiming certification.
+
+## Rollback
+
+Rollback reverts the Clearfolio configuration parser, explicit development-mode tests, redirect prohibition, same-origin artifact rule, deployment text, this doctoring record, and the corresponding CHANGELOG entry together. No database schema or persisted attachment representation changes in this slice.
+
+## References
+
+National Institute of Standards and Technology. (2022). *Secure Software Development Framework (SSDF) Version 1.1: Recommendations for mitigating the risk of software vulnerabilities* (NIST Special Publication 800-218). https://doi.org/10.6028/NIST.SP.800-218
+
+OWASP Foundation. (n.d.). *Server Side Request Forgery Prevention Cheat Sheet*. OWASP Cheat Sheet Series. https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html
+
+WHATWG. (2026). *URL Standard*. https://url.spec.whatwg.org/
