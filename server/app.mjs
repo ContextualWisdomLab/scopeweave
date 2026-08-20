@@ -218,7 +218,7 @@ async function boundedOidcFetch(request) {
   const form = new URLSearchParams(new TextDecoder().decode(body));
   const code = form.get('code');
   const expectedNonce = code ? oidcNonceByCode.get(code) : null;
-  if (!expectedNonce || expectedNonce.exp < Date.now()) throw new Error('OIDC flow binding unavailable');
+  if (!expectedNonce || expectedNonce.exp <= Date.now()) throw new Error('OIDC flow binding unavailable');
   const discovery = await loadOidcDiscovery();
   const signal = AbortSignal.any([
     request.signal,
@@ -330,7 +330,7 @@ async function canonicalInboundRequest(request) {
 
 function cleanupOidcNonces(now = Date.now()) {
   for (const [state, record] of oidcNonceByState.entries()) {
-    if (record.exp < now) oidcNonceByState.delete(state);
+    if (record.exp <= now) oidcNonceByState.delete(state);
   }
 }
 
@@ -393,7 +393,7 @@ async function coreFetchWithOidcBinding(request, rest) {
   const code = requestUrl.searchParams.get('code');
   const record = state ? oidcNonceByState.get(state) : null;
   if (state) oidcNonceByState.delete(state);
-  if (code && record && record.exp >= Date.now()) {
+  if (code && record && record.exp > Date.now()) {
     oidcNonceByCode.set(code, { ...record, callbackSignal: request.signal });
   }
   try {
