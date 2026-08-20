@@ -24,15 +24,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   membership-revocation, random-source, clock, audit, and atomic repository
   ports. Route, database, calendar-subscription, and client migration remain
   follow-up work under issue #413.
-- Added a separate framework-neutral calendar-subscription credential domain
-  with one-time secret display on create/rotate, hash-only persistence ports,
-  project-scoped management, reusable `calendar_read` authorization, issuance
-  membership-epoch binding so remove-then-rejoin cannot revive a secret,
-  a 366-day create/rotate lifetime cap, exact-expiry rejection, safe lifecycle
-  metadata, rotation, revocation, and usage evidence. Runtime route, database
-  adapter/migration, and UI implementation remain follow-up work under issue
-  #413; the required calendar-management interaction contract is captured in
-  Figma and traced in the doctoring record.
 
 ### Security
 
@@ -75,6 +66,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Switched the repository-local OpenCode development configuration from GitHub
   Models to an NVIDIA NIM-only candidate set while preserving organization-level
   review-workflow ownership in `ContextualWisdomLab/.github`.
+- Production planning-analysis requests now combine tenant-bound, server-derived
+  contextual-orchestrator cost attribution with explicit `auto` orchestration
+  mode, delegating provider/model/topology policy to the shared service without
+  weakening ScopeWeave's authenticated, fail-closed transport or response
+  boundary controls.
 - Accepted XML whitespace before exact Microsoft Project element delimiters
   while preserving the linear, regex-free import scanner and rejecting
   attributes, longer names, non-XML whitespace, nested unmatched blocks, and
