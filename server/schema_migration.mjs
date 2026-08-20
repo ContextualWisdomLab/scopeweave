@@ -21,16 +21,22 @@ const LEGACY_COMPATIBILITY_COLUMNS = Object.freeze([
     tableName: 'users',
     columnName: 'token_version',
     definition: 'token_version INTEGER NOT NULL DEFAULT 0',
+    expectedType: 'INTEGER',
+    expectedDefaultValue: '0',
   }),
   Object.freeze({
     tableName: 'projects',
     columnName: 'archived',
     definition: 'archived INTEGER NOT NULL DEFAULT 0',
+    expectedType: 'INTEGER',
+    expectedDefaultValue: '0',
   }),
   Object.freeze({
     tableName: 'projects',
     columnName: 'methodology',
     definition: "methodology TEXT NOT NULL DEFAULT 'waterfall'",
+    expectedType: 'TEXT',
+    expectedDefaultValue: "'waterfall'",
   }),
 ]);
 
@@ -99,20 +105,29 @@ function readApplicationTableNames(database) {
   return new Set(rows.map((row) => String(row.name)));
 }
 
+function matchesCompatibilityColumnContract(row, migration) {
+  return String(row.type ?? '').trim().toUpperCase() === migration.expectedType
+    && Number(row.notnull) === 1
+    && String(row.dflt_value ?? '') === migration.expectedDefaultValue;
+}
+
 /**
- * Add the three historical compatibility columns only when catalog evidence
- * proves each column is absent.
+ * Add historical compatibility columns only when catalog evidence proves each
+ * column is absent, and reject any same-named column with an incompatible
+ * declared type, nullability, or default value.
  *
  * Earlier startup code attempted every `ALTER TABLE` and caught every thrown
  * error as though it meant "column already exists". That could let a read-only,
  * corrupt, locked, or otherwise failing database continue booting with a
  * partially upgraded schema. Catalog-first idempotence removes the expected
- * duplicate-column error path, so any remaining DDL failure is causal evidence
- * and propagates fail-closed to startup.
+ * duplicate-column error path. Exact catalog validation also prevents an old or
+ * hand-modified database from entering service with a misleading same-name
+ * column whose semantics do not match the application contract.
  *
  * @param {{exec: Function, prepare: Function}} database - node:sqlite-compatible database.
  * @returns {void}
  * @throws {TypeError} When the database adapter is missing required operations.
+ * @throws {SchemaMigrationStateError} When an existing compatibility column is incompatible.
  */
 export function ensureLegacyCompatibilityColumns(database) {
   if (!database || typeof database.exec !== 'function' || typeof database.prepare !== 'function') {
@@ -121,7 +136,15 @@ export function ensureLegacyCompatibilityColumns(database) {
 
   for (const migration of LEGACY_COMPATIBILITY_COLUMNS) {
     const columns = database.prepare(`PRAGMA table_info(${migration.tableName})`).all();
-    if (columns.some((row) => String(row.name) === migration.columnName)) continue;
+    const existingColumn = columns.find((row) => String(row.name) === migration.columnName);
+    if (existingColumn) {
+      if (!matchesCompatibilityColumnContract(existingColumn, migration)) {
+        throw new SchemaMigrationStateError(
+          `legacy compatibility column definition mismatch: ${migration.tableName}.${migration.columnName}`,
+        );
+      }
+      continue;
+    }
     database.exec(`ALTER TABLE ${migration.tableName} ADD COLUMN ${migration.definition}`);
   }
 }
