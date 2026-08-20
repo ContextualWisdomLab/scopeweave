@@ -235,8 +235,8 @@ async function bootstrap() {
     elements.connectJsonSyncButton.title = '이 브라우저는 wbs.json 직접 저장 연결을 지원하지 않습니다.';
   }
 
-  // Optional cloud overlay (loaded as a separate module; undefined offline).
-  const cloudApi = typeof window !== 'undefined' ? window.ScopeWeaveCloud : null;
+  // Optional cloud overlay (loaded as a separate browser module; undefined offline).
+  const cloudApi = window.ScopeWeaveCloud || null;
   cloudApi?.init?.({
     hydrateState,
     renderAll,
@@ -864,7 +864,7 @@ function renderEditorField(label, field, value, type = 'text', required = false,
   }
   const input = document.createElement('input');
   input.id = fieldId;
-  input.setAttribute('data-testid', EDITOR_FIELD_TEST_IDS[field] || `editor-${toKebab(field)}`);
+  input.setAttribute('data-testid', EDITOR_FIELD_TEST_IDS[field]);
   input.dataset.editorField = field;
   input.type = type;
   if (type === 'text') {
@@ -1073,8 +1073,8 @@ function renderEditorValidation() {
   }
 
   form.querySelectorAll('input[data-editor-field]').forEach((input) => {
-    const label = CSV_FIELD_LABELS[input.dataset.editorField] || input.dataset.editorField;
-    const hasError = errors.some((error) => label && error.includes(label));
+    const label = CSV_FIELD_LABELS[input.dataset.editorField];
+    const hasError = errors.some((error) => error.includes(label));
     if (hasError) {
       input.setAttribute('aria-invalid', 'true');
       input.setAttribute('aria-describedby', 'editor-errors');
@@ -1328,7 +1328,7 @@ function validateDraft(draft, depth) {
 
   EDITABLE_FIELDS.forEach((field) => {
     if (/[<>]/.test(sanitized[field])) {
-      const label = CSV_FIELD_LABELS[field] || field;
+      const label = CSV_FIELD_LABELS[field];
       errors.push(`${label} 항목에는 HTML 태그 문자를 사용할 수 없습니다.`);
     }
   });
@@ -1467,11 +1467,8 @@ function calculatePlannedProgressRatio(baseDate, startDate, endDate, durationDay
   if (compareDateStrings(baseDate, endDate) >= 0) {
     return 1;
   }
-  // Bolt: Reuse passed durationDays if available to avoid redundant Date parsing and calculations.
-  const total = durationDays !== undefined ? durationDays : calculateDurationDays(startDate, endDate);
-  if (total <= 0) {
-    return 1;
-  }
+  // computeTaskMetrics always passes a validated duration for this production path.
+  const total = durationDays;
   const elapsed = calculateDurationDays(startDate, baseDate);
   return clamp(elapsed / total, 0, 1);
 }
@@ -1600,9 +1597,6 @@ function getLastRootTaskId() {
 
 function getLastDescendantId(taskId) {
   const startIndex = getTaskIndexById(taskId);
-  if (startIndex === -1) {
-    return taskId;
-  }
   const baseDepth = state.tasks[startIndex].depth;
   let lastId = taskId;
   for (let index = startIndex + 1; index < state.tasks.length; index += 1) {
@@ -1724,9 +1718,6 @@ function parseSafeJson(text) {
 }
 
 function getPlannedEndDateValue(task) {
-  if (!isTaskRecord(task)) {
-    return '';
-  }
   return task.plannedEndDate || task[LEGACY_PLANNED_END_FIELD] || '';
 }
 
@@ -2187,9 +2178,6 @@ async function connectJsonSync() {
 }
 
 async function writeJsonSyncFile(handle = state.jsonSyncHandle) {
-  if (!handle) {
-    return;
-  }
   const writable = await handle.createWritable();
   await writable.write(JSON.stringify(exportJsonArray(), null, 2));
   await writable.close();
@@ -2717,25 +2705,6 @@ function formatNumber(value) {
     formatNumber.formatter = new Intl.NumberFormat('ko-KR');
   }
   return formatNumber.formatter.format(Number(value || 0));
-}
-
-const HTML_ESCAPE_ENTITIES = Object.assign(Object.create(null), {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;'
-});
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (character) => HTML_ESCAPE_ENTITIES[character]);
-}
-
-function toKebab(value) {
-  return value
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .replace(/_/g, '-')
-    .toLowerCase();
 }
 
 function debounce(callback, wait) {
