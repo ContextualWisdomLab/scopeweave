@@ -541,10 +541,10 @@ export async function runNextStripeReconciliationJob({
 
   try {
     const receipt = await reconcile({
+      ...reconciliationDependencies,
       organizationId,
       subscriptionId: claim.subscriptionId,
       sourceEventId: claim.eventId,
-      ...reconciliationDependencies,
     });
     if (!receipt
       || typeof receipt !== 'object'
