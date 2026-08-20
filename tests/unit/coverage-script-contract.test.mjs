@@ -61,6 +61,11 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage'],
+  /--include=server\/stripe_webhook_reconciliation_queue\.mjs/,
+  'the verified Stripe reconciliation trigger queue is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
   /--include=server\/stripe_subscription_provider\.mjs/,
   'the authoritative Stripe subscription reader is instrumented',
 );
@@ -143,6 +148,26 @@ assert.match(
   scripts['test:unit'],
   /tests\/unit\/stripe-webhook-recorder-integration\.test\.mjs/,
   'normal unit CI executes the verified-event recorder integration regression',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/stripe-webhook-reconciliation-queue\.test\.mjs/,
+  'the durable Stripe reconciliation queue regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/stripe-webhook-reconciliation-queue-integration\.test\.mjs/,
+  'the verified webhook-to-queue integration executes under c8',
+);
+assert.match(
+  scripts['test:unit'],
+  /tests\/unit\/stripe-webhook-reconciliation-queue\.test\.mjs/,
+  'normal unit CI executes the durable Stripe reconciliation queue regression',
+);
+assert.match(
+  scripts['test:unit'],
+  /tests\/unit\/stripe-webhook-reconciliation-queue-integration\.test\.mjs/,
+  'normal unit CI executes the verified webhook-to-queue integration',
 );
 assert.match(
   scripts['test:coverage:cases'],
