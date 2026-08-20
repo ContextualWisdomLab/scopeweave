@@ -7,7 +7,31 @@ import { readdirSync, readFileSync } from 'node:fs';
 const packageJson = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 );
+const packageLock = JSON.parse(
+  readFileSync(new URL('../../package-lock.json', import.meta.url), 'utf8'),
+);
 const scripts = packageJson.scripts;
+
+for (const [dependencyName, dependencyVersion] of [
+  ['istanbul-lib-coverage', '3.2.2'],
+  ['v8-to-istanbul', '9.3.0'],
+]) {
+  assert.equal(
+    packageJson.devDependencies?.[dependencyName],
+    dependencyVersion,
+    `browser coverage must directly declare ${dependencyName}@${dependencyVersion}`,
+  );
+  assert.equal(
+    packageLock.packages?.['']?.devDependencies?.[dependencyName],
+    dependencyVersion,
+    `the lockfile root must preserve ${dependencyName} as a direct development dependency`,
+  );
+  assert.equal(
+    packageLock.packages?.[`node_modules/${dependencyName}`]?.version,
+    dependencyVersion,
+    `the lockfile must resolve ${dependencyName} to the reviewed coverage-tooling version`,
+  );
+}
 
 function declaredStringList(source, declarationStart, declarationEnd) {
   const startIndex = source.indexOf(declarationStart);
