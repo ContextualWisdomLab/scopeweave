@@ -163,6 +163,27 @@ test('exact webhook redelivery is idempotent but event identity cannot be reboun
   );
 });
 
+test('exact redelivery does not depend on a fresh wall-clock read after durable queueing', () => {
+  const database = databaseWithEvent();
+  let clockReads = 0;
+  const queue = createSqliteStripeWebhookReconciliationQueue(database, {
+    now: () => {
+      clockReads += 1;
+      return clockReads === 1 ? 10 : Number.NaN;
+    },
+  });
+
+  assert.equal(queue.enqueue({
+    eventId: 'evt_subscription',
+    subscriptionId: 'sub_scopeweave',
+  }).queued, true);
+  assert.equal(queue.enqueue({
+    eventId: 'evt_subscription',
+    subscriptionId: 'sub_scopeweave',
+  }).queued, false);
+  assert.equal(clockReads, 1);
+});
+
 test('queue rejects unverified event identities and malformed trigger identifiers', () => {
   const database = databaseWithEvent();
   const queue = createSqliteStripeWebhookReconciliationQueue(database, { now: () => 10 });
