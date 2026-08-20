@@ -173,6 +173,14 @@ async function readBoundedProviderJson(response) {
   }
 }
 
+async function cancelUnreadProviderBody(response) {
+  try {
+    await response.body.cancel();
+  } catch {
+    // Cleanup failure must never replace the stable provider failure returned below.
+  }
+}
+
 async function createStripeSessionWithFetch(secretKey, payload, idempotencyKey) {
   let response;
   try {
@@ -200,11 +208,13 @@ async function createStripeSessionWithFetch(secretKey, payload, idempotencyKey) 
     // no later caller silently creates a second Checkout Session with a fresh key.
     // Stripe's documented safest strategy for 4xx is a fresh idempotency key.
     const outcomeKnown = response.status < 500;
+    await cancelUnreadProviderBody(response);
     throw providerUnavailableFailure(outcomeKnown);
   }
 
   const mediaType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
   if (mediaType !== 'application/json') {
+    await cancelUnreadProviderBody(response);
     throw providerInvalidResponseFailure();
   }
 
