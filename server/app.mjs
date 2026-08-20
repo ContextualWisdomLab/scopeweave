@@ -6,6 +6,7 @@
 // this facade; app_core.mjs is an implementation module, not a public entrypoint.
 import { createPublicKey, randomBytes, verify as verifySignature } from 'node:crypto';
 import { app as coreApp } from './app_core.mjs';
+import { db } from './db.mjs';
 import {
   WebhookDestinationError,
   fetchPublicHttps,
@@ -34,6 +35,12 @@ const oidcNonceByState = new Map();
 const oidcNonceByCode = new Map();
 let oidcDiscoveryCache = null;
 let oidcSigningKeyCache = null;
+
+function matchingStoredEmails(email) {
+  return db.prepare(
+    'SELECT email FROM users WHERE email = ? COLLATE NOCASE ORDER BY id LIMIT 2',
+  ).all(email);
+}
 
 function isSignedWebhookRequest(request) {
   if (request.method.toUpperCase() !== 'POST') return false;
@@ -295,7 +302,11 @@ async function canonicalInboundRequest(request) {
       && !Array.isArray(payload)
       && typeof payload.email === 'string'
     ) {
-      const email = payload.email.trim().toLowerCase();
+      const trimmedEmail = payload.email.trim();
+      const storedMatches = matchingStoredEmails(trimmedEmail);
+      const email = url.pathname.endsWith('/signup')
+        ? (storedMatches[0]?.email || trimmedEmail.toLowerCase())
+        : (storedMatches.length === 1 ? storedMatches[0].email : trimmedEmail);
       if (email !== payload.email) return requestWithJson(request, { ...payload, email });
     }
   }
