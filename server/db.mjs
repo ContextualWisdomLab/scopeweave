@@ -21,6 +21,11 @@ import {
   createSqliteStripeInvoiceObservationRepository,
   installStripeInvoiceObservationSchema,
 } from './stripe_invoice_observation_ledger.mjs';
+import { deriveStripeSubscriptionEntitlement } from './stripe_entitlement_policy.mjs';
+import {
+  createSqliteStripeEntitlementClaimRepository,
+  installStripeEntitlementClaimSchema,
+} from './stripe_entitlement_claim_ledger.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.SCOPEWEAVE_DB || join(__dirname, '..', 'data.db');
@@ -204,6 +209,10 @@ installStripeSubscriptionObservationSchema(db);
 export const stripeSubscriptionObservations = createSqliteStripeSubscriptionObservationRepository(db);
 installStripeInvoiceObservationSchema(db);
 export const stripeInvoiceObservations = createSqliteStripeInvoiceObservationRepository(db);
+installStripeEntitlementClaimSchema(db);
+export const stripeEntitlementClaims = createSqliteStripeEntitlementClaimRepository(db, {
+  deriveEntitlement: deriveStripeSubscriptionEntitlement,
+});
 
 // node:sqlite returns lastInsertRowid as number|bigint; normalize to Number.
 export const rowid = (r) => Number(r.lastInsertRowid);

@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Persist deterministic Stripe entitlement-policy decisions as append-only,
+  tenant-bound claim evidence with optimistic previous-decision concurrency,
+  automatic current Subscription/Invoice evidence selection, exact source
+  provenance, and a separate current-head pointer; this layer still does not
+  mutate plans, session authority, or access capabilities.
 - Added a tenant-scoped read-only projection over accepted authoritative Stripe
   Invoice observations, selecting current state by append identity rather than
   webhook/provider time, preserving payment/provenance facts, and rejecting
