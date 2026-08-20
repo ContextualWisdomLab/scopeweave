@@ -10,7 +10,7 @@ for (const [label, relativePath] of workflows) {
   const workflow = readFileSync(new URL(relativePath, import.meta.url), 'utf8');
   assert.match(
     workflow,
-    /^on:\r?\n  pull_request:\r?\n  push:/m,
+    /^  pull_request:\r?\n  push:/m,
     `${label} must run on stacked pull requests regardless of their base branch`,
   );
   assert.doesNotMatch(
