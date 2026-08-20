@@ -39,10 +39,10 @@ function invoiceSnapshot(overrides = {}) {
   });
 }
 
-function baseDependencies(overrides = {}) {
+function baseDependencies(overrides = {}, fixtures = {}) {
   const calls = [];
-  const subscription = subscriptionSnapshot();
-  const invoice = invoiceSnapshot();
+  const subscription = fixtures.subscription || subscriptionSnapshot();
+  const invoice = fixtures.invoice || invoiceSnapshot();
 
   const dependencies = {
     fetchSubscription: async (authority) => {
@@ -187,15 +187,15 @@ test('event arrival order is provenance only: each trigger re-reads current Subs
 });
 
 test('reconciliation omits Invoice I/O when the authoritative Subscription has no latest Invoice', async () => {
+  const noInvoiceSubscription = subscriptionSnapshot({ latestInvoiceId: null });
   const { dependencies, calls } = baseDependencies({
-    fetchSubscription: async () => subscriptionSnapshot({ latestInvoiceId: null }),
     fetchInvoice: async () => assert.fail('Invoice provider must not be called without latestInvoiceId'),
     invoiceRepository: {
       recordAuthoritativeObservation() {
         assert.fail('Invoice evidence must not be recorded without latestInvoiceId');
       },
     },
-  });
+  }, { subscription: noInvoiceSubscription });
 
   const result = await reconcileStripeBillingAuthoritatively({
     organizationId: 42,
