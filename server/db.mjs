@@ -34,6 +34,7 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.SCOPEWEAVE_DB || join(__dirname, '..', 'data.db');
+const STRIPE_WEBHOOK_RECONCILIATION_SAVEPOINT = 'billing_stripe_webhook_reconciliation_record';
 export const db = new DatabaseSync(dbPath);
 db.exec("PRAGMA journal_mode = WAL");
 db.exec("PRAGMA foreign_keys = ON");
@@ -212,15 +213,35 @@ export const stripeWebhookEvents = createSqliteStripeWebhookEventRepository(db);
 installStripeWebhookReconciliationQueueSchema(db);
 export const stripeWebhookReconciliationQueue = createSqliteStripeWebhookReconciliationQueue(db);
 configureStripeWebhookEventRecorder((evidence) => {
-  const eventReceipt = stripeWebhookEvents.recordVerifiedEvent(evidence);
-  const subscriptionId = extractStripeSubscriptionReconciliationCandidate(evidence.event);
-  if (subscriptionId) {
-    stripeWebhookReconciliationQueue.enqueue({
-      eventId: eventReceipt.eventId,
-      subscriptionId,
-    });
+  db.exec(`SAVEPOINT ${STRIPE_WEBHOOK_RECONCILIATION_SAVEPOINT}`);
+  try {
+    const eventReceipt = stripeWebhookEvents.recordVerifiedEvent(evidence);
+    const subscriptionId = extractStripeSubscriptionReconciliationCandidate(evidence.event);
+    if (subscriptionId) {
+      stripeWebhookReconciliationQueue.enqueue({
+        eventId: eventReceipt.eventId,
+        subscriptionId,
+      });
+    }
+    db.exec(`RELEASE SAVEPOINT ${STRIPE_WEBHOOK_RECONCILIATION_SAVEPOINT}`);
+    return eventReceipt;
+  } catch (error) {
+    let rollbackSucceeded = false;
+    try {
+      db.exec(`ROLLBACK TO SAVEPOINT ${STRIPE_WEBHOOK_RECONCILIATION_SAVEPOINT}`);
+      rollbackSucceeded = true;
+    } catch {
+      // Keep an unconfirmed failed savepoint open instead of risking a partial commit.
+    }
+    if (rollbackSucceeded) {
+      try {
+        db.exec(`RELEASE SAVEPOINT ${STRIPE_WEBHOOK_RECONCILIATION_SAVEPOINT}`);
+      } catch {
+        // Cleanup after confirmed rollback must not replace the causal operation error.
+      }
+    }
+    throw error;
   }
-  return eventReceipt;
 });
 installStripeSubscriptionObservationSchema(db);
 export const stripeSubscriptionObservations = createSqliteStripeSubscriptionObservationRepository(db);
