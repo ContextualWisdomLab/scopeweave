@@ -116,6 +116,52 @@ test('inline progress keeps keyboard focus after the row is re-rendered', async 
   await expect(replacement).toBeFocused();
 });
 
+test('root creation survives a stale insertion anchor after accepted remote hydration', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__scopeweaveCapturedHost = null;
+    Object.defineProperty(window, 'ScopeWeaveCloud', {
+      configurable: true,
+      set(value) {
+        const originalInit = typeof value?.init === 'function' ? value.init.bind(value) : null;
+        if (originalInit) {
+          value.init = (host) => {
+            window.__scopeweaveCapturedHost = host;
+            return originalInit(host);
+          };
+        }
+        Object.defineProperty(window, 'ScopeWeaveCloud', {
+          configurable: true,
+          writable: true,
+          value,
+        });
+      },
+    });
+  });
+  await page.route('**/wbs.json', (route) => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify([{ __id: 'remote-anchor', __depth: 1, phase: 'Remote anchor' }]),
+  }));
+
+  await page.goto('/');
+  await page.getByRole('button', { name: '최상위 작업 추가' }).last().click();
+  await page.getByTestId('editor-phase').fill('Recovered stale insertion');
+
+  await page.evaluate(() => {
+    const host = window.__scopeweaveCapturedHost;
+    if (!host) throw new Error('ScopeWeave host API was not captured');
+    host.hydrateState({
+      projectName: 'Remote plan',
+      baseDate: '2026-08-20',
+      tasks: [],
+    });
+  });
+
+  await page.getByRole('button', { name: '저장', exact: true }).click();
+  await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(1);
+  await expect(page.getByText('Recovered stale insertion', { exact: true })).toBeVisible();
+  await expect(page.locator('#toast')).toContainText('변경 내용을 저장했습니다.');
+});
+
 test('cloud bootstrap remains usable when an optional host-init hook is absent', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, 'ScopeWeaveCloud', {
