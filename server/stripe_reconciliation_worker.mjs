@@ -7,6 +7,7 @@ const SUBSCRIPTION_ID_PATTERN = /^sub_[A-Za-z0-9_]+$/u;
 const ERROR_CODE_PATTERN = /^[a-z0-9_:-]+$/u;
 const LEASE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,128}$/u;
 const SAVEPOINT_NAME = 'billing_stripe_reconciliation_worker_write';
+const LEASE_EXPIRED_CODE = 'stripe_reconciliation_lease_expired';
 const DEFAULT_LEASE_MS = 30_000;
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_BASE_BACKOFF_MS = 5_000;
@@ -57,9 +58,8 @@ function nonNegativeInteger(value, name) {
   return value;
 }
 
-function boundedPositiveOption(value, fallback, name) {
-  if (value === undefined) return fallback;
-  return positiveInteger(value, name);
+function positiveOption(value, fallback, name) {
+  return value === undefined ? fallback : positiveInteger(value, name);
 }
 
 function normalizedNow(now) {
@@ -83,19 +83,6 @@ function tokenHash(value) {
   return createHash('sha256').update(token, 'utf8').digest('hex');
 }
 
-function safeErrorCode(error) {
-  const candidate = error && typeof error === 'object' ? error.code : null;
-  if (
-    typeof candidate === 'string'
-    && candidate.startsWith('stripe_')
-    && candidate.length <= MAX_ERROR_CODE_LENGTH
-    && ERROR_CODE_PATTERN.test(candidate)
-  ) {
-    return candidate;
-  }
-  return 'stripe_reconciliation_failed';
-}
-
 function boundedFailureCode(value) {
   if (
     typeof value !== 'string'
@@ -108,39 +95,54 @@ function boundedFailureCode(value) {
   return value;
 }
 
-function safeAdd(left, right) {
-  if (!Number.isSafeInteger(left) || !Number.isSafeInteger(right) || left < 0 || right < 0) {
-    throw workerError('stripe_reconciliation_worker_clock_invalid', 500);
+function safeFailureCode(error) {
+  const code = error && typeof error === 'object' ? error.code : null;
+  if (
+    typeof code === 'string'
+    && code.startsWith('stripe_')
+    && code.length <= MAX_ERROR_CODE_LENGTH
+    && ERROR_CODE_PATTERN.test(code)
+  ) {
+    return code;
   }
+  return 'stripe_reconciliation_failed';
+}
+
+function safeAdd(left, right) {
   const sum = left + right;
-  if (!Number.isSafeInteger(sum)) {
+  if (
+    !Number.isSafeInteger(left)
+    || !Number.isSafeInteger(right)
+    || left < 0
+    || right < 0
+    || !Number.isSafeInteger(sum)
+  ) {
     throw workerError('stripe_reconciliation_worker_clock_invalid', 500);
   }
   return sum;
 }
 
-function backoffForAttempt(attemptNumber, baseBackoffMs, maxBackoffMs) {
+function retryDelay(attemptNumber, baseBackoffMs, maxBackoffMs) {
   const exponent = Math.min(attemptNumber - 1, 30);
   const scaled = baseBackoffMs * (2 ** exponent);
-  if (!Number.isFinite(scaled)) return maxBackoffMs;
-  return Math.min(scaled, maxBackoffMs);
+  return Number.isFinite(scaled) ? Math.min(scaled, maxBackoffMs) : maxBackoffMs;
 }
 
-function runSavepoint(database, operation) {
+function withSavepoint(database, operation) {
   database.exec(`SAVEPOINT ${SAVEPOINT_NAME}`);
   try {
     const result = operation();
     database.exec(`RELEASE SAVEPOINT ${SAVEPOINT_NAME}`);
     return result;
   } catch (error) {
-    let rollbackSucceeded = false;
+    let rolledBack = false;
     try {
       database.exec(`ROLLBACK TO SAVEPOINT ${SAVEPOINT_NAME}`);
-      rollbackSucceeded = true;
+      rolledBack = true;
     } catch {
-      // An unconfirmed failed savepoint stays open instead of risking partial commit.
+      // Leave an unconfirmed failed savepoint open instead of risking partial commit.
     }
-    if (rollbackSucceeded) {
+    if (rolledBack) {
       try {
         database.exec(`RELEASE SAVEPOINT ${SAVEPOINT_NAME}`);
       } catch {
@@ -152,13 +154,13 @@ function runSavepoint(database, operation) {
 }
 
 /**
- * Install normalized durable worker state for already-queued Stripe reconciliation work.
+ * Install durable job-head and append-only attempt tables for Stripe reconciliation.
  *
- * The immutable webhook-trigger relation remains the source of work identity. This
- * schema adds a mutable job head and append-only attempt evidence without copying
- * provider payloads, secrets, raw webhook bytes, or entitlement state.
+ * The immutable webhook trigger stays the source of work identity. The worker tables
+ * contain only scheduling/audit metadata and a hash of the active lease secret; they
+ * never copy raw provider payloads, webhook bodies, API secrets, or session authority.
  *
- * @param {import('node:sqlite').DatabaseSync} database open bootstrapped SQLite database
+ * @param {import('node:sqlite').DatabaseSync} database bootstrapped SQLite database
  * @returns {void}
  */
 export function installStripeReconciliationWorkerSchema(database) {
@@ -181,17 +183,21 @@ export function installStripeReconciliationWorkerSchema(database) {
         CHECK(last_error_code IS NULL OR length(last_error_code) BETWEEN 1 AND ${MAX_ERROR_CODE_LENGTH}),
       claim_decision_id INTEGER CHECK(claim_decision_id IS NULL OR claim_decision_id > 0),
       CHECK(
-        (processing_state = 'processing' AND lease_token_sha256 IS NOT NULL AND lease_expires_at_ms IS NOT NULL
-          AND completed_at_ms IS NULL AND claim_decision_id IS NULL)
+        (processing_state = 'pending' AND lease_token_sha256 IS NULL
+          AND lease_expires_at_ms IS NULL AND completed_at_ms IS NULL
+          AND claim_decision_id IS NULL)
         OR
-        (processing_state = 'pending' AND lease_token_sha256 IS NULL AND lease_expires_at_ms IS NULL
-          AND completed_at_ms IS NULL AND claim_decision_id IS NULL)
+        (processing_state = 'processing' AND lease_token_sha256 IS NOT NULL
+          AND lease_expires_at_ms IS NOT NULL AND completed_at_ms IS NULL
+          AND claim_decision_id IS NULL)
         OR
-        (processing_state = 'succeeded' AND lease_token_sha256 IS NULL AND lease_expires_at_ms IS NULL
-          AND completed_at_ms IS NOT NULL AND claim_decision_id IS NOT NULL)
+        (processing_state = 'succeeded' AND lease_token_sha256 IS NULL
+          AND lease_expires_at_ms IS NULL AND completed_at_ms IS NOT NULL
+          AND claim_decision_id IS NOT NULL)
         OR
-        (processing_state = 'dead_letter' AND lease_token_sha256 IS NULL AND lease_expires_at_ms IS NULL
-          AND completed_at_ms IS NOT NULL AND claim_decision_id IS NULL)
+        (processing_state = 'dead_letter' AND lease_token_sha256 IS NULL
+          AND lease_expires_at_ms IS NULL AND completed_at_ms IS NOT NULL
+          AND claim_decision_id IS NULL)
       )
     );
 
@@ -216,12 +222,12 @@ export function installStripeReconciliationWorkerSchema(database) {
 }
 
 /**
- * Create the SQLite repository that leases, retries, completes, and dead-letters queued work.
+ * Create the SQLite repository that leases, retries, completes, and dead-letters work.
  *
- * Lease secrets are returned only to the claiming worker and persisted as SHA-256 hashes.
- * Every claim first imports any immutable trigger that does not yet have a worker job and
- * reclaims expired leases. Retry timing is exponential and capped; the maximum attempt
- * budget is finite so a permanently failing provider cannot create a hot loop forever.
+ * Each claim receives an opaque finite lease. The plaintext lease exists only in the
+ * worker process; SQLite stores its SHA-256 digest. Expired leases are auditable and
+ * reclaimable until the bounded attempt budget is exhausted, at which point the job
+ * becomes a durable dead letter instead of remaining in an invisible pending state.
  *
  * @param {import('node:sqlite').DatabaseSync} database bootstrapped SQLite database
  * @param {object} [options] deterministic runtime controls
@@ -247,19 +253,11 @@ export function createSqliteStripeReconciliationWorkerRepository(database, {
   if (typeof now !== 'function') throw new TypeError('now must be a function');
   if (typeof randomToken !== 'function') throw new TypeError('randomToken must be a function');
 
-  const normalizedLeaseMs = boundedPositiveOption(leaseMs, DEFAULT_LEASE_MS, 'leaseMs');
-  const normalizedMaxAttempts = boundedPositiveOption(maxAttempts, DEFAULT_MAX_ATTEMPTS, 'maxAttempts');
-  const normalizedBaseBackoffMs = boundedPositiveOption(
-    baseBackoffMs,
-    DEFAULT_BASE_BACKOFF_MS,
-    'baseBackoffMs',
-  );
-  const normalizedMaxBackoffMs = boundedPositiveOption(
-    maxBackoffMs,
-    DEFAULT_MAX_BACKOFF_MS,
-    'maxBackoffMs',
-  );
-  if (normalizedBaseBackoffMs > normalizedMaxBackoffMs) {
+  const leaseDuration = positiveOption(leaseMs, DEFAULT_LEASE_MS, 'leaseMs');
+  const attemptBudget = positiveOption(maxAttempts, DEFAULT_MAX_ATTEMPTS, 'maxAttempts');
+  const firstBackoff = positiveOption(baseBackoffMs, DEFAULT_BASE_BACKOFF_MS, 'baseBackoffMs');
+  const backoffCeiling = positiveOption(maxBackoffMs, DEFAULT_MAX_BACKOFF_MS, 'maxBackoffMs');
+  if (firstBackoff > backoffCeiling) {
     throw new TypeError('baseBackoffMs must not exceed maxBackoffMs');
   }
 
@@ -272,22 +270,24 @@ export function createSqliteStripeReconciliationWorkerRepository(database, {
     SELECT event_id, 'pending', 0, queued_at_ms, NULL, NULL, NULL, NULL, NULL
       FROM billing_stripe_reconciliation_triggers
   `);
-  const expiredJobs = database.prepare(`
+  const selectExpired = database.prepare(`
     SELECT event_id, attempt_count
       FROM billing_stripe_reconciliation_jobs
      WHERE processing_state = 'processing' AND lease_expires_at_ms <= ?
      ORDER BY lease_expires_at_ms, event_id
   `);
-  const expireAttempt = database.prepare(`
-    UPDATE billing_stripe_reconciliation_attempts
-       SET finished_at_ms = ?, outcome = 'retry', error_code = 'stripe_reconciliation_lease_expired'
-     WHERE event_id = ? AND attempt_number = ? AND outcome IS NULL
-  `);
-  const releaseExpiredJob = database.prepare(`
+  const releaseExpired = database.prepare(`
     UPDATE billing_stripe_reconciliation_jobs
        SET processing_state = 'pending', next_attempt_at_ms = ?,
            lease_token_sha256 = NULL, lease_expires_at_ms = NULL,
-           last_error_code = 'stripe_reconciliation_lease_expired'
+           last_error_code = ?
+     WHERE event_id = ? AND processing_state = 'processing' AND lease_expires_at_ms <= ?
+  `);
+  const deadLetterExpired = database.prepare(`
+    UPDATE billing_stripe_reconciliation_jobs
+       SET processing_state = 'dead_letter', next_attempt_at_ms = ?,
+           lease_token_sha256 = NULL, lease_expires_at_ms = NULL,
+           completed_at_ms = ?, last_error_code = ?, claim_decision_id = NULL
      WHERE event_id = ? AND processing_state = 'processing' AND lease_expires_at_ms <= ?
   `);
   const selectReady = database.prepare(`
@@ -318,6 +318,11 @@ export function createSqliteStripeReconciliationWorkerRepository(database, {
       FROM billing_stripe_reconciliation_jobs
      WHERE event_id = ? AND processing_state = 'processing'
   `);
+  const finishAttempt = database.prepare(`
+    UPDATE billing_stripe_reconciliation_attempts
+       SET finished_at_ms = ?, outcome = ?, error_code = ?
+     WHERE event_id = ? AND attempt_number = ? AND outcome IS NULL
+  `);
   const completeJob = database.prepare(`
     UPDATE billing_stripe_reconciliation_jobs
        SET processing_state = 'succeeded', next_attempt_at_ms = ?,
@@ -325,12 +330,7 @@ export function createSqliteStripeReconciliationWorkerRepository(database, {
            completed_at_ms = ?, last_error_code = NULL, claim_decision_id = ?
      WHERE event_id = ? AND processing_state = 'processing' AND lease_token_sha256 = ?
   `);
-  const finishAttempt = database.prepare(`
-    UPDATE billing_stripe_reconciliation_attempts
-       SET finished_at_ms = ?, outcome = ?, error_code = ?
-     WHERE event_id = ? AND attempt_number = ? AND outcome IS NULL
-  `);
-  const retryJob = database.prepare(`
+  const failJob = database.prepare(`
     UPDATE billing_stripe_reconciliation_jobs
        SET processing_state = ?, next_attempt_at_ms = ?,
            lease_token_sha256 = NULL, lease_expires_at_ms = NULL,
@@ -338,17 +338,16 @@ export function createSqliteStripeReconciliationWorkerRepository(database, {
      WHERE event_id = ? AND processing_state = 'processing' AND lease_token_sha256 = ?
   `);
   const selectOrganization = database.prepare(`
-    SELECT customers.org_id AS organization_id
+    SELECT customers.organization_id
       FROM billing_stripe_subscriptions AS subscriptions
       JOIN billing_stripe_customers AS customers
         ON customers.customer_id = subscriptions.customer_id
      WHERE subscriptions.subscription_id = ?
   `);
 
-  function assertCurrentLease(eventId, leaseToken, nowMs) {
+  function requireCurrentLease(eventId, leaseToken, nowMs) {
     const normalizedEventId = boundedIdentifier(eventId, EVENT_ID_PATTERN);
-    const normalizedLeaseToken = boundedIdentifier(leaseToken, LEASE_TOKEN_PATTERN);
-    const leaseHash = tokenHash(normalizedLeaseToken);
+    const leaseHash = tokenHash(leaseToken);
     const current = selectLease.get(normalizedEventId);
     if (!current
       || current.lease_token_sha256 !== leaseHash
@@ -363,34 +362,54 @@ export function createSqliteStripeReconciliationWorkerRepository(database, {
     };
   }
 
+  function finishAttemptExactly(nowMs, outcome, errorCode, eventId, attemptNumber) {
+    const result = finishAttempt.run(nowMs, outcome, errorCode, eventId, attemptNumber);
+    if (Number(result.changes) !== 1) {
+      throw workerError('stripe_reconciliation_attempt_state_invalid', 500);
+    }
+  }
+
   return Object.freeze({
     /** Claim at most one ready trigger under an opaque finite lease. */
     claimNext() {
       const nowMs = normalizedNow(now);
-      return runSavepoint(database, () => {
+      return withSavepoint(database, () => {
         seedJobs.run();
-        for (const expired of expiredJobs.all(nowMs)) {
+        for (const expired of selectExpired.all(nowMs)) {
+          const eventId = boundedIdentifier(expired.event_id, EVENT_ID_PATTERN);
           const attemptNumber = positiveInteger(expired.attempt_count, 'attemptNumber');
-          expireAttempt.run(nowMs, expired.event_id, attemptNumber);
-          releaseExpiredJob.run(nowMs, expired.event_id, nowMs);
+          const terminal = attemptNumber >= attemptBudget;
+          finishAttemptExactly(
+            nowMs,
+            terminal ? 'dead_letter' : 'retry',
+            LEASE_EXPIRED_CODE,
+            eventId,
+            attemptNumber,
+          );
+          const update = terminal
+            ? deadLetterExpired.run(nowMs, nowMs, LEASE_EXPIRED_CODE, eventId, nowMs)
+            : releaseExpired.run(nowMs, LEASE_EXPIRED_CODE, eventId, nowMs);
+          if (Number(update.changes) !== 1) {
+            throw workerError('stripe_reconciliation_attempt_state_invalid', 500);
+          }
         }
 
-        const candidate = selectReady.get(nowMs, normalizedMaxAttempts);
+        const candidate = selectReady.get(nowMs, attemptBudget);
         if (!candidate) return null;
         const eventId = boundedIdentifier(candidate.event_id, EVENT_ID_PATTERN);
         const subscriptionId = boundedIdentifier(candidate.subscription_id, SUBSCRIPTION_ID_PATTERN);
         const previousAttemptCount = nonNegativeInteger(candidate.attempt_count, 'attemptCount');
         const leaseToken = leaseTokenValue(randomToken);
         const leaseHash = tokenHash(leaseToken);
-        const leaseExpiresAtMs = safeAdd(nowMs, normalizedLeaseMs);
-        const claim = claimJob.run(
+        const leaseExpiresAtMs = safeAdd(nowMs, leaseDuration);
+        const claimed = claimJob.run(
           leaseHash,
           leaseExpiresAtMs,
           eventId,
           nowMs,
           previousAttemptCount,
         );
-        if (Number(claim.changes) !== 1) {
+        if (Number(claimed.changes) !== 1) {
           throw workerError('stripe_reconciliation_claim_conflict', 409);
         }
         const attemptNumber = previousAttemptCount + 1;
@@ -405,37 +424,30 @@ export function createSqliteStripeReconciliationWorkerRepository(database, {
       });
     },
 
-    /** Resolve local tenant authority from the normalized Customer/Subscription identity chain. */
+    /** Resolve tenant authority only from the normalized Subscription→Customer chain. */
     resolveOrganizationId(subscriptionId) {
-      const normalizedSubscriptionId = boundedIdentifier(subscriptionId, SUBSCRIPTION_ID_PATTERN);
-      const row = selectOrganization.get(normalizedSubscriptionId);
-      if (!row) return null;
-      return positiveInteger(Number(row.organization_id), 'organizationId');
+      const id = boundedIdentifier(subscriptionId, SUBSCRIPTION_ID_PATTERN);
+      const row = selectOrganization.get(id);
+      return row ? positiveInteger(Number(row.organization_id), 'organizationId') : null;
     },
 
-    /** Complete a currently leased job with one validated durable claim decision identity. */
+    /** Complete the exact active lease with one validated durable claim decision ID. */
     complete({ eventId, leaseToken, claimDecisionId } = {}) {
       const nowMs = normalizedNow(now);
       const decisionId = positiveInteger(claimDecisionId, 'claimDecisionId');
-      return runSavepoint(database, () => {
-        const lease = assertCurrentLease(eventId, leaseToken, nowMs);
-        const completed = completeJob.run(
+      return withSavepoint(database, () => {
+        const lease = requireCurrentLease(eventId, leaseToken, nowMs);
+        const updated = completeJob.run(
           nowMs,
           nowMs,
           decisionId,
           lease.eventId,
           lease.leaseHash,
         );
-        if (Number(completed.changes) !== 1) {
+        if (Number(updated.changes) !== 1) {
           throw workerError('stripe_reconciliation_lease_stale', 409);
         }
-        finishAttempt.run(
-          nowMs,
-          'succeeded',
-          null,
-          lease.eventId,
-          lease.attemptNumber,
-        );
+        finishAttemptExactly(nowMs, 'succeeded', null, lease.eventId, lease.attemptNumber);
         return Object.freeze({
           eventId: lease.eventId,
           status: 'succeeded',
@@ -444,47 +456,35 @@ export function createSqliteStripeReconciliationWorkerRepository(database, {
       });
     },
 
-    /** Record a sanitized retry or terminal dead-letter result for the current lease. */
+    /** Record a sanitized retry or terminal dead letter for the exact active lease. */
     fail({ eventId, leaseToken, errorCode } = {}) {
       const nowMs = normalizedNow(now);
-      const normalizedErrorCode = boundedFailureCode(errorCode);
-      return runSavepoint(database, () => {
-        const lease = assertCurrentLease(eventId, leaseToken, nowMs);
-        const deadLetter = lease.attemptNumber >= normalizedMaxAttempts;
-        const status = deadLetter ? 'dead_letter' : 'retry';
-        const nextAttemptAtMs = deadLetter
+      const code = boundedFailureCode(errorCode);
+      return withSavepoint(database, () => {
+        const lease = requireCurrentLease(eventId, leaseToken, nowMs);
+        const terminal = lease.attemptNumber >= attemptBudget;
+        const state = terminal ? 'dead_letter' : 'pending';
+        const outcome = terminal ? 'dead_letter' : 'retry';
+        const nextAttemptAtMs = terminal
           ? nowMs
-          : safeAdd(
-            nowMs,
-            backoffForAttempt(
-              lease.attemptNumber,
-              normalizedBaseBackoffMs,
-              normalizedMaxBackoffMs,
-            ),
-          );
-        const updated = retryJob.run(
-          deadLetter ? 'dead_letter' : 'pending',
+          : safeAdd(nowMs, retryDelay(lease.attemptNumber, firstBackoff, backoffCeiling));
+        const updated = failJob.run(
+          state,
           nextAttemptAtMs,
-          deadLetter ? nowMs : null,
-          normalizedErrorCode,
+          terminal ? nowMs : null,
+          code,
           lease.eventId,
           lease.leaseHash,
         );
         if (Number(updated.changes) !== 1) {
           throw workerError('stripe_reconciliation_lease_stale', 409);
         }
-        finishAttempt.run(
-          nowMs,
-          deadLetter ? 'dead_letter' : 'retry',
-          normalizedErrorCode,
-          lease.eventId,
-          lease.attemptNumber,
-        );
+        finishAttemptExactly(nowMs, outcome, code, lease.eventId, lease.attemptNumber);
         return Object.freeze({
           eventId: lease.eventId,
-          status,
-          errorCode: normalizedErrorCode,
-          nextAttemptAtMs: deadLetter ? null : nextAttemptAtMs,
+          status: terminal ? 'dead_letter' : 'retry',
+          errorCode: code,
+          nextAttemptAtMs: terminal ? null : nextAttemptAtMs,
         });
       });
     },
@@ -494,12 +494,11 @@ export function createSqliteStripeReconciliationWorkerRepository(database, {
 /**
  * Consume at most one queued Stripe reconciliation trigger.
  *
- * Tenant identity is resolved from server-owned normalized Stripe identity tables;
- * callers cannot select an organization. The authoritative reconciliation service
- * then re-fetches current provider state. A valid receipt must remain bound to the
- * claimed Subscription and resolved organization before the lease may complete.
- * Missing identity and causal failures remain durable retry/dead-letter evidence;
- * arbitrary exception text is never persisted.
+ * The worker derives the organization from server-owned normalized Stripe identity,
+ * then invokes the authoritative reconciliation service, which re-fetches current
+ * provider state before producing a claim decision. A receipt must remain bound to
+ * the claimed tenant and Subscription. Missing identity and causal failures become
+ * bounded retry/dead-letter evidence, while arbitrary exception text is never stored.
  *
  * @param {object} input worker orchestration ports
  * @param {object} input.repository durable worker repository
@@ -512,20 +511,23 @@ export async function runNextStripeReconciliationJob({
   reconcile,
   reconciliationDependencies = {},
 }) {
-  if (!repository || typeof repository.claimNext !== 'function'
+  if (!repository
+    || typeof repository.claimNext !== 'function'
     || typeof repository.resolveOrganizationId !== 'function'
     || typeof repository.complete !== 'function'
     || typeof repository.fail !== 'function') {
     throw new TypeError('repository must provide claim, authority, completion, and failure operations');
   }
   if (typeof reconcile !== 'function') throw new TypeError('reconcile must be a function');
-  if (!reconciliationDependencies || typeof reconciliationDependencies !== 'object'
+  if (!reconciliationDependencies
+    || typeof reconciliationDependencies !== 'object'
     || Array.isArray(reconciliationDependencies)) {
     throw new TypeError('reconciliationDependencies must be an object');
   }
 
   const claim = repository.claimNext();
   if (claim == null) return Object.freeze({ status: 'idle' });
+
   const organizationId = repository.resolveOrganizationId(claim.subscriptionId);
   if (organizationId == null) {
     return repository.fail({
@@ -542,7 +544,9 @@ export async function runNextStripeReconciliationJob({
       sourceEventId: claim.eventId,
       ...reconciliationDependencies,
     });
-    if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)
+    if (!receipt
+      || typeof receipt !== 'object'
+      || Array.isArray(receipt)
       || receipt.organizationId !== organizationId
       || receipt.subscriptionId !== claim.subscriptionId) {
       throw workerError('stripe_reconciliation_receipt_mismatch', 500);
@@ -564,7 +568,7 @@ export async function runNextStripeReconciliationJob({
     const failure = repository.fail({
       eventId: claim.eventId,
       leaseToken: claim.leaseToken,
-      errorCode: safeErrorCode(error),
+      errorCode: safeFailureCode(error),
     });
     return Object.freeze({
       ...failure,
