@@ -106,6 +106,42 @@ test('exact verified webhook redelivery records delivery evidence without duplic
   `).get(event.id).count, 2);
 });
 
+test('verified event evidence and its reconciliation trigger commit atomically', async () => {
+  const event = subscriptionEvent({
+    eventId: 'evt_queue_atomic_failure',
+    subscriptionId: 'sub_queue_atomic_failure',
+  });
+  db.exec(`
+    CREATE TEMP TRIGGER billing_stripe_reconciliation_force_failure
+    BEFORE INSERT ON billing_stripe_reconciliation_triggers
+    WHEN NEW.event_id = 'evt_queue_atomic_failure'
+    BEGIN
+      SELECT RAISE(ABORT, 'forced reconciliation queue failure');
+    END;
+  `);
+
+  try {
+    await assert.rejects(
+      verifyStripeWebhookRequest(signedRequest(event), {
+        secret: WEBHOOK_SECRET,
+        nowSeconds: NOW_SECONDS,
+      }),
+    );
+  } finally {
+    db.exec('DROP TRIGGER billing_stripe_reconciliation_force_failure');
+  }
+
+  assert.equal(db.prepare(`
+    SELECT COUNT(*) AS count FROM billing_stripe_webhook_events WHERE event_id = ?
+  `).get(event.id).count, 0);
+  assert.equal(db.prepare(`
+    SELECT COUNT(*) AS count FROM billing_stripe_webhook_deliveries WHERE event_id = ?
+  `).get(event.id).count, 0);
+  assert.equal(db.prepare(`
+    SELECT COUNT(*) AS count FROM billing_stripe_reconciliation_triggers WHERE event_id = ?
+  `).get(event.id).count, 0);
+});
+
 test('verified one-off Invoice evidence is retained without manufacturing Subscription work', async () => {
   const event = oneOffInvoiceEvent();
   await verifyStripeWebhookRequest(signedRequest(event), {
