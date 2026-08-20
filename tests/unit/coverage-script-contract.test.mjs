@@ -71,6 +71,11 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage'],
+  /--include=server\/stripe_reconciliation_worker\.mjs/,
+  'the leased Stripe reconciliation worker is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
   /--include=server\/stripe_subscription_provider\.mjs/,
   'the authoritative Stripe subscription reader is instrumented',
 );
@@ -170,6 +175,11 @@ assert.match(
   'the verified webhook-to-queue integration executes under c8',
 );
 assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/stripe-reconciliation-worker\.test\.mjs/,
+  'the leased Stripe reconciliation worker executes under c8',
+);
+assert.match(
   scripts['test:unit'],
   /tests\/unit\/stripe-webhook-reconciliation-queue\.test\.mjs/,
   'normal unit CI executes the durable Stripe reconciliation queue regression',
@@ -183,6 +193,11 @@ assert.match(
   scripts['test:unit'],
   /tests\/unit\/stripe-webhook-reconciliation-queue-integration\.test\.mjs/,
   'normal unit CI executes the verified webhook-to-queue integration',
+);
+assert.match(
+  scripts['test:unit'],
+  /tests\/unit\/stripe-reconciliation-worker\.test\.mjs/,
+  'normal unit CI executes the leased Stripe reconciliation worker regression',
 );
 assert.match(
   scripts['test:coverage:cases'],
