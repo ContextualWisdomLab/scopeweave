@@ -14,6 +14,13 @@ const req = (path, opts = {}) => app.request(path, {
 });
 const body = (value) => JSON.stringify(value);
 
+const unauthorizedBilling = await req('/api/orgs/1/billing');
+assert.equal(
+  unauthorizedBilling.status,
+  401,
+  'billing status preserves authorization failures without response normalization',
+);
+
 const signup = await req('/api/auth/signup', {
   method: 'POST',
   body: body({ email: 'billing-status@example.com', password: 'password123', name: 'Billing status' }),
