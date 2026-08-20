@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-This document describes **active pull-request work only**. Protected `develop` does not yet ship this SQLite adapter. The slice is stacked on PR #518 and has been reconciled against exact authorization parent `d9abfe2dfd150f3e3623165b8075063adf61ffbc`, including the domain-side prohibition on self-approved cancellation.
+This document describes **active pull-request work only**. Protected `develop` does not yet ship this SQLite adapter. The slice is stacked on PR #518 and has been reconciled against exact authorization parent `4b17e7d15c02002bb985e9d7b28fa06e78b4afab`, including the domain-side prohibition on self-approved cancellation.
 
 The slice owns one bounded persistence responsibility: atomically preserve an already-authorized terminal schedule reason event, any verified cancellation approval evidence, an immutable audit record, and the authoritative resource-version transition that makes the write current. It does not add HTTP routes, browser authority, a second work-item source of truth, schedule-variance mathematics, forecasting, or decision UI.
 
