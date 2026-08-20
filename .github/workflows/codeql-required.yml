@@ -1,8 +1,9 @@
 name: CodeQL Required
 
 on:
+  # No base-branch filter: stacked PRs target feature branches, and their
+  # exact contributor heads still require CodeQL evidence before integration.
   pull_request:
-    branches: ["develop"]
   push:
     branches: ["develop", "master"]
   schedule:

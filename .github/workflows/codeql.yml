@@ -1,8 +1,9 @@
 name: CodeQL
 
 on:
+  # No base-branch filter: stacked PRs target feature branches, and published
+  # CodeQL analysis must bind to those exact contributor heads too.
   pull_request:
-    branches: ["develop"]
   push:
     branches: ["develop", "master"]
   schedule:
