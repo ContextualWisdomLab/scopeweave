@@ -27,9 +27,12 @@ function signedRequest(event) {
   });
 }
 
-function subscriptionEvent() {
+function subscriptionEvent({
+  eventId = 'evt_queue_subscription',
+  subscriptionId = 'sub_queue_subscription',
+} = {}) {
   return {
-    id: 'evt_queue_subscription',
+    id: eventId,
     object: 'event',
     api_version: '2025-03-31.basil',
     created: NOW_SECONDS - 1,
@@ -37,7 +40,7 @@ function subscriptionEvent() {
     request: null,
     data: {
       object: {
-        id: 'sub_queue_subscription',
+        id: subscriptionId,
         object: 'subscription',
       },
     },
@@ -82,7 +85,14 @@ test('production webhook bootstrap durably queues a verified Subscription trigge
 });
 
 test('exact verified webhook redelivery records delivery evidence without duplicating queued work', async () => {
-  const event = subscriptionEvent();
+  const event = subscriptionEvent({
+    eventId: 'evt_queue_redelivery',
+    subscriptionId: 'sub_queue_redelivery',
+  });
+  await verifyStripeWebhookRequest(signedRequest(event), {
+    secret: WEBHOOK_SECRET,
+    nowSeconds: NOW_SECONDS,
+  });
   await verifyStripeWebhookRequest(signedRequest(event), {
     secret: WEBHOOK_SECRET,
     nowSeconds: NOW_SECONDS,
