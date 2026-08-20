@@ -108,7 +108,7 @@ test('the first root task persists when randomUUID is unavailable but secure ran
   await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(0);
   expect(await page.evaluate(() => typeof crypto.randomUUID)).toBe('undefined');
 
-  await page.getByRole('button', { name: '최상위 작업 추가' }).click();
+  await page.locator('#add-root-task').click();
   await page.getByTestId('editor-phase').fill('Secure fallback root');
   await page.getByTestId('editor-category-large').fill('Coverage');
   await page.getByTestId('editor-owner').fill('Coverage Owner');
