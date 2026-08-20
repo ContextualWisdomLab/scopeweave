@@ -5,6 +5,7 @@ const MAX_EVIDENCE_REFERENCE_LENGTH = 256;
 const MAX_LIST_LIMIT = 100;
 const DEFAULT_LIST_LIMIT = 50;
 const DEFAULT_LEASE_MS = 90_000;
+const LEASE_EXPIRED_CODE = 'stripe_reconciliation_lease_expired';
 const EVENT_ID_PATTERN = /^[A-Za-z0-9_:-]+$/u;
 const SUBSCRIPTION_ID_PATTERN = /^sub_[A-Za-z0-9_]+$/u;
 const LEASE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,128}$/u;
@@ -301,6 +302,31 @@ export function createSqliteStripeReconciliationRecoveryRepository(database, {
        AND recoveries.event_id = ?
        AND recoveries.evidence_reference = ?
   `);
+  const selectActiveRecovery = database.prepare(`
+    SELECT recoveries.recovery_id, recoveries.event_id, recoveries.attempt_number,
+           jobs.attempt_count AS job_attempt_count,
+           jobs.lease_expires_at_ms AS job_lease_expires_at_ms
+      FROM billing_stripe_reconciliation_recoveries AS recoveries
+      JOIN billing_stripe_reconciliation_attempts AS attempts
+        ON attempts.event_id = recoveries.event_id
+       AND attempts.attempt_number = recoveries.attempt_number
+      JOIN billing_stripe_reconciliation_jobs AS jobs
+        ON jobs.event_id = recoveries.event_id
+      JOIN billing_stripe_reconciliation_triggers AS triggers
+        ON triggers.event_id = recoveries.event_id
+      JOIN billing_stripe_subscriptions AS subscriptions
+        ON subscriptions.subscription_id = triggers.subscription_id
+      JOIN billing_stripe_customers AS customers
+        ON customers.customer_id = subscriptions.customer_id
+     WHERE customers.organization_id = ?
+       AND recoveries.event_id = ?
+       AND recoveries.outcome IS NULL
+       AND attempts.outcome IS NULL
+       AND jobs.processing_state = 'processing'
+       AND jobs.attempt_count = recoveries.attempt_number
+     ORDER BY recoveries.recovery_id DESC
+     LIMIT 1
+  `);
   const claimJob = database.prepare(`
     UPDATE billing_stripe_reconciliation_jobs
        SET processing_state = 'processing',
@@ -339,9 +365,83 @@ export function createSqliteStripeReconciliationRecoveryRepository(database, {
            claim_decision_id = NULL
      WHERE recovery_id = ? AND event_id = ? AND attempt_number = ? AND outcome IS NULL
   `);
+  const finishExpiredAttempt = database.prepare(`
+    UPDATE billing_stripe_reconciliation_attempts
+       SET finished_at_ms = ?, outcome = 'dead_letter', error_code = ?
+     WHERE event_id = ? AND attempt_number = ? AND outcome IS NULL
+       AND lease_expires_at_ms <= ?
+  `);
+  const finishExpiredJob = database.prepare(`
+    UPDATE billing_stripe_reconciliation_jobs
+       SET processing_state = 'dead_letter', next_attempt_at_ms = ?,
+           lease_token_sha256 = NULL, lease_expires_at_ms = NULL,
+           completed_at_ms = ?, last_error_code = ?, claim_decision_id = NULL
+     WHERE event_id = ? AND processing_state = 'processing'
+       AND attempt_count = ? AND lease_expires_at_ms <= ?
+  `);
 
   function recoveryNow() {
     return normalizedNow(now);
+  }
+
+  function reapExpiredRecovery(orgId, eventId, nowMs) {
+    const candidate = selectActiveRecovery.get(orgId, eventId);
+    if (!candidate) return false;
+    const candidateLeaseExpiresAtMs = Number(candidate.job_lease_expires_at_ms);
+    if (!Number.isSafeInteger(candidateLeaseExpiresAtMs) || candidateLeaseExpiresAtMs < 0) {
+      throw recoveryError('stripe_reconciliation_recovery_state_invalid', 500);
+    }
+    if (candidateLeaseExpiresAtMs > nowMs) return false;
+
+    return withSavepoint(database, () => {
+      const current = selectActiveRecovery.get(orgId, eventId);
+      if (!current) return false;
+      const recoveryId = positiveInteger(Number(current.recovery_id));
+      const attemptNumber = positiveInteger(Number(current.attempt_number));
+      const jobAttemptCount = positiveInteger(Number(current.job_attempt_count));
+      const leaseExpiresAtMs = Number(current.job_lease_expires_at_ms);
+      if (
+        jobAttemptCount !== attemptNumber
+        || !Number.isSafeInteger(leaseExpiresAtMs)
+        || leaseExpiresAtMs < 0
+      ) {
+        throw recoveryError('stripe_reconciliation_recovery_state_invalid', 500);
+      }
+      if (leaseExpiresAtMs > nowMs) return false;
+
+      const attemptUpdated = finishExpiredAttempt.run(
+        nowMs,
+        LEASE_EXPIRED_CODE,
+        eventId,
+        attemptNumber,
+        nowMs,
+      );
+      if (Number(attemptUpdated.changes) !== 1) {
+        throw recoveryError('stripe_reconciliation_recovery_state_uncertain', 500);
+      }
+      const jobUpdated = finishExpiredJob.run(
+        nowMs,
+        nowMs,
+        LEASE_EXPIRED_CODE,
+        eventId,
+        attemptNumber,
+        nowMs,
+      );
+      if (Number(jobUpdated.changes) !== 1) {
+        throw recoveryError('stripe_reconciliation_recovery_state_uncertain', 500);
+      }
+      const recoveryUpdated = finishRecoveryFailure.run(
+        nowMs,
+        LEASE_EXPIRED_CODE,
+        recoveryId,
+        eventId,
+        attemptNumber,
+      );
+      if (Number(recoveryUpdated.changes) !== 1) {
+        throw recoveryError('stripe_reconciliation_recovery_state_uncertain', 500);
+      }
+      return true;
+    });
   }
 
   return Object.freeze({
@@ -364,11 +464,12 @@ export function createSqliteStripeReconciliationRecoveryRepository(database, {
       const normalizedEventId = boundedIdentifier(eventId, EVENT_ID_PATTERN);
       const actorId = positiveInteger(actorUserId);
       const evidence = evidenceReferenceValue(evidenceReference);
+      const nowMs = recoveryNow();
 
+      reapExpiredRecovery(orgId, normalizedEventId, nowMs);
       const existing = replayReceipt(selectExistingRecovery.get(orgId, normalizedEventId, evidence));
       if (existing) return existing;
 
-      const nowMs = recoveryNow();
       const leaseToken = leaseTokenValue(randomToken);
       const leaseExpiresAtMs = safeAdd(nowMs, leaseMs);
       const leaseHash = tokenHash(leaseToken);
