@@ -14,20 +14,18 @@ function project(id = 1, name = 'Coverage Project') {
     orgId: 7,
     archived: false,
     methodology: 'waterfall',
-    tasks: [
-      {
-        id: 'task-1',
-        name: 'Coverage task',
-        phase: 'Coverage task',
-        depth: 1,
-        plannedStartDate: '2026-08-20',
-        plannedEndDate: '2026-08-22',
-        plannedProgress: 50,
-        actualProgress: 20,
-        sprint: 'Coverage Sprint',
-        storyPoints: 5,
-      },
-    ],
+    tasks: [{
+      id: 'task-1',
+      name: 'Coverage task',
+      phase: 'Coverage task',
+      depth: 1,
+      plannedStartDate: '2026-08-20',
+      plannedEndDate: '2026-08-22',
+      plannedProgress: 50,
+      actualProgress: 20,
+      sprint: 'Coverage Sprint',
+      storyPoints: 5,
+    }],
   };
 }
 
@@ -62,7 +60,7 @@ async function installApiMock(page, options = {}) {
     log: [],
   };
 
-  const json = async (route, body, status = 200) => route.fulfill({
+  const json = (route, body, status = 200) => route.fulfill({
     status,
     contentType: 'application/json; charset=utf-8',
     body: JSON.stringify(body),
@@ -75,160 +73,80 @@ async function installApiMock(page, options = {}) {
     const method = request.method();
     state.log.push(`${method} ${path}${url.search}`);
 
-    if (path.endsWith('/stream')) {
-      await route.fulfill({ status: 204, body: '' });
-      return;
-    }
+    if (path.endsWith('/stream')) return route.fulfill({ status: 204, body: '' });
     if (path === '/api/projects' && method === 'GET') {
-      await json(route, { projects: state.projects.map(({ tasks, ...meta }) => meta) });
-      return;
+      return json(route, { projects: state.projects.map(({ tasks, ...meta }) => meta) });
     }
     if (path === '/api/projects' && method === 'POST') {
-      if (state.createProjectFail) {
-        await json(route, { error: 'project creation denied' }, 503);
-        return;
-      }
+      if (state.createProjectFail) return json(route, { error: 'project creation denied' }, 503);
       const created = project(9, 'Created Project');
       state.projects.push(created);
-      await json(route, { id: created.id, name: created.name, version: created.version });
-      return;
+      return json(route, { id: created.id, name: created.name, version: created.version });
     }
-    if (path === '/api/notifications') {
-      await json(route, { notifications: [] });
-      return;
-    }
+    if (path === '/api/notifications') return json(route, { notifications: [] });
     if (/^\/api\/projects\/\d+$/.test(path) && method === 'GET') {
       const id = Number(path.split('/').at(-1));
-      await json(route, state.projects.find((item) => Number(item.id) === id) || project(id, `Project ${id}`));
-      return;
+      return json(route, state.projects.find((item) => Number(item.id) === id) || project(id, `Project ${id}`));
     }
-    if (/^\/api\/projects\/\d+$/.test(path) && method === 'PUT') {
-      await json(route, { version: 2 });
-      return;
-    }
-    if (/^\/api\/projects\/\d+\/seen$/.test(path)) {
-      await json(route, { ok: true });
-      return;
-    }
+    if (/^\/api\/projects\/\d+$/.test(path) && method === 'PUT') return json(route, { version: 2 });
+    if (/^\/api\/projects\/\d+\/seen$/.test(path)) return json(route, { ok: true });
     if (/^\/api\/projects\/\d+\/duplicate$/.test(path) && method === 'POST') {
       const created = project(2, 'Duplicated buyer plan');
       state.projects.push(created);
-      await json(route, { id: created.id, name: created.name, version: created.version });
-      return;
+      return json(route, { id: created.id, name: created.name, version: created.version });
     }
-    if (/^\/api\/projects\/\d+\/ai\/brief$/.test(path)) {
-      await json(route, { analysis: 'Buyer-ready bounded analysis' });
-      return;
-    }
+    if (/^\/api\/projects\/\d+\/ai\/brief$/.test(path)) return json(route, { analysis: 'Buyer-ready bounded analysis' });
     if (/^\/api\/projects\/\d+\/sprints$/.test(path) && method === 'GET') {
-      await json(route, { sprints: state.sprintRows, methodology: 'waterfall' });
-      return;
+      return json(route, { sprints: state.sprintRows, methodology: 'waterfall' });
     }
     if (/^\/api\/projects\/\d+\/sprints\/\d+$/.test(path) && method === 'DELETE') {
       state.sprintRows = [];
-      await json(route, { ok: true });
-      return;
+      return json(route, { ok: true });
     }
-    if (/^\/api\/projects\/\d+\/attachments$/.test(path) && method === 'GET') {
-      await json(route, { attachments: state.attachments });
-      return;
-    }
+    if (/^\/api\/projects\/\d+\/attachments$/.test(path) && method === 'GET') return json(route, { attachments: state.attachments });
     if (/^\/api\/projects\/\d+\/calendar\.ics$/.test(path)) {
-      await route.fulfill({ status: 200, contentType: 'text/calendar', body: 'BEGIN:VCALENDAR\nEND:VCALENDAR\n' });
-      return;
+      return route.fulfill({ status: 200, contentType: 'text/calendar', body: 'BEGIN:VCALENDAR\nEND:VCALENDAR\n' });
     }
-    if (/^\/api\/projects\/\d+\/revisions$/.test(path)) {
-      await json(route, { revisions: state.revisions });
-      return;
-    }
-    if (/^\/api\/projects\/\d+\/revisions\/\d+\/restore$/.test(path) && method === 'POST') {
-      await json(route, { version: 2 });
-      return;
-    }
+    if (/^\/api\/projects\/\d+\/revisions$/.test(path)) return json(route, { revisions: state.revisions });
+    if (/^\/api\/projects\/\d+\/revisions\/\d+\/restore$/.test(path) && method === 'POST') return json(route, { version: 2 });
     if (/^\/api\/projects\/\d+\/revisions\/\d+$/.test(path)) {
-      await json(route, { tasks: [{ ...project().tasks[0], plannedEndDate: '2026-08-25' }] });
-      return;
+      return json(route, { tasks: [{ ...project().tasks[0], plannedEndDate: '2026-08-25' }] });
     }
-    if (/^\/api\/projects\/\d+\/baselines$/.test(path)) {
-      await json(route, { baselines: [] });
-      return;
-    }
-    if (path === '/api/orgs/7/portfolio') {
-      await json(route, { projects: state.portfolioProjects });
-      return;
-    }
+    if (/^\/api\/projects\/\d+\/baselines$/.test(path)) return json(route, { baselines: [] });
+    if (path === '/api/orgs/7/portfolio') return json(route, { projects: state.portfolioProjects });
     if (path === '/api/orgs/7/members') {
-      await json(route, {
+      return json(route, {
         members: [
           { id: 70, email: 'owner@example.com', role: 'owner' },
           { id: 71, email: 'member@example.com', role: 'member' },
         ],
         invites: [],
       });
-      return;
     }
-    if (path === '/api/me') {
-      await json(route, { orgs: [{ id: 7, role: 'owner' }] });
-      return;
-    }
+    if (path === '/api/me') return json(route, { orgs: [{ id: 7, role: 'owner' }] });
     if (path === '/api/orgs/7/billing') {
-      await json(route, {
-        plan: 'free', planName: 'Free',
+      return json(route, {
+        plan: 'free',
+        planName: 'Free',
         usage: { projects: state.projects.length, members: 2 },
         limits: { projects: 3, members: 5 },
       });
-      return;
     }
-    if (path === '/api/tokens' && method === 'GET') {
-      await json(route, { tokens: [] });
-      return;
-    }
-    if (path === '/api/orgs/7/webhooks' && method === 'GET') {
-      await json(route, { webhooks: [] });
-      return;
-    }
-    if (path === '/api/orgs/7/audit') {
-      await json(route, { events: [] });
-      return;
-    }
-    if (path === '/api/orgs/7/invites' && method === 'POST') {
-      await json(route, { token: INVITE_TOKEN });
-      return;
-    }
-    if (path === '/api/orgs/7' && method === 'PATCH') {
-      await json(route, { ok: true });
-      return;
-    }
-    if (path === '/api/orgs/7/transfer' && method === 'POST') {
-      await json(route, { ok: true });
-      return;
-    }
-    if (path === '/api/orgs/7/checkout' && method === 'POST') {
-      await json(route, { mock: false, url: '/checkout-target' });
-      return;
-    }
+    if (path === '/api/tokens' && method === 'GET') return json(route, { tokens: [] });
+    if (path === '/api/orgs/7/webhooks' && method === 'GET') return json(route, { webhooks: [] });
+    if (path === '/api/orgs/7/audit') return json(route, { events: [] });
+    if (path === '/api/orgs/7/invites' && method === 'POST') return json(route, { token: INVITE_TOKEN });
+    if (path === '/api/orgs/7' && method === 'PATCH') return json(route, { ok: true });
+    if (path === '/api/orgs/7/transfer' && method === 'POST') return json(route, { ok: true });
+    if (path === '/api/orgs/7/checkout' && method === 'POST') return json(route, { mock: false, url: '/checkout-target' });
     if (path === '/api/orgs/7/export') {
-      if (state.exportMode === 'abort') {
-        await route.abort('failed');
-        return;
-      }
-      if (state.exportMode === 'forbidden') {
-        await json(route, { error: 'owner only' }, 403);
-        return;
-      }
-      if (state.exportMode === 'error') {
-        await json(route, { error: 'temporary export failure' }, 500);
-        return;
-      }
-      await json(route, { projects: [] });
-      return;
+      if (state.exportMode === 'abort') return route.abort('failed');
+      if (state.exportMode === 'forbidden') return json(route, { error: 'owner only' }, 403);
+      if (state.exportMode === 'error') return json(route, { error: 'temporary export failure' }, 500);
+      return json(route, { projects: [] });
     }
-    if (/^\/api\/invites\/[A-Za-z0-9_-]+\/accept$/.test(path) && method === 'POST') {
-      await json(route, { orgId: 7 });
-      return;
-    }
-
-    await json(route, { error: `unhandled mock route: ${method} ${path}` }, 404);
+    if (/^\/api\/invites\/[A-Za-z0-9_-]+\/accept$/.test(path) && method === 'POST') return json(route, { orgId: 7 });
+    return json(route, { error: `unhandled mock route: ${method} ${path}` }, 404);
   });
   return state;
 }
@@ -244,7 +162,7 @@ test('offline bootstrap remains functional when the optional cloud bridge is una
   });
   await page.goto(`${STATIC_BASE}/`);
   await expect(page.locator('#task-table-body tr').first()).toBeVisible();
-  await expect(page.locator('#cloud-auth')).toBeVisible();
+  await expect(page.locator('#cloud-auth')).toHaveCount(0);
 });
 
 test('cloud API path validation fails closed before a tampered project id can escape /api', async ({ page }) => {
@@ -297,8 +215,16 @@ test('commercial cloud controls execute success, denial, recovery, and empty-sta
   await expect(page.locator('#portfolio-panel')).toContainText('프로젝트가 없습니다.');
   await page.click('#portfolio-panel button[aria-label="대시보드 닫기"]');
   state.portfolioProjects = [{
-    id: 1, name: 'Coverage Project', tasks: 1, planned: 50, actual: 20,
-    spi: 0.4, status: 'delay', label: '지연', overdue: 1, archived: false,
+    id: 1,
+    name: 'Coverage Project',
+    tasks: 1,
+    planned: 50,
+    actual: 20,
+    spi: 0.4,
+    status: 'delay',
+    label: '지연',
+    overdue: 1,
+    archived: false,
   }];
   await page.click('#cloud-auth button:has-text("대시보드")');
   await page.click('#portfolio-panel button:has-text("열기")');
@@ -331,6 +257,7 @@ test('commercial cloud controls execute success, denial, recovery, and empty-sta
   page.once('dialog', (dialog) => dialog.accept('Renamed Workspace'));
   await page.click('#team-body button:has-text("워크스페이스 이름 변경")');
   await expect(page.locator('#toast')).toContainText('이름을 변경했습니다');
+  await expect(page.locator('#team-body li').filter({ hasText: 'member@example.com' })).toHaveCount(1);
 
   page.once('dialog', (dialog) => dialog.accept());
   await page.locator('#team-body li').filter({ hasText: 'member@example.com' }).getByRole('button', { name: '소유권 이전' }).click();
