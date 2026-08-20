@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Applied current durable Stripe entitlement claims to project/member limit
+  authorization without mutating `orgs.plan`: one unexpired tenant-owned claim
+  unlocks Pro limits, expiry or a revoke head re-locks them, foreign claims are
+  isolated, and missing claim storage never manufactures paid authority.
 - Persist deterministic Stripe entitlement-policy decisions as append-only,
   tenant-bound claim evidence with optimistic previous-decision concurrency,
   automatic current Subscription/Invoice evidence selection, exact source

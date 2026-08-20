@@ -1,8 +1,17 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { app as applicationRoutes } from './application_routes.mjs';
+import { configureBillingEntitlementDatabase } from './billing.mjs';
+import { db } from './db.mjs';
 
 const toastStylesheetUrl = new URL('../toast-state.css', import.meta.url);
+
+// Bind the already-bootstrapped server-owned database before the public route
+// graph can serve any request that reports plan authority. This keeps legacy
+// synchronous planOf consumers aligned with the same tenant-scoped current
+// entitlement claims used by resource-limit authorization, without mutating
+// orgs.plan or accepting caller-selected claim identities.
+configureBillingEntitlementDatabase(db);
 
 /**
  * ScopeWeave's public HTTP application entry point.
