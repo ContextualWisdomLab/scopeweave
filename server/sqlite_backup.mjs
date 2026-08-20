@@ -119,15 +119,23 @@ export function inspectOpenSqliteDatabase(database, prefix) {
 
   const applicationId = sqliteScalar(database, 'PRAGMA application_id', 'application_id');
   const userVersion = sqliteScalar(database, 'PRAGMA user_version', 'user_version');
-  const schema = database.prepare(
+  const schemaStatement = database.prepare(
     `SELECT type, name, tbl_name, sql FROM sqlite_schema WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name LIMIT ${SCHEMA_QUERY_LIMIT}`,
-  ).all().map((row) => ({ ...row }));
-  const schemaBytes = schema.reduce(
-    (total, row) => total + Buffer.byteLength(JSON.stringify(row), 'utf8'),
-    0,
   );
-  if (schema.length > MAX_SCHEMA_OBJECTS || schemaBytes > MAX_SCHEMA_BYTES) {
-    throw fail(`${prefix}_schema_too_large`);
+  const schema = [];
+  let schemaBytes = 2; // JSON array brackets: []
+  for (const row of schemaStatement.iterate()) {
+    const normalizedRow = { ...row };
+    const separatorBytes = schema.length === 0 ? 0 : 1;
+    const rowBytes = Buffer.byteLength(JSON.stringify(normalizedRow), 'utf8');
+    if (
+      schema.length >= MAX_SCHEMA_OBJECTS
+      || schemaBytes + separatorBytes + rowBytes > MAX_SCHEMA_BYTES
+    ) {
+      throw fail(`${prefix}_schema_too_large`);
+    }
+    schema.push(normalizedRow);
+    schemaBytes += separatorBytes + rowBytes;
   }
 
   return { applicationId, userVersion, schema };
