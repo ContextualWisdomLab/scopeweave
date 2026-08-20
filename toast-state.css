@@ -6,11 +6,3 @@
   opacity: 1;
   transform: translateY(0);
 }
-
-/* Dynamic cloud dialogs render a decorative glyph inside close buttons. Keep
- * that glyph out of hit testing so the button/backdrop close marker remains the
- * event target on every production serve path. */
-.close-button > [aria-hidden="true"],
-[data-team-close="true"] > [aria-hidden="true"] {
-  pointer-events: none;
-}
