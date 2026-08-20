@@ -180,7 +180,6 @@ export function createSqliteStripeWebhookReconciliationQueue(database, { now = D
     enqueue({ eventId, subscriptionId } = {}) {
       const normalizedEventId = requiredBoundedString(eventId);
       const normalizedSubscription = normalizedSubscriptionId(subscriptionId);
-      const queuedAtMs = normalizedNow(now);
 
       database.exec(`SAVEPOINT ${SAVEPOINT_NAME}`);
       try {
@@ -201,6 +200,7 @@ export function createSqliteStripeWebhookReconciliationQueue(database, { now = D
           throw queueError('stripe_reconciliation_trigger_unverified', 409);
         }
 
+        const queuedAtMs = normalizedNow(now);
         insertTrigger.run(normalizedEventId, normalizedSubscription, queuedAtMs);
         database.exec(`RELEASE SAVEPOINT ${SAVEPOINT_NAME}`);
         return Object.freeze({
