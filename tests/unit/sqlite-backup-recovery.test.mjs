@@ -181,10 +181,13 @@ const fake = (integrity, fk = [], scalar = 1, schema = []) => ({
       all() {
         if (sql === 'PRAGMA integrity_check') return integrity;
         if (sql === 'PRAGMA foreign_key_check') return fk;
-        observedSchemaQueries.push(sql);
-        return schema;
+        throw new Error('schema metadata must be streamed instead of materialized with all()');
       },
       get() { return { application_id: scalar, user_version: scalar }; },
+      *iterate() {
+        observedSchemaQueries.push(sql);
+        yield* schema;
+      },
     };
   },
 });
@@ -192,7 +195,7 @@ assert.throws(() => inspectOpenSqliteDatabase(fake([], []), 'x'), (e) => e.code 
 assert.throws(() => inspectOpenSqliteDatabase(fake([{ integrity_check: 'broken' }], []), 'x'), (e) => e.code === 'x_integrity_failed');
 assert.throws(() => inspectOpenSqliteDatabase(fake([{ integrity_check: 'ok' }], [{ table: 'x' }]), 'x'), (e) => e.code === 'x_foreign_key_failed');
 assert.deepEqual(inspectOpenSqliteDatabase(fake([{ integrity_check: 'ok' }], [], 3, [{ type: 'table', name: 'x', tbl_name: 'x', sql: 'CREATE TABLE x(a)' }]), 'x'), { applicationId: 3, userVersion: 3, schema: [{ type: 'table', name: 'x', tbl_name: 'x', sql: 'CREATE TABLE x(a)' }] });
-assert.match(observedSchemaQueries.at(-1), /\bLIMIT\s+100001\s*$/i, 'schema inspection must bound rows before materializing them');
+assert.match(observedSchemaQueries.at(-1), /\bLIMIT\s+100001\s*$/i, 'schema inspection should retain a SQL row bound while streaming');
 const oversizedSchema = Array.from({ length: 100_001 }, (_, index) => ({ type: 'table', name: `table_${index}`, tbl_name: `table_${index}`, sql: 'CREATE TABLE x(a)' }));
 assert.throws(
   () => inspectOpenSqliteDatabase(fake([{ integrity_check: 'ok' }], [], 3, oversizedSchema), 'x'),
