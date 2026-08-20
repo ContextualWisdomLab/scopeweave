@@ -2168,11 +2168,15 @@ async function connectJsonSync() {
   }
 
   try {
-    state.jsonSyncHandle = await window.showSaveFilePicker({
+    const candidateHandle = await window.showSaveFilePicker({
       suggestedName: 'wbs.json',
       types: [{ description: 'JSON Files', accept: { 'application/json': ['.json'] } }]
     });
-    await writeJsonSyncFile();
+    if (!candidateHandle || typeof candidateHandle.createWritable !== 'function') {
+      throw new TypeError('invalid-file-handle');
+    }
+    await writeJsonSyncFile(candidateHandle);
+    state.jsonSyncHandle = candidateHandle;
     renderAll();
     showToast('wbs.json 자동저장 연결이 완료되었습니다.');
   } catch (error) {
@@ -2182,11 +2186,11 @@ async function connectJsonSync() {
   }
 }
 
-async function writeJsonSyncFile() {
-  if (!state.jsonSyncHandle) {
+async function writeJsonSyncFile(handle = state.jsonSyncHandle) {
+  if (!handle) {
     return;
   }
-  const writable = await state.jsonSyncHandle.createWritable();
+  const writable = await handle.createWritable();
   await writable.write(JSON.stringify(exportJsonArray(), null, 2));
   await writable.close();
 }
