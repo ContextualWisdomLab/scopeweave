@@ -162,6 +162,35 @@ test('provider HTTP and malformed-success responses fail with stable categories'
   });
 });
 
+test('rejected Stripe responses cancel unread bodies before returning sanitized failures', async () => {
+  await withStripeEnv(async () => {
+    for (const scenario of [
+      { status: 503, contentType: 'application/json', expectedCode: 'billing_provider_unavailable' },
+      { status: 200, contentType: 'text/html', expectedCode: 'billing_provider_invalid_response' },
+    ]) {
+      let cancelled = false;
+      const unreadBody = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('provider bytes that must not remain leased'));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+      globalThis.fetch = async () => new Response(unreadBody, {
+        status: scenario.status,
+        headers: { 'content-type': scenario.contentType },
+      });
+
+      await expectProviderError(
+        () => createCheckout({ orgId: 73, configuration: liveConfiguration }),
+        scenario.expectedCode,
+      );
+      assert.equal(cancelled, true, `${scenario.expectedCode} cancels its unread response body`);
+    }
+  });
+});
+
 test('provider response declarations and streamed bytes are bounded before JSON parsing', async () => {
   await withStripeEnv(async () => {
     for (const declaredLength of ['not-a-number', '-1', String(providerResponseLimitBytes + 1)]) {
