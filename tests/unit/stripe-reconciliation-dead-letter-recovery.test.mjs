@@ -392,3 +392,92 @@ test('tenant isolation, bounded evidence references, in-progress replay, and tra
 
   database.close();
 });
+
+test('expired manual recovery lease self-reaps to dead-letter and permits explicit retry without a scheduler', () => {
+  const database = createDatabase();
+  seedDeadLetter(database, {
+    eventId: 'evt_recovery_expired',
+    subscriptionId: 'sub_recovery_expired',
+    customerId: 'cus_recovery_expired',
+  });
+  let nowMs = 9_000;
+  const recoveryRepository = createSqliteStripeReconciliationRecoveryRepository(database, {
+    now: () => nowMs,
+    randomToken: tokenSequence(),
+    leaseMs: 100,
+  });
+
+  const claimed = recoveryRepository.claimDeadLetterRecovery({
+    organizationId: 7,
+    eventId: 'evt_recovery_expired',
+    actorUserId: 11,
+    evidenceReference: 'INC-expired-1',
+  });
+  assert.equal(claimed.status, 'processing');
+  assert.equal(claimed.attemptNumber, 6);
+
+  nowMs = claimed.leaseExpiresAtMs;
+  const expiredReplay = recoveryRepository.claimDeadLetterRecovery({
+    organizationId: 7,
+    eventId: 'evt_recovery_expired',
+    actorUserId: 11,
+    evidenceReference: 'INC-expired-1',
+  });
+  assert.deepEqual(expiredReplay, {
+    status: 'dead_letter',
+    replayed: true,
+    recoveryId: claimed.recoveryId,
+    eventId: claimed.eventId,
+    subscriptionId: claimed.subscriptionId,
+    attemptNumber: claimed.attemptNumber,
+    errorCode: 'stripe_reconciliation_lease_expired',
+  });
+
+  const job = database.prepare(`
+    SELECT processing_state, attempt_count, lease_token_sha256, lease_expires_at_ms,
+           completed_at_ms, last_error_code
+      FROM billing_stripe_reconciliation_jobs WHERE event_id = ?
+  `).get('evt_recovery_expired');
+  assert.deepEqual({ ...job }, {
+    processing_state: 'dead_letter',
+    attempt_count: 6,
+    lease_token_sha256: null,
+    lease_expires_at_ms: null,
+    completed_at_ms: nowMs,
+    last_error_code: 'stripe_reconciliation_lease_expired',
+  });
+  const attempt = database.prepare(`
+    SELECT finished_at_ms, outcome, error_code
+      FROM billing_stripe_reconciliation_attempts
+     WHERE event_id = ? AND attempt_number = 6
+  `).get('evt_recovery_expired');
+  assert.deepEqual({ ...attempt }, {
+    finished_at_ms: nowMs,
+    outcome: 'dead_letter',
+    error_code: 'stripe_reconciliation_lease_expired',
+  });
+  const recovery = database.prepare(`
+    SELECT completed_at_ms, outcome, error_code, claim_decision_id
+      FROM billing_stripe_reconciliation_recoveries
+     WHERE recovery_id = ?
+  `).get(claimed.recoveryId);
+  assert.deepEqual({ ...recovery }, {
+    completed_at_ms: nowMs,
+    outcome: 'dead_letter',
+    error_code: 'stripe_reconciliation_lease_expired',
+    claim_decision_id: null,
+  });
+
+  nowMs += 1;
+  const retried = recoveryRepository.claimDeadLetterRecovery({
+    organizationId: 7,
+    eventId: 'evt_recovery_expired',
+    actorUserId: 11,
+    evidenceReference: 'INC-expired-2',
+  });
+  assert.equal(retried.status, 'processing');
+  assert.equal(retried.replayed, false);
+  assert.equal(retried.attemptNumber, 7);
+
+  database.close();
+});
