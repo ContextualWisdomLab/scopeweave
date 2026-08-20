@@ -34,6 +34,18 @@ async function api(path, { method = 'GET', body, token } = {}) {
   return payload;
 }
 
+async function clickDecorativeCloseGlyph(page, modal) {
+  const glyph = modal.locator('.close-button [aria-hidden="true"]');
+  await expect(glyph).toBeVisible();
+  const box = await glyph.boundingBox();
+  if (!box) throw new Error('close glyph was not rendered');
+
+  // Click the rendered glyph coordinates instead of invoking Locator.click() on
+  // the decorative span. With the production pointer-events contract the real
+  // browser hit target must be the parent close button, exactly as for a user.
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+}
+
 test.beforeAll(async () => {
   server = spawn(process.execPath, ['server/server.mjs'], {
     env: {
@@ -57,7 +69,7 @@ test('cloud login modal closes when the decorative close glyph is clicked', asyn
 
   const modal = page.locator('#cloud-modal');
   await expect(modal).not.toHaveClass(/\bhidden\b/);
-  await modal.locator('.close-button [aria-hidden="true"]').click();
+  await clickDecorativeCloseGlyph(page, modal);
   await expect(modal).toHaveClass(/\bhidden\b/);
 });
 
@@ -83,6 +95,6 @@ test('team modal closes when the decorative close glyph is clicked', async ({ pa
 
   const modal = page.locator('#team-modal');
   await expect(modal).not.toHaveClass(/\bhidden\b/);
-  await modal.locator('.close-button [aria-hidden="true"]').click();
+  await clickDecorativeCloseGlyph(page, modal);
   await expect(modal).toHaveClass(/\bhidden\b/);
 });
