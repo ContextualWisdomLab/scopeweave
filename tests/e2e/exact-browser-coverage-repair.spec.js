@@ -50,11 +50,15 @@ async function installCloudApi(page, { role = 'member', checkoutUrl = null } = {
   });
 }
 
-test('invalid file-picker handles fail closed instead of claiming auto-save is connected', async ({ page }) => {
+test('failed file-picker writes never retain false auto-save authority', async ({ page }) => {
   await page.addInitScript(() => {
     Object.defineProperty(window, 'showSaveFilePicker', {
       configurable: true,
-      value: async () => null,
+      value: async () => ({
+        createWritable: async () => {
+          throw new DOMException('write denied', 'NotAllowedError');
+        },
+      }),
     });
   });
 
@@ -64,6 +68,13 @@ test('invalid file-picker handles fail closed instead of claiming auto-save is c
   await connect.click();
 
   await expect(page.locator('#toast')).toContainText('wbs.json 연결에 실패했습니다.');
+  await expect(page.locator('#sync-status')).toHaveText('브라우저 로컬 자동저장 사용 중');
+
+  // Force a later normal render. A failed candidate must not linger in state and
+  // become false connected authority after the original error path completes.
+  const projectName = page.locator('#project-name');
+  await projectName.fill('Picker failure regression');
+  await projectName.blur();
   await expect(page.locator('#sync-status')).toHaveText('브라우저 로컬 자동저장 사용 중');
 });
 
