@@ -4,6 +4,7 @@ import { app as applicationRoutes } from './application_routes.mjs';
 import { configureBillingEntitlementDatabase } from './billing.mjs';
 import { normalizeBillingStatusResponse } from './billing_status_response.mjs';
 import { db } from './db.mjs';
+import { stripeReconciliationRecoveryRoutes } from './stripe_reconciliation_recovery_routes.mjs';
 
 const toastStylesheetUrl = new URL('../toast-state.css', import.meta.url);
 
@@ -55,4 +56,8 @@ app.use('/api/orgs/:id/billing', async (c, next) => {
   });
 });
 
+// Keep operator recovery isolated from the legacy monolith. This dedicated route
+// module owns only tenant-scoped dead-letter inspection/retry and is mounted before
+// the broader application graph so it cannot be shadowed by future catch-all routes.
+app.route('/', stripeReconciliationRecoveryRoutes);
 app.route('/', applicationRoutes);
