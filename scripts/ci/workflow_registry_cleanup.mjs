@@ -25,6 +25,7 @@ import {
 
 const TRANSIENT_STATUS = new Set([500, 502, 503, 504]);
 const CANONICAL_WORKFLOW_PATH = /^\.github\/workflows\/[A-Za-z0-9_.-]+\.ya?ml$/;
+const WORKFLOW_DISABLE_REQUEST_TIMEOUT_MS = 10_000;
 
 /** Validate one immutable Git commit identity. */
 export function validateCommitSha(value) {
@@ -116,12 +117,32 @@ export function parseCleanupArgs(argv, environment = process.env) {
 
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === '--repo') repository = argv[++index] || '';
-    else if (argument === '--branch') branch = argv[++index] || '';
-    else if (argument === '--expected-sha') expectedSha = argv[++index] || '';
-    else if (argument === '--preserve-path') preservePaths.push(argv[++index] || '');
-    else if (argument === '--workflow-id') reviewedWorkflowIds.push(validateWorkflowId(argv[++index] || ''));
-    else if (argument === '--apply') apply = true;
+    if (argument === '--repo') {
+      const value = argv[index + 1];
+      if (value?.startsWith('--') !== false) throw new Error('--repo requires a value');
+      repository = value;
+      index += 1;
+    } else if (argument === '--branch') {
+      const value = argv[index + 1];
+      if (value?.startsWith('--') !== false) throw new Error('--branch requires a value');
+      branch = value;
+      index += 1;
+    } else if (argument === '--expected-sha') {
+      const value = argv[index + 1];
+      if (value?.startsWith('--') !== false) throw new Error('--expected-sha requires a value');
+      expectedSha = value;
+      index += 1;
+    } else if (argument === '--preserve-path') {
+      const value = argv[index + 1];
+      if (value?.startsWith('--') !== false) throw new Error('--preserve-path requires a value');
+      preservePaths.push(value);
+      index += 1;
+    } else if (argument === '--workflow-id') {
+      const value = argv[index + 1];
+      if (value?.startsWith('--') !== false) throw new Error('--workflow-id requires a value');
+      reviewedWorkflowIds.push(validateWorkflowId(value));
+      index += 1;
+    } else if (argument === '--apply') apply = true;
     else throw new Error(`unsupported argument: ${argument}`);
   }
 
@@ -168,7 +189,12 @@ async function requestWorkflowDisable({
     authorization: `Bearer ${token}`,
   };
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const response = await fetchImpl(url, { method: 'PUT', headers, redirect: 'error' });
+    const response = await fetchImpl(url, {
+      method: 'PUT',
+      headers,
+      redirect: 'error',
+      signal: AbortSignal.timeout(WORKFLOW_DISABLE_REQUEST_TIMEOUT_MS),
+    });
     const status = Number(response?.status);
     if (status === 204) return;
     if (!TRANSIENT_STATUS.has(status) || attempt === maxAttempts) throw new GitHubApiError(status);
