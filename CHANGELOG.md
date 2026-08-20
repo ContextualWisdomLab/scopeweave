@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Added bounded authoritative Stripe billing reconciliation that treats webhook
+  event identity as provenance only, re-reads current Subscription and Invoice
+  state before appending evidence, and evaluates durable entitlement claims only
+  after current provider evidence is persisted; one optimistic claim-head race
+  retries claim application only, while a second conflict and non-conflict causal
+  failures remain bounded and fail closed.
 - Applied current durable Stripe entitlement claims to project/member limit
   authorization without mutating `orgs.plan`: one unexpired tenant-owned claim
   unlocks Pro limits, expiry or a revoke head re-locks them, foreign claims are
