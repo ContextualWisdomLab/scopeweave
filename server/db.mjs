@@ -14,6 +14,11 @@ import {
   installStripeWebhookEventSchema,
 } from './stripe_webhook_event_ledger.mjs';
 import {
+  createSqliteStripeWebhookReconciliationQueue,
+  extractStripeSubscriptionReconciliationCandidate,
+  installStripeWebhookReconciliationQueueSchema,
+} from './stripe_webhook_reconciliation_queue.mjs';
+import {
   createSqliteStripeSubscriptionObservationRepository,
   installStripeSubscriptionObservationSchema,
 } from './stripe_subscription_observation_ledger.mjs';
@@ -204,7 +209,19 @@ installBillingCheckoutAttemptSchema(db);
 export const billingCheckoutAttempts = createSqliteBillingCheckoutAttemptRepository(db);
 installStripeWebhookEventSchema(db);
 export const stripeWebhookEvents = createSqliteStripeWebhookEventRepository(db);
-configureStripeWebhookEventRecorder((evidence) => stripeWebhookEvents.recordVerifiedEvent(evidence));
+installStripeWebhookReconciliationQueueSchema(db);
+export const stripeWebhookReconciliationQueue = createSqliteStripeWebhookReconciliationQueue(db);
+configureStripeWebhookEventRecorder((evidence) => {
+  const eventReceipt = stripeWebhookEvents.recordVerifiedEvent(evidence);
+  const subscriptionId = extractStripeSubscriptionReconciliationCandidate(evidence.event);
+  if (subscriptionId) {
+    stripeWebhookReconciliationQueue.enqueue({
+      eventId: eventReceipt.eventId,
+      subscriptionId,
+    });
+  }
+  return eventReceipt;
+});
 installStripeSubscriptionObservationSchema(db);
 export const stripeSubscriptionObservations = createSqliteStripeSubscriptionObservationRepository(db);
 installStripeInvoiceObservationSchema(db);
