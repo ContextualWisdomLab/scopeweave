@@ -14,12 +14,11 @@ import { computeEvm } from '../analytics.js'; // pure math, shared with the clie
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
 
-// Append-only audit trail. Never throws into the request path. Callers always
-// supply a concrete authenticated actor, target kind/id, and metadata object.
+// Append-only audit trail. Never throws into the request path.
 function logAudit(orgId, userId, action, targetType, targetId, meta) {
   try {
     db.prepare('INSERT INTO audit_log(org_id,user_id,action,target_type,target_id,meta) VALUES(?,?,?,?,?,?)')
-      .run(orgId, userId, action, targetType, String(targetId), JSON.stringify(meta));
+      .run(orgId, userId ?? null, action, targetType ?? null, targetId != null ? String(targetId) : null, meta ? JSON.stringify(meta) : null);
   } catch { /* audit must not break the operation */ }
 }
 
@@ -131,7 +130,7 @@ function deliver(orgId, event, payload) {
     sendWebhook(h.id, h.url, sig, event, body, 1);
   }
 }
-const quietLogs = String(process.env.SCOPEWEAVE_DB).includes(':memory:'); // silence during tests
+const quietLogs = String(process.env.SCOPEWEAVE_DB || '').includes(':memory:'); // silence during tests
 app.use('*', async (c, next) => {
   const t = Date.now();
   await next();
@@ -1045,18 +1044,18 @@ app.post('/api/projects/:id/attachments', requireAuth, async (c) => {
   const file = form?.get('file');
   if (!file || typeof file === 'string') return c.json({ error: 'multipart file required' }, 400);
   const taskId = String(form.get('taskId') || '');
-  if (/\.(hwp|hwpx)$/i.test(file.name)) return c.json({ error: 'HWP/HWPX는 지원되지 않습니다 (Clearfolio 정책)' }, 400);
+  if (/\.(hwp|hwpx)$/i.test(file.name || '')) return c.json({ error: 'HWP/HWPX는 지원되지 않습니다 (Clearfolio 정책)' }, 400);
   if (file.size > ATTACH_MAX_BYTES) return c.json({ error: 'file too large (max 10MB)' }, 400);
   const bytes = Buffer.from(await file.arrayBuffer());
   let job;
   try {
-    job = await submitJob(p.org_id, uid, { name: file.name, mime: file.type, bytes });
+    job = await submitJob(p.org_id, uid, { name: file.name || 'document', mime: file.type || '', bytes });
   } catch (e) {
     return c.json({ error: `문서 변환 제출 실패: ${e.message}` }, 502);
   }
   const aid = rowid(db.prepare(
     'INSERT INTO attachments(project_id,task_id,name,mime,size,job_id,status,created_by) VALUES(?,?,?,?,?,?,?,?)'
-  ).run(p.id, taskId, file.name, file.type, file.size, job.jobId, job.status, uid));
+  ).run(p.id, taskId, file.name || 'document', file.type || '', file.size, job.jobId, job.status, uid));
   logAudit(p.org_id, uid, 'attachment.upload', 'project', p.id, { attachmentId: aid, name: file.name, taskId: taskId || null });
   return c.json({ id: aid, status: job.status });
 });
