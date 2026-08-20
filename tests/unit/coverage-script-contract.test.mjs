@@ -31,6 +31,11 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage'],
+  /--include=server\/application_routes\.mjs/,
+  'the mounted production application route graph is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
   /--include=server\/clearfolio\.mjs/,
   'the abortable Clearfolio adapter is instrumented',
 );
@@ -38,6 +43,11 @@ assert.match(
   scripts['test:coverage'],
   /--include=server\/billing_checkout_attempt\.mjs/,
   'the durable Checkout-attempt repository is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
+  /--include=server\/stripe_webhook\.mjs/,
+  'the Stripe webhook trust boundary is instrumented',
 );
 assert.match(
   scripts['test:coverage:cases'],
@@ -58,6 +68,11 @@ assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/billing-provider-boundary\.test\.mjs/,
   'the Stripe provider trust and transport regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/stripe-webhook-boundary\.test\.mjs/,
+  'the Stripe webhook trust regression executes under c8',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
