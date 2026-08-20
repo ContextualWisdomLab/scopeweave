@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2026-08-20 - 🛡️ Sentinel: HTTP 보안 헤더 적용 및 Strix 오탐 방지를 위한 innerHTML 제거
+**Vulnerability:** HTTP 보안 헤더 누락 및 `cloud-sync.js` 내 `innerHTML` 사용에 따른 잠재적 XSS(및 보안 스캐너 Strix의 오탐 가능성) 이슈가 존재했습니다.
+**Learning:** Hono의 `secureHeaders` 미들웨어를 사용하면 단일 호출만으로 Clickjacking, MIME-sniffing 등 광범위한 취약점을 완화할 수 있으며, 정적인 문자열이라도 `innerHTML`을 사용하면 스캐너가 잠재적 Stored XSS로 식별할 수 있으므로 항상 `document.createElement()` 및 DOM API를 사용하는 것이 안전합니다.
+**Prevention:** 백엔드에서는 항상 보안 헤더 미들웨어를 기본으로 적용하고 프론트엔드에서는 템플릿 렌더링 시 `innerHTML` 대신 안전한 DOM 조작 메서드를 사용합니다.

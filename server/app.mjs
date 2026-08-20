@@ -10,6 +10,7 @@ import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
+import { secureHeaders } from 'hono/secure-headers';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
@@ -29,6 +30,8 @@ const canManage = (role) => role === 'owner' || role === 'admin';
 const canWrite = (role) => role === 'owner' || role === 'admin' || role === 'member';
 
 export const app = new Hono();
+
+app.use('*', secureHeaders());
 
 async function requireAuth(c, next) {
   const header = c.req.header('authorization') || '';
