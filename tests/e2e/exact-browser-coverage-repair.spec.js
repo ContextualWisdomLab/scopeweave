@@ -78,6 +78,31 @@ test('failed file-picker writes never retain false auto-save authority', async (
   await expect(page.locator('#sync-status')).toHaveText('브라우저 로컬 자동저장 사용 중');
 });
 
+test('invalid file-picker return shapes fail closed without claiming sync authority', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'showSaveFilePicker', {
+      configurable: true,
+      value: async () => null,
+    });
+  });
+
+  await page.goto('/');
+  const connect = page.getByRole('button', { name: 'wbs.json 자동저장 연결' });
+  await connect.click();
+  await expect(page.locator('#toast')).toContainText('wbs.json 연결에 실패했습니다.');
+  await expect(page.locator('#sync-status')).toHaveText('브라우저 로컬 자동저장 사용 중');
+
+  await page.evaluate(() => {
+    Object.defineProperty(window, 'showSaveFilePicker', {
+      configurable: true,
+      value: async () => ({}),
+    });
+  });
+  await connect.click();
+  await expect(page.locator('#toast')).toContainText('wbs.json 연결에 실패했습니다.');
+  await expect(page.locator('#sync-status')).toHaveText('브라우저 로컬 자동저장 사용 중');
+});
+
 test('editor validation tolerates a future field label without losing the form', async ({ page }) => {
   await page.goto('/');
   const edit = page.locator('button[data-action="edit"]').first();
