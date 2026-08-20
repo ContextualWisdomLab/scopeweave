@@ -9,6 +9,29 @@ const packageJson = JSON.parse(
 );
 const scripts = packageJson.scripts;
 
+function declaredStringList(source, declarationStart, declarationEnd) {
+  const startIndex = source.indexOf(declarationStart);
+  assert.notEqual(startIndex, -1, `missing coverage ownership declaration: ${declarationStart}`);
+  const valueStart = startIndex + declarationStart.length;
+  const endIndex = source.indexOf(declarationEnd, valueStart);
+  assert.notEqual(endIndex, -1, `unterminated coverage ownership declaration: ${declarationStart}`);
+  return [...source.slice(valueStart, endIndex).matchAll(/['"]([^'"]+)['"]/g)]
+    .map((match) => match[1])
+    .sort();
+}
+
+function productionBrowserModules(indexHtml) {
+  return [...indexHtml.matchAll(/<script\b[^>]*>/gi)]
+    .map((match) => match[0])
+    .flatMap((tag) => {
+      const type = tag.match(/\btype\s*=\s*['"]([^'"]+)['"]/i)?.[1];
+      const src = tag.match(/\bsrc\s*=\s*['"]([^'"]+)['"]/i)?.[1];
+      if (type !== 'module' || !src || /^(?:[a-z]+:|\/\/)/i.test(src)) return [];
+      return [src.replace(/^\.\//, '')];
+    })
+    .sort();
+}
+
 assert.equal(
   scripts.coverage,
   'npm run test:coverage',
@@ -44,23 +67,26 @@ for (const requiredCoverageOption of [
     `server coverage must enforce ${requiredCoverageOption}`,
   );
 }
-for (const requiredServerModule of [
-  'scripts/ci/static_coverage_evidence.mjs',
-  'server/attachment_status.mjs',
-  'server/app.mjs',
-  'server/auth.mjs',
-  'server/clearfolio.mjs',
-  'server/orchestrator.mjs',
-]) {
-  assert.equal(
-    scripts['test:coverage:server'].includes(`--include=${requiredServerModule}`),
-    true,
-    `server coverage must instrument ${requiredServerModule}`,
-  );
-}
+assert.equal(
+  scripts['test:coverage:server'].includes('--include=scripts/ci/static_coverage_evidence.mjs'),
+  true,
+  'the repository-owned static evidence producer remains covered by the server lane',
+);
+const serverProductionModules = readdirSync(new URL('../../server/', import.meta.url))
+  .filter((name) => name.endsWith('.mjs'))
+  .map((name) => `server/${name}`)
+  .sort();
+const coveredServerModules = [...scripts['test:coverage:server'].matchAll(/--include=(server\/[^\s]+)/g)]
+  .map((match) => match[1])
+  .sort();
+assert.deepEqual(
+  coveredServerModules,
+  serverProductionModules,
+  'server coverage ownership must include every production server module rather than a curated subset',
+);
 assert.doesNotMatch(
   scripts['test:coverage:server'],
-  /--include=(?:app|cloud-sync)\.js\b/,
+  /--include=(?:app|cloud-sync|analytics)\.js\b/,
   'browser production must not be scored from a Node VM that cannot observe real browser execution',
 );
 assert.equal(
@@ -108,7 +134,7 @@ for (const specName of e2eSpecs) {
   );
   assert.doesNotMatch(
     specSource,
-    /page\.route\(\s*['"`][^'"`]*(?:app|cloud-sync)\.js[^'"`]*['"`]/,
+    /page\.route\(\s*['"`][^'"`]*(?:app|cloud-sync|analytics)\.js[^'"`]*['"`]/,
     `${specName} must not replace exact production script bytes while those bytes are coverage provenance evidence`,
   );
 }
@@ -117,6 +143,28 @@ const browserFixtureSource = readFileSync(new URL('../e2e/coverage-test.js', imp
 const browserCollectorSource = readFileSync(
   new URL('../../scripts/ci/browser_coverage.mjs', import.meta.url),
   'utf8',
+);
+const indexHtml = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+const browserProductionModules = productionBrowserModules(indexHtml);
+const fixtureOwnedModules = declaredStringList(
+  browserFixtureSource,
+  'const expectedBrowserSources = new Set([',
+  ']);',
+).map((source) => source.replace(/^\//, '')).sort();
+const collectorOwnedModules = declaredStringList(
+  browserCollectorSource,
+  'const expectedBrowserSources = [',
+  '];',
+).sort();
+assert.deepEqual(
+  fixtureOwnedModules,
+  browserProductionModules,
+  'the Playwright coverage fixture must capture every local production module loaded by index.html',
+);
+assert.deepEqual(
+  collectorOwnedModules,
+  browserProductionModules,
+  'the browser coverage collector must score every local production module loaded by index.html',
 );
 assert.match(
   browserFixtureSource,
