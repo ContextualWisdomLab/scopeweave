@@ -36,6 +36,13 @@ function requiredMethod(owner, methodName, ownerName) {
   }
 }
 
+function objectResult(value, name) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new TypeError(`${name} must return a result object`);
+  }
+  return value;
+}
+
 function positiveResultId(value, name) {
   if (!Number.isSafeInteger(value) || value <= 0) {
     throw new TypeError(`${name} must be a positive safe integer`);
@@ -69,6 +76,25 @@ function assertInvoiceSnapshot(snapshot, authority) {
   }
 }
 
+function subscriptionEvidenceId(evidence, authority) {
+  const result = objectResult(evidence, 'subscriptionRepository.recordAuthoritativeObservation()');
+  const observationId = positiveResultId(result.observationId, 'subscriptionEvidence.observationId');
+  if (result.subscriptionId !== authority.subscriptionId) {
+    throw new TypeError('subscription evidence does not match accepted Subscription authority');
+  }
+  return observationId;
+}
+
+function invoiceEvidenceId(evidence, authority, sourceSubscriptionObservationId) {
+  const result = objectResult(evidence, 'invoiceRepository.recordAuthoritativeObservation()');
+  const observationId = positiveResultId(result.observationId, 'invoiceEvidence.observationId');
+  if (result.invoiceId !== authority.invoiceId
+    || result.sourceSubscriptionObservationId !== sourceSubscriptionObservationId) {
+    throw new TypeError('invoice evidence does not match accepted Invoice authority');
+  }
+  return observationId;
+}
+
 function providerDependencies({ secretKey, fetchImpl, timeoutSignalFactory }) {
   const dependencies = {};
   if (secretKey !== undefined) dependencies.secretKey = secretKey;
@@ -77,12 +103,21 @@ function providerDependencies({ secretKey, fetchImpl, timeoutSignalFactory }) {
   return dependencies;
 }
 
-function currentDecisionId(claim) {
-  if (claim == null) return null;
-  if (!claim || typeof claim !== 'object' || Array.isArray(claim)) {
-    throw new TypeError('claimRepository.getCurrentClaim() returned an invalid claim');
+function claimDecisionId(claim, authority, sourceName) {
+  const result = objectResult(claim, sourceName);
+  const decisionId = positiveResultId(result.decisionId, 'claim.decisionId');
+  if (Object.hasOwn(result, 'organizationId') && result.organizationId !== authority.organizationId) {
+    throw new TypeError(`${sourceName} returned a claim for another organization`);
   }
-  return positiveResultId(claim.decisionId, 'claim.decisionId');
+  if (Object.hasOwn(result, 'subscriptionId') && result.subscriptionId !== authority.subscriptionId) {
+    throw new TypeError(`${sourceName} returned a claim for another Subscription`);
+  }
+  return decisionId;
+}
+
+function currentDecisionId(claim, authority) {
+  if (claim == null) return null;
+  return claimDecisionId(claim, authority, 'claimRepository.getCurrentClaim()');
 }
 
 function isClaimConflict(error) {
@@ -91,7 +126,7 @@ function isClaimConflict(error) {
 
 function applyClaimWithOneConflictRetry(claimRepository, authority) {
   const initialClaim = claimRepository.getCurrentClaim(authority);
-  const initialDecisionId = currentDecisionId(initialClaim);
+  const initialDecisionId = currentDecisionId(initialClaim, authority);
 
   try {
     return claimRepository.applyCurrentDecision({
@@ -103,7 +138,7 @@ function applyClaimWithOneConflictRetry(claimRepository, authority) {
   }
 
   const refreshedClaim = claimRepository.getCurrentClaim(authority);
-  const refreshedDecisionId = currentDecisionId(refreshedClaim);
+  const refreshedDecisionId = currentDecisionId(refreshedClaim, authority);
   return claimRepository.applyCurrentDecision({
     ...authority,
     expectedPreviousDecisionId: refreshedDecisionId,
@@ -119,6 +154,12 @@ function applyClaimWithOneConflictRetry(claimRepository, authority) {
  * Invoice, and only then asks the durable claim repository to evaluate the latest
  * accepted evidence. A webhook event identifier may be retained as provenance, but
  * it never selects provider state or entitlement authority.
+ *
+ * Repository return values are treated as untrusted port data. Evidence identities
+ * must remain bound to the accepted Subscription/Invoice authority before their IDs
+ * enter the reconciliation receipt, and identity-bearing claim results must match the
+ * requested tenant and Subscription. This prevents a buggy adapter from substituting
+ * another tenant's durable evidence even after provider validation succeeded.
  *
  * One optimistic claim-head conflict is expected under concurrent reconciliation.
  * In that case only claim application is retried after refreshing the current durable
@@ -182,10 +223,7 @@ export async function reconcileStripeBillingAuthoritatively({
     snapshot: subscriptionSnapshot,
     sourceEventId: eventId,
   });
-  const subscriptionObservationId = positiveResultId(
-    subscriptionEvidence?.observationId,
-    'subscriptionEvidence.observationId',
-  );
+  const subscriptionObservationId = subscriptionEvidenceId(subscriptionEvidence, authority);
 
   let invoiceObservationId = null;
   if (subscriptionSnapshot.latestInvoiceId != null) {
@@ -206,20 +244,21 @@ export async function reconcileStripeBillingAuthoritatively({
       sourceSubscriptionObservationId: subscriptionObservationId,
       sourceEventId: eventId,
     });
-    invoiceObservationId = positiveResultId(
-      invoiceEvidence?.observationId,
-      'invoiceEvidence.observationId',
+    invoiceObservationId = invoiceEvidenceId(
+      invoiceEvidence,
+      invoiceAuthority,
+      subscriptionObservationId,
     );
   }
 
   const claim = applyClaimWithOneConflictRetry(claimRepository, authority);
-  const claimDecisionId = positiveResultId(claim?.decisionId, 'claim.decisionId');
+  const claimDecision = claimDecisionId(claim, authority, 'claimRepository.applyCurrentDecision()');
 
   return Object.freeze({
     organizationId: authority.organizationId,
     subscriptionId: authority.subscriptionId,
     subscriptionObservationId,
     invoiceObservationId,
-    claimDecisionId,
+    claimDecisionId: claimDecision,
   });
 }
