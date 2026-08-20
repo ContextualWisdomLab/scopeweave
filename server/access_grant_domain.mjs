@@ -93,6 +93,27 @@ function unauthorizedGrant() {
   return new AccessGrantError('access_grant_unauthorized', 401);
 }
 
+function validateConsumedGrant(existing, consumed, { purpose, audience, projectId, attachmentId }) {
+  if (
+    !consumed
+    || typeof consumed !== 'object'
+    || Array.isArray(consumed)
+    || consumed.grant_id !== existing.grant_id
+    || consumed.subject_id !== existing.subject_id
+    || consumed.project_id !== existing.project_id
+    || consumed.project_id !== projectId
+    || consumed.purpose !== existing.purpose
+    || consumed.purpose !== purpose
+    || consumed.audience !== existing.audience
+    || consumed.audience !== audience
+    || (consumed.attachment_id ?? null) !== (existing.attachment_id ?? null)
+    || (consumed.attachment_id ?? null) !== (attachmentId ?? null)
+  ) {
+    throw unauthorizedGrant();
+  }
+  return consumed;
+}
+
 function normalizeMembershipVersion(value) {
   if (Number.isSafeInteger(value) && value >= 0) return value;
   if (
@@ -160,7 +181,9 @@ async function recordAuditBestEffort(auditSink, event) {
  * membership state inside consumeGrantAtomically(), closing the
  * revoke-between-check-and-consume race. Adapters without a shared transaction
  * boundary must atomically revoke affected grants when membership changes
- * instead.
+ * instead. The atomic consume return value is still treated as untrusted port
+ * data and must match the pre-consume grant plus requested binding before it can
+ * become the redeemed principal or an audit identity.
  *
  * Audit delivery is post-commit and best-effort at this domain boundary so a
  * sink outage never changes the result of an already durable grant operation.
@@ -272,15 +295,23 @@ export function createAccessGrantService({
     } catch {
       throw unauthorizedGrant();
     }
-    const consumed = await repository.consumeGrantAtomically(tokenHash, {
-      now_ms: readNow(clock),
-      purpose,
-      audience,
-      project_id: projectId,
-      attachment_id: normalizedAttachmentId,
-      membership_version: membershipVersion,
-    });
-    if (!consumed) throw unauthorizedGrant();
+    const consumed = validateConsumedGrant(
+      existing,
+      await repository.consumeGrantAtomically(tokenHash, {
+        now_ms: readNow(clock),
+        purpose,
+        audience,
+        project_id: projectId,
+        attachment_id: normalizedAttachmentId,
+        membership_version: membershipVersion,
+      }),
+      {
+        purpose,
+        audience,
+        projectId,
+        attachmentId: normalizedAttachmentId,
+      },
+    );
     await recordAuditBestEffort(auditSink, {
       event: 'access_grant.consumed',
       grant_id: consumed.grant_id,
