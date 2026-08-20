@@ -347,7 +347,7 @@ test('cleanup planning and CLI parsing reject malformed candidate and operator e
     reviewedWorkflowIds: [],
     apply: false,
   });
-  assert.throws(() => parseCleanupArgs(['--branch'], { GITHUB_REPOSITORY: REPO }), /branch must be/);
+  assert.throws(() => parseCleanupArgs(['--branch'], { GITHUB_REPOSITORY: REPO }), /--branch requires a value/);
   assert.throws(() => parseCleanupArgs(['--branch', 'x'.repeat(256)], { GITHUB_REPOSITORY: REPO }), /branch must be/);
   assert.throws(() => parseCleanupArgs(['--preserve-path', 'dynamic/nope'], { GITHUB_REPOSITORY: REPO }), /canonical immediate workflow/);
 });
