@@ -82,6 +82,31 @@ assert.deepEqual(
   'every fallback attempt is pinned, disables pooling, preserves SNI, and requests identity encoding',
 );
 
+const nullBodyStatusTransport = createPublicHttpsTransport({
+  lookup: async () => [PUBLIC_A],
+  request: (_url, _options, callback) => {
+    const req = new EventEmitter();
+    req.end = () => {
+      const response = new EventEmitter();
+      response.statusCode = 204;
+      response.headers = { 'content-type': 'application/json' };
+      response.destroy = () => {};
+      callback(response);
+      queueMicrotask(() => {
+        response.emit('data', Buffer.from('unexpected upstream bytes'));
+        response.emit('end');
+      });
+    };
+    return req;
+  },
+});
+const nullBodyResponse = await nullBodyStatusTransport.fetch(
+  'https://idp.example.test/no-content',
+  { signal: AbortSignal.timeout(250) },
+);
+assert.equal(nullBodyResponse.status, 204);
+assert.equal(await nullBodyResponse.text(), '');
+
 const oversized = createPublicHttpsTransport({
   lookup: async () => [PUBLIC_A],
   request: (_url, _options, callback) => {
