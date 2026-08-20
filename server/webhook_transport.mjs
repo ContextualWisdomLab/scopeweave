@@ -294,10 +294,13 @@ async function fetchFromCandidate(
             }
             const responseHeaders = new Headers();
             appendResponseHeaders(responseHeaders, response.headers);
-            const responseBody = chunks.length ? Buffer.concat(chunks) : null;
+            const responseBody = status === 204 || status === 205 || status === 304
+              ? null
+              : (chunks.length ? Buffer.concat(chunks) : null);
             try {
+              const builtResponse = new Response(responseBody, { status, headers: responseHeaders });
               settled = true;
-              resolve(new Response(responseBody, { status, headers: responseHeaders }));
+              resolve(builtResponse);
             } catch {
               fail();
             }
