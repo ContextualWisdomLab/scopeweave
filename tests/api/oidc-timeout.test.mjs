@@ -29,6 +29,7 @@ let observedUpstreamAbort = null;
 let jwksFetches = 0;
 const originalTimeout = AbortSignal.timeout;
 const originalFetch = globalThis.fetch;
+const originalDateNow = Date.now;
 
 const encoded = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
 const signIdToken = (claims) => {
@@ -102,7 +103,7 @@ globalThis.fetch = async (input, init) => {
     exp: now + 300,
   };
 
-  if (code === 'valid-code' || code === 'valid-code-cache') {
+  if (code === 'valid-code' || code === 'valid-code-cache' || code === 'exact-expiry-code') {
     return Response.json({ id_token: signIdToken(baseClaims) });
   }
   if (code === 'forged-code') {
@@ -206,6 +207,24 @@ try {
     'OIDC token exchange preserves callback cancellation while retaining its timeout budget',
   );
 
+  const anchoredNow = originalDateNow();
+  let exactExpiryState;
+  try {
+    Date.now = () => anchoredNow;
+    exactExpiryState = await startFlow('exact-expiry-code');
+    Date.now = () => anchoredNow + (5 * 60 * 1000);
+    const exactExpiry = await app.request(
+      `/api/auth/oidc/callback?state=${encodeURIComponent(exactExpiryState)}&code=exact-expiry-code`,
+    );
+    assert.equal(
+      exactExpiry.status,
+      400,
+      'an OIDC flow is unusable at the exact configured expiration instant',
+    );
+  } finally {
+    Date.now = originalDateNow;
+  }
+
   for (let index = 0; index < 256; index += 1) {
     const pending = await app.request('/api/auth/oidc/start');
     assert.equal(
@@ -226,9 +245,10 @@ try {
     'capacity exhaustion returns a stable non-secret degraded-mode response',
   );
 } finally {
+  Date.now = originalDateNow;
   AbortSignal.timeout = originalTimeout;
   globalThis.fetch = originalFetch;
   delete process.env.SCOPEWEAVE_DEV;
 }
 
-console.log('oidc discovery, private-endpoint, validation, cancellation, redirect, timeout, bounded JWKS reuse, and state-capacity regression passed');
+console.log('oidc discovery, private-endpoint, validation, cancellation, inclusive expiry, redirect, timeout, bounded JWKS reuse, and state-capacity regression passed');
