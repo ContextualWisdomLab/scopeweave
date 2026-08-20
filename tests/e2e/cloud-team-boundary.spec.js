@@ -1,7 +1,7 @@
 import { test, expect } from './coverage-test.js';
 import { spawn } from 'node:child_process';
 
-const PORT = 8834;
+const PORT = 8835;
 const BASE = `http://127.0.0.1:${PORT}`;
 let server;
 let ownerToken;
