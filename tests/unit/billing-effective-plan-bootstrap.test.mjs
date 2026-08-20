@@ -5,13 +5,15 @@ process.env.SCOPEWEAVE_DEV = '1';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 delete process.env.ORCHESTRATOR_URL;
 
+// Import the real public application bootstrap first. It is responsible for
+// composing the shared database and billing authority before requests can use
+// the legacy route graph.
+await import('../../server/app.mjs');
 const { db } = await import('../../server/db.mjs');
 const { PLANS, planOf } = await import('../../server/billing.mjs');
 
-// This exercises the real production bootstrap boundary rather than manually
-// calling configureBillingEntitlementDatabase from the test. A claim-backed plan
-// is not usable by legacy planOf consumers unless server/db.mjs binds the
-// bootstrapped database into billing.mjs itself.
+// Do not manually call configureBillingEntitlementDatabase here: this contract
+// proves production application bootstrap wires claim-backed plan authority.
 db.prepare('INSERT INTO users(id,email,password_hash,name) VALUES(?,?,?,?)')
   .run(9001, 'bootstrap-plan@example.test', 'hash', 'Bootstrap Plan');
 db.prepare('INSERT INTO orgs(id,name,owner_id,plan) VALUES(?,?,?,?)')
@@ -59,7 +61,7 @@ const organization = db.prepare('SELECT id, plan FROM orgs WHERE id = ?').get(91
 assert.equal(
   planOf(organization),
   PLANS.pro,
-  'production database bootstrap must bind current claim evidence into planOf consumers',
+  'production application bootstrap must bind current claim evidence into planOf consumers',
 );
 
 db.close();
