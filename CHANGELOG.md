@@ -22,6 +22,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Added a tenant-scoped read-only projection over accepted authoritative Stripe
+  Invoice observations, selecting current state by append identity rather than
+  webhook/provider time, preserving payment/provenance facts, and rejecting
+  ambiguous tenant or provider filters without mutating entitlement state.
 - Persist authoritative Stripe Invoice reads as normalized append-only evidence
   linked to the exact accepted Subscription observation that named the Invoice;
   tenant/customer/subscription/invoice rebinding fails closed, local observation
