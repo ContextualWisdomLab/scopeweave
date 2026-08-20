@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Added a bounded authoritative Stripe Invoice reader that verifies exact tenant-
+  bound Invoice, Customer, and Subscription identities, supports current Basil
+  and legacy Subscription provenance without trusting metadata alone, bounds
+  provider transport/response parsing, and returns immutable payment evidence
+  without granting or persisting entitlement.
 - Added a deterministic Stripe entitlement-policy boundary over authoritative
   Subscription and Invoice evidence: paid `active` access requires an exact paid
   Invoice match, `past_due` never provisions or extends access, terminal states

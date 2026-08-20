@@ -80,6 +80,11 @@ assert.match(
   'the monotonic Stripe entitlement policy is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/stripe_invoice_provider\.mjs/,
+  'the authoritative Stripe invoice reader is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
@@ -193,6 +198,26 @@ assert.match(
   scripts['test:unit'],
   /tests\/unit\/stripe-entitlement-policy-duplicate-claims\.test\.mjs/,
   'normal unit CI executes duplicate subscription-claim corruption regression',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/stripe-invoice-provider\.test\.mjs/,
+  'the authoritative Stripe invoice reader regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/stripe-invoice-provider-edge\.test\.mjs/,
+  'the authoritative Stripe invoice edge regression executes under c8',
+);
+assert.match(
+  scripts['test:unit'],
+  /tests\/unit\/stripe-invoice-provider\.test\.mjs/,
+  'normal unit CI executes the authoritative Stripe invoice reader regression',
+);
+assert.match(
+  scripts['test:unit'],
+  /tests\/unit\/stripe-invoice-provider-edge\.test\.mjs/,
+  'normal unit CI executes the authoritative Stripe invoice edge regression',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
