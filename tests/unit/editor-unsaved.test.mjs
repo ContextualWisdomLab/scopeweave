@@ -18,6 +18,10 @@ function loadApp() {
   editorHasUnsavedChanges,
   bindGlobalEvents,
   closeEditor,
+  calculatePlannedProgressRatio,
+  getLastDescendantId,
+  getPlannedEndDateValue,
+  writeJsonSyncFile,
   state,
   DEFAULT_EDITOR_STATE,
 };
@@ -123,6 +127,10 @@ const {
   editorHasUnsavedChanges,
   bindGlobalEvents,
   closeEditor,
+  calculatePlannedProgressRatio,
+  getLastDescendantId,
+  getPlannedEndDateValue,
+  writeJsonSyncFile,
   state,
   DEFAULT_EDITOR_STATE,
   windowListeners,
@@ -228,4 +236,29 @@ setConfirm(() => {
 closeEditor(true);
 assert.equal(state.editor.mode, DEFAULT_EDITOR_STATE.mode, 'force close skips confirm');
 
-console.log('✓ editor unsaved / beforeunload coverage tests passed');
+// --- defensive product contracts ---
+// These are intentionally exercised without the optimized caller assumptions used by
+// compute/render paths. CI/coverage work must not make public helpers less defensive.
+assert.equal(
+  calculatePlannedProgressRatio('2026-01-02', '2026-01-01', '2026-01-03'),
+  0.5,
+  'planned progress calculates duration when an optional precomputed duration is absent',
+);
+
+state.tasks = [];
+assert.equal(
+  getLastDescendantId('missing-task'),
+  'missing-task',
+  'missing task lookup remains non-throwing and returns the requested id',
+);
+assert.equal(
+  getPlannedEndDateValue(null),
+  '',
+  'planned-end accessor remains non-throwing for a missing task record',
+);
+await assert.doesNotReject(
+  async () => writeJsonSyncFile(),
+  'JSON sync remains a no-op when the user has not connected a file handle',
+);
+
+console.log('✓ editor unsaved / beforeunload / defensive guard coverage tests passed');
