@@ -57,4 +57,4 @@ assert.doesNotMatch(
   'default CodeQL must remain on the unprivileged pull_request trust boundary',
 );
 
-console.log('☓ default CodeQL exact-head and action supply-chain contract passed');
+console.log('✓ default CodeQL exact-head and action supply-chain contract passed');
