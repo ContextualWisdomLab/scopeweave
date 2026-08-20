@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DatabaseSync } from 'node:sqlite';
 
+import { installStripeSubscriptionObservationSchema } from '../../server/stripe_subscription_observation_ledger.mjs';
 import { installStripeWebhookEventSchema } from '../../server/stripe_webhook_event_ledger.mjs';
 import { installStripeWebhookReconciliationQueueSchema } from '../../server/stripe_webhook_reconciliation_queue.mjs';
 import {
@@ -22,18 +23,7 @@ function createWorkerDatabase() {
     );
   `);
   installStripeWebhookEventSchema(database);
-  database.exec(`
-    CREATE TABLE billing_stripe_customers (
-      customer_id TEXT PRIMARY KEY,
-      org_id INTEGER NOT NULL REFERENCES orgs(id),
-      first_observed_at_ms INTEGER NOT NULL CHECK(first_observed_at_ms >= 0)
-    );
-    CREATE TABLE billing_stripe_subscriptions (
-      subscription_id TEXT PRIMARY KEY,
-      customer_id TEXT NOT NULL REFERENCES billing_stripe_customers(customer_id),
-      first_observed_at_ms INTEGER NOT NULL CHECK(first_observed_at_ms >= 0)
-    );
-  `);
+  installStripeSubscriptionObservationSchema(database);
   installStripeWebhookReconciliationQueueSchema(database);
   installStripeReconciliationWorkerSchema(database);
   return database;
@@ -49,7 +39,7 @@ function seedTrigger(database, {
     .run(organizationId, 'Worker Org', 'free');
   if (withAuthority) {
     database.prepare(`
-      INSERT INTO billing_stripe_customers(customer_id, org_id, first_observed_at_ms)
+      INSERT INTO billing_stripe_customers(customer_id, organization_id, first_observed_at_ms)
       VALUES(?,?,?)
     `).run('cus_worker', organizationId, 1_000);
     database.prepare(`
@@ -124,7 +114,7 @@ test('worker claims one durable trigger, uses server-owned tenant authority, and
   }]);
 
   const job = database.prepare(`
-    SELECT processing_state, attempt_count, claim_decision_id, lease_token,
+    SELECT processing_state, attempt_count, claim_decision_id, lease_token_sha256,
            lease_expires_at_ms, completed_at_ms, last_error_code
       FROM billing_stripe_reconciliation_jobs WHERE event_id = ?
   `).get('evt_worker');
@@ -132,7 +122,7 @@ test('worker claims one durable trigger, uses server-owned tenant authority, and
     processing_state: 'succeeded',
     attempt_count: 1,
     claim_decision_id: 13,
-    lease_token: null,
+    lease_token_sha256: null,
     lease_expires_at_ms: null,
     completed_at_ms: nowMs,
     last_error_code: null,
