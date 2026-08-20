@@ -191,6 +191,32 @@ test('rejected Stripe responses cancel unread bodies before returning sanitized 
   });
 });
 
+test('response-body cleanup failure never replaces the stable provider failure', async () => {
+  await withStripeEnv(async () => {
+    let cancelCalls = 0;
+    const unreadBody = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('provider body'));
+      },
+      cancel() {
+        cancelCalls += 1;
+        throw new Error('cleanup secret must not escape');
+      },
+    });
+    globalThis.fetch = async () => new Response(unreadBody, {
+      status: 503,
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const payload = await expectProviderError(
+      () => createCheckout({ orgId: 73, configuration: liveConfiguration }),
+      'billing_provider_unavailable',
+    );
+    assert.equal(cancelCalls, 1);
+    assert.doesNotMatch(payload, /cleanup secret/);
+  });
+});
+
 test('provider response declarations and streamed bytes are bounded before JSON parsing', async () => {
   await withStripeEnv(async () => {
     for (const declaredLength of ['not-a-number', '-1', String(providerResponseLimitBytes + 1)]) {
