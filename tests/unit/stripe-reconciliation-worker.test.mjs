@@ -273,3 +273,45 @@ test('missing tenant identity remains explicit retryable work and never calls th
   assert.equal(job.next_attempt_at_ms, nowMs + 25);
   assert.equal(job.last_error_code, 'stripe_reconciliation_authority_missing');
 });
+
+test('dependency options cannot override server-owned tenant, Subscription, or verified Event authority', async () => {
+  const database = createWorkerDatabase();
+  seedTrigger(database, {
+    eventId: 'evt_authority_worker',
+    subscriptionId: 'sub_authority_worker',
+    organizationId: 17,
+  });
+  const repository = createSqliteStripeReconciliationWorkerRepository(database, {
+    now: () => 30_000,
+    randomToken: sequentialTokens(),
+  });
+  const calls = [];
+
+  const result = await runNextStripeReconciliationJob({
+    repository,
+    reconcile: async (input) => {
+      calls.push(input);
+      return {
+        organizationId: input.organizationId,
+        subscriptionId: input.subscriptionId,
+        claimDecisionId: 71,
+      };
+    },
+    reconciliationDependencies: {
+      organizationId: 999,
+      subscriptionId: 'sub_foreign_override',
+      sourceEventId: 'evt_foreign_override',
+      secretKey: 'sk_test_server_owned',
+    },
+  });
+
+  assert.equal(result.status, 'succeeded');
+  assert.equal(result.organizationId, 17);
+  assert.equal(result.subscriptionId, 'sub_authority_worker');
+  assert.deepEqual(calls, [{
+    organizationId: 17,
+    subscriptionId: 'sub_authority_worker',
+    sourceEventId: 'evt_authority_worker',
+    secretKey: 'sk_test_server_owned',
+  }]);
+});
