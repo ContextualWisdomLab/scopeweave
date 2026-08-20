@@ -1224,10 +1224,38 @@ function closeEditor(force = false) {
   }
 
   state.editor = { ...DEFAULT_EDITOR_STATE, errors: [] };
+
+  // 🎨 Palette: Track the previous focus element's identity before re-rendering destroys it
+  let focusElementId = null;
+  let focusTaskId = null;
+  let focusAction = null;
+
+  if (state.previousFocus) {
+    focusElementId = state.previousFocus.id;
+    focusAction = state.previousFocus.dataset?.action;
+    const row = state.previousFocus.closest?.('tr[data-task-id]');
+    if (row) {
+      focusTaskId = row.dataset.taskId;
+    }
+  }
+
   renderAll();
 
   if (state.previousFocus) {
-    state.previousFocus.focus();
+    // Try to restore focus dynamically to the newly rendered equivalent element
+    requestAnimationFrame(() => {
+      let target = null;
+      if (focusElementId) {
+        target = document.getElementById(focusElementId);
+      }
+      if (!target && focusTaskId && focusAction) {
+        target = document.querySelector(`tr[data-task-id="${focusTaskId}"] button[data-action="${focusAction}"]`);
+      }
+
+      if (target) {
+        target.focus();
+      }
+    });
     state.previousFocus = null;
   }
 }
