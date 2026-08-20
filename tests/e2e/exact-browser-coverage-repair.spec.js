@@ -103,6 +103,39 @@ test('invalid file-picker return shapes fail closed without claiming sync author
   await expect(page.locator('#sync-status')).toHaveText('브라우저 로컬 자동저장 사용 중');
 });
 
+test('inline progress keeps keyboard focus after the row is re-rendered', async ({ page }) => {
+  await page.goto('/');
+  const progress = page.locator('select[data-inline-progress]').first();
+  await expect(progress).toBeVisible();
+  await progress.focus();
+  await progress.selectOption('진행(30%)');
+
+  const taskId = await progress.getAttribute('data-inline-progress');
+  const replacement = page.locator(`select[data-inline-progress="${taskId}"]`);
+  await expect(replacement).toHaveValue('진행(30%)');
+  await expect(replacement).toBeFocused();
+});
+
+test('cloud bootstrap remains usable when an optional host-init hook is absent', async ({ page }) => {
+  await page.addInitScript(() => {
+    Object.defineProperty(window, 'ScopeWeaveCloud', {
+      configurable: true,
+      set(value) {
+        delete value.init;
+        Object.defineProperty(window, 'ScopeWeaveCloud', {
+          configurable: true,
+          writable: true,
+          value,
+        });
+      },
+    });
+  });
+
+  await page.goto('/');
+  await expect(page.getByRole('button', { name: '최상위 작업 추가' })).toBeVisible();
+  await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+});
+
 test('editor validation tolerates a future field label without losing the form', async ({ page }) => {
   await page.goto('/');
   const edit = page.locator('button[data-action="edit"]').first();
@@ -122,6 +155,26 @@ test('editor validation tolerates a future field label without losing the form',
   const future = page.locator('#future-editor-field');
   await expect(future).toBeVisible();
   await expect(future).not.toHaveAttribute('aria-invalid', 'true');
+});
+
+test('editor validation ignores a malformed unlabeled extension field while reporting real errors', async ({ page }) => {
+  await page.goto('/');
+  const edit = page.locator('button[data-action="edit"]').first();
+  await edit.click();
+
+  await page.locator('[data-testid="editor-planned-start"]').fill('2026-12-31');
+  await page.locator('[data-testid="editor-planned-end"]').fill('2026-01-01');
+  await page.evaluate(() => {
+    const form = document.querySelector('form[data-editor-form="true"]');
+    const input = document.createElement('input');
+    input.setAttribute('data-editor-field', '');
+    input.id = 'unlabeled-extension-field';
+    form.appendChild(input);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+
+  await expect(page.locator('#editor-errors')).toContainText('계획종료일은 계획시작일보다 빠를 수 없습니다.');
+  await expect(page.locator('#unlabeled-extension-field')).not.toHaveAttribute('aria-invalid', 'true');
 });
 
 test('team recovery resolves tenant authority, reports invite rejection, and lets a member leave', async ({ page }) => {
