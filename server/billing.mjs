@@ -140,6 +140,14 @@ async function readBoundedProviderJson(response) {
   }
 }
 
+async function cancelUnreadProviderBody(response) {
+  try {
+    await response.body.cancel();
+  } catch {
+    // Cleanup failure must never replace the stable provider failure returned below.
+  }
+}
+
 async function createStripeSessionWithFetch(secretKey, payload) {
   let response;
   try {
@@ -158,11 +166,13 @@ async function createStripeSessionWithFetch(secretKey, payload) {
   }
 
   if (!response.ok) {
+    await cancelUnreadProviderBody(response);
     throw providerUnavailableFailure();
   }
 
   const mediaType = response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
   if (mediaType !== 'application/json') {
+    await cancelUnreadProviderBody(response);
     throw providerInvalidResponseFailure();
   }
 
