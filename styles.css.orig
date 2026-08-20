@@ -17,12 +17,12 @@
   --status-delay: #ea580c;
   --gantt-plan: #334155;
   --gantt-actual: #10b981;
-  
+
   --shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
   --shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.08), 0 2px 4px -2px rgba(15, 23, 42, 0.04);
   --shadow-md: 0 10px 15px -3px rgba(15, 23, 42, 0.08), 0 4px 6px -4px rgba(15, 23, 42, 0.04);
   --shadow-lg: 0 20px 25px -5px rgba(15, 23, 42, 0.1), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
-  
+
   --radius: 16px;
   --radius-sm: 10px;
   --radius-badge: 20px;
@@ -360,8 +360,7 @@ button {
 .secondary-button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-.gantt-bar:focus-visible,
-.meta-value-card:focus-visible {
+.gantt-bar:focus-visible {
   outline: 3px solid rgba(37, 99, 235, 0.5);
   outline-offset: 2px;
 }
@@ -845,7 +844,7 @@ select[data-inline-progress]:focus {
   .priority-desktop {
     display: none;
   }
-  
+
   .bottom-action-bar {
     position: static;
     border-radius: var(--radius-sm);
@@ -866,7 +865,7 @@ select[data-inline-progress]:focus {
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
-  
+
   .icon-button:hover,
   .toggle-button:hover,
   .primary-button:hover,
