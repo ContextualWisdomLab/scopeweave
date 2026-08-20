@@ -17,7 +17,7 @@ The operator boundary is intentionally narrow:
 - secure temporary output reserved with owner-only permissions before snapshot work begins;
 - source and backup integrity plus foreign-key checks;
 - exact `application_id`, `user_version`, and canonical `sqlite_schema` comparison;
-- schema inspection limits SQLite's result set to 100,001 rows before materialization and rejects more than 100,000 non-internal schema objects;
+- schema inspection streams at most 100,001 rows with `StatementSync.iterate()`, rejects before retaining a 100,001st non-internal schema object, and enforces an 8 MiB UTF-8 budget over the exact serialized JSON array including brackets and separators;
 - stable non-secret JSON error codes;
 - only uniquely owned temporary output is cleaned up after pre-publication failure, without replacing the causal failure.
 
@@ -32,7 +32,7 @@ ScopeWeave currently supports Node `^22.13.0 || >=23.4.0`. Node's `node:sqlite` 
 | Requirement | Implementation evidence | Regression evidence |
 | --- | --- | --- |
 | Consistent live backup | read-only source connection plus parameterized `VACUUM INTO` | open-writer WAL fixture verifies committed content in the snapshot |
-| Bounded schema inspection | `sqlite_schema` query uses `LIMIT 100001` before mapping rows | fake-database contract asserts the SQL limit and rejects a 100,001-row schema |
+| Bounded schema inspection | `sqlite_schema` query uses `LIMIT 100001`; `StatementSync.iterate()` enforces the 100,000-object and exact 8 MiB serialized UTF-8 budgets before retaining an overflowing row | fake-database contract rejects schema access through `.all()`, streams an oversized row, and requires `source_database_schema_too_large`; object-count regression preserves the row ceiling |
 | No destination overwrite | secure temp + atomic no-overwrite hard-link publication | existing destination and source-alias tests fail closed |
 | Canonical destination authority | publication uses the destination path resolved under the canonical parent directory | parent-symlink swap during snapshot cannot redirect the final backup |
 | Preserve concurrent winner | an `EEXIST` publication failure cleans only the unique temporary path, never the destination | competing publisher fixture remains byte-for-byte intact after the losing attempt fails |
@@ -45,7 +45,7 @@ ScopeWeave currently supports Node `^22.13.0 || >=23.4.0`. Node's `node:sqlite` 
 | No destructive restore | no restore operation exported or accepted by CLI | operator runbook defines manual stopped-writer recovery rehearsal |
 | CI/coverage retention | package scripts instrument and execute the module | coverage-script contract locks both the include and regression case |
 
-The first branch commit, `3a04516d8cf3ff7336c47de911daf02faf496ef2`, intentionally added the backup contract before the production module existed. Production implementation followed on the same bounded branch. Later tests strengthened live-WAL and metadata-mismatch evidence. Security review then added a parent-symlink retarget regression at `3f55dafba40ace2a2d0192e893d961262878b8e5` and the canonical-directory repair at `1b31a58be5cfca0877252da79980d315369edf3e`. Concurrency review added a competing-publisher regression at `91f0cc411fcd8cd96be2538c8c99836ae4d76f81`; `b7083c6b8e038d1e772a2d43dfae6f804472edbb` corrected ownership so a losing publish attempt cannot delete another process's destination. Review follow-up `037fea3081774d78a80fcf04cab7fe2c1f98de76` added the pre-materialization schema-bound contract, and `2f7339486226730dd2103079b5312e437fcd4794` implemented the bounded query and read-only source connection.
+The first branch commit, `3a04516d8cf3ff7336c47de911daf02faf496ef2`, intentionally added the backup contract before the production module existed. Production implementation followed on the same bounded branch. Later tests strengthened live-WAL and metadata-mismatch evidence. Security review then added a parent-symlink retarget regression at `3f55dafba40ace2a2d0192e893d961262878b8e5` and the canonical-directory repair at `1b31a58be5cfca0877252da79980d315369edf3e`. Concurrency review added a competing-publisher regression at `91f0cc411fcd8cd96be2538c8c99836ae4d76f81`; `b7083c6b8e038d1e772a2d43dfae6f804472edbb` corrected ownership so a losing publish attempt cannot delete another process's destination. Review follow-up `037fea3081774d78a80fcf04cab7fe2c1f98de76` added the pre-materialization schema-bound contract, and `2f7339486226730dd2103079b5312e437fcd4794` implemented the bounded query and read-only source connection. Current review hardening then made the byte bound a true memory-side admission control: `34575a38a2d388889c5072a1feb597d4a878f858` made the regression refuse schema `.all()` materialization, and `9322024327d6b6f745c0eca2947bacc1073ed454` changed production to incremental `iterate()` collection with exact JSON-array UTF-8 accounting.
 
 ## Security and privacy analysis
 
