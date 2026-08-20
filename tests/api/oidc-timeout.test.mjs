@@ -27,6 +27,7 @@ let observedTimeout = null;
 let callbackAbortController = null;
 let observedUpstreamAbort = null;
 let jwksFetches = 0;
+let exactExpiryTokenExchanges = 0;
 const originalTimeout = AbortSignal.timeout;
 const originalFetch = globalThis.fetch;
 const originalDateNow = Date.now;
@@ -91,6 +92,7 @@ globalThis.fetch = async (input, init) => {
 
   const form = new URLSearchParams(await request.clone().text());
   const code = form.get('code');
+  if (code === 'exact-expiry-code') exactExpiryTokenExchanges += 1;
   const expectedNonce = expectedNonceByCode.get(code);
   const now = Math.floor(Date.now() / 1000);
   const baseClaims = {
@@ -210,7 +212,18 @@ try {
   const anchoredNow = originalDateNow();
   let exactExpiryState;
   try {
-    Date.now = () => anchoredNow;
+    // Keep the historical core OIDC state valid one second longer than the
+    // facade nonce. This isolates the facade boundary: on the vulnerable
+    // predecessor, equality at the facade expiry reaches the provider and
+    // succeeds; on the fixed code it is rejected before any token exchange.
+    const startMoments = [
+      anchoredNow,
+      anchoredNow + 1000,
+      anchoredNow,
+      anchoredNow,
+    ];
+    let startMomentIndex = 0;
+    Date.now = () => startMoments[Math.min(startMomentIndex++, startMoments.length - 1)];
     exactExpiryState = await startFlow('exact-expiry-code');
     Date.now = () => anchoredNow + (5 * 60 * 1000);
     const exactExpiry = await app.request(
@@ -219,7 +232,12 @@ try {
     assert.equal(
       exactExpiry.status,
       400,
-      'an OIDC flow is unusable at the exact configured expiration instant',
+      'the facade OIDC binding is unusable at its exact configured expiration instant',
+    );
+    assert.equal(
+      exactExpiryTokenExchanges,
+      0,
+      'an exact-expired facade binding is rejected before any provider token exchange',
     );
   } finally {
     Date.now = originalDateNow;
@@ -251,4 +269,4 @@ try {
   delete process.env.SCOPEWEAVE_DEV;
 }
 
-console.log('oidc discovery, private-endpoint, validation, cancellation, inclusive expiry, redirect, timeout, bounded JWKS reuse, and state-capacity regression passed');
+console.log('oidc discovery, private-endpoint, validation, cancellation, inclusive facade expiry, redirect, timeout, bounded JWKS reuse, and state-capacity regression passed');
