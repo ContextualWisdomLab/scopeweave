@@ -132,10 +132,11 @@ test('reconciliation queue persists one normalized pending trigger per verified 
     queued: true,
   });
 
-  assert.deepEqual(database.prepare(`
+  const persistedTrigger = database.prepare(`
     SELECT event_id, subscription_id, queued_at_ms, processing_state
       FROM billing_stripe_reconciliation_triggers
-  `).get(), {
+  `).get();
+  assert.deepEqual({ ...persistedTrigger }, {
     event_id: 'evt_subscription',
     subscription_id: 'sub_scopeweave',
     queued_at_ms: 1_787_000_000_123,
