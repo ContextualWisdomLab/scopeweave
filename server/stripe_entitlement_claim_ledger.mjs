@@ -125,7 +125,8 @@ export function installStripeEntitlementClaimSchema(database) {
       claim_invoice_observation_id INTEGER REFERENCES billing_stripe_invoice_observations(observation_id) ON DELETE RESTRICT,
       evaluated_at_sec INTEGER NOT NULL CHECK(evaluated_at_sec >= 0),
       recorded_at_ms INTEGER NOT NULL CHECK(recorded_at_ms >= 0),
-      CHECK((entitled = 1 AND valid_until_sec IS NOT NULL) OR entitled = 0)
+      CHECK((entitled = 1 AND valid_until_sec IS NOT NULL) OR entitled = 0),
+      UNIQUE(subscription_id, decision_id)
     );
     CREATE INDEX IF NOT EXISTS billing_stripe_entitlement_decision_history
       ON billing_stripe_entitlement_decisions(subscription_id, decision_id);
@@ -136,7 +137,9 @@ export function installStripeEntitlementClaimSchema(database) {
 
     CREATE TABLE IF NOT EXISTS billing_stripe_entitlement_claim_heads (
       subscription_id TEXT PRIMARY KEY REFERENCES billing_stripe_subscriptions(subscription_id) ON DELETE CASCADE,
-      decision_id INTEGER NOT NULL UNIQUE REFERENCES billing_stripe_entitlement_decisions(decision_id) ON DELETE RESTRICT
+      decision_id INTEGER NOT NULL UNIQUE,
+      FOREIGN KEY(subscription_id, decision_id)
+        REFERENCES billing_stripe_entitlement_decisions(subscription_id, decision_id) ON DELETE RESTRICT
     );
   `);
 }
