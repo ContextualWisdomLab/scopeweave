@@ -236,7 +236,7 @@ async function bootstrap() {
   }
 
   // Optional cloud overlay (loaded as a separate module; undefined offline).
-  const cloudApi = window.ScopeWeaveCloud;
+  const cloudApi = typeof window !== 'undefined' ? window.ScopeWeaveCloud : null;
   cloudApi?.init?.({
     hydrateState,
     renderAll,
@@ -643,6 +643,108 @@ function createTableCell(className, content) {
   return cell;
 }
 
+// ⚡ Bolt: Cache unattached DOM elements as templates to eliminate repetitive
+// document.createElement() JS-to-C++ allocation overhead during O(N) table rendering loops.
+// Using cloneNode() is measurably faster when creating thousands of rows.
+let taskRowTemplate = null;
+let actionCellTemplate = null;
+let actionStackTemplate = null;
+let toggleButtonTemplate = null;
+let toggleIconTemplate = null;
+let togglePlaceholderTemplate = null;
+
+function renderTaskRow(task, taskMetrics, index, hasChildren) {
+  if (!taskRowTemplate) {
+    taskRowTemplate = document.createElement('tr');
+    taskRowTemplate.draggable = true;
+    actionCellTemplate = document.createElement('td');
+    actionStackTemplate = document.createElement('div');
+    actionStackTemplate.className = 'action-stack';
+    toggleButtonTemplate = document.createElement('button');
+    toggleButtonTemplate.type = 'button';
+    toggleButtonTemplate.className = 'toggle-button';
+    toggleButtonTemplate.dataset.action = 'toggle';
+    toggleIconTemplate = document.createElement('span');
+    toggleIconTemplate.setAttribute('aria-hidden', 'true');
+    togglePlaceholderTemplate = document.createElement('span');
+    togglePlaceholderTemplate.className = 'toggle-placeholder';
+  }
+
+  const row = taskRowTemplate.cloneNode(false);
+  row.className = `task-row depth-${task.depth} ${index % 2 === 1 ? 'striped-even' : ''}`;
+  row.dataset.taskId = task.id;
+
+  const actionCell = actionCellTemplate.cloneNode(false);
+  const actionStack = actionStackTemplate.cloneNode(false);
+
+  const rowEntityName = task.task || task.activity || task.phase || '작업';
+
+  if (hasChildren) {
+    const toggleButton = toggleButtonTemplate.cloneNode(false);
+    const toggleLabel = task.expanded ? '접기' : '펼치기';
+    toggleButton.setAttribute('aria-label', `${toggleLabel} - ${rowEntityName}`);
+    toggleButton.setAttribute('aria-expanded', String(task.expanded));
+    toggleButton.title = `${toggleLabel} - ${rowEntityName}`;
+    const toggleIcon = toggleIconTemplate.cloneNode(false);
+    toggleIcon.textContent = task.expanded ? '▼' : '▶';
+    toggleButton.appendChild(toggleIcon);
+    actionStack.appendChild(toggleButton);
+  } else {
+    const placeholder = togglePlaceholderTemplate.cloneNode(false);
+    actionStack.appendChild(placeholder);
+  }
+
+  const dragHandle = getDragHandleTemplate();
+
+  const isLeaf = task.depth >= 3;
+  const addChildButton = createActionButton(`하위 추가 - ${rowEntityName}`, '＋', 'add-child', isLeaf ? '최대 3단계까지만 추가할 수 있습니다.' : `하위 추가 - ${rowEntityName}`);
+
+  if (isLeaf) {
+    addChildButton.setAttribute('aria-disabled', 'true');
+  } else {
+    addChildButton.removeAttribute('aria-disabled');
+  }
+
+  const editButton = createActionButton(`편집 - ${rowEntityName}`, '✎', 'edit', `편집 - ${rowEntityName}`);
+  editButton.setAttribute('aria-haspopup', 'dialog');
+
+  const deleteButton = createActionButton(`삭제 - ${rowEntityName}`, '🗑', 'delete', `삭제 - ${rowEntityName}`);
+
+  actionStack.append(
+    dragHandle,
+    addChildButton,
+    editButton,
+    deleteButton
+  );
+  actionCell.appendChild(actionStack);
+  row.appendChild(actionCell);
+
+  row.append(
+    createTableCell('', createTreeCellContent(task.phase, task.depth)),
+    createTableCell('', createTextCellContent(task.activity)),
+    createTableCell('', createTextCellContent(task.task)),
+    createTableCell('priority-mobile', createTextCellContent(task.categoryLarge)),
+    createTableCell('priority-mobile', createTextCellContent(task.categoryMedium)),
+    createTableCell('priority-desktop', createTextCellContent(task.documentName)),
+    createTableCell('priority-mobile', createOwnerCellContent(task.owner)),
+    createTableCell('priority-desktop', createTextCellContent(task.supportTeam)),
+    createTableCell('priority-mobile', createStatusCellContent(taskMetrics.progressState)),
+    createTableCell('priority-mobile', createTextCellContent(task.plannedStartDate)),
+    createTableCell('priority-mobile', createTextCellContent(task.plannedEndDate)),
+    createTableCell('priority-desktop', createMetricText(formatNumber(taskMetrics.durationDays), 'task-duration-days')),
+    createTableCell('priority-desktop', createMetricText(formatPercent(taskMetrics.plannedProgressRatio * 100, 2))),
+    createTableCell('priority-desktop', createMetricText(formatDecimal(taskMetrics.weightRatio, 3), 'task-weight-ratio')),
+    createTableCell('priority-desktop', createMetricText(formatPercent(taskMetrics.weightedPlannedRatio * 100, 2))),
+    createTableCell('priority-mobile', createActualProgressCellContent(task, taskMetrics)),
+    createTableCell('priority-desktop', createMetricText(formatPercent(taskMetrics.actualProgressRatio * 100, 2))),
+    createTableCell('priority-mobile', createTextCellContent(task.actualStartDate, taskMetrics.actualDateWarning)),
+    createTableCell('priority-mobile', createTextCellContent(task.actualEndDate, taskMetrics.actualDateWarning)),
+    createTableCell('priority-desktop', createMetricText(formatPercent(taskMetrics.weightedActualRatio * 100, 2)))
+  );
+
+  return row;
+}
+
 // ⚡ Bolt: Cache static DOM structures to avoid JS-to-C++ instantiation overhead in hot rendering paths.
 let dragHandleTemplate = null;
 function getDragHandleTemplate() {
@@ -762,7 +864,7 @@ function renderEditorField(label, field, value, type = 'text', required = false,
   }
   const input = document.createElement('input');
   input.id = fieldId;
-  input.setAttribute('data-testid', EDITOR_FIELD_TEST_IDS[field]);
+  input.setAttribute('data-testid', EDITOR_FIELD_TEST_IDS[field] || `editor-${toKebab(field)}`);
   input.dataset.editorField = field;
   input.type = type;
   if (type === 'text') {
@@ -1226,7 +1328,7 @@ function validateDraft(draft, depth) {
 
   EDITABLE_FIELDS.forEach((field) => {
     if (/[<>]/.test(sanitized[field])) {
-      const label = CSV_FIELD_LABELS[field];
+      const label = CSV_FIELD_LABELS[field] || field;
       errors.push(`${label} 항목에는 HTML 태그 문자를 사용할 수 없습니다.`);
     }
   });
@@ -1367,6 +1469,9 @@ function calculatePlannedProgressRatio(baseDate, startDate, endDate, durationDay
   }
   // Bolt: Reuse passed durationDays if available to avoid redundant Date parsing and calculations.
   const total = durationDays !== undefined ? durationDays : calculateDurationDays(startDate, endDate);
+  if (total <= 0) {
+    return 1;
+  }
   const elapsed = calculateDurationDays(startDate, baseDate);
   return clamp(elapsed / total, 0, 1);
 }
@@ -1419,6 +1524,11 @@ function insertTaskAfter(task, afterId) {
     return;
   }
   const index = getTaskIndexById(afterId);
+  if (index === -1) {
+    state.tasks.push(task);
+    invalidateTaskIndexCache();
+    return;
+  }
   state.tasks.splice(index + 1, 0, task);
   invalidateTaskIndexCache();
 }
@@ -1490,6 +1600,9 @@ function getLastRootTaskId() {
 
 function getLastDescendantId(taskId) {
   const startIndex = getTaskIndexById(taskId);
+  if (startIndex === -1) {
+    return taskId;
+  }
   const baseDepth = state.tasks[startIndex].depth;
   let lastId = taskId;
   for (let index = startIndex + 1; index < state.tasks.length; index += 1) {
@@ -1611,6 +1724,9 @@ function parseSafeJson(text) {
 }
 
 function getPlannedEndDateValue(task) {
+  if (!isTaskRecord(task)) {
+    return '';
+  }
   return task.plannedEndDate || task[LEGACY_PLANNED_END_FIELD] || '';
 }
 
@@ -2052,14 +2168,10 @@ async function connectJsonSync() {
   }
 
   try {
-    const handle = await window.showSaveFilePicker({
+    state.jsonSyncHandle = await window.showSaveFilePicker({
       suggestedName: 'wbs.json',
       types: [{ description: 'JSON Files', accept: { 'application/json': ['.json'] } }]
     });
-    if (typeof handle?.createWritable !== 'function') {
-      throw new Error('invalid file handle');
-    }
-    state.jsonSyncHandle = handle;
     await writeJsonSyncFile();
     renderAll();
     showToast('wbs.json 자동저장 연결이 완료되었습니다.');
@@ -2071,6 +2183,9 @@ async function connectJsonSync() {
 }
 
 async function writeJsonSyncFile() {
+  if (!state.jsonSyncHandle) {
+    return;
+  }
   const writable = await state.jsonSyncHandle.createWritable();
   await writable.write(JSON.stringify(exportJsonArray(), null, 2));
   await writable.close();
@@ -2598,6 +2713,25 @@ function formatNumber(value) {
     formatNumber.formatter = new Intl.NumberFormat('ko-KR');
   }
   return formatNumber.formatter.format(Number(value || 0));
+}
+
+const HTML_ESCAPE_ENTITIES = Object.assign(Object.create(null), {
+  '&': '&amp;',
+  '<': '&lt;',
+  '>': '&gt;',
+  '"': '&quot;',
+  "'": '&#39;'
+});
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (character) => HTML_ESCAPE_ENTITIES[character]);
+}
+
+function toKebab(value) {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .replace(/_/g, '-')
+    .toLowerCase();
 }
 
 function debounce(callback, wait) {
