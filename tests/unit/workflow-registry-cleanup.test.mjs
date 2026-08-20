@@ -123,6 +123,11 @@ test('cleanup CLI is dry-run by default and apply requires immutable SHA plus ex
   );
   assert.throws(() => parseCleanupArgs(['--repo', REPO, '--expected-sha', 'main', '--apply']), /40-character commit SHA/);
   assert.throws(() => parseCleanupArgs(['--repo', REPO, '--expected-sha', SHA_A, '--unknown']), /unsupported argument/);
+
+  for (const flag of ['--repo', '--branch', '--expected-sha', '--preserve-path', '--workflow-id']) {
+    const args = flag === '--repo' ? [flag, '--apply'] : ['--repo', REPO, flag, '--apply'];
+    assert.throws(() => parseCleanupArgs(args), new RegExp(`${flag} requires a value`));
+  }
 });
 
 test('high-level apply refuses missing authentication before audit or mutation traffic', async () => {
@@ -150,7 +155,7 @@ test('apply preflights exact workflow identity, disables only the planned ID, an
   let disabled = false;
   const calls = [];
   const fetchImpl = async (url, init) => {
-    calls.push({ url, method: init.method, authorization: init.headers.authorization });
+    calls.push({ url, method: init.method, authorization: init.headers.authorization, signal: init.signal });
     if (url === branchUrl) return response(200, { commit: { sha: SHA_A } });
     if (url === workflowUrl && init.method === 'GET') {
       return response(200, {
@@ -179,7 +184,9 @@ test('apply preflights exact workflow identity, disables only the planned ID, an
 
   assert.deepEqual(result.disabled, [{ workflow_id: 11, path: '.github/workflows/legacy-repair.yml', state: 'disabled_manually' }]);
   assert.equal(calls.filter((call) => call.method === 'PUT').length, 1);
-  assert.equal(calls.find((call) => call.method === 'PUT').url, disableUrl);
+  const disableCall = calls.find((call) => call.method === 'PUT');
+  assert.equal(disableCall.url, disableUrl);
+  assert.ok(disableCall.signal instanceof AbortSignal, 'workflow disable request must carry a bounded AbortSignal');
   assert.ok(calls.every((call) => call.authorization === 'Bearer secret-token'));
 });
 
