@@ -246,6 +246,70 @@ test('Stripe server and malformed-success outcomes remain indeterminate while 4x
   });
 });
 
+test('rejected Stripe responses cancel unread bodies while preserving retry-state semantics', async () => {
+  await withStripeEnv(async () => {
+    for (const scenario of [
+      { status: 503, contentType: 'application/json', expectedCode: 'billing_provider_unavailable', closesAttempt: false },
+      { status: 400, contentType: 'application/json', expectedCode: 'billing_provider_unavailable', closesAttempt: true },
+      { status: 200, contentType: 'text/html', expectedCode: 'billing_provider_invalid_response', closesAttempt: false },
+    ]) {
+      let cancelled = false;
+      const unreadBody = new ReadableStream({
+        start(controller) {
+          controller.enqueue(new TextEncoder().encode('provider bytes that must not remain leased'));
+        },
+        cancel() {
+          cancelled = true;
+        },
+      });
+      const attemptRepository = createAttemptRepository();
+      globalThis.fetch = async () => new Response(unreadBody, {
+        status: scenario.status,
+        headers: { 'content-type': scenario.contentType },
+      });
+
+      await expectProviderError(
+        () => liveCheckout(attemptRepository),
+        scenario.expectedCode,
+      );
+      assert.equal(cancelled, true, `${scenario.expectedCode} cancels its unread response body`);
+      if (scenario.closesAttempt) {
+        assert.equal(attemptRepository.events.at(-1).type, 'failure');
+      } else {
+        expectUnresolved(attemptRepository, 'indeterminate provider response keeps the durable retry identity');
+      }
+    }
+  });
+});
+
+test('response-body cleanup failure never replaces provider error or attempt outcome semantics', async () => {
+  await withStripeEnv(async () => {
+    let cancelCalls = 0;
+    const unreadBody = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('provider body'));
+      },
+      cancel() {
+        cancelCalls += 1;
+        throw new Error('cleanup secret must not escape');
+      },
+    });
+    const attemptRepository = createAttemptRepository();
+    globalThis.fetch = async () => new Response(unreadBody, {
+      status: 400,
+      headers: { 'content-type': 'application/json' },
+    });
+
+    const payload = await expectProviderError(
+      () => liveCheckout(attemptRepository),
+      'billing_provider_unavailable',
+    );
+    assert.equal(cancelCalls, 1);
+    assert.doesNotMatch(payload, /cleanup secret/);
+    assert.equal(attemptRepository.events.at(-1).type, 'failure');
+  });
+});
+
 test('provider response declarations and streamed bytes are bounded before JSON parsing', async () => {
   await withStripeEnv(async () => {
     for (const declaredLength of ['not-a-number', '-1', String(providerResponseLimitBytes + 1)]) {
