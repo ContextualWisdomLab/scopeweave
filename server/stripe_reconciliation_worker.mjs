@@ -8,7 +8,7 @@ const ERROR_CODE_PATTERN = /^[a-z0-9_:-]+$/u;
 const LEASE_TOKEN_PATTERN = /^[A-Za-z0-9_-]{16,128}$/u;
 const SAVEPOINT_NAME = 'billing_stripe_reconciliation_worker_write';
 const LEASE_EXPIRED_CODE = 'stripe_reconciliation_lease_expired';
-const DEFAULT_LEASE_MS = 30_000;
+const DEFAULT_LEASE_MS = 90_000;
 const DEFAULT_MAX_ATTEMPTS = 5;
 const DEFAULT_BASE_BACKOFF_MS = 5_000;
 const DEFAULT_MAX_BACKOFF_MS = 300_000;
@@ -228,12 +228,14 @@ export function installStripeReconciliationWorkerSchema(database) {
  * worker process; SQLite stores its SHA-256 digest. Expired leases are auditable and
  * reclaimable until the bounded attempt budget is exhausted, at which point the job
  * becomes a durable dead letter instead of remaining in an invisible pending state.
+ * The 90-second default lease leaves margin beyond the current two sequential
+ * 15-second authoritative Subscription and Invoice request budgets.
  *
  * @param {import('node:sqlite').DatabaseSync} database bootstrapped SQLite database
  * @param {object} [options] deterministic runtime controls
  * @param {() => number} [options.now] wall-clock milliseconds
  * @param {() => string} [options.randomToken] opaque lease-token generator
- * @param {number} [options.leaseMs=30000] lease lifetime
+ * @param {number} [options.leaseMs=90000] lease lifetime
  * @param {number} [options.maxAttempts=5] total attempt budget
  * @param {number} [options.baseBackoffMs=5000] first retry delay
  * @param {number} [options.maxBackoffMs=300000] retry-delay ceiling
