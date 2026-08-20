@@ -1,9 +1,18 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { app as applicationRoutes } from './application_routes.mjs';
+import { configureBillingEntitlementDatabase } from './billing.mjs';
 import { normalizeBillingStatusResponse } from './billing_status_response.mjs';
+import { db } from './db.mjs';
 
 const toastStylesheetUrl = new URL('../toast-state.css', import.meta.url);
+
+// Bind the already-bootstrapped server-owned database before the public route
+// graph can serve any request that reports plan authority. This keeps legacy
+// synchronous planOf consumers aligned with the same tenant-scoped current
+// entitlement claims used by resource-limit authorization, without mutating
+// orgs.plan or accepting caller-selected claim identities.
+configureBillingEntitlementDatabase(db);
 
 /**
  * ScopeWeave's public HTTP application entry point.
@@ -26,11 +35,11 @@ app.get('/toast-state.css', async (c) => {
   }
 });
 
-// The internal billing route already derives name/price/limits from
-// `planOf(org)`, but historically serialized `org.plan` as if it were the same
-// authority. Normalize only successful billing responses at the public
-// composition boundary so claim-backed authorization and buyer-visible status
-// cannot disagree, while preserving the stored/manual value separately.
+// The internal billing route derives name/price/limits from `planOf(org)` while
+// retaining the durable/manual value in its legacy `plan` field. Normalize only
+// successful billing responses at the public composition boundary so the
+// claim-backed authorization plan is buyer-visible and the stored value remains
+// separately auditable.
 app.use('/api/orgs/:id/billing', async (c, next) => {
   await next();
   if (c.res.status !== 200) return;
