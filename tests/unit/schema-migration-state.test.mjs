@@ -223,6 +223,48 @@ test('initial legacy bootstrap rolls back every table when DDL is interrupted', 
   database.close();
 });
 
+test('atomic legacy bootstrap validates inputs and preserves the causal DDL failure', () => {
+  assert.throws(
+    () => runAtomicLegacySchemaBootstrap(null, 'CREATE TABLE users (id INTEGER PRIMARY KEY)'),
+    /database must provide exec/,
+  );
+  assert.throws(
+    () => runAtomicLegacySchemaBootstrap({ exec() {} }, ''),
+    /bootstrapSql must be a non-empty string/,
+  );
+
+  const originalError = new Error('schema failed');
+  const calls = [];
+  const database = {
+    exec(sql) {
+      calls.push(sql);
+      if (sql === 'BROKEN') throw originalError;
+      if (sql === 'ROLLBACK') throw new Error('rollback also failed');
+    },
+  };
+
+  assert.throws(
+    () => runAtomicLegacySchemaBootstrap(database, 'BROKEN'),
+    (error) => error === originalError,
+  );
+  assert.deepEqual(calls, ['BEGIN IMMEDIATE', 'BROKEN', 'ROLLBACK']);
+});
+
+test('atomic legacy bootstrap commits a successful schema transaction', () => {
+  const database = new DatabaseSync(':memory:');
+  runAtomicLegacySchemaBootstrap(
+    database,
+    'CREATE TABLE users (id INTEGER PRIMARY KEY); CREATE TABLE orgs (id INTEGER PRIMARY KEY);',
+  );
+  assert.deepEqual(
+    database.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('users', 'orgs') ORDER BY name",
+    ).all().map((row) => String(row.name)),
+    ['orgs', 'users'],
+  );
+  database.close();
+});
+
 test('database bootstrap never recreates legacy tables over a canonical generation', () => {
   const tempDirectory = mkdtempSync(join(tmpdir(), 'scopeweave-schema-'));
   const databasePath = join(tempDirectory, 'canonical.sqlite');
