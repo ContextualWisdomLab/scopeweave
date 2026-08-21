@@ -130,11 +130,12 @@ test('production webhook bootstrap durably queues a verified Subscription trigge
   });
   assert.equal(verified.id, event.id);
 
-  assert.deepEqual(db.prepare(`
+  const trigger = db.prepare(`
     SELECT event_id, subscription_id, processing_state
       FROM billing_stripe_reconciliation_triggers
      WHERE event_id = ?
-  `).get(event.id), {
+  `).get(event.id);
+  assert.deepEqual({ ...trigger }, {
     event_id: event.id,
     subscription_id: 'sub_queue_subscription',
     processing_state: 'pending',
