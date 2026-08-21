@@ -213,7 +213,6 @@ app.get('/api/me', requireAuth, (c) => {
   return c.json({ user, orgs });
 });
 
-// Create an additional workspace (org); the creator becomes its owner.
 app.post('/api/orgs', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const { name } = await c.req.json().catch(() => ({}));
@@ -279,7 +278,6 @@ app.put('/api/projects/:id', requireAuth, async (c) => {
     "UPDATE projects SET name=?, base_date=?, tasks_json=?, version=?, methodology=?, updated_at=datetime('now') WHERE id=?"
   ).run(body.name ?? p.name, body.baseDate ?? p.base_date, JSON.stringify(tasks), version, methodology, id);
   logAudit(p.org_id, uid, 'project.update', 'project', id, { version, tasks: tasks.length });
-  // Revision history: snapshot every save, keep the last 20 per project.
   try {
     db.prepare('INSERT OR REPLACE INTO project_revisions(project_id,version,name,base_date,tasks_json,saved_by) VALUES(?,?,?,?,?,?)')
       .run(id, version, body.name ?? p.name, body.baseDate ?? p.base_date, JSON.stringify(tasks), uid);
@@ -290,8 +288,6 @@ app.put('/api/projects/:id', requireAuth, async (c) => {
   return c.json({ version });
 });
 
-// Task comments: discussion bound to a project (optionally a task). All roles
-// can read; write roles can post; author or manage can delete.
 app.get('/api/projects/:id/comments', requireAuth, (c) => {
   const p = projectAccess(c.get('user').sub, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
@@ -333,7 +329,6 @@ app.delete('/api/projects/:id/comments/:cid', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// Revision history: list, inspect, restore.
 app.get('/api/projects/:id/revisions', requireAuth, (c) => {
   const p = projectAccess(c.get('user').sub, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
@@ -353,7 +348,6 @@ app.get('/api/projects/:id/revisions/:version', requireAuth, (c) => {
   return c.json({ version: r.version, name: r.name, baseDate: r.baseDate, tasks: JSON.parse(r.tasks_json) });
 });
 
-// Restore = write the old snapshot as a NEW version (history stays linear).
 app.post('/api/projects/:id/revisions/:version/restore', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const id = c.req.param('id');
@@ -375,9 +369,6 @@ app.post('/api/projects/:id/revisions/:version/restore', requireAuth, (c) => {
   return c.json({ version });
 });
 
-// iCalendar feed: planned tasks as all-day VEVENTs — subscribable from
-// Google/Outlook. Calendar apps can't send headers, so accept ?token= (same
-// pattern + ceiling as /stream). PATs work via the Authorization header.
 app.get('/api/projects/:id/calendar.ics', (c) => {
   const header = c.req.header('authorization') || '';
   const raw = header.startsWith('Bearer ') ? header.slice(7) : (c.req.query('token') || '');
@@ -399,14 +390,7 @@ app.get('/api/projects/:id/calendar.ics', (c) => {
   const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//ScopeWeave//KO', 'CALSCALE:GREGORIAN', `X-WR-CALNAME:${esc(p.name)}`];
   for (const t of tasks) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(t.plannedStartDate || '') || !/^\d{4}-\d{2}-\d{2}$/.test(t.plannedEndDate || '')) continue;
-    lines.push(
-      'BEGIN:VEVENT',
-      `UID:scopeweave-${p.id}-${esc(t.id)}`,
-      `DTSTART;VALUE=DATE:${day(t.plannedStartDate)}`,
-      `DTEND;VALUE=DATE:${nextDay(t.plannedEndDate)}`, // DTEND is exclusive
-      `SUMMARY:${esc(t.name || t.task || t.id)}`,
-      'END:VEVENT'
-    );
+    lines.push('BEGIN:VEVENT', `UID:scopeweave-${p.id}-${esc(t.id)}`, `DTSTART;VALUE=DATE:${day(t.plannedStartDate)}`, `DTEND;VALUE=DATE:${nextDay(t.plannedEndDate)}`, `SUMMARY:${esc(t.name || t.task || t.id)}`, 'END:VEVENT');
   }
   lines.push('END:VCALENDAR');
   return c.text(lines.join('\r\n') + '\r\n', 200, {
@@ -416,9 +400,6 @@ app.get('/api/projects/:id/calendar.ics', (c) => {
 });
 
 app.get('/api/projects/:id/stream', (c) => {
-  // EventSource can't send an Authorization header, so accept a query token
-  // here only. Ceiling: issue a short-lived stream-scoped token before prod so
-  // full JWTs don't land in URLs / access logs.
   const header = c.req.header('authorization') || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : (c.req.query('token') || '');
   let user;
@@ -437,13 +418,9 @@ app.get('/api/projects/:id/stream', (c) => {
       });
     },
   });
-  return new Response(stream, {
-    headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' },
-  });
+  return new Response(stream, { headers: { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache', Connection: 'keep-alive' } });
 });
 
-// --------------------------------------------------------------- teams / RBAC
-// List members of an org (any member may view the roster).
 app.get('/api/orgs/:id/members', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -452,26 +429,20 @@ app.get('/api/orgs/:id/members', requireAuth, (c) => {
     `SELECT u.id, u.email, u.name, m.role FROM memberships m
      JOIN users u ON u.id = m.user_id WHERE m.org_id = ? ORDER BY m.id`
   ).all(orgId);
-  const invites = db.prepare(
-    `SELECT id, email, role, token, created_at AS createdAt FROM invites
-     WHERE org_id = ? AND accepted_at IS NULL ORDER BY id DESC`
-  ).all(orgId);
+  const invites = db.prepare(`SELECT id, email, role, token, created_at AS createdAt FROM invites WHERE org_id = ? AND accepted_at IS NULL ORDER BY id DESC`).all(orgId);
   return c.json({ members, invites });
 });
 
-// Revoke a pending invite (owner/admin). The token stops working immediately.
 app.delete('/api/orgs/:id/invites/:inviteId', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
-  const info = db.prepare('DELETE FROM invites WHERE id = ? AND org_id = ? AND accepted_at IS NULL')
-    .run(c.req.param('inviteId'), orgId);
+  const info = db.prepare('DELETE FROM invites WHERE id = ? AND org_id = ? AND accepted_at IS NULL').run(c.req.param('inviteId'), orgId);
   if (!info.changes) return c.json({ error: 'not found' }, 404);
   logAudit(orgId, uid, 'invite.revoke', 'invite', c.req.param('inviteId'), {});
   return c.json({ ok: true });
 });
 
-// Invite by email (owner/admin only). Returns the token (prod: email a link).
 app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -484,22 +455,18 @@ app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
   if (!email) return c.json({ error: 'email required' }, 400);
   if (!['admin', 'member', 'viewer'].includes(inviteRole)) return c.json({ error: 'invalid role' }, 400);
   const token = randomBytes(24).toString('base64url');
-  db.prepare('INSERT INTO invites(org_id,email,role,token,invited_by) VALUES(?,?,?,?,?)')
-    .run(orgId, email, inviteRole, token, uid);
+  db.prepare('INSERT INTO invites(org_id,email,role,token,invited_by) VALUES(?,?,?,?,?)').run(orgId, email, inviteRole, token, uid);
   logAudit(orgId, uid, 'member.invite', 'invite', email, { role: inviteRole });
   return c.json({ token, email, role: inviteRole });
 });
 
-// Accept an invite (any authenticated user holding the token). Idempotent.
 app.post('/api/invites/:token/accept', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const inv = db.prepare('SELECT * FROM invites WHERE token = ?').get(c.req.param('token'));
   if (!inv || inv.accepted_at) return c.json({ error: 'invalid or used invite' }, 404);
   const existing = orgRole(uid, inv.org_id);
   if (!existing) {
-    if (wouldExceed(db, getOrg(inv.org_id), 'members')) {
-      return c.json({ error: 'member limit reached on the Free plan', upgrade: true, limit: PLANS.free.limits.members }, 402);
-    }
+    if (wouldExceed(db, getOrg(inv.org_id), 'members')) return c.json({ error: 'member limit reached on the Free plan', upgrade: true, limit: PLANS.free.limits.members }, 402);
     db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)').run(inv.org_id, uid, inv.role);
     logAudit(inv.org_id, uid, 'member.join', 'user', uid, { role: inv.role });
     deliver(inv.org_id, 'member.join', { userId: uid, role: inv.role });
@@ -508,7 +475,6 @@ app.post('/api/invites/:token/accept', requireAuth, (c) => {
   return c.json({ orgId: inv.org_id, role: existing || inv.role });
 });
 
-// Change a member's role (owner/admin). Cannot touch an owner or set owner.
 app.patch('/api/orgs/:id/members/:userId', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -525,7 +491,6 @@ app.patch('/api/orgs/:id/members/:userId', requireAuth, async (c) => {
   return c.json({ userId: Number(targetId), role: newRole });
 });
 
-// Remove a member (owner/admin). Cannot remove an owner.
 app.delete('/api/orgs/:id/members/:userId', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -539,8 +504,6 @@ app.delete('/api/orgs/:id/members/:userId', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// Leave a workspace voluntarily (any non-owner member). Owners must transfer or
-// delete the org instead — an org can never be left ownerless.
 app.post('/api/orgs/:id/leave', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -552,8 +515,6 @@ app.post('/api/orgs/:id/leave', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// Transfer workspace ownership to an existing member (owner only). The old
-// owner becomes an admin; orgs.owner_id follows. Transactional.
 app.post('/api/orgs/:id/transfer', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -573,7 +534,6 @@ app.post('/api/orgs/:id/transfer', requireAuth, async (c) => {
   return c.json({ ok: true, newOwnerId: Number(userId) });
 });
 
-// Rename a workspace (owner only).
 app.patch('/api/orgs/:id', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -585,7 +545,6 @@ app.patch('/api/orgs/:id', requireAuth, async (c) => {
   return c.json({ id: Number(orgId), name: String(name).trim() });
 });
 
-// ------------------------------------------------------------------- billing
 app.get('/api/orgs/:id/billing', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -604,8 +563,6 @@ app.post('/api/orgs/:id/checkout', requireAuth, async (c) => {
   return c.json(session);
 });
 
-// Stripe webhook (stub). Live mode should verify the signature with
-// STRIPE_WEBHOOK_SECRET before trusting the event — named ceiling.
 app.post('/api/stripe/webhook', async (c) => {
   const event = await c.req.json().catch(() => ({}));
   if (event?.type === 'checkout.session.completed') {
@@ -615,8 +572,6 @@ app.post('/api/stripe/webhook', async (c) => {
   return c.json({ received: true });
 });
 
-// Dev-only: simulate a successful checkout upgrading the org to Pro.
-// Disabled unless SCOPEWEAVE_DEV=1 (never reachable in production).
 app.post('/api/orgs/:id/_dev/activate-pro', requireAuth, (c) => {
   if (process.env.SCOPEWEAVE_DEV !== '1') return c.json({ error: 'not found' }, 404);
   const uid = c.get('user').sub;
@@ -628,22 +583,17 @@ app.post('/api/orgs/:id/_dev/activate-pro', requireAuth, (c) => {
   return c.json({ plan: 'pro' });
 });
 
-// ------------------------------------------------- personal access tokens (PAT)
 app.get('/api/tokens', requireAuth, (c) => {
   const uid = c.get('user').sub;
-  const tokens = db.prepare(
-    'SELECT id, name, prefix, last_used AS lastUsed, created_at AS createdAt FROM api_tokens WHERE user_id = ? ORDER BY id DESC'
-  ).all(uid);
-  return c.json({ tokens }); // never the secret or hash
+  const tokens = db.prepare('SELECT id, name, prefix, last_used AS lastUsed, created_at AS createdAt FROM api_tokens WHERE user_id = ? ORDER BY id DESC').all(uid);
+  return c.json({ tokens });
 });
 
 app.post('/api/tokens', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const { name } = await c.req.json().catch(() => ({}));
   const t = generateApiToken();
-  const id = rowid(db.prepare('INSERT INTO api_tokens(user_id,name,token_hash,prefix) VALUES(?,?,?,?)')
-    .run(uid, String(name || 'token').slice(0, 60), t.hash, t.prefix));
-  // Full secret returned ONCE — never retrievable again.
+  const id = rowid(db.prepare('INSERT INTO api_tokens(user_id,name,token_hash,prefix) VALUES(?,?,?,?)').run(uid, String(name || 'token').slice(0, 60), t.hash, t.prefix));
   return c.json({ id, name: name || 'token', prefix: t.prefix, token: t.full });
 });
 
@@ -654,24 +604,17 @@ app.delete('/api/tokens/:id', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// Audit trail — owner/admin only. Enterprise requirement.
 app.get('/api/orgs/:id/audit', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const limit = Math.min(Number(c.req.query('limit')) || 100, 500);
-  const rows = db.prepare(
-    `SELECT a.id, a.action, a.target_type AS targetType, a.target_id AS targetId, a.meta,
+  const rows = db.prepare(`SELECT a.id, a.action, a.target_type AS targetType, a.target_id AS targetId, a.meta,
             a.created_at AS createdAt, u.email AS actorEmail
      FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
-     WHERE a.org_id = ? ORDER BY a.id DESC LIMIT ?`
-  ).all(orgId, limit);
+     WHERE a.org_id = ? ORDER BY a.id DESC LIMIT ?`).all(orgId, limit);
   const events = rows.map((r) => ({ ...r, meta: r.meta ? JSON.parse(r.meta) : null }));
   if (c.req.query('format') === 'csv') {
-    // Compliance deliverable. Formula-injection-safe: values that (after optional
-    // leading whitespace) start with = + - @ | are prefixed with ' so
-    // spreadsheets treat them as text. Leading whitespace alone used to bypass
-    // /^[=+\-@|]/ — match the client-side CSV_FORMULA_PREFIX_PATTERN.
     const csvCell = (v) => {
       let s = v == null ? '' : String(v);
       if (/^\s*[=+\-@|]/.test(s)) s = `'${s}`;
@@ -679,69 +622,46 @@ app.get('/api/orgs/:id/audit', requireAuth, (c) => {
     };
     const header = ['id', 'createdAt', 'actorEmail', 'action', 'targetType', 'targetId', 'meta'];
     const lines = [header.join(',')];
-    for (const e of events) {
-      lines.push([e.id, e.createdAt, e.actorEmail, e.action, e.targetType, e.targetId, e.meta ? JSON.stringify(e.meta) : ''].map(csvCell).join(','));
-    }
-    return c.text(lines.join('\r\n') + '\r\n', 200, {
-      'content-type': 'text/csv; charset=utf-8',
-      'content-disposition': `attachment; filename="scopeweave-audit-${orgId}.csv"`,
-    });
+    for (const e of events) lines.push([e.id, e.createdAt, e.actorEmail, e.action, e.targetType, e.targetId, e.meta ? JSON.stringify(e.meta) : ''].map(csvCell).join(','));
+    return c.text(lines.join('\r\n') + '\r\n', 200, { 'content-type': 'text/csv; charset=utf-8', 'content-disposition': `attachment; filename="scopeweave-audit-${orgId}.csv"` });
   }
   return c.json({ events });
 });
 
-// Full workspace export (owner only) — data portability / GDPR. Everything the
-// org holds, as one JSON document.
 app.get('/api/orgs/:id/export', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
   if (orgRole(uid, orgId) !== 'owner') return c.json({ error: 'only the owner can export' }, 403);
   const org = getOrg(orgId);
-  const members = db.prepare(
-    `SELECT u.email, u.name, m.role FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.org_id = ?`
-  ).all(orgId);
-  const projects = db.prepare(
-    'SELECT id, name, base_date AS baseDate, tasks_json, version, created_at AS createdAt, updated_at AS updatedAt FROM projects WHERE org_id = ?'
-  ).all(orgId).map((p) => ({ ...p, tasks: JSON.parse(p.tasks_json), tasks_json: undefined }));
-  const audit = db.prepare(
-    'SELECT action, target_type AS targetType, target_id AS targetId, meta, created_at AS createdAt FROM audit_log WHERE org_id = ? ORDER BY id'
-  ).all(orgId).map((a) => ({ ...a, meta: a.meta ? JSON.parse(a.meta) : null }));
+  const members = db.prepare(`SELECT u.email, u.name, m.role FROM memberships m JOIN users u ON u.id = m.user_id WHERE m.org_id = ?`).all(orgId);
+  const projects = db.prepare('SELECT id, name, base_date AS baseDate, tasks_json, version, created_at AS createdAt, updated_at AS updatedAt FROM projects WHERE org_id = ?').all(orgId).map((p) => ({ ...p, tasks: JSON.parse(p.tasks_json), tasks_json: undefined }));
+  const audit = db.prepare('SELECT action, target_type AS targetType, target_id AS targetId, meta, created_at AS createdAt FROM audit_log WHERE org_id = ? ORDER BY id').all(orgId).map((a) => ({ ...a, meta: a.meta ? JSON.parse(a.meta) : null }));
   logAudit(orgId, uid, 'org.export', 'org', orgId, { projects: projects.length });
-  return c.json({
-    exportedAt: new Date().toISOString(),
-    org: { id: org.id, name: org.name, plan: org.plan },
-    members, projects, audit,
-  }, 200, { 'Content-Disposition': `attachment; filename="scopeweave-org-${orgId}.json"` });
+  return c.json({ exportedAt: new Date().toISOString(), org: { id: org.id, name: org.name, plan: org.plan }, members, projects, audit }, 200, { 'Content-Disposition': `attachment; filename="scopeweave-org-${orgId}.json"` });
 });
 
-// Operational metrics (JSON). Ceiling: expose Prometheus text format + gate
-// behind an internal token before prod if scraped externally.
 app.get('/api/metrics', (c) => {
   const sseActive = [...streams.values()].reduce((n, s) => n + s.size, 0);
   const all = { ...metrics, sseActive, uptimeSec: Math.round(process.uptime()) };
   if (c.req.query('format') !== 'prometheus') return c.json(all);
-  // Prometheus text exposition format (0.0.4) — scrape-ready for Grafana/Alerting.
   const gauge = new Set(['sseActive', 'uptimeSec']);
   const lines = [];
   for (const [k, v] of Object.entries(all)) {
-    if (typeof v !== 'number') continue; // startedAt etc.
+    if (typeof v !== 'number') continue;
     const name = `scopeweave_${k.replace(/([A-Z])/g, '_$1').toLowerCase()}`;
     lines.push(`# TYPE ${name} ${gauge.has(k) ? 'gauge' : 'counter'}`, `${name} ${v}`);
   }
   return c.text(lines.join('\n') + '\n', 200, { 'content-type': 'text/plain; version=0.0.4; charset=utf-8' });
 });
 
-// ------------------------------------------------------------------- webhooks
 app.get('/api/orgs/:id/webhooks', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
-  const webhooks = db.prepare(
-    `SELECT w.id, w.url, w.events, w.active, w.created_at AS createdAt,
+  const webhooks = db.prepare(`SELECT w.id, w.url, w.events, w.active, w.created_at AS createdAt,
        (SELECT ok FROM webhook_deliveries d WHERE d.webhook_id = w.id ORDER BY d.id DESC LIMIT 1) AS lastOk,
        (SELECT created_at FROM webhook_deliveries d WHERE d.webhook_id = w.id ORDER BY d.id DESC LIMIT 1) AS lastAt
-     FROM webhooks w WHERE w.org_id = ? ORDER BY w.id DESC`
-  ).all(orgId); // secret never returned
+     FROM webhooks w WHERE w.org_id = ? ORDER BY w.id DESC`).all(orgId);
   return c.json({ webhooks });
 });
 
@@ -755,7 +675,7 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
   logAudit(orgId, uid, 'webhook.create', 'webhook', id, { url, events: evs });
-  return c.json({ id, url, events: evs, secret }); // secret shown once for signature verification
+  return c.json({ id, url, events: evs, secret });
 });
 
 app.get('/api/orgs/:id/webhooks/:whId/deliveries', requireAuth, (c) => {
@@ -764,14 +684,10 @@ app.get('/api/orgs/:id/webhooks/:whId/deliveries', requireAuth, (c) => {
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const wh = db.prepare('SELECT id FROM webhooks WHERE id = ? AND org_id = ?').get(c.req.param('whId'), orgId);
   if (!wh) return c.json({ error: 'not found' }, 404);
-  const deliveries = db.prepare(
-    'SELECT event, status_code AS statusCode, ok, attempt, created_at AS createdAt FROM webhook_deliveries WHERE webhook_id = ? ORDER BY id DESC LIMIT 50'
-  ).all(wh.id);
+  const deliveries = db.prepare('SELECT event, status_code AS statusCode, ok, attempt, created_at AS createdAt FROM webhook_deliveries WHERE webhook_id = ? ORDER BY id DESC LIMIT 50').all(wh.id);
   return c.json({ deliveries });
 });
 
-// Rotate a webhook's signing secret (leak response / periodic hygiene). The new
-// secret is returned ONCE; old signatures stop validating immediately.
 app.post('/api/orgs/:id/webhooks/:whId/rotate', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -780,7 +696,7 @@ app.post('/api/orgs/:id/webhooks/:whId/rotate', requireAuth, (c) => {
   const info = db.prepare('UPDATE webhooks SET secret = ? WHERE id = ? AND org_id = ?').run(secret, c.req.param('whId'), orgId);
   if (!info.changes) return c.json({ error: 'not found' }, 404);
   logAudit(orgId, uid, 'webhook.rotate', 'webhook', c.req.param('whId'), {});
-  return c.json({ id: Number(c.req.param('whId')), secret }); // shown once
+  return c.json({ id: Number(c.req.param('whId')), secret });
 });
 
 app.delete('/api/orgs/:id/webhooks/:whId', requireAuth, (c) => {
@@ -792,26 +708,17 @@ app.delete('/api/orgs/:id/webhooks/:whId', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// ------------------------------------------------------------ SSO (OIDC)
-// Real IdP via env (OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI). When
-// unset, a built-in mock provider makes the whole flow self-contained + testable.
-const OIDC = {
-  issuer: process.env.OIDC_ISSUER,
-  clientId: process.env.OIDC_CLIENT_ID,
-  clientSecret: process.env.OIDC_CLIENT_SECRET,
-  redirectUri: process.env.OIDC_REDIRECT_URI,
-};
+const OIDC = { issuer: process.env.OIDC_ISSUER, clientId: process.env.OIDC_CLIENT_ID, clientSecret: process.env.OIDC_CLIENT_SECRET, redirectUri: process.env.OIDC_REDIRECT_URI };
 const oidcMock = !OIDC.issuer;
-const oidcStates = new Map(); // state -> { verifier, exp }
-const oidcCodes = new Map();  // mock only: code -> email
+const oidcStates = new Map();
+const oidcCodes = new Map();
 
 function upsertSsoUser(email) {
   let user = db.prepare('SELECT id, email, token_version FROM users WHERE email = ?').get(email);
   if (user) return user;
   db.exec('BEGIN');
   try {
-    const uid = rowid(db.prepare('INSERT INTO users(email,password_hash,name) VALUES(?,?,?)')
-      .run(email, hashPassword(randomBytes(24).toString('hex')), ''));
+    const uid = rowid(db.prepare('INSERT INTO users(email,password_hash,name) VALUES(?,?,?)').run(email, hashPassword(randomBytes(24).toString('hex')), ''));
     const oid = rowid(db.prepare('INSERT INTO orgs(name,owner_id) VALUES(?,?)').run(`${email}'s workspace`, uid));
     db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)').run(oid, uid, 'owner');
     db.exec('COMMIT');
@@ -846,7 +753,6 @@ app.get('/api/auth/oidc/start', (c) => {
   return c.redirect(u.toString());
 });
 
-// Built-in mock IdP authorize — instantly issues a code (dev/test only).
 app.get('/api/auth/oidc/mock/authorize', (c) => {
   if (!oidcMock) return c.json({ error: 'mock disabled' }, 404);
   const state = c.req.query('state');
@@ -873,37 +779,25 @@ app.get('/api/auth/oidc/callback', async (c) => {
     if (!email) return c.json({ error: 'invalid code' }, 400);
   } else {
     const redirectUri = OIDC.redirectUri || `${new URL(c.req.url).origin}/api/auth/oidc/callback`;
-    const tokenRes = await fetch(`${OIDC.issuer.replace(/\/$/, '')}/token`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri, client_id: OIDC.clientId, client_secret: OIDC.clientSecret, code_verifier: s.verifier }),
-    }).catch(() => null);
+    const tokenRes = await fetch(`${OIDC.issuer.replace(/\/$/, '')}/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: redirectUri, client_id: OIDC.clientId, client_secret: OIDC.clientSecret, code_verifier: s.verifier }) }).catch(() => null);
     const tok = tokenRes ? await tokenRes.json().catch(() => ({})) : {};
     if (!tok.id_token) return c.json({ error: 'token exchange failed' }, 400);
-    // Ceiling: verify the id_token signature via the issuer JWKS before prod.
     const claims = JSON.parse(Buffer.from(String(tok.id_token).split('.')[1] || '', 'base64url').toString() || '{}');
     email = claims.email;
     if (!email) return c.json({ error: 'no email claim' }, 400);
   }
   const user = upsertSsoUser(email);
   const token = signToken({ sub: user.id, email, tv: user.token_version || 0 });
-  // Return the token in the URL fragment (not query → not logged); the client
-  // stores it and cleans the URL.
   return c.redirect(`/#token=${token}`);
 });
 
-// Cross-project search: project names + task names, membership-scoped (tenant
-// isolation via the same JOIN as projectAccess).
-// ponytail: LIKE over tasks_json text; move to FTS5 if search gets heavy.
 app.get('/api/search', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const q = String(c.req.query('q') || '').trim();
   if (q.length < 2) return c.json({ error: 'query too short (min 2)' }, 400);
-  const rows = db.prepare(
-    `SELECT DISTINCT p.id, p.name, p.tasks_json FROM projects p
+  const rows = db.prepare(`SELECT DISTINCT p.id, p.name, p.tasks_json FROM projects p
      JOIN memberships m ON m.org_id = p.org_id
-     WHERE m.user_id = ? AND (p.name LIKE ? OR p.tasks_json LIKE ?) LIMIT 100`
-  ).all(uid, `%${q}%`, `%${q}%`);
+     WHERE m.user_id = ? AND (p.name LIKE ? OR p.tasks_json LIKE ?) LIMIT 100`).all(uid, `%${q}%`, `%${q}%`);
   const needle = q.toLowerCase();
   const results = [];
   for (const p of rows) {
@@ -923,16 +817,12 @@ app.get('/api/search', requireAuth, (c) => {
   return c.json({ query: q, results });
 });
 
-// Portfolio dashboard: executive rollup across every project in a workspace —
-// weighted planned/actual progress, SPI + status, overdue-task counts.
 app.get('/api/orgs/:id/portfolio', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
   if (!orgRole(uid, orgId)) return c.json({ error: 'not found' }, 404);
   const today = new Date().toISOString().slice(0, 10);
-  const rows = db.prepare(
-    'SELECT id, name, base_date AS baseDate, tasks_json, archived, updated_at AS updatedAt FROM projects WHERE org_id = ? ORDER BY archived ASC, updated_at DESC'
-  ).all(orgId);
+  const rows = db.prepare('SELECT id, name, base_date AS baseDate, tasks_json, archived, updated_at AS updatedAt FROM projects WHERE org_id = ? ORDER BY archived ASC, updated_at DESC').all(orgId);
   const projects = rows.map((p) => {
     let tasks = [];
     try { tasks = JSON.parse(p.tasks_json); } catch { /* empty */ }
@@ -945,26 +835,11 @@ app.get('/api/orgs/:id/portfolio', requireAuth, (c) => {
       if (t.plannedEndDate && t.plannedEndDate < today && (Number(t.actualProgress) || 0) < 100) overdue++;
     }
     const evm = computeEvm({ pv: wSum ? pv / wSum : 0, ev: wSum ? ev / wSum : 0 });
-    return {
-      id: p.id,
-      name: p.name,
-      archived: Boolean(p.archived),
-      tasks: tasks.length,
-      planned: Math.round(evm.pv * 1000) / 10,   // %
-      actual: Math.round(evm.ev * 1000) / 10,    // %
-      spi: evm.spi === null ? null : Math.round(evm.spi * 100) / 100,
-      status: evm.status,
-      label: evm.label,
-      overdue,
-      updatedAt: p.updatedAt,
-    };
+    return { id: p.id, name: p.name, archived: Boolean(p.archived), tasks: tasks.length, planned: Math.round(evm.pv * 1000) / 10, actual: Math.round(evm.ev * 1000) / 10, spi: evm.spi === null ? null : Math.round(evm.spi * 100) / 100, status: evm.status, label: evm.label, overdue, updatedAt: p.updatedAt };
   });
   return c.json({ projects });
 });
 
-// AI 브리핑: 프로젝트 스냅샷(요약 지표 + 지연/차주 작업)을 contextual-
-// orchestrator(LLM)로 보내 경영진용 리스크 분석을 생성. 원문 데이터는 서버가
-// 요약해 전송하며, LLM 자격은 서버 환경변수에만 존재.
 app.post('/api/projects/:id/ai/brief', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
@@ -980,28 +855,17 @@ app.post('/api/projects/:id/ai/brief', requireAuth, async (c) => {
     pv += w * ((Number(t.plannedProgress) || 0) / 100);
     ev += w * ((Number(t.actualProgress) || 0) / 100);
     const name = t.name || t.task || t.activity || t.phase || t.id;
-    if (t.plannedEndDate && t.plannedEndDate < today && (Number(t.actualProgress) || 0) < 100) {
-      late.push(`${name}(계획종료 ${t.plannedEndDate}, 실적 ${Number(t.actualProgress) || 0}%${t.owner ? `, ${t.owner}` : ''})`);
-    } else if (t.plannedStartDate && t.plannedStartDate >= today) {
-      upcoming.push(`${name}(${t.plannedStartDate} 시작)`);
-    }
+    if (t.plannedEndDate && t.plannedEndDate < today && (Number(t.actualProgress) || 0) < 100) late.push(`${name}(계획종료 ${t.plannedEndDate}, 실적 ${Number(t.actualProgress) || 0}%${t.owner ? `, ${t.owner}` : ''})`);
+    else if (t.plannedStartDate && t.plannedStartDate >= today) upcoming.push(`${name}(${t.plannedStartDate} 시작)`);
   }
   const pvPct = wSum ? ((pv / wSum) * 100).toFixed(1) : '0';
   const evPct = wSum ? ((ev / wSum) * 100).toFixed(1) : '0';
-  const context = [
-    `프로젝트: ${p.name}`,
-    `작업 수: ${tasks.length} · 계획진척 ${pvPct}% · 실적진척 ${evPct}%`,
-    `지연 작업(${late.length}): ${late.slice(0, 8).join(' / ') || '없음'}`,
-    `예정 작업(${upcoming.length}): ${upcoming.slice(0, 5).join(' / ') || '없음'}`,
-  ].join('\n');
+  const context = [`프로젝트: ${p.name}`, `작업 수: ${tasks.length} · 계획진척 ${pvPct}% · 실적진척 ${evPct}%`, `지연 작업(${late.length}): ${late.slice(0, 8).join(' / ') || '없음'}`, `예정 작업(${upcoming.length}): ${upcoming.slice(0, 5).join(' / ') || '없음'}`].join('\n');
   try {
     const analysis = await orchestratorChat([
       { role: 'system', content: '너는 공정관리(schedule control) 전문가다. 주어진 프로젝트 지표를 근거로 한국어 경영진 브리핑을 작성하라: ①일정 상태 한 줄 판정 ②핵심 리스크 2~3개(근거 지표 인용) ③실행 권고 2~3개. 지표에 없는 사실은 만들지 마라.' },
       { role: 'user', content: context },
-    ], {
-      service: 'scopeweave',
-      account: String(p.org_id),
-    });
+    ], { service: 'scopeweave', account: String(p.org_id) });
     logAudit(p.org_id, uid, 'ai.brief', 'project', p.id, { tasks: tasks.length });
     return c.json({ analysis });
   } catch (e) {
@@ -1009,35 +873,19 @@ app.post('/api/projects/:id/ai/brief', requireAuth, async (c) => {
   }
 });
 
-// 산출물 첨부(Clearfolio 통합 문서 뷰어 프록시): 업로드→변환 잡, 목록(+상태
-// 갱신), 서명 아티팩트 열람(302), 삭제. 테넌트 = 조직, 브라우저에는 Clearfolio
-// 자격이 절대 노출되지 않음.
 const ATTACH_MAX_BYTES = 10 * 1024 * 1024;
-
-const ATTACH_STATUS_CONCURRENCY = normalizeAttachmentStatusConcurrency(
-  process.env.SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY,
-);
-const ATTACH_STATUS_TIMEOUT_MS = normalizeAttachmentStatusTimeoutMs(
-  process.env.SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS,
-);
-const ATTACH_STATUS_BUDGET_MS = normalizeAttachmentStatusBudgetMs(
-  process.env.SCOPEWEAVE_ATTACHMENT_STATUS_BUDGET_MS,
-);
+const ATTACH_STATUS_CONCURRENCY = normalizeAttachmentStatusConcurrency(process.env.SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY);
+const ATTACH_STATUS_TIMEOUT_MS = normalizeAttachmentStatusTimeoutMs(process.env.SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS);
+const ATTACH_STATUS_BUDGET_MS = normalizeAttachmentStatusBudgetMs(process.env.SCOPEWEAVE_ATTACHMENT_STATUS_BUDGET_MS);
 const ATTACHMENT_LIST_COLUMNS = `a.id, a.task_id AS taskId, a.name, a.mime, a.size,
   a.job_id AS jobId, a.status, a.created_at AS createdAt, u.email AS uploadedBy`;
-const ATTACHMENT_LIST_FROM =
-  'FROM attachments a LEFT JOIN users u ON u.id = a.created_by';
-const listAttachmentsStatement = db.prepare(
-  `SELECT ${ATTACHMENT_LIST_COLUMNS} ${ATTACHMENT_LIST_FROM}
-   WHERE a.project_id = ? ORDER BY a.id DESC`,
-);
-const listTaskAttachmentsStatement = db.prepare(
-  `SELECT ${ATTACHMENT_LIST_COLUMNS} ${ATTACHMENT_LIST_FROM}
-   WHERE a.project_id = ? AND a.task_id = ? ORDER BY a.id DESC`,
-);
-const updateAttachmentStatusStatement = db.prepare(
-  'UPDATE attachments SET status = ? WHERE id = ?',
-);
+const ATTACHMENT_LIST_FROM = 'FROM attachments a LEFT JOIN users u ON u.id = a.created_by';
+const listAttachmentsStatement = db.prepare(`SELECT ${ATTACHMENT_LIST_COLUMNS} ${ATTACHMENT_LIST_FROM}
+   WHERE a.project_id = ? ORDER BY a.id DESC`);
+const listTaskAttachmentsStatement = db.prepare(`SELECT ${ATTACHMENT_LIST_COLUMNS} ${ATTACHMENT_LIST_FROM}
+   WHERE a.project_id = ? AND a.task_id = ? ORDER BY a.id DESC`);
+const updateAttachmentStatusStatement = db.prepare('UPDATE attachments SET status = ? WHERE id = ?');
+
 app.post('/api/projects/:id/attachments', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
@@ -1051,14 +899,9 @@ app.post('/api/projects/:id/attachments', requireAuth, async (c) => {
   if (file.size > ATTACH_MAX_BYTES) return c.json({ error: 'file too large (max 10MB)' }, 400);
   const bytes = Buffer.from(await file.arrayBuffer());
   let job;
-  try {
-    job = await submitJob(p.org_id, uid, { name: file.name || 'document', mime: file.type || '', bytes });
-  } catch (e) {
-    return c.json({ error: `문서 변환 제출 실패: ${e.message}` }, 502);
-  }
-  const aid = rowid(db.prepare(
-    'INSERT INTO attachments(project_id,task_id,name,mime,size,job_id,status,created_by) VALUES(?,?,?,?,?,?,?,?)'
-  ).run(p.id, taskId, file.name || 'document', file.type || '', file.size, job.jobId, job.status, uid));
+  try { job = await submitJob(p.org_id, uid, { name: file.name || 'document', mime: file.type || '', bytes }); }
+  catch (e) { return c.json({ error: `문서 변환 제출 실패: ${e.message}` }, 502); }
+  const aid = rowid(db.prepare('INSERT INTO attachments(project_id,task_id,name,mime,size,job_id,status,created_by) VALUES(?,?,?,?,?,?,?,?)').run(p.id, taskId, file.name || 'document', file.type || '', file.size, job.jobId, job.status, uid));
   logAudit(p.org_id, uid, 'attachment.upload', 'project', p.id, { attachmentId: aid, name: file.name, taskId: taskId || null });
   return c.json({ id: aid, status: job.status });
 });
@@ -1067,27 +910,13 @@ app.get('/api/projects/:id/attachments', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
-
   const taskId = c.req.query('taskId');
-  const rows = taskId
-    ? listTaskAttachmentsStatement.all(p.id, taskId)
-    : listAttachmentsStatement.all(p.id);
-  await refreshAttachmentStatuses(rows, {
-    orgId: p.org_id,
-    userId: uid,
-    jobStatus,
-    updateStatus: (status, attachmentId) =>
-      updateAttachmentStatusStatement.run(status, attachmentId),
-    concurrency: ATTACH_STATUS_CONCURRENCY,
-    timeoutMs: ATTACH_STATUS_TIMEOUT_MS,
-    budgetMs: ATTACH_STATUS_BUDGET_MS,
-    metrics,
-  });
+  const rows = taskId ? listTaskAttachmentsStatement.all(p.id, taskId) : listAttachmentsStatement.all(p.id);
+  await refreshAttachmentStatuses(rows, { orgId: p.org_id, userId: uid, jobStatus, updateStatus: (status, attachmentId) => updateAttachmentStatusStatement.run(status, attachmentId), concurrency: ATTACH_STATUS_CONCURRENCY, timeoutMs: ATTACH_STATUS_TIMEOUT_MS, budgetMs: ATTACH_STATUS_BUDGET_MS, metrics });
   const attachments = rows.map(({ jobId: _internalJobId, ...publicRow }) => publicRow);
   return c.json({ attachments });
 });
 
-// 열람: 서명 아티팩트 URL로 302. 새 탭 열기용으로 ?token=도 허용(ics/stream 패턴).
 app.get('/api/projects/:id/attachments/:aid/view', (c) => {
   const header = c.req.header('authorization') || '';
   const raw = header.startsWith('Bearer ') ? header.slice(7) : (c.req.query('token') || '');
@@ -1109,9 +938,7 @@ app.get('/api/projects/:id/attachments/:aid/view', (c) => {
   const a = db.prepare('SELECT job_id, status FROM attachments WHERE id = ? AND project_id = ?').get(c.req.param('aid'), p.id);
   if (!a) return c.json({ error: 'not found' }, 404);
   if (a.status !== 'SUCCEEDED') return c.json({ error: `문서가 아직 준비되지 않았습니다 (${a.status})` }, 409);
-  return artifactUrl(p.org_id, uid, a.job_id)
-    .then((url) => c.redirect(url))
-    .catch((e) => c.json({ error: `열람 링크 발급 실패: ${e.message}` }, 502));
+  return artifactUrl(p.org_id, uid, a.job_id).then((url) => c.redirect(url)).catch((e) => c.json({ error: `열람 링크 발급 실패: ${e.message}` }, 502));
 });
 
 app.delete('/api/projects/:id/attachments/:aid', requireAuth, (c) => {
@@ -1126,20 +953,14 @@ app.delete('/api/projects/:id/attachments/:aid', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// mock Clearfolio 아티팩트 서빙(dev/test 전용)
 if (clearfolioMock) {
   app.get('/api/mock-clearfolio/:jobId', (c) => {
     const doc = mockArtifact(c.req.param('jobId'));
     if (!doc) return c.json({ error: 'not found' }, 404);
-    return c.body(doc.bytes, 200, {
-      'content-type': doc.mime || 'application/octet-stream',
-      'content-disposition': `inline; filename="${encodeURIComponent(doc.name)}"`,
-    });
+    return c.body(doc.bytes, 200, { 'content-type': doc.mime || 'application/octet-stream', 'content-disposition': `inline; filename="${encodeURIComponent(doc.name)}"` });
   });
 }
 
-// Public read-only share links: a random token grants VIEW access to one
-// project (no account needed) — revocable. Never exposes org/member data.
 app.post('/api/projects/:id/shares', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
@@ -1155,9 +976,7 @@ app.get('/api/projects/:id/shares', requireAuth, (c) => {
   const p = projectAccess(c.get('user').sub, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
   if (!canManage(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
-  const shares = db.prepare(
-    'SELECT id, token, created_at AS createdAt FROM share_tokens WHERE project_id = ? AND revoked = 0 ORDER BY id DESC'
-  ).all(p.id);
+  const shares = db.prepare('SELECT id, token, created_at AS createdAt FROM share_tokens WHERE project_id = ? AND revoked = 0 ORDER BY id DESC').all(p.id);
   return c.json({ shares });
 });
 
@@ -1166,42 +985,26 @@ app.delete('/api/projects/:id/shares/:sid', requireAuth, (c) => {
   const p = projectAccess(uid, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
   if (!canManage(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
-  const info = db.prepare('UPDATE share_tokens SET revoked = 1 WHERE id = ? AND project_id = ? AND revoked = 0')
-    .run(c.req.param('sid'), p.id);
+  const info = db.prepare('UPDATE share_tokens SET revoked = 1 WHERE id = ? AND project_id = ? AND revoked = 0').run(c.req.param('sid'), p.id);
   if (!info.changes) return c.json({ error: 'not found' }, 404);
   logAudit(p.org_id, uid, 'share.revoke', 'project', p.id, { shareId: Number(c.req.param('sid')) });
   return c.json({ ok: true });
 });
 
-// Anonymous read via share token — project content only.
 app.get('/api/shared/:token', (c) => {
-  const row = db.prepare(
-    `SELECT p.name, p.base_date AS baseDate, p.tasks_json FROM share_tokens s
-     JOIN projects p ON p.id = s.project_id WHERE s.token = ? AND s.revoked = 0`
-  ).get(c.req.param('token'));
+  const row = db.prepare(`SELECT p.name, p.base_date AS baseDate, p.tasks_json FROM share_tokens s
+     JOIN projects p ON p.id = s.project_id WHERE s.token = ? AND s.revoked = 0`).get(c.req.param('token'));
   if (!row) return c.json({ error: 'not found' }, 404);
   return c.json({ name: row.name, baseDate: row.baseDate, tasks: JSON.parse(row.tasks_json), readOnly: true });
 });
 
-// Unseen-activity notifications: per project, count others' saves + comments
-// newer than my last-seen mark. Opening a project marks it seen.
 app.get('/api/notifications', requireAuth, (c) => {
   const uid = c.get('user').sub;
-  const rows = db.prepare(
-    `SELECT p.id AS projectId,
-       (SELECT COUNT(*) FROM project_revisions r WHERE r.project_id = p.id
-          AND r.saved_by IS NOT NULL AND r.saved_by != ?
-          AND r.created_at > COALESCE(s.seen_at, '')) AS revisions,
-       (SELECT COUNT(*) FROM comments cm WHERE cm.project_id = p.id
-          AND cm.user_id IS NOT NULL AND cm.user_id != ?
-          AND cm.created_at > COALESCE(s.seen_at, '')) AS comments
-     FROM projects p
-     JOIN memberships m ON m.org_id = p.org_id AND m.user_id = ?
-     LEFT JOIN project_seen s ON s.project_id = p.id AND s.user_id = ?`
-  ).all(uid, uid, uid, uid);
-  const notifications = rows
-    .map((r) => ({ projectId: r.projectId, unseen: r.revisions + r.comments }))
-    .filter((r) => r.unseen > 0);
+  const rows = db.prepare(`SELECT p.id AS projectId,
+       (SELECT COUNT(*) FROM project_revisions r WHERE r.project_id = p.id AND r.saved_by IS NOT NULL AND r.saved_by != ? AND r.created_at > COALESCE(s.seen_at, '')) AS revisions,
+       (SELECT COUNT(*) FROM comments cm WHERE cm.project_id = p.id AND cm.user_id IS NOT NULL AND cm.user_id != ? AND cm.created_at > COALESCE(s.seen_at, '')) AS comments
+     FROM projects p JOIN memberships m ON m.org_id = p.org_id AND m.user_id = ? LEFT JOIN project_seen s ON s.project_id = p.id AND s.user_id = ?`).all(uid, uid, uid, uid);
+  const notifications = rows.map((r) => ({ projectId: r.projectId, unseen: r.revisions + r.comments })).filter((r) => r.unseen > 0);
   return c.json({ notifications });
 });
 
@@ -1209,12 +1012,10 @@ app.post('/api/projects/:id/seen', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
-  db.prepare(`INSERT INTO project_seen(project_id, user_id, seen_at) VALUES(?, ?, datetime('now'))
-    ON CONFLICT(project_id, user_id) DO UPDATE SET seen_at = datetime('now')`).run(p.id, uid);
+  db.prepare(`INSERT INTO project_seen(project_id, user_id, seen_at) VALUES(?, ?, datetime('now')) ON CONFLICT(project_id, user_id) DO UPDATE SET seen_at = datetime('now')`).run(p.id, uid);
   return c.json({ ok: true });
 });
 
-// Archive / restore a project (write roles): declutter without deleting.
 app.post('/api/projects/:id/archive', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
@@ -1227,29 +1028,20 @@ app.post('/api/projects/:id/archive', requireAuth, async (c) => {
   return c.json({ id: p.id, archived: Boolean(flag) });
 });
 
-// Duplicate a project (template use: copy tasks + base date into a new project
-// in the same org). Plan caps apply like any create.
 app.post('/api/projects/:id/duplicate', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
   if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
-  if (wouldExceed(db, getOrg(p.org_id), 'projects')) {
-    return c.json({ error: 'project limit reached on the Free plan', upgrade: true, limit: PLANS.free.limits.projects }, 402);
-  }
+  if (wouldExceed(db, getOrg(p.org_id), 'projects')) return c.json({ error: 'project limit reached on the Free plan', upgrade: true, limit: PLANS.free.limits.projects }, 402);
   const { name } = await c.req.json().catch(() => ({}));
   const newName = String(name || `${p.name} (복사본)`).slice(0, 120);
-  const nid = rowid(db.prepare('INSERT INTO projects(org_id,name,base_date,tasks_json,created_by) VALUES(?,?,?,?,?)')
-    .run(p.org_id, newName, p.base_date, p.tasks_json, uid));
+  const nid = rowid(db.prepare('INSERT INTO projects(org_id,name,base_date,tasks_json,created_by) VALUES(?,?,?,?,?)').run(p.org_id, newName, p.base_date, p.tasks_json, uid));
   metrics.projectsCreated++;
   logAudit(p.org_id, uid, 'project.duplicate', 'project', nid, { from: p.id, name: newName });
   return c.json({ id: nid, name: newName, version: 1 });
 });
 
-// -------------------------------------------------------------- sprints
-// Agile/Hybrid: 시간상자(스프린트) CRUD. 작업은 task.sprint(이름)로 배정되고
-// task.storyPoints로 추정된다 — 지표(커밋/완료 포인트, 벨로시티)는 클라이언트
-// 순수 함수(computeSprintStats)가 계산한다.
 app.post('/api/projects/:id/sprints', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const p = projectAccess(uid, c.req.param('id'));
@@ -1258,8 +1050,7 @@ app.post('/api/projects/:id/sprints', requireAuth, async (c) => {
   const { name, startDate, endDate, goal } = await c.req.json().catch(() => ({}));
   if (!name || !String(name).trim()) return c.json({ error: 'name required' }, 400);
   const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? v : '');
-  const sid = rowid(db.prepare('INSERT INTO sprints(project_id,name,start_date,end_date,goal) VALUES(?,?,?,?,?)')
-    .run(p.id, String(name).trim().slice(0, 80), day(startDate), day(endDate), String(goal || '').slice(0, 300)));
+  const sid = rowid(db.prepare('INSERT INTO sprints(project_id,name,start_date,end_date,goal) VALUES(?,?,?,?,?)').run(p.id, String(name).trim().slice(0, 80), day(startDate), day(endDate), String(goal || '').slice(0, 300)));
   logAudit(p.org_id, uid, 'sprint.create', 'project', p.id, { sprintId: sid, name });
   return c.json({ id: sid, name: String(name).trim() });
 });
@@ -1267,9 +1058,7 @@ app.post('/api/projects/:id/sprints', requireAuth, async (c) => {
 app.get('/api/projects/:id/sprints', requireAuth, (c) => {
   const p = projectAccess(c.get('user').sub, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
-  const sprints = db.prepare(
-    'SELECT id, name, start_date AS startDate, end_date AS endDate, goal FROM sprints WHERE project_id = ? ORDER BY start_date, id'
-  ).all(p.id);
+  const sprints = db.prepare('SELECT id, name, start_date AS startDate, end_date AS endDate, goal FROM sprints WHERE project_id = ? ORDER BY start_date, id').all(p.id);
   return c.json({ sprints, methodology: p.methodology || 'waterfall' });
 });
 
@@ -1283,9 +1072,6 @@ app.delete('/api/projects/:id/sprints/:sid', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// ------------------------------------------------------------- baselines
-// Snapshot a project's current plan as a named baseline (schedule-control:
-// compare actuals against the frozen plan later).
 app.post('/api/projects/:id/baselines', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const id = c.req.param('id');
@@ -1293,8 +1079,7 @@ app.post('/api/projects/:id/baselines', requireAuth, async (c) => {
   if (!p) return c.json({ error: 'not found' }, 404);
   if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
   const { name } = await c.req.json().catch(() => ({}));
-  const bid = rowid(db.prepare('INSERT INTO baselines(project_id,name,base_date,tasks_json,created_by) VALUES(?,?,?,?,?)')
-    .run(id, String(name || 'Baseline').slice(0, 80), p.base_date, p.tasks_json, uid));
+  const bid = rowid(db.prepare('INSERT INTO baselines(project_id,name,base_date,tasks_json,created_by) VALUES(?,?,?,?,?)').run(id, String(name || 'Baseline').slice(0, 80), p.base_date, p.tasks_json, uid));
   logAudit(p.org_id, uid, 'baseline.create', 'project', id, { baselineId: bid, name });
   return c.json({ id: bid, name: name || 'Baseline' });
 });
@@ -1302,9 +1087,7 @@ app.post('/api/projects/:id/baselines', requireAuth, async (c) => {
 app.get('/api/projects/:id/baselines', requireAuth, (c) => {
   const p = projectAccess(c.get('user').sub, c.req.param('id'));
   if (!p) return c.json({ error: 'not found' }, 404);
-  const baselines = db.prepare(
-    'SELECT id, name, base_date AS baseDate, created_at AS createdAt FROM baselines WHERE project_id = ? ORDER BY id DESC'
-  ).all(p.id);
+  const baselines = db.prepare('SELECT id, name, base_date AS baseDate, created_at AS createdAt FROM baselines WHERE project_id = ? ORDER BY id DESC').all(p.id);
   return c.json({ baselines });
 });
 
@@ -1326,8 +1109,6 @@ app.delete('/api/projects/:id/baselines/:bid', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// ------------------------------------------------------ account & lifecycle
-// Delete a project (write roles). tasks live in the row, so this fully removes it.
 app.delete('/api/projects/:id', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const id = c.req.param('id');
@@ -1340,8 +1121,6 @@ app.delete('/api/projects/:id', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// Log out everywhere: bump token_version → every existing JWT dies. Returns a
-// fresh token so THIS device stays signed in. PATs are unaffected.
 app.post('/api/auth/logout-all', requireAuth, (c) => {
   const uid = c.get('user').sub;
   db.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?').run(uid);
@@ -1349,32 +1128,25 @@ app.post('/api/auth/logout-all', requireAuth, (c) => {
   return c.json({ ok: true, token: signToken({ sub: uid, email: u.email, tv: u.token_version }) });
 });
 
-// Change password (verifies the current one).
 app.post('/api/auth/change-password', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const { oldPassword, newPassword } = await c.req.json().catch(() => ({}));
   if (typeof newPassword !== 'string' || newPassword.length < 8) return c.json({ error: 'new password (min 8) required' }, 400);
   const u = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(uid);
-  if (!u || typeof oldPassword !== 'string' || !verifyPassword(oldPassword, u.password_hash)) {
-    return c.json({ error: 'current password incorrect' }, 403);
-  }
+  if (!u || typeof oldPassword !== 'string' || !verifyPassword(oldPassword, u.password_hash)) return c.json({ error: 'current password incorrect' }, 403);
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(newPassword), uid);
   return c.json({ ok: true });
 });
 
-// Delete account (GDPR). Removes owned workspaces (cascading their data) and the
-// user. Requires the current password to confirm.
 app.delete('/api/account', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const { password } = await c.req.json().catch(() => ({}));
   const u = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(uid);
-  if (!u || typeof password !== 'string' || !verifyPassword(password, u.password_hash)) {
-    return c.json({ error: 'password required to delete account' }, 403);
-  }
+  if (!u || typeof password !== 'string' || !verifyPassword(password, u.password_hash)) return c.json({ error: 'password required to delete account' }, 403);
   db.exec('BEGIN');
   try {
-    db.prepare('DELETE FROM orgs WHERE owner_id = ?').run(uid); // cascades projects/members/webhooks/invites/audit
-    db.prepare('DELETE FROM users WHERE id = ?').run(uid);       // cascades memberships/tokens
+    db.prepare('DELETE FROM orgs WHERE owner_id = ?').run(uid);
+    db.prepare('DELETE FROM users WHERE id = ?').run(uid);
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
   return c.json({ ok: true });
@@ -1382,8 +1154,6 @@ app.delete('/api/account', requireAuth, async (c) => {
 
 app.get('/api/health', (c) => c.json({ ok: true }));
 
-// Static client — strict allowlist so server/, data.db, package.json etc. are
-// never served. Anything not listed → 404.
 const STATIC = {
   '/': ['index.html', 'text/html; charset=utf-8'],
   '/index.html': ['index.html', 'text/html; charset=utf-8'],
@@ -1397,6 +1167,7 @@ const STATIC = {
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/cloud-sync.js': ['cloud-sync.js', 'text/javascript; charset=utf-8'],
   '/analytics.js': ['analytics.js', 'text/javascript; charset=utf-8'],
+  '/dialog-accessibility.js': ['dialog-accessibility.js', 'text/javascript; charset=utf-8'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
   '/toast-state.css': ['toast-state.css', 'text/css; charset=utf-8'],
   '/wbs.json': ['wbs.json', 'application/json; charset=utf-8'],
