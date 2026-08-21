@@ -62,7 +62,7 @@ const nullableAudit = db.prepare(
   `SELECT user_id AS userId, target_type AS targetType, target_id AS targetId, meta
    FROM audit_log WHERE org_id = ? AND action = ? ORDER BY id DESC LIMIT 1`,
 ).get(orgId, 'system.nullable-audit');
-assert.deepEqual(nullableAudit, {
+assert.deepEqual({ ...nullableAudit }, {
   userId: null,
   targetType: null,
   targetId: null,
