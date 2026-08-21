@@ -67,6 +67,41 @@ export class SchemaMigrationStateError extends Error {
 }
 
 /**
+ * Execute the legacy schema bootstrap as one recoverable SQLite transaction.
+ *
+ * A first startup that is interrupted after only some CREATE statements must
+ * not leave a partial generation that later startup correctly refuses to serve.
+ * SQLite rolls back an open transaction after process loss; synchronous DDL
+ * failures are rolled back here before the original failure is rethrown.
+ *
+ * @param {{exec: Function}} database - node:sqlite-compatible database.
+ * @param {string} bootstrapSql - Complete legacy CREATE TABLE/INDEX statements.
+ * @returns {void}
+ * @throws {TypeError} When the adapter or SQL input is unusable.
+ */
+export function runAtomicLegacySchemaBootstrap(database, bootstrapSql) {
+  if (!database || typeof database.exec !== 'function') {
+    throw new TypeError('database must provide exec');
+  }
+  if (typeof bootstrapSql !== 'string' || bootstrapSql.trim() === '') {
+    throw new TypeError('bootstrapSql must be a non-empty string');
+  }
+
+  database.exec('BEGIN IMMEDIATE');
+  try {
+    database.exec(bootstrapSql);
+    database.exec('COMMIT');
+  } catch (error) {
+    try {
+      database.exec('ROLLBACK');
+    } catch {
+      // Preserve the causal bootstrap failure; startup remains fail-closed.
+    }
+    throw error;
+  }
+}
+
+/**
  * Classify the database as the complete legacy or complete canonical schema.
  *
  * Unrelated compliant tables are intentionally ignored. Any mixture, missing
