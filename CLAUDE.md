@@ -49,8 +49,7 @@ docker compose up --build            # Dockerfile.server → :8787
 ```
 
 Environment variables (`SCOPEWEAVE_JWT_SECRET`, `SCOPEWEAVE_DB`, `PORT`, OIDC/Stripe
-config, rate limiting) are tabled in `README.md`; API reference is `docs/api.md`,
-deploy guide is `docs/deploy.md`.
+config, rate limiting) are documented in `docs/deploy.md`; API reference is `docs/api.md`.
 
 ## Architecture
 
