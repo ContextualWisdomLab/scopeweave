@@ -268,9 +268,10 @@ export function createVerifiedSqliteBackup({ sourcePath, destinationPath, snapsh
   }
 
   const parentReal = dirname(destinationReal);
-  const temporaryPath = createSecureTemporaryPath(parentReal);
+  let temporaryPath;
   let database;
   try {
+    temporaryPath = createSecureTemporaryPath(parentReal);
     database = new DatabaseSync(sourceReal, { readOnly: true });
     database.exec('PRAGMA foreign_keys = ON');
     const sourceMetadata = inspectOpenSqliteDatabase(database, 'source_database');
@@ -304,7 +305,7 @@ export function createVerifiedSqliteBackup({ sourcePath, destinationPath, snapsh
   } catch (error) {
     // Only the unique temporary file is owned before publication. In
     // particular, EEXIST means another process owns destinationReal.
-    removeIncompleteBackupBestEffort(temporaryPath);
+    if (temporaryPath) removeIncompleteBackupBestEffort(temporaryPath);
     if (error instanceof SqliteBackupError) throw error;
     throw fail('sqlite_backup_failed', error);
   } finally {
