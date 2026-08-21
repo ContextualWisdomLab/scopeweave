@@ -8,6 +8,7 @@ import {
   ensureLegacyCompatibilityColumns,
   ensureSchemaMigrationState,
   inspectSchemaBootstrapState,
+  runAtomicLegacySchemaBootstrap,
   SchemaMigrationStateError,
 } from './schema_migration.mjs';
 
@@ -29,7 +30,7 @@ if (initialSchemaState === 'canonical_ready') {
   );
 }
 
-db.exec(`
+runAtomicLegacySchemaBootstrap(db, `
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
