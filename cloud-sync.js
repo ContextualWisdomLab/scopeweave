@@ -82,6 +82,7 @@ async function openProject(id, { silent = false } = {}) {
   host?.hydrateState({ projectName: p.name, baseDate: p.baseDate, tasks: p.tasks });
   host?.renderAll();
   subscribe(id);
+  // opening = seen: clear the unseen badge for this project
   notifCache.delete(String(id));
   api(`/api/projects/${id}/seen`, { method: 'POST' }).catch(() => {});
   renderAuthUI();
@@ -107,6 +108,7 @@ async function doPush(payload) {
   }
 }
 
+// ---------------------------------------------------------------- public API
 export const cloud = {
   init(hostApi) {
     host = hostApi;
@@ -114,7 +116,9 @@ export const cloud = {
     renderAuthUI();
     if (isAuthed()) refreshProjects().then(renderAuthUI).catch(() => {});
   },
+  // Returns the saved project state to hydrate, or null (→ local/seed path).
   async boot() {
+    // public read-only share view (?share=TOKEN) — no account needed
     const shareToken = routeTokenPathSegment(new URLSearchParams(location.search).get('share'));
     if (shareToken) {
       try {
@@ -131,7 +135,7 @@ export const cloud = {
     try {
       const p = await api(`/api/projects/${getProjectId()}`);
       version = p.version;
-      currentOrgId = p.orgId || currentOrgId;
+      currentOrgId = p.orgId || currentOrgId; // team/dashboard need the org right after reload
       subscribe(p.id);
       renderAuthUI();
       return { projectName: p.name, baseDate: p.baseDate, tasks: p.tasks };
@@ -140,14 +144,16 @@ export const cloud = {
       return null;
     }
   },
+  // Called from persistState(). No-op unless logged in with a project open.
   push(payload) {
-    if (shareMode) return;
+    if (shareMode) return; // read-only share view never writes
     if (!isAuthed() || !getProjectId()) return;
     clearTimeout(pushTimer);
     pushTimer = setTimeout(() => doPush(payload), 600);
   },
 };
 
+// ------------------------------------------------------------------- auth UI
 function ensureAuthUI() {
   if (document.getElementById('cloud-auth')) return;
   const titleRow = document.querySelector('.title-row');
@@ -157,6 +163,7 @@ function ensureAuthUI() {
   bar.className = 'cloud-auth';
   titleRow.appendChild(bar);
 
+  // modal (reuses .modal/.hidden conventions from the gantt modal)
   const modal = document.createElement('div');
   modal.id = 'cloud-modal';
   modal.className = 'modal hidden';
@@ -242,6 +249,7 @@ function ensureAuthUI() {
   form.append(emailLabel, nameLabel, pwdLabel, errorP, actions, ssoBtn);
   panel.append(header, form);
   modal.append(backdrop, panel);
+
   document.body.appendChild(modal);
 
   let mode = 'login';
@@ -277,7 +285,7 @@ function ensureAuthUI() {
 }
 
 let projectsCache = [];
-let notifCache = new Map();
+let notifCache = new Map(); // projectId -> unseen count
 
 async function refreshProjects() {
   try { projectsCache = (await api('/api/projects')).projects || []; } catch { projectsCache = []; }
@@ -307,6 +315,7 @@ function renderAuthUI() {
     bar.appendChild(btn);
     return;
   }
+  // logged in: onboarding (no projects yet) → sample; else project switcher.
   if (!projectsCache.length) {
     const sample = document.createElement('button');
     sample.type = 'button';
@@ -327,7 +336,7 @@ function renderAuthUI() {
     const opt = document.createElement('option');
     opt.value = String(p.id);
     const unseen = notifCache.get(String(p.id));
-    opt.textContent = unseen ? `${p.name} ●${unseen}` : p.name;
+    opt.textContent = unseen ? `${p.name} ●${unseen}` : p.name; // textContent → XSS-safe
     if (String(p.id) === String(openId)) opt.selected = true;
     select.appendChild(opt);
   }
@@ -495,6 +504,8 @@ function openLoginModal() {
   modal?.classList.remove('hidden');
 }
 
+// Create a cloud project and seed it with `seedState` (defaults to what's on
+// screen). Used by both "새 프로젝트" and the "샘플로 시작" onboarding.
 async function makeProject(name, seedState) {
   const r = await api('/api/projects', { method: 'POST', body: { name } });
   await refreshProjects();
@@ -503,7 +514,7 @@ async function makeProject(name, seedState) {
   const meta = projectsCache.find((x) => String(x.id) === String(r.id));
   if (meta) currentOrgId = meta.orgId;
   const base = seedState || host?.getState?.() || { baseDate: '', tasks: [] };
-  await doPush({ ...base, projectName: name });
+  await doPush({ ...base, projectName: name }); // keep the chosen project name
   subscribe(r.id);
   renderAuthUI();
   return r;
@@ -520,6 +531,8 @@ async function createProjectFlow() {
   }
 }
 
+// Onboarding: a first project pre-populated from the app's source-backed seed
+// (whatever app.js has loaded on screen — the wbs.json sample for a new user).
 async function sampleStart() {
   try {
     await makeProject('샘플 프로젝트', host?.getState?.());
@@ -529,6 +542,7 @@ async function sampleStart() {
   }
 }
 
+// ------------------------------------------------------------- team / RBAC UI
 const ROLE_LABELS = { owner: '소유자', admin: '관리자', member: '멤버', viewer: '뷰어' };
 
 async function exportOrg() {
@@ -558,6 +572,7 @@ async function resolveOrgId() {
   return currentOrgId;
 }
 
+// ---------------------------------------------------------------- share links
 async function openShareModal() {
   const pid = getProjectId();
   if (!pid) return;
@@ -645,12 +660,15 @@ async function openShareModal() {
   }
 }
 
+// ------------------------------------------------------------ weekly report
+// 주간보고 generator — the PM deliverable, straight from live data.
+// Pure: takes tasks + a reference date, returns markdown.
 export function buildWeeklyReport(tasks, refDate, projectName = '') {
   const ref = new Date(refDate);
   if (Number.isNaN(ref.getTime())) return '';
   const day = (d) => d.toISOString().slice(0, 10);
   const monday = new Date(ref);
-  monday.setDate(ref.getDate() - ((ref.getDay() + 6) % 7));
+  monday.setDate(ref.getDate() - ((ref.getDay() + 6) % 7)); // this week's Monday
   const weekStart = day(monday);
   const weekEnd = day(new Date(monday.getTime() + 6 * 86400000));
   const nextStart = day(new Date(monday.getTime() + 7 * 86400000));
@@ -776,7 +794,14 @@ function openReportModal() {
   panel.appendChild(pre);
 }
 
+// ------------------------------------------------------- MS Project import
+// Parse Microsoft Project XML (Project 2003+ .xml export) into ScopeWeave's
+// task schema. ponytail: regex block parsing (MSP XML is machine-generated,
+// no DOMParser needed → node-testable); swap for a real XML parser if
+// hand-edited files ever matter.
 export function parseMsProjectXml(xml) {
+  // Fully linear extract (indexOf/slice) — no dynamic RegExp and no lazy
+  // [\s\S]*? block collectors (those can quadratic-backtrack on truncated input).
   const isXmlWhitespace = (charCode) => (
     charCode === 0x20 || charCode === 0x09 || charCode === 0x0d || charCode === 0x0a
   );
@@ -787,8 +812,14 @@ export function parseMsProjectXml(xml) {
       const start = source.indexOf(prefix, searchFrom);
       if (start === -1) return null;
       let delimiter = start + prefix.length;
-      while (delimiter < source.length && isXmlWhitespace(source.charCodeAt(delimiter))) delimiter += 1;
-      if (source.charCodeAt(delimiter) === 0x3e) return { start, end: delimiter + 1 };
+      while (delimiter < source.length && isXmlWhitespace(source.charCodeAt(delimiter))) {
+        delimiter += 1;
+      }
+      if (source.charCodeAt(delimiter) === 0x3e) {
+        return { start, end: delimiter + 1 };
+      }
+      // Reject attributes, longer names, and non-XML whitespace while advancing
+      // past every inspected byte so malformed candidates are never rescanned.
       searchFrom = Math.max(delimiter + 1, start + prefix.length);
     }
   };
@@ -808,6 +839,8 @@ export function parseMsProjectXml(xml) {
       if (!opening) break;
       const closing = findTagBoundary(source, name, opening.end, true);
       const nextOpening = findTagBoundary(source, name, opening.end);
+      // Incomplete or nested same-name block: stop at the first unmatched
+      // opening tag instead of pairing it with a later block's closing tag.
       if (!closing || (nextOpening && nextOpening.start < closing.start)) break;
       out.push(source.slice(opening.start, closing.end));
       from = closing.end;
@@ -827,14 +860,14 @@ export function parseMsProjectXml(xml) {
     .replace(/&apos;/g, "'").replace(/&amp;/g, '&');
   const day = (s) => (/^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : '');
   const tasks = [];
-  const parents = {};
+  const parents = {}; // depth -> last task id at that depth
   const blocks = collectBlocks(String(xml || ''), 'Task');
   for (const block of blocks) {
     const uid = tag(block, 'UID');
     const name = unescape(tag(block, 'Name'));
-    if (!uid || uid === '0' || !name) continue;
+    if (!uid || uid === '0' || !name) continue; // project-summary row / blanks
     const level = Math.max(1, Number(tag(block, 'OutlineLevel')) || 1);
-    const depth = Math.min(level, 3);
+    const depth = Math.min(level, 3); // deeper levels flatten to task level
     const preds = predecessorIds(block);
     const pct = Number(tag(block, 'PercentComplete')) || 0;
     const t = {
@@ -852,7 +885,7 @@ export function parseMsProjectXml(xml) {
     };
     tasks.push(t);
     parents[depth] = t.id;
-    for (let d = depth + 1; d <= 3; d++) delete parents[d];
+    for (let d = depth + 1; d <= 3; d++) delete parents[d]; // reset deeper chain
   }
   return tasks;
 }
@@ -862,6 +895,7 @@ async function importMsProjectFile(file) {
   const tasks = parseMsProjectXml(xml);
   if (!tasks.length) { toast('가져올 작업이 없습니다 (MSP XML 형식을 확인하세요).'); return; }
   if (!confirm(`MS Project에서 ${tasks.length}개 작업을 가져옵니다. 현재 프로젝트 내용을 대체합니다.`)) return;
+  // preserve name/baseDate — only the task tree is replaced
   const prev = host?.getState?.() || {};
   host?.hydrateState({ projectName: prev.projectName, baseDate: prev.baseDate, tasks });
   host?.renderAll();
@@ -870,6 +904,8 @@ async function importMsProjectFile(file) {
   toast(`MS Project에서 ${tasks.length}개 작업을 가져왔습니다.`);
 }
 
+// ------------------------------------------------------------- portfolio
+// Executive rollup: every project's weighted progress, SPI, and overdue count.
 async function openPortfolioModal() {
   if (!currentOrgId) { toast('워크스페이스를 먼저 선택하세요.'); return; }
   let modal = document.getElementById('portfolio-modal');
@@ -959,6 +995,9 @@ async function openPortfolioModal() {
   panel.appendChild(wrap);
 }
 
+// --------------------------------------------------------------- sprints
+// Agile/Hybrid 지표 (순수): 스프린트별 커밋/완료 스토리포인트와 팀 벨로시티.
+// 작업 배정 = task.sprint(이름 일치), 추정 = task.storyPoints, 완료 = 실적 100%.
 export function computeSprintStats(tasks, sprints, today) {
   const leaf = (tasks || []).filter((t) => !t.isSynthetic);
   const rows = (sprints || []).map((sp) => {
@@ -977,6 +1016,8 @@ export function computeSprintStats(tasks, sprints, today) {
   return { rows, velocity, backlogCount: backlog.length };
 }
 
+// 번다운 (순수): 스프린트 기간의 일별 잔여 포인트 — ideal(선형 소진) vs
+// actual(완료일 actualEndDate 기준; 완료일 없는 100% 작업은 오늘 완료로 간주).
 export function computeBurndown(tasks, sprint, today) {
   if (!sprint?.startDate || !sprint?.endDate || sprint.endDate < sprint.startDate) return null;
   const leaf = (tasks || []).filter((t) => !t.isSynthetic && String(t.sprint || '').trim() === sprint.name);
@@ -988,13 +1029,13 @@ export function computeBurndown(tasks, sprint, today) {
     const iso = d.toISOString().slice(0, 10);
     days.push(iso);
     if (iso >= sprint.endDate) break;
-    if (days.length > 120) break;
+    if (days.length > 120) break; // 안전 상한
   }
   const n = days.length;
   const ideal = days.map((_, i) => committed * (1 - (n === 1 ? 1 : i / (n - 1))));
   const doneAt = (t) => t.actualEndDate || ((Number(t.actualProgress) || 0) >= 100 ? today : null);
   const actual = days.map((day) => {
-    if (today && day > today) return null;
+    if (today && day > today) return null; // 미래는 미기록
     const burned = leaf.filter((t) => { const d = doneAt(t); return d && d <= day; }).reduce((s2, t) => s2 + pts(t), 0);
     return committed - burned;
   });
@@ -1075,6 +1116,8 @@ async function openSprintModal() {
   panel.appendChild(head);
 
   const data = await api(`/api/projects/${pid}/sprints`);
+
+  // 방법론 선택 — 프로젝트 메타로 저장
   const mLabel = document.createElement('label');
   mLabel.className = 'meta-field';
   const mSpan = document.createElement('span');
@@ -1099,6 +1142,7 @@ async function openSprintModal() {
   mLabel.append(mSpan, mSel);
   panel.appendChild(mLabel);
 
+  // 지표 + 목록
   const stats = computeSprintStats(host?.getState?.()?.tasks || [], data.sprints, new Date().toISOString().slice(0, 10));
   const summary = document.createElement('p');
   summary.className = 'cpm-summary';
@@ -1174,6 +1218,9 @@ async function openSprintModal() {
   panel.appendChild(form);
 }
 
+// ----------------------------------------------------------- attachments
+// 산출물 첨부: Clearfolio 통합 문서 뷰어로 업로드/열람. 서버가 프록시하므로
+// 브라우저에는 Clearfolio 자격/시크릿이 노출되지 않는다.
 async function openAttachmentsModal() {
   const pid = getProjectId();
   if (!pid) return;
@@ -1210,6 +1257,7 @@ async function openAttachmentsModal() {
   head.append(h2, close);
   panel.appendChild(head);
 
+  // 작업 선택 + 파일 업로드
   const sel = document.createElement('select');
   sel.className = 'cloud-select';
   const optAll = document.createElement('option');
@@ -1309,6 +1357,7 @@ async function openAttachmentsModal() {
   await refresh();
 }
 
+// ------------------------------------------------------------- comments
 async function openCommentsModal() {
   const pid = getProjectId();
   if (!pid) return;
@@ -1345,6 +1394,7 @@ async function openCommentsModal() {
   head.append(h2, close);
   panel.appendChild(head);
 
+  // task filter (전체 or a specific task)
   const sel = document.createElement('select');
   sel.className = 'cloud-select';
   const all = document.createElement('option');
@@ -1421,6 +1471,7 @@ async function openCommentsModal() {
   await refresh();
 }
 
+// ------------------------------------------------------------- search
 function openSearchModal() {
   let modal = document.getElementById('search-modal');
   if (!modal) {
@@ -1502,6 +1553,9 @@ function openSearchModal() {
   input.focus();
 }
 
+// ------------------------------------------------------------- baselines
+// Compare the live plan against a frozen baseline: which tasks' planned dates
+// slipped, and by how many days.
 const dayMs = 86400000;
 const slipDays = (fromDate, toDate) => {
   if (!fromDate || !toDate) return null;
@@ -1606,6 +1660,7 @@ async function openBaselineModal() {
   result.id = 'baseline-result';
   panel.appendChild(result);
 
+  // 변경 이력 (revision history) — related schedule-control tool, same modal.
   const histH = document.createElement('h3');
   histH.className = 'token-heading';
   histH.textContent = '변경 이력';
@@ -1734,7 +1789,6 @@ async function openTeamModal() {
     modal.className = 'modal hidden';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
-    modal.setAttribute('aria-labelledby', 'team-modal-title');
 
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
@@ -1745,7 +1799,6 @@ async function openTeamModal() {
     const header = document.createElement('div');
     header.className = 'modal-header';
     const h2 = document.createElement('h2');
-    h2.id = 'team-modal-title';
     h2.textContent = '팀 멤버';
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
@@ -1823,6 +1876,7 @@ async function renderTeam() {
   const data = await api(`/api/orgs/${currentOrgId}/members`);
   body.textContent = '';
 
+  // org actions: rename (owner) / leave (everyone else)
   try {
     const me = await api('/api/me');
     const myRole = me.orgs?.find((o) => String(o.id) === String(currentOrgId))?.role;
@@ -1862,8 +1916,9 @@ async function renderTeam() {
       actions.appendChild(leave);
     }
     if (actions.childNodes.length) body.appendChild(actions);
-  } catch { }
+  } catch { /* org actions are best-effort */ }
 
+  // plan + usage indicator
   try {
     const b = await api(`/api/orgs/${currentOrgId}/billing`);
     const bar = document.createElement('div');
@@ -1887,7 +1942,7 @@ async function renderTeam() {
       bar.appendChild(up);
     }
     body.appendChild(bar);
-  } catch { }
+  } catch { /* billing optional */ }
   const list = document.createElement('ul');
   list.className = 'team-list';
   for (const m of data.members) {
@@ -1932,7 +1987,7 @@ async function renderTeam() {
           await api(`/api/orgs/${currentOrgId}/transfer`, { method: 'POST', body: { userId: m.id } });
           toast('소유권을 이전했습니다.');
           renderTeam();
-        } catch (e) { toast(e.data?.error || e.message); }
+        } catch (e) { toast(e.data?.error || e.message); } // server 403s non-owners
       });
       li.appendChild(xfer);
     }
@@ -1979,6 +2034,7 @@ async function renderTeam() {
   renderAccount(body);
 }
 
+// Account settings — change password / delete account.
 function renderAccount(body) {
   const section = document.createElement('div');
   section.className = 'token-section';
@@ -2015,7 +2071,7 @@ function renderAccount(body) {
     if (!confirm('다른 모든 기기의 세션을 무효화합니다. 이 기기는 유지됩니다.')) return;
     try {
       const res = await api('/api/auth/logout-all', { method: 'POST' });
-      setToken(res.token);
+      setToken(res.token); // fresh token keeps this device signed in
       toast('다른 모든 기기에서 로그아웃했습니다.');
     } catch (e) { toast(e.data?.error || e.message); }
   });
@@ -2042,6 +2098,7 @@ function renderAccount(body) {
   body.appendChild(section);
 }
 
+// Outbound webhooks — owner/admin. Secret shown once at creation.
 async function renderWebhooks(body) {
   let data;
   try { data = await api(`/api/orgs/${currentOrgId}/webhooks`); } catch { return; }
@@ -2120,6 +2177,7 @@ const AUDIT_LABELS = {
   'billing.upgrade': '플랜 업그레이드',
 };
 
+// Recent activity (owner/admin only; endpoint 403s otherwise → section hidden).
 async function renderAudit(body) {
   let data;
   try { data = await api(`/api/orgs/${currentOrgId}/audit?limit=12`); } catch { return; }
@@ -2162,6 +2220,7 @@ async function renderAudit(body) {
   body.appendChild(section);
 }
 
+// Personal Access Tokens — create/list/revoke, secret shown once.
 async function renderTokens(body) {
   const section = document.createElement('div');
   section.className = 'token-section';
@@ -2209,6 +2268,7 @@ async function renderTokens(body) {
       const t = await api('/api/tokens', { method: 'POST', body: { name: input.value.trim() || 'token' } });
       secret.textContent = `한 번만 표시됩니다 — 지금 복사하세요: ${t.token}`;
       input.value = '';
+      // append the new token to the list without wiping the shown secret
       const li = document.createElement('li');
       const who = document.createElement('span');
       who.className = 'team-who';
@@ -2222,6 +2282,8 @@ async function renderTokens(body) {
   body.appendChild(section);
 }
 
+// SSO (OIDC) redirect: the token arrives in the URL fragment (not query → not
+// logged). Store it and clean the URL before anything else reads auth state.
 if (typeof window !== 'undefined' && location.hash.startsWith('#token=')) {
   const t = decodeURIComponent(location.hash.slice('#token='.length));
   if (t) {
@@ -2230,6 +2292,7 @@ if (typeof window !== 'undefined' && location.hash.startsWith('#token=')) {
   }
 }
 
+// Auto-accept an invite token from the URL (?invite=...) once logged in.
 if (typeof window !== 'undefined') {
   const params = new URLSearchParams(location.search);
   const inviteToken = routeTokenPathSegment(params.get('invite'));
@@ -2240,6 +2303,8 @@ if (typeof window !== 'undefined') {
   }
 }
 
+// Bridge onto window so app.js (a plain, non-import script) can reach us
+// without an ESM import statement — keeps app.js eval-safe for unit tests.
 if (typeof window !== 'undefined') {
   window.ScopeWeaveCloud = cloud;
 }
