@@ -6,3 +6,10 @@
   opacity: 1;
   transform: translateY(0);
 }
+
+/* Dynamic cloud/team close buttons delegate clicks from their modal roots.
+ * Their decorative icon must not become the pointer target, otherwise the
+ * button's data-* close marker is bypassed and the modal remains open. */
+.close-button > [aria-hidden="true"] {
+  pointer-events: none;
+}
