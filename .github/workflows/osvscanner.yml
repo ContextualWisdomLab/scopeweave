@@ -19,7 +19,6 @@ jobs:
     permissions:
       actions: read
       contents: read
-      security-events: write
     steps:
       - name: Checkout current protected base revision
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -165,11 +164,14 @@ jobs:
             --gh-annotations=true
             --fail-on-vuln=true
 
-      - name: Upload exact-head SARIF
+      - name: Preserve exact-head OSV SARIF
         if: ${{ !cancelled() }}
-        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          sarif_file: results.sarif
+          name: scopeweave-osv-${{ github.run_id }}-${{ github.run_attempt }}
+          path: results.sarif
+          if-no-files-found: error
+          retention-days: 3
 
   manifest-pattern-coverage:
     if: github.event_name == 'workflow_dispatch'
