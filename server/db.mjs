@@ -8,6 +8,12 @@ import {
   createSqliteBillingCheckoutAttemptRepository,
   installBillingCheckoutAttemptSchema,
 } from './billing_checkout_attempt.mjs';
+import { reconcileStripeBillingAuthoritatively } from './stripe_billing_reconciliation.mjs';
+import {
+  createSqliteStripeReconciliationWorkerRepository,
+  installStripeReconciliationWorkerSchema,
+  runNextStripeReconciliationJob,
+} from './stripe_reconciliation_worker.mjs';
 import {
   configureStripeWebhookEventRecorder,
   createSqliteStripeWebhookEventRepository,
@@ -255,6 +261,29 @@ installStripeEntitlementClaimSchema(db);
 export const stripeEntitlementClaims = createSqliteStripeEntitlementClaimRepository(db, {
   deriveEntitlement: deriveStripeSubscriptionEntitlement,
 });
+installStripeReconciliationWorkerSchema(db);
+export const stripeReconciliationWorker = createSqliteStripeReconciliationWorkerRepository(db);
+
+/**
+ * Consume at most one pending verified Stripe reconciliation trigger.
+ *
+ * This bootstrap wrapper keeps queue leasing and authoritative provider reads behind
+ * server-owned repositories. Callers cannot choose tenant authority or inject claim
+ * identities; an idle queue returns `{ status: 'idle' }`.
+ *
+ * @returns {Promise<Readonly<object>>} bounded worker result
+ */
+export function reconcileNextStripeBillingTrigger() {
+  return runNextStripeReconciliationJob({
+    repository: stripeReconciliationWorker,
+    reconcile: reconcileStripeBillingAuthoritatively,
+    reconciliationDependencies: {
+      subscriptionRepository: stripeSubscriptionObservations,
+      invoiceRepository: stripeInvoiceObservations,
+      claimRepository: stripeEntitlementClaims,
+    },
+  });
+}
 
 // node:sqlite returns lastInsertRowid as number|bigint; normalize to Number.
 export const rowid = (r) => Number(r.lastInsertRowid);

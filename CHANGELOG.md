@@ -22,6 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Added a durable leased Stripe reconciliation worker that consumes verified-event
+  triggers through server-owned Subscription-to-organization authority, hashes
+  lease secrets at rest, prevents concurrent/stale completion, retries with bounded
+  exponential backoff, records append-only attempt evidence, and dead-letters work
+  after a finite attempt budget without persisting arbitrary provider error text.
 - Bound verified subscription-mode `checkout.session.completed` Customer and
   Subscription identities to exactly one server-recorded successful local Checkout
   Session before creating reconciliation work; missing or ambiguous Session
