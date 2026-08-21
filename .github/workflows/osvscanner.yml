@@ -83,7 +83,7 @@ jobs:
             --old=old-results.json
             --new=new-results.json
             --gh-annotations=true
-            --fail-on-vuln=false
+            --fail-on-vuln=true
 
       - name: Upload exact-head SARIF
         uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd # v4.37.7
