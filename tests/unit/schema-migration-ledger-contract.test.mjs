@@ -35,3 +35,26 @@ test('migration ledger fails closed when its persisted schema cannot enforce ide
 
   database.close();
 });
+
+test('migration ledger fails closed when its application timestamp default has drifted', () => {
+  const database = new DatabaseSync(':memory:');
+  createLegacyGeneration(database);
+  database.exec(`
+    CREATE TABLE schema_migrations (
+      migration_key TEXT PRIMARY KEY NOT NULL,
+      state_code TEXT NOT NULL,
+      applied_at TEXT NOT NULL
+    );
+    INSERT INTO schema_migrations(migration_key, state_code, applied_at)
+    VALUES ('legacy_schema_v1', 'legacy_ready', '2026-08-21T00:00:00Z');
+  `);
+
+  assert.throws(
+    () => ensureSchemaMigrationState(database),
+    (error) => error instanceof SchemaMigrationStateError
+      && /migration ledger schema/.test(error.message),
+    'startup must reject a persisted ledger that no longer supplies the required application timestamp default',
+  );
+
+  database.close();
+});
