@@ -18,7 +18,7 @@ function migrationLedgerColumnRows() {
   return [
     { name: 'migration_key', type: 'TEXT', notnull: 1, pk: 1 },
     { name: 'state_code', type: 'TEXT', notnull: 1, pk: 0 },
-    { name: 'applied_at', type: 'TEXT', notnull: 1, pk: 0 },
+    { name: 'applied_at', type: 'TEXT', notnull: 1, pk: 0, dflt_value: "datetime('now')" },
   ];
 }
 
