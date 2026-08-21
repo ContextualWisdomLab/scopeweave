@@ -79,15 +79,16 @@ export class SchemaMigrationStateError extends Error {
 }
 
 /**
- * Execute the legacy schema bootstrap as one recoverable SQLite transaction.
+ * Execute the legacy schema bootstrap without losing additive schema evolution.
  *
  * A first startup that is interrupted after only some CREATE statements must
  * not leave a partial generation that later startup correctly refuses to serve.
  * SQLite rolls back an open transaction after process loss; synchronous DDL
- * failures are rolled back here before the original failure is rethrown. Once
- * a complete schema generation already exists, the helper returns after a
- * read-only catalog verification so rolling startup does not take a write lock
- * merely to re-run idempotent CREATE statements.
+ * failures are rolled back here before the original failure is rethrown.
+ * Existing complete legacy databases still execute the idempotent CREATE TABLE
+ * and CREATE INDEX script so later additive objects self-heal, but they avoid
+ * BEGIN IMMEDIATE and therefore do not reserve a write lock merely for startup.
+ * A complete canonical generation is verified and never receives legacy DDL.
  *
  * @param {{exec: Function, prepare?: Function}} database - node:sqlite-compatible database.
  * @param {string} bootstrapSql - Complete legacy CREATE TABLE/INDEX statements.
@@ -105,7 +106,8 @@ export function runAtomicLegacySchemaBootstrap(database, bootstrapSql) {
   if (typeof database.prepare === 'function') {
     const objectNames = readApplicationTableNames(database);
     if (objectNames.size !== 0) {
-      classifySchemaMigrationState(objectNames);
+      const state = classifySchemaMigrationState(objectNames);
+      if (state === 'legacy_ready') database.exec(bootstrapSql);
       return;
     }
   }
