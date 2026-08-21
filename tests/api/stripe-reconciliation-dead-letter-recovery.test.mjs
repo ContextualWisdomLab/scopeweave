@@ -2,8 +2,11 @@ import assert from 'node:assert/strict';
 
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_DEV = '1';
+process.env.SCOPEWEAVE_PUBLIC_ORIGIN = 'https://scopeweave.test';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 process.env.STRIPE_SECRET_KEY = 'sk_test_dead_letter_recovery';
+process.env.STRIPE_PRICE_ID = 'price_dead_letter_recovery';
+process.env.STRIPE_WEBHOOK_SECRET = 'whsec_dead_letter_recovery';
 delete process.env.ORCHESTRATOR_URL;
 
 const { app } = await import('../../server/app.mjs');
