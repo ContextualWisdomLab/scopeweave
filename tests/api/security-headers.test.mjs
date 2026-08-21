@@ -53,4 +53,22 @@ const missing = await app.request('/api/definitely-missing');
 assert.equal(missing.status, 404, 'unknown route remains a normal not-found response');
 assertBaselineSecurityHeaders(missing, 'not-found response');
 
+const dialogModule = await app.request('/dialog-accessibility.js');
+assert.equal(
+  dialogModule.status,
+  200,
+  'the canonical Hono app must serve every module referenced by index.html',
+);
+assert.match(
+  dialogModule.headers.get('content-type') ?? '',
+  /^text\/javascript(?:;|$)/i,
+  'the dialog accessibility module must be served as JavaScript',
+);
+assertBaselineSecurityHeaders(dialogModule, 'dialog accessibility module response');
+assert.match(
+  await dialogModule.text(),
+  /export function labelUnnamedDialogs\(/,
+  'the static route must return the dialog accessibility module, not a fallback document',
+);
+
 console.log('security header regression passed');
