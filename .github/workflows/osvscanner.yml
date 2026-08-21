@@ -52,12 +52,41 @@ jobs:
 
       - name: Fail closed on incomplete protected-base scan
         if: ${{ steps.scan-base.outcome == 'failure' }}
+        env:
+          RESULT_FILE: old-results.json
         run: |
           set -euo pipefail
-          test -s old-results.json || {
-            echo "::error::OSV protected-base scan failed without producing old-results.json"
-            exit 1
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+
+          const resultFile = process.env.RESULT_FILE;
+          if (!resultFile) {
+            console.error('::error::OSV scan completion guard has no result file');
+            process.exit(1);
           }
+
+          let scanResult;
+          try {
+            scanResult = JSON.parse(readFileSync(resultFile, 'utf8'));
+          } catch {
+            console.error(`::error::OSV scanner failed without valid JSON evidence in ${resultFile}`);
+            process.exit(1);
+          }
+
+          if (!scanResult || !Array.isArray(scanResult.results)) {
+            console.error(`::error::OSV scanner failed without a results array in ${resultFile}`);
+            process.exit(1);
+          }
+
+          const vulnerabilities = scanResult.results
+            .flatMap((result) => Array.isArray(result?.packages) ? result.packages : [])
+            .flatMap((entry) => Array.isArray(entry?.vulnerabilities) ? entry.vulnerabilities : []);
+
+          if (vulnerabilities.length === 0) {
+            console.error(`::error::OSV scanner failed without vulnerability evidence in ${resultFile}; refusing ambiguous or incomplete scan output`);
+            process.exit(1);
+          }
+          NODE
 
       - name: Checkout exact contributor revision
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -90,12 +119,41 @@ jobs:
 
       - name: Fail closed on incomplete contributor scan
         if: ${{ steps.scan-head.outcome == 'failure' }}
+        env:
+          RESULT_FILE: new-results.json
         run: |
           set -euo pipefail
-          test -s new-results.json || {
-            echo "::error::OSV contributor scan failed without producing new-results.json"
-            exit 1
+          node --input-type=module <<'NODE'
+          import { readFileSync } from 'node:fs';
+
+          const resultFile = process.env.RESULT_FILE;
+          if (!resultFile) {
+            console.error('::error::OSV scan completion guard has no result file');
+            process.exit(1);
           }
+
+          let scanResult;
+          try {
+            scanResult = JSON.parse(readFileSync(resultFile, 'utf8'));
+          } catch {
+            console.error(`::error::OSV scanner failed without valid JSON evidence in ${resultFile}`);
+            process.exit(1);
+          }
+
+          if (!scanResult || !Array.isArray(scanResult.results)) {
+            console.error(`::error::OSV scanner failed without a results array in ${resultFile}`);
+            process.exit(1);
+          }
+
+          const vulnerabilities = scanResult.results
+            .flatMap((result) => Array.isArray(result?.packages) ? result.packages : [])
+            .flatMap((entry) => Array.isArray(entry?.vulnerabilities) ? entry.vulnerabilities : []);
+
+          if (vulnerabilities.length === 0) {
+            console.error(`::error::OSV scanner failed without vulnerability evidence in ${resultFile}; refusing ambiguous or incomplete scan output`);
+            process.exit(1);
+          }
+          NODE
 
       - name: Compare dependency findings
         uses: google/osv-scanner-action/osv-reporter-action@06b2ab4348248b456ee06c9e953637f55e03504f # v2.5.0
