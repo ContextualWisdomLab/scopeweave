@@ -17,9 +17,15 @@ const MIGRATION_LEDGER_STATES = Object.freeze(Object.assign(Object.create(null),
 }));
 
 const MIGRATION_LEDGER_COLUMNS = Object.freeze([
-  Object.freeze({ name: 'migration_key', type: 'TEXT', notNull: 1, primaryKey: 1 }),
-  Object.freeze({ name: 'state_code', type: 'TEXT', notNull: 1, primaryKey: 0 }),
-  Object.freeze({ name: 'applied_at', type: 'TEXT', notNull: 1, primaryKey: 0 }),
+  Object.freeze({ name: 'migration_key', type: 'TEXT', notNull: 1, primaryKey: 1, defaultValue: '' }),
+  Object.freeze({ name: 'state_code', type: 'TEXT', notNull: 1, primaryKey: 0, defaultValue: '' }),
+  Object.freeze({
+    name: 'applied_at',
+    type: 'TEXT',
+    notNull: 1,
+    primaryKey: 0,
+    defaultValue: "datetime('now')",
+  }),
 ]);
 
 const LEGACY_COMPATIBILITY_COLUMNS = Object.freeze([
@@ -179,7 +185,8 @@ function validateMigrationLedgerSchema(database) {
     if (!observed
       || String(observed.type ?? '').trim().toUpperCase() !== expected.type
       || Number(observed.notnull) !== expected.notNull
-      || Number(observed.pk) !== expected.primaryKey) {
+      || Number(observed.pk) !== expected.primaryKey
+      || String(observed.dflt_value ?? '') !== expected.defaultValue) {
       throw new SchemaMigrationStateError('schema migration ledger schema does not match required contract');
     }
   }
