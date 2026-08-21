@@ -70,11 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   checkout differs, preventing synthetic merge results from being mistaken for
   contributor-head test evidence.
 - Restored protected `Analyze (javascript-typescript)` and `Analyze (python)`
-  CodeQL contexts through exact-head repository analysis while keeping GitHub
-  CodeQL default setup's SARIF publication authority separate. Both repository
-  CodeQL definitions now retain exact-checkout attestation and run for stacked
-  pull requests as well as `develop`-bound pull requests instead of silently
-  skipping feature-branch children.
+  contexts through one exact-head, non-publishing repository CodeQL lane for
+  `develop`-bound and stacked pull requests while GitHub default setup remains
+  the sole SARIF publication authority; retired the stale advanced publisher
+  and removed unused code-scanning write authority from the required lane.
 - Made OSV differential scanning resolve the current protected base **ref** at
   runner execution instead of treating the pull-request base SHA snapshot as a
   live-base authority, verify the immutable contributor head, retain the
