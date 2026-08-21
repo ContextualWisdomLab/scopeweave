@@ -4,21 +4,32 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
-const styles = fs.readFileSync(path.join(repositoryRoot, 'styles.css'), 'utf8');
+const stylesheetPaths = ['styles.css', 'toast-state.css'];
+const styles = stylesheetPaths
+  .map((stylesheetPath) => fs.readFileSync(path.join(repositoryRoot, stylesheetPath), 'utf8'))
+  .join('\n');
 
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function readHexProperty(selector, property) {
+function readEffectiveHexProperty(selector, property) {
   const selectorPattern = escapeRegExp(selector);
-  const rule = styles.match(new RegExp(`${selectorPattern}\\s*\\{([^}]*)\\}`));
-  assert.ok(rule, `missing CSS rule for ${selector}`);
-  const declaration = rule[1].match(
-    new RegExp(`${escapeRegExp(property)}\\s*:\\s*(#[0-9a-fA-F]{6})\\b`),
+  const rules = Array.from(styles.matchAll(new RegExp(`${selectorPattern}\\s*\\{([^}]*)\\}`, 'g')));
+  assert.ok(rules.length > 0, `missing CSS rule for ${selector}`);
+
+  const declarationPattern = new RegExp(
+    `${escapeRegExp(property)}\\s*:\\s*(#[0-9a-fA-F]{6})\\b`,
+    'g',
   );
-  assert.ok(declaration, `missing ${property} hex value for ${selector}`);
-  return declaration[1];
+  let effectiveValue = null;
+  for (const rule of rules) {
+    for (const declaration of rule[1].matchAll(declarationPattern)) {
+      effectiveValue = declaration[1];
+    }
+  }
+  assert.ok(effectiveValue, `missing ${property} hex value for ${selector}`);
+  return effectiveValue;
 }
 
 function channelToLinear(channel) {
@@ -46,10 +57,10 @@ function contrastRatio(first, second) {
   return (brighter + 0.05) / (darker + 0.05);
 }
 
-const foreground = readHexProperty('.owner-badge', 'color');
+const foreground = readEffectiveHexProperty('.owner-badge', 'color');
 for (let index = 0; index < 20; index += 1) {
   const selector = `.owner-badge--color-${index}`;
-  const background = readHexProperty(selector, 'background');
+  const background = readEffectiveHexProperty(selector, 'background');
   const ratio = contrastRatio(foreground, background);
   assert.ok(
     ratio >= 4.5,
