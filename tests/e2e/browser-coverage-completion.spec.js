@@ -155,6 +155,37 @@ test('a free-plan upgrade follows the live checkout redirect returned by the pro
   await expect(page).toHaveTitle('Checkout redirect target');
 });
 
+test('a failed provider navigation still attempts the returned checkout URL without a false demo fallback', async ({ page }) => {
+  await loginAndOpen(page);
+  const plannerUrl = page.url();
+  const checkoutTarget = `${BASE}/checkout-navigation-aborted`;
+  let checkoutRequests = 0;
+
+  await page.route('**/api/orgs/*/checkout', async (route) => {
+    checkoutRequests += 1;
+    expect(route.request().method()).toBe('POST');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ mock: false, url: checkoutTarget }),
+    });
+  });
+  await page.route(checkoutTarget, (route) => route.abort('aborted'));
+
+  await page.getByRole('button', { name: '팀', exact: true }).click();
+  const upgrade = page.locator('#team-body .billing-upgrade');
+  await expect(upgrade).toBeVisible();
+
+  const attemptedNavigation = page.waitForRequest(checkoutTarget);
+  await upgrade.click();
+  const navigationRequest = await attemptedNavigation;
+
+  expect(navigationRequest.url()).toBe(checkoutTarget);
+  expect(checkoutRequests).toBe(1);
+  await expect(page.locator('#toast')).not.toContainText('데모 환경입니다.');
+  await expect(page).toHaveURL(plannerUrl);
+});
+
 test('a demo billing checkout explains the missing provider key without navigating away', async ({ page }) => {
   await loginAndOpen(page);
   const plannerUrl = page.url();
