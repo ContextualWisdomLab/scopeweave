@@ -192,8 +192,28 @@ assert.deepEqual(
 );
 assert.match(
   browserFixtureSource,
-  /page\.on\(['"]response['"]/,
-  'browser coverage must observe the actual network responses that supplied covered production scripts',
+  /context:\s*async\s*\(\{\s*context\s*\},\s*use,\s*testInfo\)\s*=>/,
+  'browser coverage must own the per-test browser context so every page in that context can produce evidence',
+);
+assert.match(
+  browserFixtureSource,
+  /const originalNewPage = context\.newPage\.bind\(context\)/,
+  'browser coverage must preserve the real BrowserContext.newPage implementation before wrapping it',
+);
+assert.match(
+  browserFixtureSource,
+  /context\.newPage = async \(\.\.\.args\) => \{[\s\S]*?await startPageCoverage\(newPage\)/,
+  'browser coverage must start instrumentation before any context.newPage caller can navigate a secondary page',
+);
+assert.match(
+  browserFixtureSource,
+  /page\.close = async \(\.\.\.args\) => \{[\s\S]*?await stopPageCoverage\(page\)/,
+  'browser coverage must collect secondary-page evidence before an explicitly closed page becomes unavailable',
+);
+assert.match(
+  browserFixtureSource,
+  /context\.on\(['"]response['"],\s*responseListener\)/,
+  'browser coverage must observe production responses from every page in the test context',
 );
 assert.match(
   browserFixtureSource,
