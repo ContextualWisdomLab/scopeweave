@@ -36,6 +36,35 @@ assert.match(
   /git ls-remote --exit-code origin "refs\/heads\/\$BASE_REF"/,
   'Dependency Review must independently resolve the live base branch tip',
 );
+
+const ancestryCompareEndpoint = '/repos/${REPOSITORY}/compare/${BASE_SHA}...${HEAD_SHA}';
+const dependencyGraphCompareEndpoint = '/repos/${REPOSITORY}/dependency-graph/compare/${BASE_SHA}...${HEAD_SHA}';
+const ancestryCheckIndex = workflow.indexOf(ancestryCompareEndpoint);
+const dependencyGraphCheckIndex = workflow.indexOf(dependencyGraphCompareEndpoint);
+assert.notEqual(
+  ancestryCheckIndex,
+  -1,
+  'Dependency Review must verify the exact head relationship to the independently resolved live base',
+);
+assert.notEqual(
+  dependencyGraphCheckIndex,
+  -1,
+  'Dependency Review must retain an explicit dependency-graph support check',
+);
+assert.ok(
+  ancestryCheckIndex < dependencyGraphCheckIndex,
+  'Dependency Review must reject a stale/diverged head before interpreting dependency-graph differences',
+);
+assert.match(
+  workflow,
+  /comparison_status="\$\(jq -er '\.status' "\$relationship_file"\)"/,
+  'Dependency Review must parse the authenticated compare-commits relationship fail closed',
+);
+assert.match(
+  workflow,
+  /if \[ "\$comparison_status" != "ahead" \] && \[ "\$comparison_status" != "identical" \]; then[\s\S]*?exit 1/,
+  'Dependency Review must fail when the exact contributor head does not contain the live protected base',
+);
 assert.match(
   workflow,
   /base-ref: \$\{\{ steps\.resolve_live_base\.outputs\.base_sha \}\}/,
