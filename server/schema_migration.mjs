@@ -84,9 +84,12 @@ export class SchemaMigrationStateError extends Error {
  * A first startup that is interrupted after only some CREATE statements must
  * not leave a partial generation that later startup correctly refuses to serve.
  * SQLite rolls back an open transaction after process loss; synchronous DDL
- * failures are rolled back here before the original failure is rethrown.
+ * failures are rolled back here before the original failure is rethrown. Once
+ * a complete schema generation already exists, the helper returns after a
+ * read-only catalog verification so rolling startup does not take a write lock
+ * merely to re-run idempotent CREATE statements.
  *
- * @param {{exec: Function}} database - node:sqlite-compatible database.
+ * @param {{exec: Function, prepare?: Function}} database - node:sqlite-compatible database.
  * @param {string} bootstrapSql - Complete legacy CREATE TABLE/INDEX statements.
  * @returns {void}
  * @throws {TypeError} When the adapter or SQL input is unusable.
@@ -97,6 +100,14 @@ export function runAtomicLegacySchemaBootstrap(database, bootstrapSql) {
   }
   if (typeof bootstrapSql !== 'string' || bootstrapSql.trim() === '') {
     throw new TypeError('bootstrapSql must be a non-empty string');
+  }
+
+  if (typeof database.prepare === 'function') {
+    const objectNames = readApplicationTableNames(database);
+    if (objectNames.size !== 0) {
+      classifySchemaMigrationState(objectNames);
+      return;
+    }
   }
 
   database.exec('BEGIN IMMEDIATE');
@@ -293,9 +304,10 @@ export function inspectSchemaBootstrapState(database) {
  * This is the first expand/verify slice of issue #433. It does not rename data
  * tables. Instead it gives every database an explicit migration ledger and makes
  * startup fail closed if a later rename crashes or otherwise leaves old and new
- * object generations mixed. Repeated startup is idempotent, and a database that
- * has ever recorded the canonical generation cannot silently return to legacy
- * tables while retaining canonical migration history.
+ * object generations mixed. Repeated startup is idempotent and read-only once
+ * the verified generation's ledger row exists, and a database that has ever
+ * recorded the canonical generation cannot silently return to legacy tables
+ * while retaining canonical migration history.
  *
  * @param {{exec: Function, prepare: Function}} database - node:sqlite-compatible database.
  * @returns {'legacy_ready'|'canonical_ready'} Verified schema generation.
@@ -323,13 +335,17 @@ export function ensureSchemaMigrationState(database) {
   validateMigrationLedgerHistory(existingRows, state);
 
   const migrationKey = state === 'legacy_ready' ? 'legacy_schema_v1' : 'canonical_schema_v2';
-  database.prepare(
-    'INSERT OR IGNORE INTO schema_migrations(migration_key, state_code) VALUES (?, ?)',
-  ).run(migrationKey, state);
-
-  const ledgerRow = database.prepare(
+  const ledgerStatement = database.prepare(
     'SELECT state_code AS stateCode FROM schema_migrations WHERE migration_key = ?',
-  ).get(migrationKey);
+  );
+  let ledgerRow = ledgerStatement.get(migrationKey);
+  if (!ledgerRow) {
+    database.prepare(
+      'INSERT INTO schema_migrations(migration_key, state_code) VALUES (?, ?)',
+    ).run(migrationKey, state);
+    ledgerRow = ledgerStatement.get(migrationKey);
+  }
+
   if (!ledgerRow || ledgerRow.stateCode !== state) {
     throw new SchemaMigrationStateError('schema migration ledger state does not match verified schema');
   }
