@@ -78,5 +78,10 @@ assert.match(
   /\bupload-database:\s*false\b/,
   'required CodeQL must not publish CodeQL databases from default-branch required-context runs',
 );
+assert.doesNotMatch(
+  requiredWorkflow,
+  /\bsecurity-events:\s*write\b/,
+  'non-publishing required CodeQL must not retain code-scanning write authority',
+);
 
 console.log('✓ CodeQL exact-head, default-setup authority, and supply-chain contract passed');
