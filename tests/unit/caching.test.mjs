@@ -28,6 +28,7 @@ function loadApp() {
       this.dataset = Object.create(null);
       this.style = Object.create(null);
       this.children = [];
+      this.valueAttribute = undefined;
     }
     set className(value) { this.attributes.class = value; }
     get className() { return this.attributes.class; }
@@ -35,6 +36,21 @@ function loadApp() {
     get textContent() { return this.text; }
     set title(value) { this.titleAttribute = value; }
     get title() { return this.titleAttribute; }
+    set value(value) {
+      if (this.name !== 'select') {
+        this.valueAttribute = value;
+        return;
+      }
+      const normalized = String(value);
+      this.valueAttribute = this.children.some((child) => String(child.value) === normalized)
+        ? normalized
+        : '';
+    }
+    get value() {
+      if (this.name !== 'select') return this.valueAttribute;
+      if (this.valueAttribute) return this.valueAttribute;
+      return this.children.find((child) => child.name === 'option')?.value ?? '';
+    }
     setAttribute(key, value) { this.attributes[key] = value; }
     appendChild(child) { this.children.push(child); }
     append(...children) { this.children.push(...children); }
@@ -45,11 +61,11 @@ function loadApp() {
       node.style = { ...this.style };
       node.titleAttribute = this.titleAttribute;
       node.id = this.id;
-      node.value = this.value;
       if (deep) {
         node.text = this.text;
         node.children = this.children.map((child) => child.cloneNode(true));
       }
+      node.value = this.value;
       return node;
     }
   }
@@ -265,7 +281,7 @@ const progressShell = getActualProgressSelectTemplate();
 assert.equal(progressShell.name, 'select');
 assert.equal(progressShell.id, undefined, 'cached progress shell must not retain a row ID');
 assert.equal(progressShell.dataset.inlineProgress, undefined, 'cached progress shell must not retain a task ID');
-assert.equal(progressShell.value, undefined, 'cached progress shell must not retain a selected row value');
+assert.equal(progressShell.value, '미착수(0%)', 'cached progress shell keeps only the browser-default first option');
 assert.equal(progressShell.attributes['aria-invalid'], undefined, 'cached progress shell must not retain validation state');
 assert.equal(progressShell.attributes['aria-describedby'], undefined, 'cached progress shell must not retain validation references');
 
@@ -274,7 +290,7 @@ const cleanTask = {
   task: '정상 작업',
   activity: '',
   phase: 'Phase A',
-  actualProgressStatus: '완료(100%)',
+  actualProgressStatus: 'PM확인(100%)',
 };
 const cleanProgressCell = createActualProgressCellContent(cleanTask, {
   plannedDateWarning: '',
@@ -284,7 +300,7 @@ const cleanSelect = cleanProgressCell.children[1];
 assert.notEqual(cleanSelect, warningSelect, 'each progress row receives a distinct select clone');
 assert.equal(cleanSelect.id, 'actual-progress-task-b');
 assert.equal(cleanSelect.dataset.inlineProgress, 'task-b');
-assert.equal(cleanSelect.value, '완료(100%)');
+assert.equal(cleanSelect.value, 'PM확인(100%)');
 assert.equal(cleanSelect.attributes['aria-invalid'], undefined, 'validation state does not leak between progress clones');
 assert.equal(cleanSelect.attributes['aria-describedby'], undefined, 'validation references do not leak between progress clones');
 assert.equal(getActualProgressSelectTemplate(), progressShell, 'progress rendering reuses one immutable select shell');
