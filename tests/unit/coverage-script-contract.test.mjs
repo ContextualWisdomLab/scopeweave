@@ -252,8 +252,13 @@ assert.doesNotMatch(
 );
 assert.match(
   browserCollectorSource,
-  /if \(testRun\.status !== 0\) \{[\s\S]*?process\.exitCode = testRun\.status \?\? 1;[\s\S]*?\}\s*const rawFiles =/,
-  'the collector must preserve a non-passing Playwright result while continuing into raw coverage processing',
+  /if \(testRun\.status !== 0\) \{[\s\S]*?process\.exitCode = testRun\.status \?\? 1;[\s\S]*?\}\s*try\s*\{\s*const rawFiles =/,
+  'the collector must preserve a non-passing Playwright result while continuing into guarded raw coverage processing',
+);
+assert.match(
+  browserCollectorSource,
+  /catch \(coverageError\) \{\s*process\.exitCode = reportCoverageProcessingFailure\(testRun\.status, coverageError\);\s*\}/,
+  'secondary coverage-processing failures must preserve the primary Playwright failure instead of replacing it',
 );
 assert.match(
   browserCollectorSource,
