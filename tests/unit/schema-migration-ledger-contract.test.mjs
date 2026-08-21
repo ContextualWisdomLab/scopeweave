@@ -1,0 +1,37 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { DatabaseSync } from 'node:sqlite';
+import {
+  LEGACY_SCHEMA_OBJECTS,
+  SchemaMigrationStateError,
+  ensureSchemaMigrationState,
+} from '../../server/schema_migration.mjs';
+
+function createLegacyGeneration(database) {
+  for (const tableName of LEGACY_SCHEMA_OBJECTS) {
+    database.exec(`CREATE TABLE ${tableName} (id INTEGER PRIMARY KEY)`);
+  }
+}
+
+test('migration ledger fails closed when its persisted schema cannot enforce identity', () => {
+  const database = new DatabaseSync(':memory:');
+  createLegacyGeneration(database);
+  database.exec(`
+    CREATE TABLE schema_migrations (
+      migration_key TEXT,
+      state_code TEXT,
+      applied_at TEXT DEFAULT (datetime('now'))
+    );
+    INSERT INTO schema_migrations(migration_key, state_code)
+    VALUES ('legacy_schema_v1', 'legacy_ready');
+  `);
+
+  assert.throws(
+    () => ensureSchemaMigrationState(database),
+    (error) => error instanceof SchemaMigrationStateError
+      && /migration ledger schema/.test(error.message),
+    'startup must not trust a ledger that cannot enforce unique migration identity and required fields',
+  );
+
+  database.close();
+});
