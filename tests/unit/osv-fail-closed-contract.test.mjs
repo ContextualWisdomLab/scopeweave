@@ -46,4 +46,30 @@ for (const resultFile of ['old-results.json', 'new-results.json', 'results.sarif
   );
 }
 
-console.log('✓ OSV introduced-vulnerability and checkout-isolation gates fail closed');
+assert.equal(
+  osvWorkflow.split('continue-on-error: true').length - 1,
+  2,
+  'both OSV scans must continue only far enough to distinguish findings from scanner failure',
+);
+for (const [stepId, resultFile] of [
+  ['scan-base', 'old-results.json'],
+  ['scan-head', 'new-results.json'],
+]) {
+  assert.equal(
+    osvWorkflow.split(`id: ${stepId}`).length - 1,
+    1,
+    `${stepId} must expose the scanner step outcome before continue-on-error rewrites its conclusion`,
+  );
+  assert.equal(
+    osvWorkflow.split(`if: \${{ steps.${stepId}.outcome == 'failure' }}`).length - 1,
+    1,
+    `${stepId} must run a completion guard whenever the scanner reports failure`,
+  );
+  assert.equal(
+    osvWorkflow.split(`test -s ${resultFile}`).length - 1,
+    1,
+    `${stepId} failure may proceed to reporting only when it produced ${resultFile}`,
+  );
+}
+
+console.log('✓ OSV introduced-vulnerability, checkout-isolation, and scan-completion gates fail closed');
