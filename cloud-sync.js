@@ -1228,12 +1228,17 @@ async function openAttachmentsModal() {
   list.className = 'team-list';
   panel.appendChild(list);
 
+  let taskMapCache = null;
   const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
-    return t ? (t.name || t.task || id) : id;
+    if (!taskMapCache) {
+      taskMapCache = new Map((host?.getState?.()?.tasks || []).map(t => [t.id, t]));
+    }
+    const t = taskMapCache.get(id);
+    return t ? (t.name || t.task || t.activity || t.phase || id) : id;
   };
 
   async function refresh() {
+    taskMapCache = null; // ⚡ Bolt: Reset cache on refresh to pick up new tasks, but use O(1) map inside loop
     list.textContent = '';
     const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
     const data = await api(`/api/projects/${pid}/attachments${q}`);
@@ -1365,12 +1370,17 @@ async function openCommentsModal() {
   form.append(input, send);
   panel.appendChild(form);
 
+  let taskMapCache = null;
   const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
-    return t ? (t.name || t.task || id) : id;
+    if (!taskMapCache) {
+      taskMapCache = new Map((host?.getState?.()?.tasks || []).map(t => [t.id, t]));
+    }
+    const t = taskMapCache.get(id);
+    return t ? (t.name || t.task || t.activity || t.phase || id) : id;
   };
 
   async function refresh() {
+    taskMapCache = null; // ⚡ Bolt: Reset cache on refresh to pick up new tasks, but use O(1) map inside loop
     list.textContent = '';
     const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
     const data = await api(`/api/projects/${pid}/comments${q}`);
