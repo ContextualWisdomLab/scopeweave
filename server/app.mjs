@@ -1031,7 +1031,10 @@ app.post('/api/projects/:id/ai/brief', requireAuth, async (c) => {
     const analysis = await orchestratorChat([
       { role: 'system', content: '너는 공정관리(schedule control) 전문가다. 주어진 프로젝트 지표를 근거로 한국어 경영진 브리핑을 작성하라: ①일정 상태 한 줄 판정 ②핵심 리스크 2~3개(근거 지표 인용) ③실행 권고 2~3개. 지표에 없는 사실은 만들지 마라.' },
       { role: 'user', content: context },
-    ]);
+    ], {
+      service: 'scopeweave',
+      account: String(p.org_id),
+    });
     logAudit(p.org_id, uid, 'ai.brief', 'project', p.id, { tasks: tasks.length });
     return c.json({ analysis });
   } catch (e) {
@@ -1443,6 +1446,7 @@ const STATIC = {
   '/cloud-sync.js': ['cloud-sync.js', 'text/javascript; charset=utf-8'],
   '/analytics.js': ['analytics.js', 'text/javascript; charset=utf-8'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
+  '/toast-state.css': ['toast-state.css', 'text/css; charset=utf-8'],
   '/wbs.json': ['wbs.json', 'application/json; charset=utf-8'],
 };
 app.get('*', async (c) => {

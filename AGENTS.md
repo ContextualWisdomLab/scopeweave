@@ -27,6 +27,12 @@
 - OpenCode Review, Strix Security Scan, and PR Review Merge Scheduler are
   organization-level required workflows from `ContextualWisdomLab/.github`.
   Do not copy them into this repository.
+- ScopeWeave's repository-local `opencode.jsonc` is development configuration,
+  not a replacement for the organization review workflow. It uses NVIDIA NIM
+  only and reads the process-local `NVIDIA_API_KEY` binding. Organization CI
+  owns secret injection and maps the organization `NVIDIA_NIM_API_KEY` secret
+  into that process binding; do not add a repository-local OpenCode workflow or
+  restore GitHub Models/COPILOT credentials to this configuration.
 - Keep companion SCA workflows development-only; do not add runtime
   dependencies.
 - If GitHub CLI output emits Projects(classic) deprecation warnings,
