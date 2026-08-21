@@ -10,6 +10,7 @@ import { pathToFileURL } from 'node:url';
 export const GITHUB_API_VERSION = '2026-03-10';
 export const WORKFLOW_DIRECTORY = '.github/workflows';
 const TRANSIENT_STATUS = new Set([500, 502, 503, 504]);
+const GITHUB_READ_REQUEST_TIMEOUT_MS = 10_000;
 const KNOWN_WORKFLOW_STATES = new Set([
   'active',
   'deleted',
@@ -76,7 +77,12 @@ export async function requestJson({ fetchImpl, url, token = '', sleepImpl = slee
   const headers = { accept: 'application/vnd.github+json', 'x-github-api-version': GITHUB_API_VERSION };
   if (token) headers.authorization = `Bearer ${token}`;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    const response = await fetchImpl(url, { method: 'GET', headers, redirect: 'error' });
+    const response = await fetchImpl(url, {
+      method: 'GET',
+      headers,
+      redirect: 'error',
+      signal: AbortSignal.timeout(GITHUB_READ_REQUEST_TIMEOUT_MS),
+    });
     const status = Number(response?.status);
     if (response?.ok) {
       let data;
