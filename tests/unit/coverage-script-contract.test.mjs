@@ -66,6 +66,11 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage'],
+  /--include=server\/stripe_checkout_identity_bootstrap\.mjs/,
+  'the verified Checkout identity bootstrap boundary is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
   /--include=server\/stripe_subscription_provider\.mjs/,
   'the authoritative Stripe subscription reader is instrumented',
 );
@@ -156,6 +161,11 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage:cases'],
+  /tests\/unit\/stripe-checkout-identity-bootstrap\.test\.mjs/,
+  'the verified Checkout identity bootstrap regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
   /tests\/unit\/stripe-webhook-reconciliation-queue-integration\.test\.mjs/,
   'the verified webhook-to-queue integration executes under c8',
 );
@@ -163,6 +173,11 @@ assert.match(
   scripts['test:unit'],
   /tests\/unit\/stripe-webhook-reconciliation-queue\.test\.mjs/,
   'normal unit CI executes the durable Stripe reconciliation queue regression',
+);
+assert.match(
+  scripts['test:unit'],
+  /tests\/unit\/stripe-checkout-identity-bootstrap\.test\.mjs/,
+  'normal unit CI executes the verified Checkout identity bootstrap regression',
 );
 assert.match(
   scripts['test:unit'],

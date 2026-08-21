@@ -79,14 +79,24 @@ function currentInvoiceSubscription(object) {
   return optionalSubscriptionId(details.subscription);
 }
 
+function checkoutSessionSubscription(object) {
+  if (object.object !== 'checkout.session') {
+    throw queueError('stripe_reconciliation_trigger_invalid');
+  }
+  if (object.mode !== 'subscription') return null;
+  return normalizedSubscriptionId(object.subscription);
+}
+
 /**
  * Extract the Subscription identity that a verified Stripe event should reconcile.
  *
  * The returned identifier is only a trigger key. It is never treated as current
  * lifecycle or entitlement authority; the reconciliation service must re-fetch
- * current provider state before evaluating durable claims. Irrelevant events and
- * one-off invoices return `null`. Contradictory current/legacy Invoice provenance
- * fails closed instead of selecting one representation.
+ * current provider state before evaluating durable claims. A completed subscription
+ * Checkout Session is eligible only after the runtime also binds that Session to a
+ * unique successful local Checkout attempt. Payment/setup Checkout Sessions,
+ * irrelevant events, and one-off invoices return `null`. Contradictory current/
+ * legacy Invoice provenance fails closed instead of selecting one representation.
  *
  * @param {Record<string, unknown>} event cryptographically verified Stripe event
  * @returns {string|null} bounded Subscription identity to reconcile
@@ -94,6 +104,10 @@ function currentInvoiceSubscription(object) {
  */
 export function extractStripeSubscriptionReconciliationCandidate(event) {
   const { type, object } = requireEventEnvelope(event);
+
+  if (type === 'checkout.session.completed') {
+    return checkoutSessionSubscription(object);
+  }
 
   if (type.startsWith('customer.subscription.')) {
     if (object.object !== 'subscription') {

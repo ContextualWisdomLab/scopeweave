@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Bound verified subscription-mode `checkout.session.completed` Customer and
+  Subscription identities to exactly one server-recorded successful local Checkout
+  Session before creating reconciliation work; missing or ambiguous Session
+  ownership and cross-tenant identity rebinding fail closed, exact replay is
+  idempotent, and event/identity/trigger writes roll back together without changing
+  `orgs.plan` or granting entitlement.
 - Added bounded authoritative Stripe billing reconciliation that treats webhook
   event identity as provenance only, re-reads current Subscription and Invoice
   state before appending evidence, and evaluates durable entitlement claims only
