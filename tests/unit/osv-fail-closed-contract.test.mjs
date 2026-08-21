@@ -22,4 +22,28 @@ assert.doesNotMatch(
   'OSV must not convert newly introduced vulnerabilities into a passing gate',
 );
 
-console.log('✓ OSV introduced-vulnerability gate fails closed');
+const isolatedCheckoutPath = 'path: osv-scan-source';
+assert.equal(
+  osvWorkflow.split(isolatedCheckoutPath).length - 1,
+  2,
+  'both OSV source checkouts must be isolated below the workspace evidence files',
+);
+assert.equal(
+  osvWorkflow.split('-r\n            ./osv-scan-source').length - 1,
+  2,
+  'base and contributor scans must inspect the same isolated source path',
+);
+for (const resultFile of ['old-results.json', 'new-results.json', 'results.sarif']) {
+  assert.match(
+    osvWorkflow,
+    new RegExp(`--(?:output|old|new)=${resultFile.replace('.', '\\.')}`),
+    `${resultFile} must remain a workspace-root evidence file outside the untrusted checkout`,
+  );
+  assert.doesNotMatch(
+    osvWorkflow,
+    new RegExp(`--(?:output|old|new)=\\.?/?osv-scan-source/${resultFile.replace('.', '\\.')}`),
+    `${resultFile} must not be written inside the untrusted checkout`,
+  );
+}
+
+console.log('✓ OSV introduced-vulnerability and checkout-isolation gates fail closed');
