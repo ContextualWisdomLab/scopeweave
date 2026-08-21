@@ -1,4 +1,22 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const dockerfile = readFileSync(new URL('../../Dockerfile', import.meta.url), 'utf8');
+const pagesWorkflow = readFileSync(
+  new URL('../../.github/workflows/pages.yml', import.meta.url),
+  'utf8',
+);
+
+assert.match(
+  dockerfile,
+  /^COPY\s+[^\n]*\bdialog-accessibility\.js\b[^\n]*\/usr\/share\/nginx\/html\/\s*$/m,
+  'the static Docker image must ship the dialog accessibility module referenced by index.html',
+);
+assert.match(
+  pagesWorkflow,
+  /^\s*cp\s+[^\n]*\bdialog-accessibility\.js\b[^\n]*_site\/\s*$/m,
+  'the GitHub Pages artifact must stage the dialog accessibility module referenced by index.html',
+);
 
 class FakeDialog {
   constructor({ heading = null, ariaLabel = '', ariaLabelledby = '' } = {}) {
