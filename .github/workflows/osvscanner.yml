@@ -95,6 +95,12 @@ jobs:
           clean: false
           path: osv-scan-source
 
+      - name: Sanitize exact contributor scan tree
+        run: |
+          set -euo pipefail
+          git -C osv-scan-source clean -ffdx
+          test -z "$(git -C osv-scan-source status --porcelain)"
+
       - name: Verify exact contributor checkout
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
