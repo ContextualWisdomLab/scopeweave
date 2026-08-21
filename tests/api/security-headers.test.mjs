@@ -5,7 +5,25 @@ process.env.SCOPEWEAVE_DEV = '1';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 delete process.env.ORCHESTRATOR_URL;
 
+const { SECURE_HEADERS_OPTIONS } = await import('../../server/app.mjs');
 const { createRuntimeApp, runtimeApp } = await import('../../server/runtime-app.mjs');
+
+assert.deepEqual(
+  SECURE_HEADERS_OPTIONS,
+  {
+    crossOriginResourcePolicy: 'same-origin',
+    crossOriginOpenerPolicy: 'same-origin',
+    referrerPolicy: 'no-referrer',
+    strictTransportSecurity: 'max-age=15552000; includeSubDomains',
+    xContentTypeOptions: 'nosniff',
+    xDnsPrefetchControl: 'off',
+    xDownloadOptions: 'noopen',
+    xFrameOptions: 'SAMEORIGIN',
+    xPermittedCrossDomainPolicies: 'none',
+    xXssProtection: '0',
+  },
+  'security-sensitive response headers must be an app-owned policy rather than mutable framework defaults',
+);
 
 function assertBaselineSecurityHeaders(response, label) {
   assert.equal(
@@ -36,7 +54,7 @@ function assertBaselineSecurityHeaders(response, label) {
   assert.equal(
     response.headers.get('strict-transport-security'),
     'max-age=15552000; includeSubDomains',
-    `${label} carries the framework baseline HSTS policy`,
+    `${label} carries the application-owned HSTS policy`,
   );
   assert.equal(
     response.headers.get('x-powered-by'),
