@@ -11,8 +11,9 @@ runtimeApp.get('/dialog-accessibility.js', async (c) => {
   try {
     const body = await readFile(new URL('../dialog-accessibility.js', import.meta.url));
     return c.body(body, 200, { 'Content-Type': 'text/javascript; charset=utf-8' });
-  } catch {
-    return c.notFound();
+  } catch (error) {
+    if (error?.code === 'ENOENT') return c.notFound();
+    return c.text('Internal Server Error', 500);
   }
 });
 runtimeApp.route('/', app);

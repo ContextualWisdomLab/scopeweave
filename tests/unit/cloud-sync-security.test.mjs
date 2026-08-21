@@ -14,7 +14,7 @@ const stylesheetSource = await readFile(new URL('../../styles.css', import.meta.
 
 assert.doesNotMatch(
   cloudSyncSource,
-  /ssoBtn\.style\.(?:width|marginTop)\s*=/,
+  /\bssoBtn\.style\b|ssoBtn\.setAttribute\(\s*['"]style['"]/,
   'cloud SSO button layout must be owned by the stylesheet rather than inline JS styles',
 );
 assert.match(

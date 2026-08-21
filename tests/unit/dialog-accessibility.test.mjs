@@ -49,8 +49,16 @@ class FakeMutationObserver {
 globalThis.document = fakeDocument;
 globalThis.MutationObserver = FakeMutationObserver;
 
+const initialDialog = new FakeDialog({ heading: { textContent: '초기 프로젝트 대화상자' } });
+dialogs.push(initialDialog);
+
 const { labelUnnamedDialogs } = await import(`../../dialog-accessibility.js?test=${Date.now()}`);
 
+assert.equal(
+  initialDialog.getAttribute('aria-label'),
+  '초기 프로젝트 대화상자',
+  'module initialization labels dialogs that already exist in the document',
+);
 assert.deepEqual(FakeMutationObserver.latest.observed, {
   target: fakeDocument.documentElement,
   options: { childList: true, subtree: true },
