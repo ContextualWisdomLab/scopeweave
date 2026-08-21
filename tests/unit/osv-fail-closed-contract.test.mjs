@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { spawnSync } from 'node:child_process';
 
 const osvWorkflow = readFileSync(
   new URL('../../.github/workflows/osvscanner.yml', import.meta.url),
@@ -66,10 +69,70 @@ for (const [stepId, resultFile] of [
     `${stepId} must run a completion guard whenever the scanner reports failure`,
   );
   assert.equal(
-    osvWorkflow.split(`test -s ${resultFile}`).length - 1,
+    osvWorkflow.split(`RESULT_FILE: ${resultFile}`).length - 1,
     1,
-    `${stepId} failure may proceed to reporting only when it produced ${resultFile}`,
+    `${stepId} must bind its completion guard to ${resultFile}`,
   );
 }
 
-console.log('✓ OSV introduced-vulnerability, checkout-isolation, and scan-completion gates fail closed');
+const completionGuardPattern = /node --input-type=module <<'NODE'\n([\s\S]*?)\n\s+NODE/g;
+const completionGuards = [...osvWorkflow.matchAll(completionGuardPattern)].map((match) => match[1]);
+assert.equal(
+  completionGuards.length,
+  2,
+  'base and contributor failure paths must each execute a structured OSV result validator',
+);
+
+function runCompletionGuard(guardSource, resultFile, payload) {
+  const workdir = mkdtempSync(join(tmpdir(), 'scopeweave-osv-guard-'));
+  try {
+    writeFileSync(join(workdir, resultFile), payload, 'utf8');
+    return spawnSync(
+      process.execPath,
+      ['--input-type=module', '--eval', guardSource],
+      {
+        cwd: workdir,
+        env: { ...process.env, RESULT_FILE: resultFile },
+        encoding: 'utf8',
+      },
+    );
+  } finally {
+    rmSync(workdir, { recursive: true, force: true });
+  }
+}
+
+const vulnerabilityEvidence = JSON.stringify({
+  results: [{
+    packages: [{
+      package: { ecosystem: 'npm', name: 'example-package', version: '1.0.0' },
+      vulnerabilities: [{ id: 'OSV-TEST-1' }],
+    }],
+  }],
+});
+const ambiguousFailureEvidence = [
+  ['malformed JSON', '{'],
+  ['missing results array', JSON.stringify({})],
+  ['empty results array', JSON.stringify({ results: [] })],
+  ['finding-free results', JSON.stringify({ results: [{ packages: [] }] })],
+];
+
+for (const [index, guardSource] of completionGuards.entries()) {
+  const resultFile = index === 0 ? 'old-results.json' : 'new-results.json';
+  const accepted = runCompletionGuard(guardSource, resultFile, vulnerabilityEvidence);
+  assert.equal(
+    accepted.status,
+    0,
+    `${resultFile} failure guard must allow structured vulnerability evidence to reach differential reporting: ${accepted.stderr}`,
+  );
+
+  for (const [label, payload] of ambiguousFailureEvidence) {
+    const rejected = runCompletionGuard(guardSource, resultFile, payload);
+    assert.notEqual(
+      rejected.status,
+      0,
+      `${resultFile} failure guard must reject ${label} instead of treating a scanner failure as completed evidence`,
+    );
+  }
+}
+
+console.log('✓ OSV introduced-vulnerability, checkout-isolation, and structured scan-completion gates fail closed');
