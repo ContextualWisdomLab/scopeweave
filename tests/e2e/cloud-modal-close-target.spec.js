@@ -73,7 +73,7 @@ test('cloud login modal closes when the decorative close glyph is clicked', asyn
   await expect(modal).toHaveClass(/\bhidden\b/);
 });
 
-test('team modal closes when the decorative close glyph is clicked', async ({ page }) => {
+test('team modal owns its accessible name and closes when the decorative close glyph is clicked', async ({ page }) => {
   const email = `close-target-${Date.now()}@scopeweave.test`;
   const signup = await api('/api/auth/signup', {
     method: 'POST',
@@ -95,6 +95,8 @@ test('team modal closes when the decorative close glyph is clicked', async ({ pa
 
   const modal = page.locator('#team-modal');
   await expect(modal).not.toHaveClass(/\bhidden\b/);
+  await expect(modal).toHaveAttribute('aria-labelledby', 'team-modal-title');
+  await expect(modal.locator('#team-modal-title')).toHaveText('팀 멤버');
   await expect(modal).toHaveAccessibleName('팀 멤버');
   await clickDecorativeCloseGlyph(page, modal);
   await expect(modal).toHaveClass(/\bhidden\b/);
