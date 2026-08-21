@@ -95,6 +95,7 @@ test('team modal closes when the decorative close glyph is clicked', async ({ pa
 
   const modal = page.locator('#team-modal');
   await expect(modal).not.toHaveClass(/\bhidden\b/);
+  await expect(modal).toHaveAccessibleName('팀 멤버');
   await clickDecorativeCloseGlyph(page, modal);
   await expect(modal).toHaveClass(/\bhidden\b/);
 });
