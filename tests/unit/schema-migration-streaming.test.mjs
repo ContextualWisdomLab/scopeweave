@@ -14,6 +14,14 @@ function legacyCatalogRows() {
   ];
 }
 
+function migrationLedgerColumnRows() {
+  return [
+    { name: 'migration_key', type: 'TEXT', notnull: 1, pk: 1 },
+    { name: 'state_code', type: 'TEXT', notnull: 1, pk: 0 },
+    { name: 'applied_at', type: 'TEXT', notnull: 1, pk: 0 },
+  ];
+}
+
 test('schema bootstrap streams catalog rows instead of materializing an unbounded catalog', () => {
   const fakeDatabase = {
     prepare(sql) {
@@ -45,6 +53,16 @@ test('schema migration ledger streams persisted rows and rejects materialization
           all: () => catalogRows,
           *iterate() {
             yield* catalogRows;
+          },
+        };
+      }
+      if (sql === 'PRAGMA table_info(schema_migrations)') {
+        return {
+          all() {
+            throw new Error('migration ledger schema must be streamed instead of materialized with all()');
+          },
+          *iterate() {
+            yield* migrationLedgerColumnRows();
           },
         };
       }
