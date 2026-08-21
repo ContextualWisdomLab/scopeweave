@@ -103,8 +103,7 @@ deploy guide is `docs/deploy.md`.
 
 ## Git and CI
 
-- **Default branch is `develop`.** SaaS work lands as a stacked PR train — see
-  "Merge order" in `README.md` before retargeting or merging PRs.
+- **Default branch is `develop`.** Before retargeting or merging stacked work, refetch the live protected `develop` tip, each PR's exact base/head ancestry, and current required evidence; do not rely on a hard-coded merge order.
 - Repo-local PR gates: `server-tests.yml` (unit + API + eval-safe check + cloud e2e),
   `fuzz.yml`, `codeql.yml`, `dependency-review.yml`.
 - OpenCode Review, Strix Security Scan, and PR Review Merge Scheduler are
