@@ -22,6 +22,7 @@ const fakeDatabase = {
         return { application_id: 1, user_version: 1 };
       },
       *iterate() {
+        if (sql === 'PRAGMA foreign_key_check') return;
         yield oversizedSchemaRow;
       },
     };
