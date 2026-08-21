@@ -24,6 +24,8 @@ assert.match(
   'the GitHub Pages artifact must stage the dialog accessibility module referenced by index.html',
 );
 
+const unnamedSelector = '[role="dialog"]:not([aria-label]):not([aria-labelledby])';
+
 class FakeDialog {
   constructor({ heading = null, ariaLabel = '', ariaLabelledby = '' } = {}) {
     this.heading = heading;
@@ -32,9 +34,19 @@ class FakeDialog {
     if (ariaLabelledby) this.attributes.set('aria-labelledby', ariaLabelledby);
   }
 
+  matches(selector) {
+    assert.equal(selector, unnamedSelector);
+    return !this.getAttribute('aria-label') && !this.getAttribute('aria-labelledby');
+  }
+
   querySelector(selector) {
     assert.equal(selector, 'h1,h2,h3,h4,h5,h6');
     return this.heading;
+  }
+
+  querySelectorAll(selector) {
+    assert.equal(selector, unnamedSelector);
+    return [];
   }
 
   setAttribute(name, value) {
@@ -47,11 +59,12 @@ class FakeDialog {
 }
 
 const dialogs = [];
-const unnamedSelector = '[role="dialog"]:not([aria-label]):not([aria-labelledby])';
+let documentQueryCount = 0;
 const fakeDocument = {
   documentElement: { nodeName: 'HTML' },
   querySelectorAll(selector) {
     assert.equal(selector, unnamedSelector);
+    documentQueryCount += 1;
     return dialogs.filter((dialog) => !dialog.getAttribute('aria-label') && !dialog.getAttribute('aria-labelledby'));
   },
 };
@@ -89,23 +102,41 @@ assert.deepEqual(FakeMutationObserver.latest.observed, {
 });
 
 const teamDialog = new FakeDialog({ heading: { textContent: '  팀 멤버  ' } });
+const nestedDialog = new FakeDialog({ heading: { textContent: '읽기 전용 공유' } });
 const blankHeadingDialog = new FakeDialog({ heading: { textContent: '   ' } });
 const missingHeadingDialog = new FakeDialog();
 const alreadyNamedDialog = new FakeDialog({ heading: { textContent: '기존 이름' }, ariaLabel: '명시 이름' });
 const alreadyLabelledbyDialog = new FakeDialog({ heading: { textContent: '제목 참조' }, ariaLabelledby: 'existing-title' });
-dialogs.push(teamDialog, blankHeadingDialog, missingHeadingDialog, alreadyNamedDialog, alreadyLabelledbyDialog);
+const mutationSubtree = {
+  matches(selector) {
+    assert.equal(selector, unnamedSelector);
+    return false;
+  },
+  querySelectorAll(selector) {
+    assert.equal(selector, unnamedSelector);
+    return [nestedDialog, blankHeadingDialog, missingHeadingDialog, alreadyNamedDialog, alreadyLabelledbyDialog]
+      .filter((dialog) => !dialog.getAttribute('aria-label') && !dialog.getAttribute('aria-labelledby'));
+  },
+};
+const documentScansBeforeMutation = documentQueryCount;
 
-FakeMutationObserver.latest.callback([]);
+FakeMutationObserver.latest.callback([{ addedNodes: [teamDialog, mutationSubtree, { nodeType: 3 }] }]);
 assert.equal(teamDialog.getAttribute('aria-label'), '팀 멤버');
+assert.equal(nestedDialog.getAttribute('aria-label'), '읽기 전용 공유');
 assert.equal(blankHeadingDialog.getAttribute('aria-label'), null);
 assert.equal(missingHeadingDialog.getAttribute('aria-label'), null);
 assert.equal(alreadyNamedDialog.getAttribute('aria-label'), '명시 이름');
 assert.equal(alreadyLabelledbyDialog.getAttribute('aria-labelledby'), 'existing-title');
+assert.equal(
+  documentQueryCount,
+  documentScansBeforeMutation,
+  'mutation batches must scan only added subtrees instead of rescanning the full document',
+);
 
-const anotherDialog = new FakeDialog({ heading: { textContent: '읽기 전용 공유' } });
+const anotherDialog = new FakeDialog({ heading: { textContent: '추가 프로젝트 대화상자' } });
 dialogs.push(anotherDialog);
 assert.equal(labelUnnamedDialogs(fakeDocument), 1);
-assert.equal(anotherDialog.getAttribute('aria-label'), '읽기 전용 공유');
+assert.equal(anotherDialog.getAttribute('aria-label'), '추가 프로젝트 대화상자');
 assert.equal(labelUnnamedDialogs(fakeDocument), 0);
 
 delete globalThis.document;
