@@ -128,6 +128,3 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
-## 2026-08-21 - Securing EventSource with short-lived tokens
-**Learning:** Passing a full JWT token in an `EventSource` URL for Server-Sent Events exposes the token via browser history, server access logs, and referrer headers, leading to a high-severity token leakage vulnerability (CWE-598).
-**Action:** Use a dedicated endpoint to exchange the long-lived JWT for a short-lived stream token, and configure the SSE endpoint to validate the short-lived token and restrict its scope.

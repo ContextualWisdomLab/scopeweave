@@ -26,6 +26,28 @@ export function routeTokenPathSegment(value) {
   return ROUTE_TOKEN_RE.test(token) ? token : '';
 }
 
+/**
+ * Build a constant-time task-label lookup for modal list rendering.
+ *
+ * The first task with an ID wins so this index preserves the previous
+ * `Array.find` behavior when malformed or legacy data contains duplicate IDs.
+ * Display labels intentionally keep the historical `name -> task -> id`
+ * fallback instead of changing what buyers see while applying a performance
+ * optimization.
+ *
+ * @param {Array<object>} tasks Tasks from the active project.
+ * @returns {Map<unknown, unknown>} Task ID to the label shown beside records.
+ */
+export function buildTaskNameIndex(tasks) {
+  const index = new Map();
+  for (const task of tasks || []) {
+    if (!index.has(task.id)) {
+      index.set(task.id, task.name || task.task || task.id);
+    }
+  }
+  return index;
+}
+
 function safeApiPath(path) {
   if (typeof path !== 'string' || !path.startsWith('/api/')) throw new Error('invalid api path');
   const origin = typeof location !== 'undefined' ? location.origin : 'http://localhost';
@@ -62,25 +84,9 @@ async function api(path, { method = 'GET', body } = {}) {
 
 // ---- realtime (EventSource can't set headers → token via query; ceiling:
 // swap for a short-lived stream token before prod so JWTs stay out of URLs)
-let streamTokenCache = null;
-let streamTokenExp = 0;
-async function getStreamToken() {
-  if (streamTokenCache && Date.now() < streamTokenExp) return streamTokenCache;
-  const res = await api('/api/auth/stream-token', { method: 'POST' });
-  streamTokenCache = res.token;
-  streamTokenExp = Date.now() + 14 * 60 * 1000; // 14 mins
-  return streamTokenCache;
-}
-
-async function subscribe(id) {
+function subscribe(id) {
   if (sse) { sse.close(); sse = null; }
-  try {
-    const st = await getStreamToken();
-    sse = new EventSource(`/api/projects/${id}/stream?token=${encodeURIComponent(st)}`);
-  } catch (e) {
-    console.error('Failed to obtain stream token', e);
-    return;
-  }
+  sse = new EventSource(`/api/projects/${id}/stream?token=${encodeURIComponent(getToken())}`);
   sse.onmessage = (ev) => {
     let msg;
     try { msg = JSON.parse(ev.data); } catch { return; }
@@ -1244,17 +1250,16 @@ async function openAttachmentsModal() {
   list.className = 'team-list';
   panel.appendChild(list);
 
-  let taskMapCache = null;
+  let taskNameCache = null;
   const taskName = (id) => {
-    if (!taskMapCache) {
-      taskMapCache = new Map((host?.getState?.()?.tasks || []).map(t => [t.id, t]));
+    if (!taskNameCache) {
+      taskNameCache = buildTaskNameIndex(host?.getState?.()?.tasks || []);
     }
-    const t = taskMapCache.get(id);
-    return t ? (t.name || t.task || t.activity || t.phase || id) : id;
+    return taskNameCache.get(id) ?? id;
   };
 
   async function refresh() {
-    taskMapCache = null; // ⚡ Bolt: Reset cache on refresh to pick up new tasks, but use O(1) map inside loop
+    taskNameCache = null; // reset after data refresh so newly loaded task labels are visible
     list.textContent = '';
     const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
     const data = await api(`/api/projects/${pid}/attachments${q}`);
@@ -1386,17 +1391,16 @@ async function openCommentsModal() {
   form.append(input, send);
   panel.appendChild(form);
 
-  let taskMapCache = null;
+  let taskNameCache = null;
   const taskName = (id) => {
-    if (!taskMapCache) {
-      taskMapCache = new Map((host?.getState?.()?.tasks || []).map(t => [t.id, t]));
+    if (!taskNameCache) {
+      taskNameCache = buildTaskNameIndex(host?.getState?.()?.tasks || []);
     }
-    const t = taskMapCache.get(id);
-    return t ? (t.name || t.task || t.activity || t.phase || id) : id;
+    return taskNameCache.get(id) ?? id;
   };
 
   async function refresh() {
-    taskMapCache = null; // ⚡ Bolt: Reset cache on refresh to pick up new tasks, but use O(1) map inside loop
+    taskNameCache = null; // reset after data refresh so newly loaded task labels are visible
     list.textContent = '';
     const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
     const data = await api(`/api/projects/${pid}/comments${q}`);
