@@ -4,6 +4,7 @@ import {
   LEGACY_SCHEMA_OBJECTS,
   ensureSchemaMigrationState,
   inspectSchemaBootstrapState,
+  runAtomicLegacySchemaBootstrap,
 } from '../../server/schema_migration.mjs';
 
 function legacyCatalogRows() {
@@ -38,6 +39,32 @@ test('schema bootstrap streams catalog rows instead of materializing an unbounde
   };
 
   assert.equal(inspectSchemaBootstrapState(fakeDatabase), 'legacy_ready');
+});
+
+test('established legacy schema still runs additive idempotent bootstrap DDL without an explicit write reservation', () => {
+  const bootstrapSql = 'CREATE TABLE IF NOT EXISTS auxiliary_runtime_state (id INTEGER PRIMARY KEY);';
+  const execCalls = [];
+  const fakeDatabase = {
+    exec(sql) {
+      execCalls.push(sql);
+    },
+    prepare(sql) {
+      assert.match(sql, /FROM sqlite_master/);
+      return {
+        *iterate() {
+          yield* LEGACY_SCHEMA_OBJECTS.map((name) => ({ name }));
+        },
+      };
+    },
+  };
+
+  runAtomicLegacySchemaBootstrap(fakeDatabase, bootstrapSql);
+
+  assert.deepEqual(
+    execCalls,
+    [bootstrapSql],
+    'existing legacy databases must receive additive CREATE IF NOT EXISTS DDL without BEGIN IMMEDIATE',
+  );
 });
 
 test('schema migration ledger streams persisted rows and rejects materialization', () => {
