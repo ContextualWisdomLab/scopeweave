@@ -147,6 +147,30 @@ test.describe('browser residual production behavior', () => {
     await expect(baseDate).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
   });
 
+  test('renders tampered persisted date ranges without non-finite summary progress', async ({ page }) => {
+    await page.addInitScript(() => {
+      localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
+        projectName: 'Corrupt date recovery',
+        baseDate: '2026-08-21',
+        tasks: [{
+          id: 'invalid-date-range',
+          depth: 1,
+          phase: 'Corrupt imported phase',
+          plannedStartDate: '2026-08-00',
+          plannedEndDate: '2026-08-99',
+          actualProgressStatus: '미착수(0%)',
+        }],
+      }));
+    });
+    await page.goto('/');
+
+    await expect(page.locator('tr[data-task-id="invalid-date-range"]')).toBeVisible();
+    await expect(page.getByTestId('base-date-input')).toHaveValue('2026-08-21');
+    await expect(page.locator('#summary-total-days')).toHaveText('0일');
+    await expect(page.locator('#summary-planned-progress')).toHaveText('0.00%');
+    await expect(page.locator('#summary-actual-progress')).not.toContainText('NaN');
+  });
+
   test('returns focus when the Gantt dialog closes and isolates persistence failures', async ({ page }) => {
     await page.route('**/wbs.json', (route) => route.fulfill({
       contentType: 'application/json',
