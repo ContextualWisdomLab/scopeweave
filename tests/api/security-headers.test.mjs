@@ -5,8 +5,8 @@ process.env.SCOPEWEAVE_DEV = '1';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 delete process.env.ORCHESTRATOR_URL;
 
-const { SECURE_HEADERS_OPTIONS } = await import('../../server/app.mjs');
-const { createRuntimeApp, runtimeApp } = await import('../../server/runtime-app.mjs');
+const { SECURE_HEADERS_OPTIONS, createRuntimeApp, runtimeApp } =
+  await import('../../server/runtime-app.mjs');
 
 assert.deepEqual(
   SECURE_HEADERS_OPTIONS,
