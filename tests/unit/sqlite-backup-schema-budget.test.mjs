@@ -34,4 +34,30 @@ assert.throws(
   'schema verification must stream metadata and enforce its serialized byte budget before retaining all rows',
 );
 
-console.log('✓ SQLite schema byte budget regression passed');
+const foreignKeyViolationDatabase = {
+  prepare(sql) {
+    if (sql === 'PRAGMA integrity_check') {
+      return { all: () => [{ integrity_check: 'ok' }] };
+    }
+    if (sql === 'PRAGMA foreign_key_check') {
+      return {
+        all() {
+          throw new Error('foreign-key verification must not materialize an unbounded violation set');
+        },
+        *iterate() {
+          yield { table: 'child_records', rowid: 1, parent: 'parent_records', fkid: 0 };
+          throw new Error('foreign-key verification must stop after the first violation');
+        },
+      };
+    }
+    throw new Error(`unexpected SQL after foreign-key violation: ${sql}`);
+  },
+};
+
+assert.throws(
+  () => inspectOpenSqliteDatabase(foreignKeyViolationDatabase, 'source_database'),
+  (error) => error?.code === 'source_database_foreign_key_failed',
+  'foreign-key verification must stream violations and fail on the first row without materializing the full result set',
+);
+
+console.log('✓ SQLite schema and foreign-key streaming budget regressions passed');
