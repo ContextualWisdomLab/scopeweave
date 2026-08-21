@@ -16,6 +16,12 @@ const MIGRATION_LEDGER_STATES = Object.freeze(Object.assign(Object.create(null),
   canonical_schema_v2: 'canonical_ready',
 }));
 
+const MIGRATION_LEDGER_COLUMNS = Object.freeze([
+  Object.freeze({ name: 'migration_key', type: 'TEXT', notNull: 1, primaryKey: 1 }),
+  Object.freeze({ name: 'state_code', type: 'TEXT', notNull: 1, primaryKey: 0 }),
+  Object.freeze({ name: 'applied_at', type: 'TEXT', notNull: 1, primaryKey: 0 }),
+]);
+
 const LEGACY_COMPATIBILITY_COLUMNS = Object.freeze([
   Object.freeze({
     tableName: 'users',
@@ -158,6 +164,27 @@ function readApplicationTableNames(database) {
   return objectNames;
 }
 
+function validateMigrationLedgerSchema(database) {
+  const observedColumns = new Map();
+  for (const row of database.prepare('PRAGMA table_info(schema_migrations)').iterate()) {
+    observedColumns.set(String(row.name), row);
+  }
+
+  if (observedColumns.size !== MIGRATION_LEDGER_COLUMNS.length) {
+    throw new SchemaMigrationStateError('schema migration ledger schema does not match required contract');
+  }
+
+  for (const expected of MIGRATION_LEDGER_COLUMNS) {
+    const observed = observedColumns.get(expected.name);
+    if (!observed
+      || String(observed.type ?? '').trim().toUpperCase() !== expected.type
+      || Number(observed.notnull) !== expected.notNull
+      || Number(observed.pk) !== expected.primaryKey) {
+      throw new SchemaMigrationStateError('schema migration ledger schema does not match required contract');
+    }
+  }
+}
+
 function matchesCompatibilityColumnContract(row, migration) {
   return String(row.type ?? '').trim().toUpperCase() === migration.expectedType
     && Number(row.notnull) === 1
@@ -275,11 +302,12 @@ export function ensureSchemaMigrationState(database) {
 
   database.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
-      migration_key TEXT PRIMARY KEY,
+      migration_key TEXT PRIMARY KEY NOT NULL,
       state_code TEXT NOT NULL,
       applied_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
+  validateMigrationLedgerSchema(database);
 
   const state = classifySchemaMigrationState(readApplicationTableNames(database));
   const existingRows = database.prepare(
