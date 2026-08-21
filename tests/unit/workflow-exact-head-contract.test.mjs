@@ -248,19 +248,29 @@ assert.doesNotMatch(
   'OSV must not regress to the superseded v2.3.8 action revision or annotation',
 );
 assert.equal(
-  osvWorkflow.split(`github/codeql-action/upload-sarif@${codeqlActionV4377Sha} # v4.37.7`).length - 1,
+  osvWorkflow.split(coverageArtifactPin).length - 1,
   1,
-  'OSV must publish candidate-head SARIF through the reviewed immutable CodeQL v4.37.7 action revision',
+  'OSV exact-head SARIF evidence must use the reviewed immutable upload-artifact revision',
 );
 assert.match(
   osvWorkflow,
-  /- name: Upload exact-head SARIF\r?\n\s+if: \$\{\{ !cancelled\(\) \}\}\r?\n\s+uses: github\/codeql-action\/upload-sarif@/,
-  'OSV must publish generated SARIF even when the reporter fails on an introduced vulnerability, while still skipping cancelled runs',
+  /- name: Preserve exact-head OSV SARIF\r?\n\s+if: \$\{\{ !cancelled\(\) \}\}\r?\n\s+uses: actions\/upload-artifact@[\s\S]*?name: scopeweave-osv-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}[\s\S]*?path: results\.sarif[\s\S]*?if-no-files-found: error[\s\S]*?retention-days: 3/,
+  'OSV must retain generated exact-head SARIF evidence even when the reporter fails on an introduced vulnerability, while still skipping cancelled runs',
+);
+assert.doesNotMatch(
+  osvWorkflow,
+  /github\/codeql-action\/upload-sarif@/,
+  'OSV must not publish a second SARIF stream into the CodeQL-only code-scanning surface',
+);
+assert.doesNotMatch(
+  osvWorkflow,
+  /\bsecurity-events:\s*write\b/,
+  'OSV evidence retention must not require code-scanning write authority',
 );
 assert.equal(
   osvWorkflow.includes(supersededCodeqlActionV4362Sha),
   false,
-  'OSV SARIF publication must not regress to the superseded CodeQL v4.36.2 action revision',
+  'OSV evidence retention must not regress to a superseded CodeQL action revision',
 );
 assert.doesNotMatch(
   osvWorkflow,
