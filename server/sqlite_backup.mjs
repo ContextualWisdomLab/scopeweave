@@ -343,6 +343,18 @@ export function runSqliteBackupCli(args, io = console) {
     try {
       io.log(JSON.stringify({ ok: true, operation, ...result }));
     } catch (error) {
+      if (operation === 'backup') {
+        // Publication is the durable operation boundary. Once it succeeds, a
+        // closed stdout/pipeline must not turn a valid backup into a reported
+        // backup failure that invites an unsafe retry against the same path.
+        runBestEffortCleanup(() => io.error(JSON.stringify({
+          ok: true,
+          operation: 'backup',
+          warning: 'success_output_failed',
+          action: 'verify_destination_before_retry',
+        })));
+        return 0;
+      }
       throw fail('sqlite_backup_failed', error);
     }
     return 0;
