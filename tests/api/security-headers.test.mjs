@@ -49,6 +49,24 @@ const health = await app.request('/api/health');
 assert.equal(health.status, 200, 'health route remains available');
 assertBaselineSecurityHeaders(health, 'successful API response');
 
+const dialogAccessibility = await app.request('/dialog-accessibility.js');
+assert.equal(
+  dialogAccessibility.status,
+  200,
+  'the application route graph serves the accessibility module without relying on the node entrypoint wrapper',
+);
+assert.match(
+  dialogAccessibility.headers.get('content-type') || '',
+  /^text\/javascript\b/,
+  'the accessibility module is served as JavaScript',
+);
+assert.match(
+  await dialogAccessibility.text(),
+  /labelUnnamedDialogs/,
+  'the served asset is the accessibility module rather than a fallback document',
+);
+assertBaselineSecurityHeaders(dialogAccessibility, 'accessibility module response');
+
 const missing = await app.request('/api/definitely-missing');
 assert.equal(missing.status, 404, 'unknown route remains a normal not-found response');
 assertBaselineSecurityHeaders(missing, 'not-found response');
