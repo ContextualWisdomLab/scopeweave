@@ -63,7 +63,7 @@ test('canonical schema preserves valid legacy history before appending its own r
   createTables(db, CANONICAL_SCHEMA_OBJECTS);
   db.exec(`
     CREATE TABLE schema_migrations (
-      migration_key TEXT PRIMARY KEY,
+      migration_key TEXT PRIMARY KEY NOT NULL,
       state_code TEXT NOT NULL,
       applied_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -100,7 +100,7 @@ test('corrupted migration-ledger state cannot bless a verified schema', () => {
   createTables(db, LEGACY_SCHEMA_OBJECTS);
   db.exec(`
     CREATE TABLE schema_migrations (
-      migration_key TEXT PRIMARY KEY,
+      migration_key TEXT PRIMARY KEY NOT NULL,
       state_code TEXT NOT NULL,
       applied_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -121,7 +121,7 @@ test('unknown migration-ledger identities fail closed', () => {
   createTables(db, LEGACY_SCHEMA_OBJECTS);
   db.exec(`
     CREATE TABLE schema_migrations (
-      migration_key TEXT PRIMARY KEY,
+      migration_key TEXT PRIMARY KEY NOT NULL,
       state_code TEXT NOT NULL,
       applied_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
@@ -142,7 +142,7 @@ test('legacy schema rejects a canonical ledger record from an impossible rollbac
   createTables(db, LEGACY_SCHEMA_OBJECTS);
   db.exec(`
     CREATE TABLE schema_migrations (
-      migration_key TEXT PRIMARY KEY,
+      migration_key TEXT PRIMARY KEY NOT NULL,
       state_code TEXT NOT NULL,
       applied_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
