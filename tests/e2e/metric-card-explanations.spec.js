@@ -54,8 +54,8 @@ test.describe('summary metric explanations', () => {
 
       await expect(value).toBeVisible();
       await expect(card.getByText(description, { exact: true })).toBeVisible();
-      await expect(card).not.toHaveAttribute('tabindex', '0');
-      await expect(card).not.toHaveAttribute('role', 'note');
+      await expect(card).not.toHaveAttribute('tabindex');
+      await expect(card).not.toHaveAttribute('role');
       await expect(card).not.toHaveAttribute('title');
     });
   }
