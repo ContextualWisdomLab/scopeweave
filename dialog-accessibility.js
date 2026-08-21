@@ -39,10 +39,16 @@ export function labelUnnamedDialogs(root) {
 labelUnnamedDialogs(document);
 
 const dialogObserver = new MutationObserver((mutations) => {
+  const ancestorDialogs = new Set();
   for (const mutation of mutations) {
     for (const node of mutation.addedNodes) {
       labelUnnamedDialogs(node);
+      const ancestorDialog = node?.parentElement?.closest?.(UNNAMED_DIALOG_SELECTOR);
+      if (ancestorDialog) ancestorDialogs.add(ancestorDialog);
     }
+  }
+  for (const dialog of ancestorDialogs) {
+    labelUnnamedDialogs(dialog);
   }
 });
 
