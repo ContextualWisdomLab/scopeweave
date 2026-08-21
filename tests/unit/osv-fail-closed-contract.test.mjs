@@ -25,6 +25,29 @@ assert.doesNotMatch(
   'OSV must not convert newly introduced vulnerabilities into a passing gate',
 );
 
+const osvEvidenceArtifactPin =
+  'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1';
+assert.doesNotMatch(
+  osvWorkflow,
+  /github\/codeql-action\/upload-sarif@/,
+  'OSV must not become a second publisher into the CodeQL-only code-scanning surface',
+);
+assert.doesNotMatch(
+  osvWorkflow,
+  /\bsecurity-events:\s*write\b/,
+  'OSV evidence retention must not require code-scanning write authority',
+);
+assert.equal(
+  osvWorkflow.split(osvEvidenceArtifactPin).length - 1,
+  1,
+  'OSV SARIF evidence must use the reviewed immutable upload-artifact revision',
+);
+assert.match(
+  osvWorkflow,
+  /- name: Preserve exact-head OSV SARIF\r?\n\s+if: \$\{\{ !cancelled\(\) \}\}\r?\n\s+uses: actions\/upload-artifact@[\s\S]*?name: scopeweave-osv-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}[\s\S]*?path: results\.sarif[\s\S]*?if-no-files-found: error[\s\S]*?retention-days: 3/,
+  'OSV must retain exact-head SARIF as bounded workflow evidence even when introduced vulnerabilities fail the reporter',
+);
+
 const isolatedCheckoutPath = 'path: osv-scan-source';
 assert.equal(
   osvWorkflow.split(isolatedCheckoutPath).length - 1,
@@ -135,4 +158,4 @@ for (const [index, guardSource] of completionGuards.entries()) {
   }
 }
 
-console.log('✓ OSV introduced-vulnerability, checkout-isolation, and structured scan-completion gates fail closed');
+console.log('✓ OSV introduced-vulnerability, checkout-isolation, evidence-ownership, and structured scan-completion gates fail closed');
