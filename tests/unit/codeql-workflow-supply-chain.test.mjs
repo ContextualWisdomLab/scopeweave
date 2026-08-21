@@ -3,7 +3,11 @@ import { readFileSync } from 'node:fs';
 
 const workflow = readFileSync(
   new URL('../../.github/workflows/codeql.yml', import.meta.url),
-   'utf8',
+  'utf8',
+);
+const requiredWorkflow = readFileSync(
+  new URL('../../.github/workflows/codeql-required.yml', import.meta.url),
+  'utf8',
 );
 
 const exactHeadRef = 'ref: ${{ github.event.pull_request.head.sha || github.sha }}';
@@ -56,5 +60,15 @@ assert.doesNotMatch(
   /\bpull_request_target\s*:/,
   'default CodeQL must remain on the unprivileged pull_request trust boundary',
 );
+assert.match(
+  requiredWorkflow,
+  /\bupload:\s*never\b/,
+  'required CodeQL must not publish SARIF from the deterministic required-context lane',
+);
+assert.match(
+  requiredWorkflow,
+  /\bupload-database:\s*false\b/,
+  'required CodeQL must not publish CodeQL databases from default-branch required-context runs',
+);
 
-console.log('✓ default CodeQL exact-head and action supply-chain contract passed');
+console.log('✓ CodeQL exact-head and action supply-chain contract passed');
