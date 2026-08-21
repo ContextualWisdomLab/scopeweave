@@ -58,7 +58,9 @@ jobs:
           for report in coverage/coverage-final.json coverage/browser-coverage-final.json; do
             if [ -f "$report" ]; then
               found_report=1
-              node scripts/ci/coverage_diagnostics.mjs "$report"
+              if ! node scripts/ci/coverage_diagnostics.mjs "$report"; then
+                echo "::warning::coverage diagnostics could not inspect $report"
+              fi
             fi
           done
           if [ "$found_report" -eq 0 ]; then
