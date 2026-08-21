@@ -115,3 +115,6 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+## 2026-08-15 - Prefer persistent visible help for static metric explanations
+**Learning:** A `title` fallback on static content is not reliably discoverable by sighted keyboard or touch users, and making an otherwise non-interactive card a synthetic tab stop solely to expose that tooltip adds navigation cost without adding an action.
+**Action:** For short explanatory copy on static metric cards, prefer persistent visible text. Do not add `tabindex` or an ARIA role only to make help discoverable. If a genuinely supplemental popup is needed, implement and test an explicit tooltip or disclosure interaction with the appropriate accessible relationship instead of relying on `title` alone.

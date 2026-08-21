@@ -170,13 +170,20 @@ button {
   letter-spacing: -0.02em;
 }
 
+.meta-description {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+
 .accent-card {
   color: #fff;
   border: none;
 }
 
-.accent-card .meta-label {
-  color: rgba(255, 255, 255, 0.9);
+.accent-card .meta-label,
+.accent-card .meta-description {
+  color: rgba(255, 255, 255, 0.92);
 }
 
 .accent-card strong {
@@ -184,12 +191,12 @@ button {
 }
 
 .plan-card {
-  background: linear-gradient(135deg, #1e40af, #3b82f6);
+  background: linear-gradient(135deg, #1e40af, #2563eb);
   box-shadow: 0 4px 14px 0 rgba(37, 99, 235, 0.25);
 }
 
 .actual-card {
-  background: linear-gradient(135deg, #047857, #10b981);
+  background: linear-gradient(135deg, #065f46, #047857);
   box-shadow: 0 4px 14px 0 rgba(16, 185, 129, 0.25);
 }
 
