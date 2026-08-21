@@ -38,6 +38,7 @@ jobs:
           echo "Resolved refs/heads/$BASE_REF to $actual_sha for the OSV baseline scan"
 
       - name: Scan current protected base dependencies
+        id: scan-base
         uses: google/osv-scanner-action/osv-scanner-action@06b2ab4348248b456ee06c9e953637f55e03504f # v2.5.0
         continue-on-error: true
         with:
@@ -48,6 +49,15 @@ jobs:
             --no-resolve
             -r
             ./osv-scan-source
+
+      - name: Fail closed on incomplete protected-base scan
+        if: ${{ steps.scan-base.outcome == 'failure' }}
+        run: |
+          set -euo pipefail
+          test -s old-results.json || {
+            echo "::error::OSV protected-base scan failed without producing old-results.json"
+            exit 1
+          }
 
       - name: Checkout exact contributor revision
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -66,6 +76,7 @@ jobs:
           test "$actual_sha" = "$EXPECTED_HEAD_SHA"
 
       - name: Scan exact contributor dependencies
+        id: scan-head
         uses: google/osv-scanner-action/osv-scanner-action@06b2ab4348248b456ee06c9e953637f55e03504f # v2.5.0
         continue-on-error: true
         with:
@@ -76,6 +87,15 @@ jobs:
             --no-resolve
             -r
             ./osv-scan-source
+
+      - name: Fail closed on incomplete contributor scan
+        if: ${{ steps.scan-head.outcome == 'failure' }}
+        run: |
+          set -euo pipefail
+          test -s new-results.json || {
+            echo "::error::OSV contributor scan failed without producing new-results.json"
+            exit 1
+          }
 
       - name: Compare dependency findings
         uses: google/osv-scanner-action/osv-reporter-action@06b2ab4348248b456ee06c9e953637f55e03504f # v2.5.0
