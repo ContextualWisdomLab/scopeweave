@@ -27,6 +27,7 @@ try {
   assert.equal(entrypoint.resolvePort('0'), 0, 'port 0 remains valid for an ephemeral test listener');
   assert.equal(entrypoint.resolvePort('65535'), 65535, 'the highest TCP port remains valid');
   assert.equal(entrypoint.resolvePort(''), 8787, 'blank configuration falls back to the default port');
+  assert.equal(entrypoint.resolvePort('   '), 8787, 'whitespace-only configuration falls back to the default port');
   assert.equal(entrypoint.resolvePort(undefined), 8787, 'missing configuration falls back to the default port');
   assert.equal(entrypoint.resolvePort('3.5'), 8787, 'fractional ports fail closed to the default');
   assert.equal(entrypoint.resolvePort('-1'), 8787, 'negative ports fail closed to the default');
