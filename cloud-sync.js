@@ -1787,6 +1787,7 @@ async function openTeamModal() {
     modal.className = 'modal hidden';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-labelledby', 'team-modal-title');
 
     const backdrop = document.createElement('div');
     backdrop.className = 'modal-backdrop';
@@ -1797,6 +1798,7 @@ async function openTeamModal() {
     const header = document.createElement('div');
     header.className = 'modal-header';
     const h2 = document.createElement('h2');
+    h2.id = 'team-modal-title';
     h2.textContent = '팀 멤버';
     const closeBtn = document.createElement('button');
     closeBtn.type = 'button';
