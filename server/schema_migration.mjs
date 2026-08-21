@@ -341,7 +341,7 @@ export function ensureSchemaMigrationState(database) {
   let ledgerRow = ledgerStatement.get(migrationKey);
   if (!ledgerRow) {
     database.prepare(
-      'INSERT INTO schema_migrations(migration_key, state_code) VALUES (?, ?)',
+      'INSERT OR IGNORE INTO schema_migrations(migration_key, state_code) VALUES (?, ?)',
     ).run(migrationKey, state);
     ledgerRow = ledgerStatement.get(migrationKey);
   }
