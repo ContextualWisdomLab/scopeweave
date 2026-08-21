@@ -59,6 +59,11 @@ assert.equal(
   2,
   'base and contributor scans must inspect the same isolated source path',
 );
+assert.match(
+  osvWorkflow,
+  /- name: Sanitize exact contributor scan tree\r?\n\s+run: \|\r?\n\s+set -euo pipefail\r?\n\s+git -C osv-scan-source clean -ffdx\r?\n\s+test -z "\$\(git -C osv-scan-source status --porcelain\)"/,
+  'OSV must remove base-only untracked artifacts before scanning the exact contributor tree',
+);
 for (const resultFile of ['old-results.json', 'new-results.json', 'results.sarif']) {
   assert.match(
     osvWorkflow,
