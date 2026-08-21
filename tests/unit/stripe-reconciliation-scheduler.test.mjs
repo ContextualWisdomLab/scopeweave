@@ -38,7 +38,7 @@ function createFakeTimers() {
     assert.ok(next, 'expected one pending scheduler callback');
     const [id, entry] = next;
     pending.delete(id);
-    return { delayMs: entry.delayMs, promise: entry.callback() };
+    return { delayMs: entry.delayMs, promise: entry.callback(), callback: entry.callback };
   }
 
   return { schedule, cancel, runNext, beginNext, pending, cancelled };
@@ -46,16 +46,39 @@ function createFakeTimers() {
 
 test('poll interval parsing is bounded and rejects ambiguous configuration', () => {
   assert.equal(stripeReconciliationPollIntervalMs(undefined), 1_000);
+  assert.equal(stripeReconciliationPollIntervalMs(250), 250);
   assert.equal(stripeReconciliationPollIntervalMs('250'), 250);
   assert.equal(stripeReconciliationPollIntervalMs('60000'), 60_000);
 
-  for (const invalid of ['', ' 250', '250 ', '1e3', '99', '60001', '-1', 'NaN']) {
+  for (const invalid of [
+    '', ' 250', '250 ', '1e3', '0', '99', '60001', '-1', 'NaN', null, {}, 250.5,
+  ]) {
     assert.throws(
       () => stripeReconciliationPollIntervalMs(invalid),
       (error) => error?.code === 'stripe_reconciliation_scheduler_interval_invalid',
       `expected ${JSON.stringify(invalid)} to fail closed`,
     );
   }
+});
+
+test('scheduler validates lifecycle ports before arming provider work', () => {
+  assert.throws(() => createStripeReconciliationScheduler(), /runOnce must be a function/);
+  assert.throws(
+    () => createStripeReconciliationScheduler({ runOnce: async () => {}, schedule: null }),
+    /schedule must be a function/,
+  );
+  assert.throws(
+    () => createStripeReconciliationScheduler({ runOnce: async () => {}, cancel: null }),
+    /cancel must be a function/,
+  );
+  assert.throws(
+    () => createStripeReconciliationScheduler({ runOnce: async () => {}, onFailure: null }),
+    /onFailure must be a function/,
+  );
+
+  const realTimerScheduler = createStripeReconciliationScheduler({ runOnce: async () => {} });
+  assert.equal(realTimerScheduler.start(), true);
+  assert.equal(realTimerScheduler.stop(), true);
 });
 
 test('scheduler never overlaps reconciliation and stop during an in-flight run prevents rescheduling', async () => {
@@ -90,6 +113,28 @@ test('scheduler never overlaps reconciliation and stop during an in-flight run p
   resolveRun();
   await first.promise;
   assert.equal(timers.pending.size, 0, 'an in-flight completion cannot resurrect a stopped scheduler');
+});
+
+test('a stale timer callback observed after stop cannot restart reconciliation', async () => {
+  let callback;
+  const failures = [];
+  const scheduler = createStripeReconciliationScheduler({
+    runOnce: async () => {
+      throw new Error('must not run after stop');
+    },
+    intervalMs: 250,
+    schedule: (scheduled) => {
+      callback = scheduled;
+      return 1;
+    },
+    cancel: () => {},
+    onFailure: (code) => failures.push(code),
+  });
+
+  scheduler.start();
+  scheduler.stop();
+  await callback();
+  assert.deepEqual(failures, []);
 });
 
 test('scheduler sanitizes iteration failures and continues with one bounded delayed retry', async () => {
@@ -142,6 +187,42 @@ test('failure reporting cannot crash or multiply the scheduler loop', async () =
   scheduler.stop();
 });
 
+test('scheduler fails closed if its timer cannot be armed or re-armed', async () => {
+  const startupScheduler = createStripeReconciliationScheduler({
+    runOnce: async () => {},
+    intervalMs: 250,
+    schedule: () => {
+      throw new Error('timer allocation failure');
+    },
+    cancel: () => {},
+  });
+  assert.throws(
+    () => startupScheduler.start(),
+    (error) => error?.code === 'stripe_reconciliation_scheduler_timer_failed',
+  );
+  assert.equal(startupScheduler.stop(), false);
+
+  let callback;
+  let armCount = 0;
+  const failures = [];
+  const retryScheduler = createStripeReconciliationScheduler({
+    runOnce: async () => ({ status: 'idle' }),
+    intervalMs: 250,
+    schedule: (scheduled) => {
+      armCount += 1;
+      if (armCount > 1) throw new Error('timer re-arm failure');
+      callback = scheduled;
+      return 1;
+    },
+    cancel: () => {},
+    onFailure: (code) => failures.push(code),
+  });
+  retryScheduler.start();
+  await callback();
+  assert.deepEqual(failures, ['stripe_reconciliation_scheduler_timer_failed']);
+  assert.equal(retryScheduler.stop(), false, 'timer failure terminates the loop instead of hot-spinning');
+});
+
 test('stopping a waiting scheduler cancels the exact pending timer', () => {
   const timers = createFakeTimers();
   const scheduler = createStripeReconciliationScheduler({
@@ -156,6 +237,53 @@ test('stopping a waiting scheduler cancels the exact pending timer', () => {
   scheduler.stop();
   assert.deepEqual(timers.cancelled, [timerId]);
   assert.equal(timers.pending.size, 0);
+});
+
+test('timer cancellation failure is sanitized after the loop is already stopped', () => {
+  const failures = [];
+  const scheduler = createStripeReconciliationScheduler({
+    runOnce: async () => {},
+    intervalMs: 250,
+    schedule: () => 7,
+    cancel: () => {
+      throw new Error('secret timer implementation detail');
+    },
+    onFailure: (code) => failures.push(code),
+  });
+  scheduler.start();
+  assert.equal(scheduler.stop(), true);
+  assert.deepEqual(failures, ['stripe_reconciliation_scheduler_timer_cancel_failed']);
+  assert.equal(scheduler.stop(), false);
+});
+
+test('runtime binding validates server, scheduler, signal, and telemetry ports', () => {
+  const signalTarget = new EventEmitter();
+  const server = { close: () => {} };
+  const scheduler = { start: () => true, stop: () => true };
+
+  assert.throws(() => bindScopeWeaveRuntime(), /server must provide close/);
+  assert.throws(() => bindScopeWeaveRuntime({ server: {}, scheduler }), /server must provide close/);
+  assert.throws(() => bindScopeWeaveRuntime({ server, scheduler: {} }), /scheduler must provide/);
+  assert.throws(
+    () => bindScopeWeaveRuntime({ server, scheduler: { start: () => true } }),
+    /scheduler must provide/,
+  );
+  assert.throws(
+    () => bindScopeWeaveRuntime({ server, scheduler, signalTarget: {} }),
+    /signalTarget must provide/,
+  );
+  assert.throws(
+    () => bindScopeWeaveRuntime({
+      server,
+      scheduler,
+      signalTarget: { once: () => {} },
+    }),
+    /signalTarget must provide/,
+  );
+  assert.throws(
+    () => bindScopeWeaveRuntime({ server, scheduler, signalTarget, onShutdownFailure: null }),
+    /onShutdownFailure must be a function/,
+  );
 });
 
 test('runtime binding starts reconciliation and drains it before closing on termination signals', () => {
@@ -195,7 +323,7 @@ test('runtime binding starts reconciliation and drains it before closing on term
   assert.deepEqual(order, ['scheduler:start', 'scheduler:stop', 'server:close']);
 });
 
-test('runtime binding exposes only a stable shutdown failure code', () => {
+test('runtime binding exposes only stable scheduler and server shutdown failure codes', () => {
   const signalTarget = new EventEmitter();
   const failures = [];
   const runtime = bindScopeWeaveRuntime({
@@ -204,11 +332,65 @@ test('runtime binding exposes only a stable shutdown failure code', () => {
         callback(new Error('socket path /secret/internal.sock failed'));
       },
     },
-    scheduler: { start: () => true, stop: () => true },
+    scheduler: {
+      start: () => true,
+      stop() {
+        throw new Error('provider state must not escape');
+      },
+    },
     signalTarget,
     onShutdownFailure: (...args) => failures.push(args),
   });
 
   assert.equal(runtime.shutdown(), true);
-  assert.deepEqual(failures, [['scopeweave_server_shutdown_failed']]);
+  assert.deepEqual(failures, [
+    ['scopeweave_scheduler_shutdown_failed'],
+    ['scopeweave_server_shutdown_failed'],
+  ]);
+});
+
+test('runtime shutdown survives thrown close and broken failure telemetry', () => {
+  const signalTarget = new EventEmitter();
+  const runtime = bindScopeWeaveRuntime({
+    server: {
+      close() {
+        throw new Error('sensitive close failure');
+      },
+    },
+    scheduler: { start: () => true, stop: () => true },
+    signalTarget,
+    onShutdownFailure: () => {
+      throw new Error('telemetry unavailable');
+    },
+  });
+
+  assert.equal(runtime.shutdown(), true);
+});
+
+test('runtime detaches termination handlers when scheduler startup fails', () => {
+  const signalTarget = new EventEmitter();
+  const startupError = new Error('scheduler failed to start');
+  assert.throws(
+    () => bindScopeWeaveRuntime({
+      server: { close: () => {} },
+      scheduler: {
+        start() {
+          throw startupError;
+        },
+        stop: () => true,
+      },
+      signalTarget,
+    }),
+    (error) => error === startupError,
+  );
+  assert.equal(signalTarget.listenerCount('SIGINT'), 0);
+  assert.equal(signalTarget.listenerCount('SIGTERM'), 0);
+});
+
+test('runtime defaults can bind and immediately unbind the real process signal target', () => {
+  const runtime = bindScopeWeaveRuntime({
+    server: { close: (callback) => callback() },
+    scheduler: { start: () => true, stop: () => true },
+  });
+  assert.equal(runtime.shutdown(), true);
 });
