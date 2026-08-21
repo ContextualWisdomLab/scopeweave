@@ -501,6 +501,8 @@ export function createSqliteStripeReconciliationWorkerRepository(database, {
  * provider state before producing a claim decision. A receipt must remain bound to
  * the claimed tenant and Subscription. Missing identity and causal failures become
  * bounded retry/dead-letter evidence, while arbitrary exception text is never stored.
+ * Once reconciliation has succeeded, a completion failure is treated as uncertain
+ * durable state and must not initiate a contradictory failure transition.
  *
  * @param {object} input worker orchestration ports
  * @param {object} input.repository durable worker repository
@@ -539,6 +541,7 @@ export async function runNextStripeReconciliationJob({
     });
   }
 
+  let claimDecisionId;
   try {
     const receipt = await reconcile({
       ...reconciliationDependencies,
@@ -553,19 +556,7 @@ export async function runNextStripeReconciliationJob({
       || receipt.subscriptionId !== claim.subscriptionId) {
       throw workerError('stripe_reconciliation_receipt_mismatch', 500);
     }
-    const claimDecisionId = positiveInteger(receipt.claimDecisionId, 'claimDecisionId');
-    repository.complete({
-      eventId: claim.eventId,
-      leaseToken: claim.leaseToken,
-      claimDecisionId,
-    });
-    return Object.freeze({
-      status: 'succeeded',
-      eventId: claim.eventId,
-      subscriptionId: claim.subscriptionId,
-      organizationId,
-      claimDecisionId,
-    });
+    claimDecisionId = positiveInteger(receipt.claimDecisionId, 'claimDecisionId');
   } catch (error) {
     const failure = repository.fail({
       eventId: claim.eventId,
@@ -578,4 +569,22 @@ export async function runNextStripeReconciliationJob({
       organizationId,
     });
   }
+
+  try {
+    repository.complete({
+      eventId: claim.eventId,
+      leaseToken: claim.leaseToken,
+      claimDecisionId,
+    });
+  } catch {
+    throw workerError('stripe_reconciliation_worker_state_uncertain', 500);
+  }
+
+  return Object.freeze({
+    status: 'succeeded',
+    eventId: claim.eventId,
+    subscriptionId: claim.subscriptionId,
+    organizationId,
+    claimDecisionId,
+  });
 }

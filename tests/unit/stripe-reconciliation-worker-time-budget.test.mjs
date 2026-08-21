@@ -8,6 +8,7 @@ import { installStripeWebhookReconciliationQueueSchema } from '../../server/stri
 import {
   createSqliteStripeReconciliationWorkerRepository,
   installStripeReconciliationWorkerSchema,
+  runNextStripeReconciliationJob,
 } from '../../server/stripe_reconciliation_worker.mjs';
 
 function databaseWithReadyTrigger() {
@@ -71,4 +72,46 @@ test('default worker lease exceeds the two sequential 15-second authoritative pr
     claim.leaseExpiresAtMs - nowMs > 30_000,
     'default lease must leave completion margin beyond Subscription + Invoice timeout budgets',
   );
+});
+
+test('provider success followed by uncertain worker completion never starts a failure transition', async () => {
+  let failureTransitions = 0;
+  const repository = {
+    claimNext() {
+      return {
+        eventId: 'evt_worker_completion_uncertain',
+        subscriptionId: 'sub_worker_completion_uncertain',
+        leaseToken: 'lease_token_completion_123456',
+      };
+    },
+    resolveOrganizationId() {
+      return 7;
+    },
+    complete() {
+      throw new Error('injected completion state uncertainty');
+    },
+    fail() {
+      failureTransitions += 1;
+      return {
+        status: 'retry',
+        eventId: 'evt_worker_completion_uncertain',
+        errorCode: 'stripe_reconciliation_failed',
+        nextAttemptAtMs: 9_000,
+      };
+    },
+  };
+
+  await assert.rejects(
+    runNextStripeReconciliationJob({
+      repository,
+      reconcile: async () => ({
+        organizationId: 7,
+        subscriptionId: 'sub_worker_completion_uncertain',
+        claimDecisionId: 91,
+      }),
+    }),
+    (error) => error?.code === 'stripe_reconciliation_worker_state_uncertain'
+      && error.status === 500,
+  );
+  assert.equal(failureTransitions, 0);
 });
