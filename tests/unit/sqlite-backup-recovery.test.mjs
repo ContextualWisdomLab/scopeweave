@@ -186,7 +186,7 @@ const fake = (integrity, fk = [], scalar = 1, schema = []) => ({
       get() { return { application_id: scalar, user_version: scalar }; },
       *iterate() {
         observedSchemaQueries.push(sql);
-        yield* schema;
+        yield* sql === 'PRAGMA foreign_key_check' ? fk : schema;
       },
     };
   },
