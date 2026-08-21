@@ -938,6 +938,10 @@ select[data-inline-progress]:focus {
 .cloud-actions .primary-button {
   flex: 1;
 }
+.cloud-sso-button {
+  width: 100%;
+  margin-top: 8px;
+}
 .cloud-error {
   color: var(--danger);
   font-size: 13px;
