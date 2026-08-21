@@ -132,6 +132,40 @@ response = await request(
 );
 assert.equal(response.status, 400, 'recovery requires a bounded control-free evidence reference');
 
+const retryUrl = `http://scopeweave.test/api/orgs/${owner.organizationId}/billing/reconciliation/dead-letters/${eventId}/retry`;
+const oversizedRecoveryBody = jsonBody({ evidenceReference: 'x'.repeat(5_000) });
+response = await app.request(new Request(retryUrl, {
+  method: 'POST',
+  headers: {
+    ...ownerAuth,
+    'content-type': 'application/json',
+    'content-length': String(Buffer.byteLength(oversizedRecoveryBody)),
+  },
+  body: oversizedRecoveryBody,
+}));
+assert.equal(response.status, 413, 'declared oversized recovery JSON fails before parsing');
+assert.deepEqual(await response.json(), { error: 'stripe_reconciliation_recovery_body_too_large' });
+
+const encoder = new TextEncoder();
+const oversizedRecoveryStream = new ReadableStream({
+  start(controller) {
+    controller.enqueue(encoder.encode('{"evidenceReference":"'));
+    controller.enqueue(encoder.encode('y'.repeat(5_000)));
+    controller.enqueue(encoder.encode('"}'));
+    controller.close();
+  },
+});
+const streamedRequest = new Request(retryUrl, {
+  method: 'POST',
+  headers: { ...ownerAuth, 'content-type': 'application/json' },
+  body: oversizedRecoveryStream,
+  duplex: 'half',
+});
+assert.equal(streamedRequest.headers.get('content-length'), null, 'stream regression has no declared byte length');
+response = await app.request(streamedRequest);
+assert.equal(response.status, 413, 'streamed oversized recovery JSON fails at the byte ceiling');
+assert.deepEqual(await response.json(), { error: 'stripe_reconciliation_recovery_body_too_large' });
+
 const originalFetch = globalThis.fetch;
 let providerCalls = 0;
 const nowSec = Math.floor(Date.now() / 1000);
