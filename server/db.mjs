@@ -14,6 +14,11 @@ import {
   installStripeWebhookEventSchema,
 } from './stripe_webhook_event_ledger.mjs';
 import {
+  createSqliteStripeWebhookReconciliationQueue,
+  extractStripeSubscriptionReconciliationCandidate,
+  installStripeWebhookReconciliationQueueSchema,
+} from './stripe_webhook_reconciliation_queue.mjs';
+import {
   createSqliteStripeSubscriptionObservationRepository,
   installStripeSubscriptionObservationSchema,
 } from './stripe_subscription_observation_ledger.mjs';
@@ -29,6 +34,7 @@ import {
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.SCOPEWEAVE_DB || join(__dirname, '..', 'data.db');
+const STRIPE_WEBHOOK_RECONCILIATION_SAVEPOINT = 'billing_stripe_webhook_reconciliation_record';
 export const db = new DatabaseSync(dbPath);
 db.exec("PRAGMA journal_mode = WAL");
 db.exec("PRAGMA foreign_keys = ON");
@@ -204,7 +210,39 @@ installBillingCheckoutAttemptSchema(db);
 export const billingCheckoutAttempts = createSqliteBillingCheckoutAttemptRepository(db);
 installStripeWebhookEventSchema(db);
 export const stripeWebhookEvents = createSqliteStripeWebhookEventRepository(db);
-configureStripeWebhookEventRecorder((evidence) => stripeWebhookEvents.recordVerifiedEvent(evidence));
+installStripeWebhookReconciliationQueueSchema(db);
+export const stripeWebhookReconciliationQueue = createSqliteStripeWebhookReconciliationQueue(db);
+configureStripeWebhookEventRecorder((evidence) => {
+  db.exec(`SAVEPOINT ${STRIPE_WEBHOOK_RECONCILIATION_SAVEPOINT}`);
+  try {
+    const eventReceipt = stripeWebhookEvents.recordVerifiedEvent(evidence);
+    const subscriptionId = extractStripeSubscriptionReconciliationCandidate(evidence.event);
+    if (subscriptionId) {
+      stripeWebhookReconciliationQueue.enqueue({
+        eventId: eventReceipt.eventId,
+        subscriptionId,
+      });
+    }
+    db.exec(`RELEASE SAVEPOINT ${STRIPE_WEBHOOK_RECONCILIATION_SAVEPOINT}`);
+    return eventReceipt;
+  } catch (error) {
+    let rollbackSucceeded = false;
+    try {
+      db.exec(`ROLLBACK TO SAVEPOINT ${STRIPE_WEBHOOK_RECONCILIATION_SAVEPOINT}`);
+      rollbackSucceeded = true;
+    } catch {
+      // Keep an unconfirmed failed savepoint open instead of risking a partial commit.
+    }
+    if (rollbackSucceeded) {
+      try {
+        db.exec(`RELEASE SAVEPOINT ${STRIPE_WEBHOOK_RECONCILIATION_SAVEPOINT}`);
+      } catch {
+        // Cleanup after confirmed rollback must not replace the causal operation error.
+      }
+    }
+    throw error;
+  }
+});
 installStripeSubscriptionObservationSchema(db);
 export const stripeSubscriptionObservations = createSqliteStripeSubscriptionObservationRepository(db);
 installStripeInvoiceObservationSchema(db);
