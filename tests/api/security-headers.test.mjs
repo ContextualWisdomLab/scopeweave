@@ -5,7 +5,7 @@ process.env.SCOPEWEAVE_DEV = '1';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 delete process.env.ORCHESTRATOR_URL;
 
-const { app } = await import('../../server/app.mjs');
+const { runtimeApp } = await import('../../server/runtime-app.mjs');
 
 function assertBaselineSecurityHeaders(response, label) {
   assert.equal(
@@ -45,19 +45,19 @@ function assertBaselineSecurityHeaders(response, label) {
   );
 }
 
-const health = await app.request('/api/health');
+const health = await runtimeApp.request('/api/health');
 assert.equal(health.status, 200, 'health route remains available');
 assertBaselineSecurityHeaders(health, 'successful API response');
 
-const missing = await app.request('/api/definitely-missing');
+const missing = await runtimeApp.request('/api/definitely-missing');
 assert.equal(missing.status, 404, 'unknown route remains a normal not-found response');
 assertBaselineSecurityHeaders(missing, 'not-found response');
 
-const dialogModule = await app.request('/dialog-accessibility.js');
+const dialogModule = await runtimeApp.request('/dialog-accessibility.js');
 assert.equal(
   dialogModule.status,
   200,
-  'the canonical Hono app must serve every module referenced by index.html',
+  'the runtime Hono app must serve every module referenced by index.html',
 );
 assert.match(
   dialogModule.headers.get('content-type') ?? '',
