@@ -98,5 +98,9 @@ test('schema migration ledger streams persisted rows and rejects materialization
   };
 
   assert.equal(ensureSchemaMigrationState(fakeDatabase), 'legacy_ready');
-  assert.equal(insertObserved, true);
+  assert.equal(
+    insertObserved,
+    false,
+    'an already-persisted migration row must be streamed and reused without a redundant insert',
+  );
 });
