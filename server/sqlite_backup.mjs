@@ -112,8 +112,8 @@ export function inspectOpenSqliteDatabase(database, prefix) {
     throw fail(`${prefix}_integrity_failed`);
   }
 
-  const foreignKeyRows = database.prepare('PRAGMA foreign_key_check').all();
-  if (!Array.isArray(foreignKeyRows) || foreignKeyRows.length !== 0) {
+  const foreignKeyRows = database.prepare('PRAGMA foreign_key_check').iterate();
+  if (!foreignKeyRows.next().done) {
     throw fail(`${prefix}_foreign_key_failed`);
   }
 
