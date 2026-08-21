@@ -33,6 +33,15 @@ must already be one complete known generation; mixed, incomplete, ledger-only,
 or otherwise ambiguous states fail closed before legacy bootstrap can mutate
 them.
 
+The complete legacy `CREATE TABLE`/`CREATE INDEX` bootstrap is executed inside
+one explicit SQLite transaction. If a first deployment is terminated while that
+transaction is open, SQLite recovery returns the catalog to its pre-transaction
+state; if a statement fails synchronously, ScopeWeave explicitly rolls the
+transaction back before rethrowing the causal error. This prevents a brand-new
+database from being stranded as an otherwise unrecoverable partial legacy
+generation. A partial generation that already exists before startup remains
+fail-closed and requires verified recovery rather than heuristic completion.
+
 The historical compatibility columns `users.token_version`,
 `projects.archived`, and `projects.methodology` are also catalog-driven. Startup
 queries `PRAGMA table_info` and runs `ALTER TABLE` only when the exact column is
@@ -105,7 +114,10 @@ must restore the ledger from the same verified recovery point.
 - incomplete schema rejection;
 - the complete ten-object legacy and canonical inventories;
 - pre-bootstrap classification of pristine, legacy, canonical, and invalid
-  databases; and
+  databases;
+- atomic legacy-bootstrap commit behavior, rollback after a real mid-script
+  SQLite DDL failure, input validation, and preservation of the causal error even
+  if best-effort rollback itself fails; and
 - a real `server/db.mjs` subprocess regression proving canonical startup fails
   for the truthful query-layer reason without recreating any legacy table.
 
