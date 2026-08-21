@@ -236,7 +236,7 @@ async function bootstrap() {
   }
 
   // Optional cloud overlay (loaded as a separate module; undefined offline).
-  const cloudApi = typeof window !== 'undefined' ? window.ScopeWeaveCloud : null;
+  const cloudApi = window.ScopeWeaveCloud;
   cloudApi?.init?.({
     hydrateState,
     renderAll,
