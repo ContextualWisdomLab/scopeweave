@@ -240,10 +240,8 @@ function ensureAuthUI() {
 
   const ssoBtn = document.createElement('button');
   ssoBtn.type = 'button';
-  ssoBtn.className = 'secondary-button';
+  ssoBtn.className = 'secondary-button cloud-sso-button';
   ssoBtn.id = 'cloud-sso';
-  ssoBtn.style.width = '100%';
-  ssoBtn.style.marginTop = '8px';
   ssoBtn.textContent = 'SSO로 로그인 (OIDC)';
 
   form.append(emailLabel, nameLabel, pwdLabel, errorP, actions, ssoBtn);
