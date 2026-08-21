@@ -18,6 +18,7 @@ const packageJson = JSON.parse(
 );
 const serverCoverageScript = packageJson.scripts?.['test:coverage:server'] ?? '';
 const browserCoverageScript = packageJson.scripts?.['test:coverage:browser'] ?? '';
+const coverageCasesScript = packageJson.scripts?.['test:coverage:cases'] ?? '';
 
 const exactHeadRef = 'ref: ${{ github.event.pull_request.head.sha || github.sha }}';
 const expectedShaEnv = 'EXPECTED_CHECKOUT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}';
@@ -106,6 +107,16 @@ for (const requiredCoverageOption of [
     `test:coverage:server must enforce ${requiredCoverageOption}`,
   );
 }
+assert.equal(
+  coverageCasesScript,
+  'npm run test:unit && npm run test:api',
+  'the exact server coverage case set must continue executing both unit and API suites',
+);
+assert.doesNotMatch(
+  serverTestsWorkflow,
+  /^\s+run: npm run test:(?:unit|api)\s*$/m,
+  'Server Tests must not execute unit or API suites outside the exact coverage gate when coverage already owns those cases',
+);
 assert.equal(
   browserCoverageScript,
   'node scripts/ci/browser_coverage.mjs',
