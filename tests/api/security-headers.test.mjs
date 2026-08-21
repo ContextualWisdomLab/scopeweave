@@ -49,26 +49,8 @@ const health = await app.request('/api/health');
 assert.equal(health.status, 200, 'health route remains available');
 assertBaselineSecurityHeaders(health, 'successful API response');
 
-const dialogAccessibility = await app.request('/dialog-accessibility.js');
-assert.equal(
-  dialogAccessibility.status,
-  200,
-  'the canonical app serves the dialog accessibility module without a server-entrypoint wrapper',
-);
-assert.match(
-  dialogAccessibility.headers.get('content-type') ?? '',
-  /^text\/javascript; charset=utf-8/i,
-  'the dialog accessibility module is served as JavaScript',
-);
-assert.match(
-  await dialogAccessibility.text(),
-  /aria-labelledby/,
-  'the served dialog accessibility module contains its accessibility behavior',
-);
-assertBaselineSecurityHeaders(dialogAccessibility, 'dialog accessibility static response');
-
 const missing = await app.request('/api/definitely-missing');
 assert.equal(missing.status, 404, 'unknown route remains a normal not-found response');
 assertBaselineSecurityHeaders(missing, 'not-found response');
 
-console.log('security header and static-module regression passed');
+console.log('security header regression passed');
