@@ -14,6 +14,8 @@ const exactHeadRef = 'ref: ${{ github.event.pull_request.head.sha || github.sha 
 const expectedShaEnv = 'EXPECTED_CHECKOUT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}';
 const currentCodeqlSha = 'ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd';
 const supersededCodeqlSha = '8aad20d150bbac5944a9f9d289da16a4b0d87c1e';
+const protectedAnalyzeName = 'name: Analyze (${{ matrix.language }})';
+const publisherAnalyzeName = 'name: Publish CodeQL (${{ matrix.language }})';
 
 assert.equal(
   workflow.split(exactHeadRef).length - 1,
@@ -59,6 +61,21 @@ assert.doesNotMatch(
   workflow,
   /\bpull_request_target\s*:/,
   'default CodeQL must remain on the unprivileged pull_request trust boundary',
+);
+assert.equal(
+  requiredWorkflow.split(protectedAnalyzeName).length - 1,
+  1,
+  'required CodeQL must remain the sole workflow provider of the protected Analyze check names',
+);
+assert.equal(
+  workflow.includes(protectedAnalyzeName),
+  false,
+  'SARIF-publishing CodeQL must not duplicate the protected Analyze check names',
+);
+assert.equal(
+  workflow.split(publisherAnalyzeName).length - 1,
+  1,
+  'SARIF-publishing CodeQL must expose a distinct review-visible check name',
 );
 assert.match(
   requiredWorkflow,
