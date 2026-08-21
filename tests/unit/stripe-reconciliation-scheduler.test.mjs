@@ -256,7 +256,7 @@ test('timer cancellation failure is sanitized after the loop is already stopped'
   assert.equal(scheduler.stop(), false);
 });
 
-test('runtime binding validates server, scheduler, signal, and telemetry ports', () => {
+test('runtime binding validates server, scheduler, signal, telemetry, and shutdown-timer ports', () => {
   const signalTarget = new EventEmitter();
   const server = { close: () => {} };
   const scheduler = { start: () => true, stop: () => true };
@@ -283,6 +283,14 @@ test('runtime binding validates server, scheduler, signal, and telemetry ports',
   assert.throws(
     () => bindScopeWeaveRuntime({ server, scheduler, signalTarget, onShutdownFailure: null }),
     /onShutdownFailure must be a function/,
+  );
+  assert.throws(
+    () => bindScopeWeaveRuntime({ server, scheduler, signalTarget, scheduleShutdown: null }),
+    /scheduleShutdown must be a function/,
+  );
+  assert.throws(
+    () => bindScopeWeaveRuntime({ server, scheduler, signalTarget, cancelShutdown: null }),
+    /cancelShutdown must be a function/,
   );
 });
 
@@ -321,6 +329,79 @@ test('runtime binding starts reconciliation and drains it before closing on term
   assert.equal(runtime.shutdown(), false, 'shutdown is idempotent after the first signal');
   signalTarget.emit('SIGINT', 'SIGINT');
   assert.deepEqual(order, ['scheduler:start', 'scheduler:stop', 'server:close']);
+});
+
+test('runtime force-closes long-lived connections after the bounded graceful drain window', async () => {
+  const shutdownTimers = createFakeTimers();
+  const order = [];
+  const signalTarget = new EventEmitter();
+  let closeCallback;
+  const server = {
+    close(callback) {
+      order.push('server:close');
+      closeCallback = callback;
+    },
+    closeAllConnections() {
+      order.push('server:force-close');
+    },
+  };
+  const scheduler = {
+    start() {
+      order.push('scheduler:start');
+      return true;
+    },
+    stop() {
+      order.push('scheduler:stop');
+      return true;
+    },
+  };
+  const failures = [];
+
+  const runtime = bindScopeWeaveRuntime({
+    server,
+    scheduler,
+    signalTarget,
+    onShutdownFailure: (code) => failures.push(code),
+    scheduleShutdown: shutdownTimers.schedule,
+    cancelShutdown: shutdownTimers.cancel,
+  });
+
+  assert.equal(runtime.shutdown(), true);
+  assert.deepEqual(order, ['scheduler:start', 'scheduler:stop', 'server:close']);
+  assert.equal(shutdownTimers.pending.size, 1, 'active responses need one bounded shutdown watchdog');
+  assert.equal(await shutdownTimers.runNext(), 10_000);
+  assert.deepEqual(order, ['scheduler:start', 'scheduler:stop', 'server:close', 'server:force-close']);
+  closeCallback();
+  assert.deepEqual(failures, []);
+});
+
+test('runtime cancels the forced-close watchdog when graceful drain completes first', () => {
+  const shutdownTimers = createFakeTimers();
+  const signalTarget = new EventEmitter();
+  let closeCallback;
+  let forceCloseCalls = 0;
+  const runtime = bindScopeWeaveRuntime({
+    server: {
+      close(callback) {
+        closeCallback = callback;
+      },
+      closeAllConnections() {
+        forceCloseCalls += 1;
+      },
+    },
+    scheduler: { start: () => true, stop: () => true },
+    signalTarget,
+    scheduleShutdown: shutdownTimers.schedule,
+    cancelShutdown: shutdownTimers.cancel,
+  });
+
+  assert.equal(runtime.shutdown(), true);
+  const watchdogId = [...shutdownTimers.pending.keys()][0];
+  assert.ok(watchdogId, 'graceful shutdown must arm one bounded watchdog');
+  closeCallback();
+  assert.deepEqual(shutdownTimers.cancelled, [watchdogId]);
+  assert.equal(shutdownTimers.pending.size, 0);
+  assert.equal(forceCloseCalls, 0, 'clean drain must not terminate already-finished connections');
 });
 
 test('runtime binding exposes only stable scheduler and server shutdown failure codes', () => {
