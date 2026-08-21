@@ -18,7 +18,10 @@ concurrency:
 
 jobs:
   analyze:
-    name: Analyze (${{ matrix.language }})
+    # Branch protection intentionally requires the identically-shaped jobs from
+    # codeql-required.yml. Keep the publishing lane visibly distinct so a
+    # successful SARIF publisher cannot satisfy the protected Analyze contexts.
+    name: Publish CodeQL (${{ matrix.language }})
     runs-on: ubuntu-latest
     permissions:
       contents: read
