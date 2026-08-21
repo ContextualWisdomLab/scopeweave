@@ -26,6 +26,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.base.ref }}
           persist-credentials: false
+          path: osv-scan-source
 
       - name: Record resolved protected base checkout
         env:
@@ -33,7 +34,7 @@ jobs:
         run: |
           set -euo pipefail
           test -n "$BASE_REF"
-          actual_sha="$(git rev-parse HEAD)"
+          actual_sha="$(cd osv-scan-source && git rev-parse HEAD)"
           echo "Resolved refs/heads/$BASE_REF to $actual_sha for the OSV baseline scan"
 
       - name: Scan current protected base dependencies
@@ -46,7 +47,7 @@ jobs:
             --maven-registry=https://maven-central.storage-download.googleapis.com/maven2
             --no-resolve
             -r
-            ./
+            ./osv-scan-source
 
       - name: Checkout exact contributor revision
         uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
@@ -54,13 +55,14 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           persist-credentials: false
           clean: false
+          path: osv-scan-source
 
       - name: Verify exact contributor checkout
         env:
           EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
-          actual_sha="$(git rev-parse HEAD)"
+          actual_sha="$(cd osv-scan-source && git rev-parse HEAD)"
           test "$actual_sha" = "$EXPECTED_HEAD_SHA"
 
       - name: Scan exact contributor dependencies
@@ -73,7 +75,7 @@ jobs:
             --maven-registry=https://maven-central.storage-download.googleapis.com/maven2
             --no-resolve
             -r
-            ./
+            ./osv-scan-source
 
       - name: Compare dependency findings
         uses: google/osv-scanner-action/osv-reporter-action@06b2ab4348248b456ee06c9e953637f55e03504f # v2.5.0
