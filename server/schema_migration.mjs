@@ -46,6 +46,12 @@ export const LEGACY_SCHEMA_OBJECTS = Object.freeze(Object.keys(SCHEMA_OBJECT_REN
 /** Canonical two-or-more-word tables required after issue #433 migration. */
 export const CANONICAL_SCHEMA_OBJECTS = Object.freeze(Object.values(SCHEMA_OBJECT_RENAMES));
 
+const KNOWN_SCHEMA_OBJECTS = new Set([
+  ...LEGACY_SCHEMA_OBJECTS,
+  ...CANONICAL_SCHEMA_OBJECTS,
+]);
+const UNRELATED_SCHEMA_OBJECT_SENTINEL = '__scopeweave_unrelated_schema_object__';
+
 /**
  * Error raised when the process observes an incomplete or mixed schema cutover.
  *
@@ -90,19 +96,31 @@ export function classifySchemaMigrationState(objectNames) {
 }
 
 /**
- * Read application table names from SQLite's schema catalog.
+ * Read application table names from SQLite's schema catalog with bounded memory.
  *
  * SQLite internal tables are excluded because they are not ScopeWeave-owned
- * schema objects and cannot participate in the naming migration.
+ * schema objects and cannot participate in the naming migration. Known legacy
+ * and canonical names are retained exactly; every unrelated application table
+ * collapses to one sentinel so a non-empty unknown database cannot be mistaken
+ * for a pristine bootstrap while an arbitrarily large catalog cannot force an
+ * equally large in-memory result set.
  *
  * @param {{prepare: Function}} database - node:sqlite-compatible database.
- * @returns {Set<string>} Current application table names.
+ * @returns {Set<string>} Bounded current application table-name evidence.
  */
 function readApplicationTableNames(database) {
-  const rows = database.prepare(
+  const statement = database.prepare(
     "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'",
-  ).all();
-  return new Set(rows.map((row) => String(row.name)));
+  );
+  const objectNames = new Set();
+  let sawUnrelatedObject = false;
+  for (const row of statement.iterate()) {
+    const name = String(row.name);
+    if (KNOWN_SCHEMA_OBJECTS.has(name)) objectNames.add(name);
+    else sawUnrelatedObject = true;
+  }
+  if (sawUnrelatedObject) objectNames.add(UNRELATED_SCHEMA_OBJECT_SENTINEL);
+  return objectNames;
 }
 
 function matchesCompatibilityColumnContract(row, migration) {
@@ -158,7 +176,7 @@ export function ensureLegacyCompatibilityColumns(database) {
  * closed. Canonical schemas may retain the earlier legacy record because the
  * ledger is append-only across a forward migration.
  *
- * @param {Array<{migrationKey: unknown, stateCode: unknown}>} rows - Persisted ledger rows.
+ * @param {Iterable<{migrationKey: unknown, stateCode: unknown}>} rows - Persisted ledger rows.
  * @param {'legacy_ready'|'canonical_ready'} state - Fresh schema classification.
  * @returns {void}
  * @throws {SchemaMigrationStateError} When ledger history is corrupt or moves backward.
@@ -231,7 +249,7 @@ export function ensureSchemaMigrationState(database) {
   const state = classifySchemaMigrationState(readApplicationTableNames(database));
   const existingRows = database.prepare(
     'SELECT migration_key AS migrationKey, state_code AS stateCode FROM schema_migrations ORDER BY migration_key',
-  ).all();
+  ).iterate();
   validateMigrationLedgerHistory(existingRows, state);
 
   const migrationKey = state === 'legacy_ready' ? 'legacy_schema_v1' : 'canonical_schema_v2';
