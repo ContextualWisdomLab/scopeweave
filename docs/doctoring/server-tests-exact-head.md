@@ -32,32 +32,34 @@ The control keeps the unprivileged `pull_request` event, `contents: read`, immut
 The current Server Tests lane treats coverage as evidence rather than a best-effort report:
 
 - server coverage uses c8 with `--all --check-coverage --per-file` and exact 100% statements, branches, functions, and lines over registered owned production modules;
-- browser coverage exercises served production `/app.js` and `/cloud-sync.js`, records SHA-256 for served bytes, independently hashes checked-out source, rejects a source/served provenance mismatch, and requires exact 100% statements, branches, functions, and lines;
+- browser coverage exercises served production `/analytics.js`, `/app.js`, and `/cloud-sync.js`, records SHA-256 for served bytes, independently hashes checked-out source, rejects a source/served provenance mismatch, and requires exact 100% statements, branches, functions, and lines;
+- every Playwright page in the test context is instrumented before navigation when created through `context.newPage()`, and coverage is collected before an explicitly closed page becomes unavailable;
 - failure diagnostics and uploaded evidence are scoped to a failed coverage step so unrelated test/setup failures do not cascade into misleading coverage errors; and
 - structural regression contracts keep the production modules, test cases, exact-head assertions, and coverage thresholds from silently disappearing.
 
 Coverage success on a predecessor head, synthetic merge, skipped lane, or different served source is non-authorizing.
 
-## CodeQL required-context and stacked-PR repair
+## CodeQL required-context, default-setup authority, and stacked-PR repair
 
-Protected `develop` requires `Analyze (javascript-typescript)` and `Analyze (python)`. PR #523 therefore retains two repository CodeQL workflows with different evidence roles:
+Protected `develop` requires `Analyze (javascript-typescript)` and `Analyze (python)`. Current repository evidence uses **one** checked-in CodeQL workflow for those protected contexts:
 
-- `.github/workflows/codeql-required.yml` performs real exact-head analysis with `upload: never` so it can supply deterministic required contexts without competing with GitHub CodeQL default setup for SARIF publication; and
-- `.github/workflows/codeql.yml` remains the repository advanced/publisher definition. It is **not removed**. Both workflows use immutable CodeQL Action pins, explicit exact-head checkout/runtime attestation, disabled checkout credential persistence, and the unprivileged `pull_request` trust boundary.
+- `.github/workflows/codeql-required.yml` performs real exact-head analysis with `upload: never` and `upload-database: false`; it supplies deterministic required contexts without publishing SARIF or a CodeQL database;
+- its job permission is `contents: read` only, because this non-publishing lane has no need for `security-events: write`;
+- GitHub CodeQL default setup remains the sole SARIF publication authority; and
+- the former repository advanced publisher `.github/workflows/codeql.yml` has been retired instead of leaving a disabled/conflicting advanced setup in source.
 
-The first replacement attempt at `612dcb6ed0ff17b03e30baacb301dc006bac7d6f` reached CodeQL analysis but GitHub rejected advanced-configuration SARIF publication while default setup was authoritative. `upload: never` is the narrow required-context repair; publication authority remains separate evidence.
+The first replacement attempt at `612dcb6ed0ff17b03e30baacb301dc006bac7d6f` reached CodeQL analysis but GitHub rejected advanced-configuration SARIF publication while default setup was authoritative. GitHub's current troubleshooting guidance states that enabling default setup disables existing advanced CodeQL workflow files and blocks CodeQL analysis API uploads from them; when the workflow is no longer needed, the file should be deleted. Retaining the stale publisher therefore supplied neither trustworthy evidence nor a useful fallback.
 
-### Stacked pull-request trigger defect
+Fresh review later exposed two additional control defects. First, two repository workflows had been configured to emit the same protected `Analyze (...)` names, making required-context provenance ambiguous. Second, both workflows had historically limited `pull_request` to base branch `develop`, so stacked child PRs could receive no repository analysis.
 
-Fresh review later found both CodeQL workflows limited `pull_request` to base branch `develop`. ScopeWeave uses stacked delivery trains whose child PRs target another feature branch, so those exact contributor heads could receive no repository CodeQL run even though the eventual protected integration requires the same analysis contexts.
+The final repair sequence is test-first and single-authority:
 
-The repair was again test-first:
+1. `4cba72546115a4877705f8e079d6ca635b948161` established a failing contract that default-setup publication authority must not coexist with a checked-in advanced publisher;
+2. `c14ac41168af120e584c0d5578e8260b5c40cf79` deleted the stale `.github/workflows/codeql.yml` publisher;
+3. `bcad2b61a4220f11ab28d8527c54b2c3ae893b19` narrowed the stacked-PR contract to the remaining required workflow; and
+4. `9c5d7e163cf3f114d2811416421b4825a2d1bddc` added a least-privilege regression before `19140bba86f7dc088eeb133465fbc91343edc7fc` removed the unused `security-events: write` permission.
 
-1. `196227d0a2f6e030fbfde70ea0a8e5fe85312032` added `tests/unit/codeql-stacked-pr-trigger-contract.test.mjs` while the production base filter still existed, establishing the RED contract;
-2. `eb05b384c1c4971d5e73f9cf616eb3c7ac9c445f` removed only the CodeQL pull-request base filters, making both workflows execute for develop-bound and stacked PRs while retaining exact-head attestation and the unprivileged event boundary; and
-3. `058c2cd446826935aae26eefca2d5d12c6acd29a` hardened the regression so explanatory YAML comments do not create a false failure while a nested `branches:` filter still does.
-
-No `pull_request_target`, secret-bearing contributor execution, analysis weakening, or required-context bypass was introduced.
+The surviving required workflow retains immutable CodeQL Action pins, explicit exact-head checkout/runtime attestation, disabled checkout credential persistence, no base-branch filter on `pull_request`, and the unprivileged event boundary. No `pull_request_target`, secret-bearing contributor execution, analysis weakening, SARIF publication duplication, or required-context bypass was introduced.
 
 ## OSV exact-head and live-base differential scanning
 
@@ -76,24 +78,25 @@ The current OSV sequence is:
 5. attest `git rev-parse HEAD == EXPECTED_HEAD_SHA`;
 6. scan the exact contributor head into `new-results.json`;
 7. compare introduced findings with the pinned reporter; and
-8. publish candidate-head SARIF through the pinned CodeQL upload action.
+8. preserve generated candidate-head SARIF for non-cancelled finding failures according to the current OSV evidence contract.
 
 A merge or release decision must still resolve protected `develop` again after all checks because the branch can advance after any workflow starts.
 
 ## Executable regression contract
 
-`tests/unit/workflow-exact-head-contract.test.mjs`, `tests/unit/codeql-stacked-pr-trigger-contract.test.mjs`, the coverage contracts, and the associated package registrations collectively require:
+`tests/unit/workflow-exact-head-contract.test.mjs`, `tests/unit/codeql-stacked-pr-trigger-contract.test.mjs`, `tests/unit/codeql-workflow-supply-chain.test.mjs`, the coverage contracts, and the associated package registrations collectively require:
 
 - exact contributor-head checkout and runtime SHA attestation for both Server Tests jobs;
-- exact contributor-head checkout/runtime attestation for CodeQL and property fuzz;
+- exact contributor-head checkout/runtime attestation for the repository CodeQL required lane and property fuzz;
 - disabled checkout credential persistence and no privileged `pull_request_target` path;
-- both required `Analyze (...)` identities/languages;
-- CodeQL required-context analysis with `upload: never` while retaining the separate publisher workflow;
+- both protected `Analyze (...)` identities/languages from one repository workflow;
+- CodeQL required-context analysis with `upload: never`, `upload-database: false`, and no unused code-scanning write permission while GitHub default setup owns publication;
+- absence of the stale advanced CodeQL publisher workflow;
 - CodeQL execution for stacked PRs as well as `develop`-bound PRs;
 - OSV baseline selection by named base ref, with explicit rejection of `github.event.pull_request.base.sha` as live authority;
 - OSV exact-head checkout with `clean: false` and runtime SHA verification;
 - immutable scanner/reporter/action revisions; and
-- exact owned production coverage/provenance requirements.
+- exact owned production coverage/provenance requirements, including secondary Playwright pages.
 
 Structural contracts complement rather than replace hosted runtime evidence. Every changed head must prove its own execution.
 
@@ -109,7 +112,7 @@ Organization-owned controls remain separate authorities. In particular, the curr
 
 Before protected integration, rollback is source-only: remove the PR-owned workflow/test/coverage/doctoring changes together. After protected integration, do not silently restore default pull-request checkout and then label synthetic merge success as contributor-head evidence. Do not restore `github.event.pull_request.base.sha` as live base authority, and do not reintroduce a CodeQL base filter that skips stacked PR heads.
 
-If CodeQL publication ownership later moves from GitHub default setup back to repository advanced configuration, treat that as a control-plane migration and update publication authority, required contexts, exact-head regressions, and protected-branch evidence together.
+If CodeQL publication ownership later moves from GitHub default setup back to repository advanced configuration, treat that as an explicit control-plane migration: disable default setup through the authorized GitHub security configuration path, add one reviewed advanced publisher with unique check identity, restore only the permissions needed for publication, and update protected-context, exact-head, and publication-authority regressions together. Do not re-add a competing publisher as a speculative fallback.
 
 ## References
 
