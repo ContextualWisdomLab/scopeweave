@@ -15,6 +15,11 @@ import {
   runNextStripeReconciliationJob,
 } from './stripe_reconciliation_worker.mjs';
 import {
+  createSqliteStripeReconciliationRecoveryRepository,
+  installStripeReconciliationRecoverySchema,
+  retryStripeReconciliationDeadLetter,
+} from './stripe_reconciliation_recovery.mjs';
+import {
   configureStripeWebhookEventRecorder,
   createSqliteStripeWebhookEventRepository,
   installStripeWebhookEventSchema,
@@ -263,6 +268,8 @@ export const stripeEntitlementClaims = createSqliteStripeEntitlementClaimReposit
 });
 installStripeReconciliationWorkerSchema(db);
 export const stripeReconciliationWorker = createSqliteStripeReconciliationWorkerRepository(db);
+installStripeReconciliationRecoverySchema(db);
+export const stripeReconciliationRecoveries = createSqliteStripeReconciliationRecoveryRepository(db);
 
 /**
  * Consume at most one pending verified Stripe reconciliation trigger.
@@ -282,6 +289,40 @@ export function reconcileNextStripeBillingTrigger() {
       invoiceRepository: stripeInvoiceObservations,
       claimRepository: stripeEntitlementClaims,
     },
+  });
+}
+
+/**
+ * Retry one exact tenant-owned Stripe reconciliation dead letter.
+ *
+ * Authenticated adapters provide only the tenant, verified Event identity, actor, and
+ * evidence reference. The recovery repository resolves Subscription authority from
+ * normalized server state and the reconciliation service re-fetches current provider
+ * state before entitlement evaluation.
+ *
+ * @param {{organizationId:number,eventId:string,actorUserId:number,evidenceReference:string}} input
+ * operator recovery authority
+ * @returns {Promise<Readonly<object>>} durable recovery receipt
+ */
+export function recoverStripeBillingDeadLetter({
+  organizationId,
+  eventId,
+  actorUserId,
+  evidenceReference,
+}) {
+  return retryStripeReconciliationDeadLetter({
+    recoveryRepository: stripeReconciliationRecoveries,
+    workerRepository: stripeReconciliationWorker,
+    reconcile: reconcileStripeBillingAuthoritatively,
+    reconciliationDependencies: {
+      subscriptionRepository: stripeSubscriptionObservations,
+      invoiceRepository: stripeInvoiceObservations,
+      claimRepository: stripeEntitlementClaims,
+    },
+    organizationId,
+    eventId,
+    actorUserId,
+    evidenceReference,
   });
 }
 

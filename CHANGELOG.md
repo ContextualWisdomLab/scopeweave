@@ -22,6 +22,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Added tenant-scoped operator recovery for Stripe reconciliation dead letters:
+  owner/admin callers can inspect bounded backlog state and authorize one exact
+  manual retry with an idempotent evidence reference, preserving append-only
+  automatic attempt history, finite hashed leases, current-provider reconciliation,
+  cross-tenant non-disclosure, and immediate return to `dead_letter` after a failed
+  manual attempt without exposing provider secrets or arbitrary exception text.
 - Added a durable leased Stripe reconciliation worker that consumes verified-event
   triggers through server-owned Subscription-to-organization authority, hashes
   lease secrets at rest, prevents concurrent/stale completion, retries with bounded
