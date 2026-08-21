@@ -252,6 +252,11 @@ assert.equal(
   1,
   'OSV must publish candidate-head SARIF through the reviewed immutable CodeQL v4.37.7 action revision',
 );
+assert.match(
+  osvWorkflow,
+  /- name: Upload exact-head SARIF\r?\n\s+if: \$\{\{ !cancelled\(\) \}\}\r?\n\s+uses: github\/codeql-action\/upload-sarif@/,
+  'OSV must publish generated SARIF even when the reporter fails on an introduced vulnerability, while still skipping cancelled runs',
+);
 assert.equal(
   osvWorkflow.includes(supersededCodeqlActionV4362Sha),
   false,
