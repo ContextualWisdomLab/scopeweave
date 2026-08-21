@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import coverageLibrary from 'istanbul-lib-coverage';
 import v8ToIstanbul from 'v8-to-istanbul';
+import { reportCoverageProcessingFailure } from './browser_coverage_failure.mjs';
 
 const { createCoverageMap } = coverageLibrary;
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -74,77 +75,81 @@ if (testRun.status !== 0) {
   process.exitCode = testRun.status ?? 1;
 }
 
-const rawFiles = (await readdir(rawDirectory)).filter((name) => name.endsWith('.json')).sort();
-if (rawFiles.length === 0) {
-  if (testRun.status !== 0) {
-    console.error('Browser tests failed before any raw browser coverage evidence was emitted.');
+try {
+  const rawFiles = (await readdir(rawDirectory)).filter((name) => name.endsWith('.json')).sort();
+  if (rawFiles.length === 0) {
+    if (testRun.status !== 0) {
+      console.error('Browser tests failed before any raw browser coverage evidence was emitted.');
+    } else {
+      throw new Error('Browser coverage produced no raw evidence files.');
+    }
   } else {
-    throw new Error('Browser coverage produced no raw evidence files.');
-  }
-} else {
-  const coverageMap = createCoverageMap({});
-  const observedSources = new Set();
-  for (const rawFile of rawFiles) {
-    const payload = JSON.parse(await readFile(path.join(rawDirectory, rawFile), 'utf8'));
-    if (!Array.isArray(payload.entries)) {
-      throw new Error(`Malformed browser coverage evidence: ${rawFile}`);
-    }
-    for (const entry of payload.entries) {
-      const browserPath = normalizeBrowserPath(entry.url);
-      if (!expectedBrowserSources.includes(browserPath)) continue;
-      observedSources.add(browserPath);
-      const localPath = path.join(repositoryRoot, browserPath);
-      const localBytes = await readFile(localPath);
-      const localSource = localBytes.toString('utf8');
-      const localSourceSha256 = createHash('sha256').update(localBytes).digest('hex');
-      const servedSourceSha256 = payload.servedSourceSha256?.[`/${browserPath}`];
-      if (typeof servedSourceSha256 !== 'string') {
-        throw new Error(`Browser coverage lacks served-source identity for ${browserPath}.`);
+    const coverageMap = createCoverageMap({});
+    const observedSources = new Set();
+    for (const rawFile of rawFiles) {
+      const payload = JSON.parse(await readFile(path.join(rawDirectory, rawFile), 'utf8'));
+      if (!Array.isArray(payload.entries)) {
+        throw new Error(`Malformed browser coverage evidence: ${rawFile}`);
       }
-      if (servedSourceSha256 !== localSourceSha256) {
-        throw new Error(`Browser served source does not match checked-out ${browserPath}.`);
+      for (const entry of payload.entries) {
+        const browserPath = normalizeBrowserPath(entry.url);
+        if (!expectedBrowserSources.includes(browserPath)) continue;
+        observedSources.add(browserPath);
+        const localPath = path.join(repositoryRoot, browserPath);
+        const localBytes = await readFile(localPath);
+        const localSource = localBytes.toString('utf8');
+        const localSourceSha256 = createHash('sha256').update(localBytes).digest('hex');
+        const servedSourceSha256 = payload.servedSourceSha256?.[`/${browserPath}`];
+        if (typeof servedSourceSha256 !== 'string') {
+          throw new Error(`Browser coverage lacks served-source identity for ${browserPath}.`);
+        }
+        if (servedSourceSha256 !== localSourceSha256) {
+          throw new Error(`Browser served source does not match checked-out ${browserPath}.`);
+        }
+        if (!Array.isArray(entry.functions)) {
+          throw new Error(`Browser coverage lacks V8 function ranges for ${browserPath}.`);
+        }
+        const converter = v8ToIstanbul(localPath, 0, { source: entry.source ?? localSource });
+        await converter.load();
+        converter.applyCoverage(entry.functions);
+        coverageMap.merge(converter.toIstanbul());
       }
-      if (!Array.isArray(entry.functions)) {
-        throw new Error(`Browser coverage lacks V8 function ranges for ${browserPath}.`);
+    }
+
+    for (const expectedSource of expectedBrowserSources) {
+      if (!observedSources.has(expectedSource)) {
+        throw new Error(`Browser coverage never observed required production source ${expectedSource}.`);
       }
-      const converter = v8ToIstanbul(localPath, 0, { source: entry.source ?? localSource });
-      await converter.load();
-      converter.applyCoverage(entry.functions);
-      coverageMap.merge(converter.toIstanbul());
+    }
+
+    const report = {};
+    let incomplete = false;
+    for (const expectedSource of expectedBrowserSources) {
+      const localPath = path.join(repositoryRoot, expectedSource);
+      const fileCoverage = coverageMap.fileCoverageFor(localPath);
+      const metrics = metricSummary(fileCoverage);
+      const uncovered = uncoveredLocations(fileCoverage);
+      report[expectedSource] = { metrics, uncovered };
+      for (const metric of ['statements', 'branches', 'functions', 'lines']) {
+        if (metrics[metric].pct !== 100) incomplete = true;
+      }
+    }
+
+    await writeFile(
+      path.join(reportDirectory, 'browser-coverage-final.json'),
+      `${JSON.stringify(coverageMap.toJSON(), null, 2)}\n`,
+      'utf8',
+    );
+    await writeFile(
+      path.join(reportDirectory, 'browser-coverage-summary.json'),
+      `${JSON.stringify(report, null, 2)}\n`,
+      'utf8',
+    );
+    console.log('Browser production coverage:', JSON.stringify(report, null, 2));
+    if (incomplete) {
+      throw new Error('Browser production coverage is below 100% statement/branch/function/line coverage.');
     }
   }
-
-  for (const expectedSource of expectedBrowserSources) {
-    if (!observedSources.has(expectedSource)) {
-      throw new Error(`Browser coverage never observed required production source ${expectedSource}.`);
-    }
-  }
-
-  const report = {};
-  let incomplete = false;
-  for (const expectedSource of expectedBrowserSources) {
-    const localPath = path.join(repositoryRoot, expectedSource);
-    const fileCoverage = coverageMap.fileCoverageFor(localPath);
-    const metrics = metricSummary(fileCoverage);
-    const uncovered = uncoveredLocations(fileCoverage);
-    report[expectedSource] = { metrics, uncovered };
-    for (const metric of ['statements', 'branches', 'functions', 'lines']) {
-      if (metrics[metric].pct !== 100) incomplete = true;
-    }
-  }
-
-  await writeFile(
-    path.join(reportDirectory, 'browser-coverage-final.json'),
-    `${JSON.stringify(coverageMap.toJSON(), null, 2)}\n`,
-    'utf8',
-  );
-  await writeFile(
-    path.join(reportDirectory, 'browser-coverage-summary.json'),
-    `${JSON.stringify(report, null, 2)}\n`,
-    'utf8',
-  );
-  console.log('Browser production coverage:', JSON.stringify(report, null, 2));
-  if (incomplete) {
-    throw new Error('Browser production coverage is below 100% statement/branch/function/line coverage.');
-  }
+} catch (coverageError) {
+  process.exitCode = reportCoverageProcessingFailure(testRun.status, coverageError);
 }
