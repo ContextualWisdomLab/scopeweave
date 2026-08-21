@@ -616,7 +616,9 @@ function assertReconciliationReceipt(receipt, claim) {
  * reference. Tenant/Subscription authority comes from normalized server-owned state.
  * Replaying the same evidence reference is side-effect free. A new explicit reference
  * creates one new finite lease and attempt; failure returns immediately to dead-letter
- * state instead of reopening the automatic retry budget.
+ * state instead of reopening the automatic retry budget. Once provider reconciliation
+ * succeeds, any completion uncertainty fails closed without starting a contradictory
+ * failure transition against a lease whose durable state can no longer be trusted.
  *
  * @param {object} input recovery and reconciliation ports
  * @param {object} input.recoveryRepository tenant-scoped recovery repository
@@ -664,6 +666,7 @@ export async function retryStripeReconciliationDeadLetter({
   });
   if (claim.replayed) return claim;
 
+  let claimDecisionId;
   try {
     const receipt = await reconcile({
       ...reconciliationDependencies,
@@ -671,21 +674,7 @@ export async function retryStripeReconciliationDeadLetter({
       subscriptionId: claim.subscriptionId,
       sourceEventId: claim.eventId,
     });
-    const claimDecisionId = assertReconciliationReceipt(receipt, claim);
-    recoveryRepository.completeRecovery({
-      claim,
-      claimDecisionId,
-      workerRepository,
-    });
-    return Object.freeze({
-      status: 'succeeded',
-      replayed: false,
-      recoveryId: claim.recoveryId,
-      eventId: claim.eventId,
-      subscriptionId: claim.subscriptionId,
-      attemptNumber: claim.attemptNumber,
-      claimDecisionId,
-    });
+    claimDecisionId = assertReconciliationReceipt(receipt, claim);
   } catch (error) {
     const errorCode = safeFailureCode(error);
     try {
@@ -703,4 +692,24 @@ export async function retryStripeReconciliationDeadLetter({
       errorCode,
     });
   }
+
+  try {
+    recoveryRepository.completeRecovery({
+      claim,
+      claimDecisionId,
+      workerRepository,
+    });
+  } catch {
+    throw recoveryError('stripe_reconciliation_recovery_state_uncertain', 500);
+  }
+
+  return Object.freeze({
+    status: 'succeeded',
+    replayed: false,
+    recoveryId: claim.recoveryId,
+    eventId: claim.eventId,
+    subscriptionId: claim.subscriptionId,
+    attemptNumber: claim.attemptNumber,
+    claimDecisionId,
+  });
 }
