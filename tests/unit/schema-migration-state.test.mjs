@@ -13,6 +13,7 @@ import {
   classifySchemaMigrationState,
   ensureSchemaMigrationState,
   inspectSchemaBootstrapState,
+  runAtomicLegacySchemaBootstrap,
 } from '../../server/schema_migration.mjs';
 
 const REPOSITORY_ROOT = fileURLToPath(new URL('../..', import.meta.url));
@@ -196,6 +197,30 @@ test('pre-bootstrap inspection permits only pristine or complete known generatio
     /partial or mixed schema migration state/,
   );
   ledgerOnlyDatabase.close();
+});
+
+test('initial legacy bootstrap rolls back every table when DDL is interrupted', () => {
+  const database = new DatabaseSync(':memory:');
+
+  assert.throws(
+    () => runAtomicLegacySchemaBootstrap(database, `
+      CREATE TABLE users (id INTEGER PRIMARY KEY);
+      CREATE TABLE orgs (id INTEGER PRIMARY KEY);
+      THIS IS NOT VALID SQLITE;
+      CREATE TABLE memberships (id INTEGER PRIMARY KEY);
+    `),
+    /syntax error|near "THIS"/i,
+  );
+
+  const applicationTables = database.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+  ).all().map((row) => String(row.name));
+  assert.deepEqual(
+    applicationTables,
+    [],
+    'an interrupted first bootstrap must recover as pristine instead of becoming a permanent partial generation',
+  );
+  database.close();
 });
 
 test('database bootstrap never recreates legacy tables over a canonical generation', () => {
