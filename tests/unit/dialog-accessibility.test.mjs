@@ -133,6 +133,31 @@ assert.equal(
   'mutation batches must scan only added subtrees instead of rescanning the full document',
 );
 
+const delayedDialog = new FakeDialog();
+FakeMutationObserver.latest.callback([{ addedNodes: [delayedDialog] }]);
+assert.equal(delayedDialog.getAttribute('aria-label'), null);
+const delayedHeading = {
+  textContent: '나중에 추가된 제목',
+  parentElement: {
+    closest(selector) {
+      assert.equal(selector, unnamedSelector);
+      return delayedDialog;
+    },
+  },
+};
+delayedDialog.heading = delayedHeading;
+FakeMutationObserver.latest.callback([{ addedNodes: [delayedHeading] }]);
+assert.equal(
+  delayedDialog.getAttribute('aria-label'),
+  '나중에 추가된 제목',
+  'a dialog inserted before its heading must be labeled when that heading is added later',
+);
+assert.equal(
+  documentQueryCount,
+  documentScansBeforeMutation,
+  'delayed dialog labeling must remain bounded to the mutated subtree and ancestor dialog',
+);
+
 const anotherDialog = new FakeDialog({ heading: { textContent: '추가 프로젝트 대화상자' } });
 dialogs.push(anotherDialog);
 assert.equal(labelUnnamedDialogs(fakeDocument), 1);
