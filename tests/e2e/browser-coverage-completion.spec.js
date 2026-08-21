@@ -154,3 +154,28 @@ test('a free-plan upgrade follows the live checkout redirect returned by the pro
   ]);
   await expect(page).toHaveTitle('Checkout redirect target');
 });
+
+test('a demo billing checkout explains the missing provider key without navigating away', async ({ page }) => {
+  await loginAndOpen(page);
+  const plannerUrl = page.url();
+  let checkoutRequests = 0;
+
+  await page.route('**/api/orgs/*/checkout', async (route) => {
+    checkoutRequests += 1;
+    expect(route.request().method()).toBe('POST');
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ mock: true, url: null }),
+    });
+  });
+
+  await page.getByRole('button', { name: '팀', exact: true }).click();
+  const upgrade = page.locator('#team-body .billing-upgrade');
+  await expect(upgrade).toBeVisible();
+  await upgrade.click();
+
+  await expect(page.locator('#toast')).toContainText('결제 연동(Stripe 키)이 필요합니다 — 데모 환경입니다.');
+  expect(checkoutRequests).toBe(1);
+  await expect(page).toHaveURL(plannerUrl);
+});
