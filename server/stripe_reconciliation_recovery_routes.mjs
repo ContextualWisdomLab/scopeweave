@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 
 import { hashApiToken, verifyToken } from './auth.mjs';
 import {
@@ -7,6 +8,8 @@ import {
   stripeReconciliationRecoveries,
 } from './db.mjs';
 import { StripeReconciliationRecoveryError } from './stripe_reconciliation_recovery.mjs';
+
+const MAX_RECOVERY_REQUEST_BYTES = 4 * 1024;
 
 function organizationRole(userId, organizationId) {
   return db.prepare('SELECT role FROM memberships WHERE user_id = ? AND org_id = ?')
@@ -84,6 +87,9 @@ function auditRecovery(organizationId, actorUserId, result) {
  * The route graph deliberately exposes no lease token, provider secret, raw webhook
  * payload, or caller-selected Subscription identity. Owners/admins can inspect their
  * bounded backlog and retry one exact verified Event using a durable evidence reference.
+ * Recovery JSON is capped at 4 KiB by Hono's body-limit middleware, which checks both
+ * declared Content-Length and streamed bytes before the JSON parser can buffer an
+ * unbounded privileged request.
  */
 export const stripeReconciliationRecoveryRoutes = new Hono();
 
@@ -116,6 +122,14 @@ stripeReconciliationRecoveryRoutes.get(
 stripeReconciliationRecoveryRoutes.post(
   '/api/orgs/:id/billing/reconciliation/dead-letters/:eventId/retry',
   requireRecoveryAuth,
+  bodyLimit({
+    maxSize: MAX_RECOVERY_REQUEST_BYTES,
+    onError: (c) => c.json(
+      { error: 'stripe_reconciliation_recovery_body_too_large' },
+      413,
+      { 'Cache-Control': 'no-store' },
+    ),
+  }),
   async (c) => {
     const actorUserId = c.get('recoveryUserId');
     const organizationId = Number(c.req.param('id'));
