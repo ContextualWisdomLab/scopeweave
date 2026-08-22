@@ -25,6 +25,8 @@ This slice deliberately remains a staged migration. It adds the durable subscrip
 
 The create and rotate responses expose the 256-bit random subscription secret exactly once. Lifecycle listing never returns the plaintext secret, its SHA-256 hash, or the membership epoch. The returned feed path uses `subscription=` rather than `token=` and the reusable credential cannot authorize JSON APIs, SSE, attachments, another project, or another audience.
 
+Calendar-subscription create and rotate JSON bodies are capped at 4 KiB by Hono's `bodyLimit` middleware before JSON parsing. The same ceiling applies to an oversized declared `Content-Length` and to streamed request bytes when no length is declared. Oversized requests return the stable `calendar_subscription_body_too_large` error with HTTP 413 and `Cache-Control: no-store` before the calendar domain service or durable subscription state can be mutated.
+
 A subscription feed request is accepted only when all of these are true:
 
 - the secret has the required format and resolves to the current stored SHA-256 hash;
@@ -60,11 +62,16 @@ Two later feed-validity repairs were also established with executed RED evidence
 
 The interoperability repair was likewise test-first. Test-only head `e3bd931539f19ea342042a7c11aeaab78fe7af1e` added a long Korean task summary and required every physical iCalendar line to remain within 75 UTF-8 octets while unfolding preserved the complete Unicode value. Server Tests run `32583307921`, `unit-and-api` job `97055782749`, failed at the intended assertion because the renderer emitted an overlong line. Production commit `a73f974efc81085703fe3fe49233fce2162aebca` added UTF-8-safe RFC 5545 content-line folding. Server Tests run `32583381045` then completed successfully: `unit-and-api` job `97055956846` passed the registered API regression and the full unit/API suite, and `cloud-e2e` job `97055956941` passed. Dependency Review `32583381120` and OSV Scanner `32583381290` were also terminal success on that contributor head. The hosted Server Tests checked synthetic merge `cdac7ea7f6f61642d79b959691d74f2fe88317b9` (`Merge a73f974e... into 422f754e...`), so this is causal merge-result evidence rather than exact-contributor-head merge authorization until #523 reaches protected `develop`.
 
+Fresh source inspection then found a separate resource-boundary defect: create and rotate called `c.req.json()` without a request-body byte ceiling. The registered RED head `6127c8f022d079dcaed202edf15179746d17b2ce` added `tests/api/calendar-subscription-body-limit.test.mjs` and required both an oversized declared body and an oversized streamed body to fail before persistence. Server Tests run `32584476314`, `unit-and-api` job `97058694218`, failed at the intended declared-body assertion with HTTP 400 instead of the required 413, proving the application reached JSON/domain handling without a transport bound. That runner checked synthetic merge `568b372d310933999618d0c8d0329fef5540bb77` (`Merge 6127c8f... into 422f754e...`).
+
+Production commit `f990b985e1b6437a7309a65d9d1a6ca898fafc64` added Hono `bodyLimit` at 4 KiB only to the create/rotate management routes. Server Tests run `32584561011` then completed successfully: `unit-and-api` job `97058880349` passed the registered declared/streamed body regressions and full unit/API suite, and `cloud-e2e` job `97058880463` passed. Dependency Review `32584560985` and OSV Scanner `32584561245` were also terminal success. The hosted Server Tests checked synthetic merge `1fb30735a7d1846afdc6b87d05410bcae3f6c9a6` (`Merge f990b985... into 422f754e...`); therefore this is causal merge-result GREEN evidence and not exact-contributor-head merge authority while #523 remains outside protected `develop`.
+
 The current regression covers:
 
 - unauthenticated and cross-tenant management rejection;
 - stable invalid-request status mapping;
 - create/list and one-time secret disclosure;
+- declared and streamed oversized create/rotate body rejection before durable state mutation;
 - project/purpose/audience-bound feed authorization;
 - private/no-store/no-referrer/nosniff response policy;
 - malformed, impossible, and unrepresentable-exclusive-end task-date omission;
