@@ -122,6 +122,14 @@ globalThis.fetch = async (input, init) => {
   if (code === 'wrong-nonce-code') {
     return Response.json({ id_token: signIdToken({ ...baseClaims, nonce: 'attacker-nonce' }) });
   }
+  if (code === 'future-not-before-code') {
+    return Response.json({
+      id_token: signIdToken({
+        ...baseClaims,
+        nbf: now + 120,
+      }),
+    });
+  }
   if (code === 'cancelled-code') {
     callbackAbortController.abort();
     observedUpstreamAbort = request.signal.aborted;
@@ -196,6 +204,13 @@ try {
   const wrongNonce = await callback('wrong-nonce-code');
   assert.equal(wrongNonce.status, 400, 'an ID token from another authorization flow is rejected');
 
+  const futureNotBefore = await callback('future-not-before-code');
+  assert.equal(
+    futureNotBefore.status,
+    400,
+    'a signed ID token must not be accepted before its nbf time, beyond the allowed clock skew',
+  );
+
   const cancelledState = await startFlow('cancelled-code');
   callbackAbortController = new AbortController();
   const cancelled = await app.request(new Request(
@@ -269,4 +284,4 @@ try {
   delete process.env.SCOPEWEAVE_DEV;
 }
 
-console.log('oidc discovery, private-endpoint, validation, cancellation, inclusive facade expiry, redirect, timeout, bounded JWKS reuse, and state-capacity regression passed');
+console.log('oidc discovery, private-endpoint, validation, not-before, cancellation, inclusive facade expiry, redirect, timeout, bounded JWKS reuse, and state-capacity regression passed');
