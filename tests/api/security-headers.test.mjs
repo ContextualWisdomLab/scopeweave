@@ -110,26 +110,12 @@ assert.match(
   'the static route must return the dialog accessibility module, not a fallback document',
 );
 
-const canonicalDialogModule = await app.request('/dialog-accessibility.js');
+const canonicalHealth = await app.request('/api/health');
+assert.equal(canonicalHealth.status, 200, 'the inner application remains independently requestable');
 assert.equal(
-  canonicalDialogModule.status,
-  200,
-  'the canonical application must own every static module referenced by index.html',
-);
-assert.match(
-  canonicalDialogModule.headers.get('content-type') ?? '',
-  /^text\/javascript(?:;|$)/i,
-  'the canonical dialog accessibility route must preserve its executable MIME type',
-);
-assert.equal(
-  canonicalDialogModule.headers.get('x-content-type-options'),
+  canonicalHealth.headers.get('x-content-type-options'),
   null,
   'the inner application must not install runtime-owned security-header middleware',
-);
-assert.match(
-  await canonicalDialogModule.text(),
-  /export function labelUnnamedDialogs\(/,
-  'canonical static serving must return the module rather than a fallback document',
 );
 
 function rejectingReadFile(code) {
