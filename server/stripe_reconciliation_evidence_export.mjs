@@ -101,6 +101,13 @@ function payloadSha256Value(value) {
   return value;
 }
 
+function leaseTokenSha256Value(value) {
+  if (typeof value !== 'string' || !PAYLOAD_SHA256_PATTERN.test(value)) {
+    throw exportError(undefined, 500);
+  }
+  return value;
+}
+
 function processingStateValue(value) {
   if (!PROCESSING_STATES.has(value)) throw exportError(undefined, 500);
   return value;
@@ -193,6 +200,10 @@ function frozenEvent(row, attempts, recoveries) {
   const lastErrorCode = nullableErrorCode(row.last_error_code);
   const claimDecisionId = nullablePositiveInteger(row.claim_decision_id);
   const attemptCount = nonNegativeInteger(row.attempt_count);
+  const leaseTokenSha256 = row.lease_token_sha256 == null
+    ? null
+    : leaseTokenSha256Value(row.lease_token_sha256);
+  const leaseExpiresAtMs = nullableNonNegativeInteger(row.lease_expires_at_ms);
   if (
     attempts.length !== attemptCount
     || attempts.some((attempt, index) => attempt.attemptNumber !== index + 1)
@@ -231,6 +242,16 @@ function frozenEvent(row, attempts, recoveries) {
     || (processingState === 'dead_letter'
       && (latestAttempt == null || latestAttempt.outcome !== 'dead_letter'));
   if (latestAttemptLifecycleInvalid) throw exportError(undefined, 500);
+
+  const leaseLifecycleInvalid = processingState === 'processing'
+    ? (
+      leaseTokenSha256 == null
+      || leaseExpiresAtMs == null
+      || latestAttempt == null
+      || leaseExpiresAtMs !== latestAttempt.leaseExpiresAtMs
+    )
+    : leaseTokenSha256 != null || leaseExpiresAtMs != null;
+  if (leaseLifecycleInvalid) throw exportError(undefined, 500);
 
   return Object.freeze({
     eventId: boundedIdentifier(row.event_id),
@@ -282,6 +303,8 @@ export function createSqliteStripeReconciliationEvidenceExportRepository(databas
       j.processing_state,
       j.attempt_count,
       j.next_attempt_at_ms,
+      j.lease_token_sha256,
+      j.lease_expires_at_ms,
       j.completed_at_ms,
       j.last_error_code,
       j.claim_decision_id
