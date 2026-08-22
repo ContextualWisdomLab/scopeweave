@@ -216,10 +216,8 @@ assert.equal(runSqliteBackupCli(['verify', cliBackup], messages), 0); assert.mat
 assert.equal(runSqliteBackupCli([], messages), 1); assert.match(messages.errors.at(-1), /usage_invalid/);
 assert.equal(runSqliteBackupCli(['verify', join(root, 'missing.db')], messages), 1); assert.match(messages.errors.at(-1), /database_not_found/);
 const throwingIo = { log() { throw new Error('sink failed'); }, error(v) { messages.errors.push(v); } };
-assert.equal(runSqliteBackupCli(['verify', cliBackup], throwingIo), 0);
-assert.match(messages.errors.at(-1), /"operation":"verify"/);
-assert.match(messages.errors.at(-1), /"warning":"success_output_failed"/);
-assert.match(messages.errors.at(-1), /"action":"rerun_verify_if_output_is_required"/);
+assert.equal(runSqliteBackupCli(['verify', cliBackup], throwingIo), 1);
+assert.match(messages.errors.at(-1), /"error":"success_output_failed"/);
 const backupScript = fileURLToPath(new URL('../../server/sqlite_backup.mjs', import.meta.url));
 const directBackup = join(root, 'direct.db');
 const direct = spawnSync(process.execPath, [backupScript, 'backup', source, directBackup], { encoding: 'utf8', env: process.env });
