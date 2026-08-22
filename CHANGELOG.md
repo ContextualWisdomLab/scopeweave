@@ -24,6 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   membership-revocation, random-source, clock, audit, and atomic repository
   ports. Route, database, calendar-subscription, and client migration remain
   follow-up work under issue #413.
+- Added a separate framework-neutral calendar-subscription credential domain
+  with one-time secret display on create/rotate, hash-only persistence ports,
+  project-scoped management, reusable `calendar_read` authorization, issuance
+  membership-epoch binding so remove-then-rejoin cannot revive a secret,
+  a 366-day create/rotate lifetime cap, exact-expiry rejection, safe lifecycle
+  metadata, rotation, revocation, and usage evidence. Runtime route, database
+  adapter/migration, and UI implementation remain follow-up work under issue
+  #413; the required calendar-management interaction contract is captured in
+  Figma and traced in the doctoring record.
 
 ### Security
 
@@ -112,7 +121,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `wbs.json` seed loading plus browser autosave and optional file sync.
 - Playwright E2E coverage for add/edit hierarchy flows, delete
   confirmation, subtree drag-and-drop, and JSON sync shape.
-- GitHub Pages deployment workflow and operator documentation.
+- `wbs.json` seed loading plus browser autosave and optional file sync.
 
 ## [1.0.1] - 2026-06-25
 ### 성능 개선 (Performance)
