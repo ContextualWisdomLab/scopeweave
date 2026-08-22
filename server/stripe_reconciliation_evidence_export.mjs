@@ -15,6 +15,7 @@ const ATTEMPT_OUTCOMES = new Set(['succeeded', 'retry', 'dead_letter']);
 const RECOVERY_OUTCOMES = new Set(['succeeded', 'dead_letter']);
 const CONTROL_CHARACTER_PATTERN = /[\u0000-\u001f\u007f]/u;
 const SCHEMA_VERSION = 'scopeweave.stripe-reconciliation-evidence/v1';
+const READ_SNAPSHOT_SAVEPOINT = 'scopeweave_stripe_reconciliation_evidence_export';
 
 /** Stable fail-closed error for tenant reconciliation evidence exports. */
 export class StripeReconciliationEvidenceExportError extends Error {
@@ -273,6 +274,40 @@ function frozenEvent(row, attempts, recoveries) {
 }
 
 /**
+ * Run a synchronous evidence read inside one composable SQLite read snapshot.
+ *
+ * A SAVEPOINT is used instead of a bare BEGIN so this repository can be called
+ * inside an outer transaction. SQLite fixes the read view on the first SELECT;
+ * every count, history read, and validation therefore describes one database
+ * moment even when a WAL-mode reconciliation writer commits concurrently.
+ *
+ * @param {import('node:sqlite').DatabaseSync} database SQLite database
+ * @param {()=>any} operation synchronous evidence read operation
+ * @returns {any} operation result after the snapshot is released
+ */
+function withReadSnapshot(database, operation) {
+  let snapshotStarted = false;
+  try {
+    database.exec(`SAVEPOINT ${READ_SNAPSHOT_SAVEPOINT}`);
+    snapshotStarted = true;
+    const result = operation();
+    database.exec(`RELEASE SAVEPOINT ${READ_SNAPSHOT_SAVEPOINT}`);
+    return result;
+  } catch (error) {
+    if (!snapshotStarted) {
+      throw exportError('stripe_reconciliation_evidence_export_snapshot_failed', 500);
+    }
+    try {
+      database.exec(`ROLLBACK TO SAVEPOINT ${READ_SNAPSHOT_SAVEPOINT}`);
+      database.exec(`RELEASE SAVEPOINT ${READ_SNAPSHOT_SAVEPOINT}`);
+    } catch {
+      throw exportError('stripe_reconciliation_evidence_export_snapshot_failed', 500);
+    }
+    throw error;
+  }
+}
+
+/**
  * Create the read-only tenant evidence export repository.
  *
  * Tenant authority is derived exclusively through the normalized persisted
@@ -280,15 +315,17 @@ function frozenEvent(row, attempts, recoveries) {
  * webhook payloads, provider credentials, active lease-token hashes, or free-form
  * recovery evidence text. Operator evidence remains correlatable through SHA-256.
  * Event selection is capped at 100 and the combined nested attempt/recovery history
- * is capped at 1,000 rows before those histories are materialized.
+ * is capped at 1,000 rows before those histories are materialized. Every exported
+ * document is read from one SQLite snapshot so the row cap and lifecycle evidence
+ * cannot be invalidated by a concurrent reconciliation commit.
  *
  * @param {import('node:sqlite').DatabaseSync} database bootstrapped SQLite database
  * @returns {{exportTenantEvidence(input:{organizationId:number,limit?:number}):Readonly<object>}}
  * bounded read-only evidence port
  */
 export function createSqliteStripeReconciliationEvidenceExportRepository(database) {
-  if (!database || typeof database.prepare !== 'function') {
-    throw new TypeError('database must provide SQLite prepare operations');
+  if (!database || typeof database.prepare !== 'function' || typeof database.exec !== 'function') {
+    throw new TypeError('database must provide SQLite prepare and exec operations');
   }
 
   const selectEvents = database.prepare(`
@@ -348,30 +385,33 @@ export function createSqliteStripeReconciliationEvidenceExportRepository(databas
     exportTenantEvidence({ organizationId, limit } = {}) {
       const tenantId = positiveInteger(organizationId);
       const eventLimit = eventLimitValue(limit);
-      const eventRows = selectEvents.all(tenantId, eventLimit);
 
-      let nestedRows = 0;
-      for (const row of eventRows) {
-        const eventId = boundedIdentifier(row.event_id);
-        const count = countNestedEvidence.get(eventId, eventId)?.evidence_row_count;
-        const normalizedCount = nonNegativeInteger(count);
-        nestedRows += normalizedCount;
-        if (!Number.isSafeInteger(nestedRows) || nestedRows > MAX_NESTED_EVIDENCE_ROWS) {
-          throw exportError('stripe_reconciliation_evidence_export_too_large', 413);
+      return withReadSnapshot(database, () => {
+        const eventRows = selectEvents.all(tenantId, eventLimit);
+
+        let nestedRows = 0;
+        for (const row of eventRows) {
+          const eventId = boundedIdentifier(row.event_id);
+          const count = countNestedEvidence.get(eventId, eventId)?.evidence_row_count;
+          const normalizedCount = nonNegativeInteger(count);
+          nestedRows += normalizedCount;
+          if (!Number.isSafeInteger(nestedRows) || nestedRows > MAX_NESTED_EVIDENCE_ROWS) {
+            throw exportError('stripe_reconciliation_evidence_export_too_large', 413);
+          }
         }
-      }
 
-      const events = eventRows.map((row) => {
-        const eventId = boundedIdentifier(row.event_id);
-        const attempts = selectAttempts.all(eventId).map(frozenAttempt);
-        const recoveries = selectRecoveries.all(eventId).map(frozenRecovery);
-        return frozenEvent(row, attempts, recoveries);
-      });
+        const events = eventRows.map((row) => {
+          const eventId = boundedIdentifier(row.event_id);
+          const attempts = selectAttempts.all(eventId).map(frozenAttempt);
+          const recoveries = selectRecoveries.all(eventId).map(frozenRecovery);
+          return frozenEvent(row, attempts, recoveries);
+        });
 
-      return Object.freeze({
-        schemaVersion: SCHEMA_VERSION,
-        organizationId: tenantId,
-        events: Object.freeze(events),
+        return Object.freeze({
+          schemaVersion: SCHEMA_VERSION,
+          organizationId: tenantId,
+          events: Object.freeze(events),
+        });
       });
     },
   });
