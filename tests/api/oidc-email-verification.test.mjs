@@ -141,6 +141,12 @@ try {
     'an ID token with a provider-verified email can create the federated session',
   );
   const initialUserId = sessionSubject(verified);
+  const metricsAfterVerified = await (await app.request('/api/metrics')).json();
+  assert.equal(
+    metricsAfterVerified.signups,
+    1,
+    'a first-time federated account increments the same signup counter as password registration',
+  );
 
   const reassigned = await callback('reassigned-email-code');
   assert.equal(
@@ -243,6 +249,12 @@ try {
     retryAfterLinkFailure.status,
     302,
     'a transient identity-link persistence failure remains safely retryable',
+  );
+  const metricsAfterRetry = await (await app.request('/api/metrics')).json();
+  assert.equal(
+    metricsAfterRetry.signups,
+    3,
+    'only committed password or federated account creation increments signup metrics',
   );
 } finally {
   globalThis.fetch = originalFetch;
