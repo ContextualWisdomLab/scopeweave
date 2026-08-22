@@ -17,7 +17,9 @@ const jwksEndpoint = 'http://127.0.0.1:19104/jwks';
 const primaryEmail = 'verified@scopeweave.test';
 const renamedEmail = 'renamed@scopeweave.test';
 const passwordEmail = 'password-account@scopeweave.test';
+const linkFailureEmail = 'link-failure@scopeweave.test';
 const primarySubject = 'oidc-subject-verified';
+const linkFailureSubject = 'oidc-subject-link-failure';
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const publicJwk = {
   ...publicKey.export({ format: 'jwk' }),
@@ -60,6 +62,11 @@ const claimCases = {
   'password-email-code': {
     sub: 'oidc-subject-password-collision',
     email: passwordEmail,
+    email_verified: true,
+  },
+  'link-failure-code': {
+    sub: linkFailureSubject,
+    email: linkFailureEmail,
     email_verified: true,
   },
   'unverified-email-code': {
@@ -194,6 +201,48 @@ try {
     identityLinks,
     [{ issuer, subject: primarySubject, userId: Number(initialUserId) }],
     'the durable federated identity key is the verified issuer/subject pair',
+  );
+
+  const beforeLinkFailure = {
+    users: db.prepare('SELECT COUNT(*) AS count FROM users').get().count,
+    orgs: db.prepare('SELECT COUNT(*) AS count FROM orgs').get().count,
+    memberships: db.prepare('SELECT COUNT(*) AS count FROM memberships').get().count,
+  };
+  db.exec(`
+    CREATE TRIGGER fail_oidc_identity_link
+    BEFORE INSERT ON oidc_identity_links
+    WHEN NEW.subject_identifier = '${linkFailureSubject}'
+    BEGIN
+      SELECT RAISE(ABORT, 'simulated OIDC identity-link persistence failure');
+    END;
+  `);
+  await assert.rejects(
+    () => callback('link-failure-code'),
+    /simulated OIDC identity-link persistence failure/,
+    'identity-link persistence failure is surfaced instead of returning an unbound session',
+  );
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS count FROM users').get().count,
+    beforeLinkFailure.users,
+    'failed identity-link persistence must not leave an orphan local user',
+  );
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS count FROM orgs').get().count,
+    beforeLinkFailure.orgs,
+    'failed identity-link persistence must not leave an orphan personal workspace',
+  );
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS count FROM memberships').get().count,
+    beforeLinkFailure.memberships,
+    'failed identity-link persistence must not leave an orphan owner membership',
+  );
+  db.exec('DROP TRIGGER fail_oidc_identity_link');
+
+  const retryAfterLinkFailure = await callback('link-failure-code');
+  assert.equal(
+    retryAfterLinkFailure.status,
+    302,
+    'a transient identity-link persistence failure remains safely retryable',
   );
 } finally {
   globalThis.fetch = originalFetch;
