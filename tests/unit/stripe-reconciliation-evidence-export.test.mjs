@@ -314,6 +314,27 @@ db.exec(`
    WHERE event_id = 'evt_one_old' AND recovery_id = 1;
 `);
 
+// Recovery outcome is written atomically with the exact worker attempt. A damaged
+// restore must not serialize success when its linked worker attempt is durable
+// dead-letter evidence.
+db.exec(`
+  UPDATE billing_stripe_reconciliation_recoveries
+     SET outcome = 'succeeded', error_code = NULL, claim_decision_id = 42
+   WHERE event_id = 'evt_one_old' AND recovery_id = 1;
+`);
+assert.throws(
+  () => repository.exportTenantEvidence({ organizationId: 1, limit: 10 }),
+  (error) => error instanceof StripeReconciliationEvidenceExportError
+    && error.status === 500,
+  'recovery outcome must agree with its linked worker attempt',
+);
+db.exec(`
+  UPDATE billing_stripe_reconciliation_recoveries
+     SET outcome = 'dead_letter', error_code = 'stripe_reconciliation_failed',
+         claim_decision_id = NULL
+   WHERE event_id = 'evt_one_old' AND recovery_id = 1;
+`);
+
 // attempt_count is the worker's durable count of append-only attempts. If a damaged
 // restore loses an attempt row, the export must not present a plausible but incomplete
 // audit history merely because the surviving attempt numbers are individually valid.
