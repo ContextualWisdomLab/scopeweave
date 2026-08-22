@@ -124,7 +124,9 @@ try {
     },
     prepare(sql) {
       const statement = reader.prepare(sql);
-      if (!sql.includes('FROM billing_stripe_reconciliation_attempts')) return statement;
+      const isAttemptMaterialization = sql.includes('FROM billing_stripe_reconciliation_attempts')
+        && sql.includes('ORDER BY attempt_number ASC');
+      if (!isAttemptMaterialization) return statement;
       return {
         all(...parameters) {
           if (!writerCommitted) {
