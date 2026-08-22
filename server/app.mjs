@@ -751,32 +751,6 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
   if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
-
-  // SSRF protection: basic blocklist for loopback, private, and link-local ranges, plus common internal domains
-  let parsedUrl;
-  try {
-    parsedUrl = new URL(url);
-  } catch {
-    return c.json({ error: 'invalid url format' }, 400);
-  }
-  const host = parsedUrl.hostname.toLowerCase();
-
-  if (
-    host === 'localhost' ||
-    host.endsWith('.localhost') ||
-    host.endsWith('.internal') ||
-    host === '169.254.169.254' ||
-    host === '127.0.0.1' ||
-    host === '::1' ||
-    /^127\.\d+\.\d+\.\d+$/.test(host) ||
-    /^10\.\d+\.\d+\.\d+$/.test(host) ||
-    /^192\.168\.\d+\.\d+$/.test(host) ||
-    /^172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+$/.test(host) ||
-    /^169\.254\.\d+\.\d+$/.test(host)
-  ) {
-    return c.json({ error: 'webhook url cannot point to internal or private addresses' }, 400);
-  }
-
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
