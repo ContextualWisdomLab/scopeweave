@@ -115,6 +115,46 @@ test('invalid webhook credentials cannot force unbounded pre-auth body buffering
   );
 });
 
+test('public auth rejects an oversized streaming body before unbounded buffering', async () => {
+  let bodyPulls = 0;
+  const chunk = new Uint8Array(8 * 1024).fill(0x20);
+  const requestBody = new ReadableStream({
+    pull(controller) {
+      bodyPulls += 1;
+      if (bodyPulls > 20) {
+        controller.close();
+        return;
+      }
+      controller.enqueue(chunk);
+    },
+  }, { highWaterMark: 0 });
+  const oversizedLogin = new Request(
+    'http://localhost/api/auth/login',
+    {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: requestBody,
+      duplex: 'half',
+    },
+  );
+
+  const response = await app.request(oversizedLogin);
+  assert.equal(
+    response.status,
+    413,
+    'public login rejects a body that exceeds the bounded authentication budget',
+  );
+  assert.deepEqual(
+    await response.json(),
+    { error: 'authentication request body too large' },
+    'oversized public authentication uses a stable non-secret rejection contract',
+  );
+  assert.ok(
+    bodyPulls <= 3,
+    `authentication parsing must stop at the bounded request budget; observed ${bodyPulls} pulls`,
+  );
+});
+
 test('signed webhook Request inputs stay behind the SSRF destination policy', async () => {
   const signedRequest = new Request('https://127.0.0.1/internal', {
     method: 'POST',
