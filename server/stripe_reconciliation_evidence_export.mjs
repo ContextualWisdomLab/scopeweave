@@ -134,8 +134,13 @@ function evidenceReferenceDigest(value) {
 
 function frozenAttempt(row) {
   const outcome = nullableOutcome(row.outcome, ATTEMPT_OUTCOMES);
+  const leaseStartedAtMs = nonNegativeInteger(row.lease_started_at_ms);
+  const leaseExpiresAtMs = nonNegativeInteger(row.lease_expires_at_ms);
   const finishedAtMs = nullableNonNegativeInteger(row.finished_at_ms);
   const errorCode = nullableErrorCode(row.error_code);
+  if (leaseExpiresAtMs < leaseStartedAtMs || (finishedAtMs != null && finishedAtMs < leaseStartedAtMs)) {
+    throw exportError(undefined, 500);
+  }
   if (outcome == null && (finishedAtMs != null || errorCode != null)) throw exportError(undefined, 500);
   if (outcome === 'succeeded' && errorCode != null) throw exportError(undefined, 500);
   if ((outcome === 'retry' || outcome === 'dead_letter') && errorCode == null) {
@@ -144,8 +149,8 @@ function frozenAttempt(row) {
 
   return Object.freeze({
     attemptNumber: positiveInteger(Number(row.attempt_number)),
-    leaseStartedAtMs: nonNegativeInteger(row.lease_started_at_ms),
-    leaseExpiresAtMs: nonNegativeInteger(row.lease_expires_at_ms),
+    leaseStartedAtMs,
+    leaseExpiresAtMs,
     finishedAtMs,
     outcome,
     errorCode,
