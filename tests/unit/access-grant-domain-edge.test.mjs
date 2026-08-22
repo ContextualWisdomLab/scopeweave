@@ -95,6 +95,17 @@ for (const nowMs of [() => Number.NaN, () => -1]) {
   }), (error) => error.code === 'access_grant_unauthorized');
 }
 
+{
+  const service = createAccessGrantService(validPorts());
+  await assert.rejects(service.mint({
+    subjectId: 'prototype-user',
+    projectId: 'prototype-project',
+    purpose: 'toString',
+    audience: Object.prototype.toString,
+    ttlSeconds: 10,
+  }), (error) => error.code === 'access_grant_request_invalid' && error.status === 400);
+}
+
 for (const membershipVersion of [
   undefined,
   null,
@@ -220,6 +231,31 @@ for (const membershipVersion of [
     purpose: 'stream',
     audience: 'scopeweave:stream',
     projectId: 'return-boundary-project',
+  }), (error) => error.code === 'access_grant_unauthorized' && error.status === 401);
+}
+
+{
+  const repository = new ConsumableRepository();
+  repository.consumeGrantAtomically = async (hash, expected) => {
+    const record = repository.records.get(hash);
+    if (!record) return null;
+    record.used_at_ms = expected.now_ms;
+    record.subject_id = 'mutated-subject';
+    return structuredClone(record);
+  };
+  const service = createAccessGrantService({ ...validPorts(), repository });
+  const grant = await service.mint({
+    subjectId: 'alias-boundary-user',
+    projectId: 'alias-boundary-project',
+    purpose: 'stream',
+    audience: 'scopeweave:stream',
+    ttlSeconds: 10,
+  });
+  await assert.rejects(service.redeem({
+    secret: grant.secret,
+    purpose: 'stream',
+    audience: 'scopeweave:stream',
+    projectId: 'alias-boundary-project',
   }), (error) => error.code === 'access_grant_unauthorized' && error.status === 401);
 }
 
