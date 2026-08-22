@@ -7,9 +7,23 @@ import {
   recoverStripeBillingDeadLetter,
   stripeReconciliationRecoveries,
 } from './db.mjs';
+import {
+  StripeReconciliationEvidenceExportError,
+  createSqliteStripeReconciliationEvidenceExportRepository,
+} from './stripe_reconciliation_evidence_export.mjs';
 import { StripeReconciliationRecoveryError } from './stripe_reconciliation_recovery.mjs';
 
 const MAX_RECOVERY_REQUEST_BYTES = 4 * 1024;
+const EVIDENCE_EXPORT_HEADERS = Object.freeze({
+  'Cache-Control': 'no-store',
+  'X-Content-Type-Options': 'nosniff',
+});
+const EVIDENCE_EXPORT_DOWNLOAD_HEADERS = Object.freeze({
+  ...EVIDENCE_EXPORT_HEADERS,
+  'Content-Disposition': 'attachment; filename="scopeweave-stripe-reconciliation-evidence.json"',
+});
+const stripeReconciliationEvidenceExports =
+  createSqliteStripeReconciliationEvidenceExportRepository(db);
 
 function organizationRole(userId, organizationId) {
   return db.prepare('SELECT role FROM memberships WHERE user_id = ? AND org_id = ?')
@@ -56,6 +70,17 @@ function recoveryFailure(c, error) {
   );
 }
 
+function evidenceExportFailure(c, error) {
+  if (error instanceof StripeReconciliationEvidenceExportError) {
+    return c.json({ error: error.code }, error.status, EVIDENCE_EXPORT_HEADERS);
+  }
+  return c.json(
+    { error: 'stripe_reconciliation_evidence_export_unavailable' },
+    500,
+    EVIDENCE_EXPORT_HEADERS,
+  );
+}
+
 function auditRecovery(organizationId, actorUserId, result) {
   try {
     db.prepare(`
@@ -82,16 +107,42 @@ function auditRecovery(organizationId, actorUserId, result) {
 }
 
 /**
- * Tenant-scoped operator API for Stripe reconciliation dead-letter recovery.
+ * Tenant-scoped operator API for Stripe reconciliation evidence and dead-letter recovery.
  *
  * The route graph deliberately exposes no lease token, provider secret, raw webhook
- * payload, or caller-selected Subscription identity. Owners/admins can inspect their
- * bounded backlog and retry one exact verified Event using a durable evidence reference.
- * Recovery JSON is capped at 4 KiB by Hono's body-limit middleware, which checks both
- * declared Content-Length and streamed bytes before the JSON parser can buffer an
- * unbounded privileged request.
+ * payload, or caller-selected Subscription identity. Owners/admins can export their
+ * bounded reconciliation evidence, inspect their bounded backlog, and retry one exact
+ * verified Event using a durable evidence reference. Recovery JSON is capped at 4 KiB
+ * by Hono's body-limit middleware, which checks declared Content-Length and streamed
+ * bytes before the JSON parser can buffer an unbounded privileged request.
  */
 export const stripeReconciliationRecoveryRoutes = new Hono();
+
+stripeReconciliationRecoveryRoutes.get(
+  '/api/orgs/:id/billing/reconciliation/evidence',
+  requireRecoveryAuth,
+  (c) => {
+    const actorUserId = c.get('recoveryUserId');
+    const organizationId = Number(c.req.param('id'));
+    const role = Number.isSafeInteger(organizationId) && organizationId > 0
+      ? organizationRole(actorUserId, organizationId)
+      : null;
+    if (!role) return c.json({ error: 'not found' }, 404, EVIDENCE_EXPORT_HEADERS);
+    if (!canManage(role)) return c.json({ error: 'forbidden' }, 403, EVIDENCE_EXPORT_HEADERS);
+
+    const rawLimit = c.req.query('limit');
+    const limit = rawLimit === undefined ? undefined : Number(rawLimit);
+    try {
+      const report = stripeReconciliationEvidenceExports.exportTenantEvidence({
+        organizationId,
+        limit,
+      });
+      return c.json(report, 200, EVIDENCE_EXPORT_DOWNLOAD_HEADERS);
+    } catch (error) {
+      return evidenceExportFailure(c, error);
+    }
+  },
+);
 
 stripeReconciliationRecoveryRoutes.get(
   '/api/orgs/:id/billing/reconciliation/dead-letters',
