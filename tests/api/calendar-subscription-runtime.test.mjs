@@ -11,6 +11,7 @@ const req = (path, opts = {}) => app.request(path, {
   headers: { 'content-type': 'application/json', ...(opts.headers || {}) },
 });
 const json = (value) => JSON.stringify(value);
+const longCalendarTaskName = '국제화일정'.repeat(24);
 
 let response = await req('/api/auth/signup', {
   method: 'POST',
@@ -82,6 +83,12 @@ response = await req(`/api/projects/${project.id}`, {
         plannedStartDate: '2026-08-23',
         plannedEndDate: '2026-08-21',
       },
+      {
+        id: 'calendar-task-8',
+        name: longCalendarTaskName,
+        plannedStartDate: '2026-08-24',
+        plannedEndDate: '2026-08-24',
+      },
     ],
   }),
 });
@@ -144,6 +151,17 @@ assert.doesNotMatch(feed, /calendar-task-5/, 'impossible calendar days are omitt
 assert.doesNotMatch(feed, /calendar-task-6/, 'events whose exclusive end cannot be represented are omitted');
 assert.doesNotMatch(feed, /\+01000001/, 'the feed never emits an extended-year value as an RFC 5545 DATE');
 assert.doesNotMatch(feed, /calendar-task-7/, 'events whose end precedes their start are omitted');
+const physicalCalendarLines = feed.split('\r\n').filter(Boolean);
+assert.equal(
+  physicalCalendarLines.every((line) => Buffer.byteLength(line, 'utf8') <= 75),
+  true,
+  'RFC 5545 content lines are folded to at most 75 UTF-8 octets',
+);
+const unfoldedFeed = feed.replace(/\r\n[ \t]/g, '');
+assert.ok(
+  unfoldedFeed.includes(`SUMMARY:${longCalendarTaskName}`),
+  'UTF-8 line folding preserves the complete customer-visible task summary after unfolding',
+);
 
 response = await req(`${created.feedPath}&token=${encodeURIComponent(currentToken)}`);
 assert.equal(response.status, 401, 'mixed subscription and session-query credentials fail closed');
