@@ -8,6 +8,11 @@ import { createPublicKey, randomBytes, verify as verifySignature } from 'node:cr
 import { app as coreApp } from './app_core.mjs';
 import { db } from './db.mjs';
 import {
+  finalizeOidcIdentity,
+  OidcIdentityConflictError,
+  prepareOidcIdentity,
+} from './oidc_identity.mjs';
+import {
   WebhookDestinationError,
   fetchPublicHttps,
   postWebhook,
@@ -282,6 +287,7 @@ async function verifyOidcIdToken(idToken, expectedNonce, discovery) {
   if (typeof claims.sub !== 'string' || !claims.sub || claims.nonce !== expectedNonce) throw new Error('invalid subject or nonce');
   if (typeof claims.email !== 'string' || !claims.email.trim()) throw new Error('missing email');
   if (claims.email_verified !== true) throw new Error('unverified email');
+  return claims;
 }
 
 async function boundedOidcFetch(request) {
@@ -306,7 +312,24 @@ async function boundedOidcFetch(request) {
   });
   if (!response.ok) return response;
   const tokenPayload = await response.clone().json();
-  await verifyOidcIdToken(tokenPayload.id_token, expectedNonce.nonce, discovery);
+  const claims = await verifyOidcIdToken(tokenPayload.id_token, expectedNonce.nonce, discovery);
+  const identity = {
+    issuer: claims.iss,
+    subject: claims.sub,
+    email: claims.email.trim(),
+  };
+  try {
+    const prepared = prepareOidcIdentity(identity);
+    expectedNonce.verifiedIdentity = {
+      ...identity,
+      needsFinalization: prepared.needsFinalization,
+    };
+  } catch (error) {
+    if (error instanceof OidcIdentityConflictError) {
+      expectedNonce.identityConflict = true;
+    }
+    throw error;
+  }
   return response;
 }
 
@@ -460,11 +483,36 @@ async function coreFetchWithOidcBinding(request, rest) {
   const code = requestUrl.searchParams.get('code');
   const record = state ? oidcNonceByState.get(state) : null;
   if (state) oidcNonceByState.delete(state);
+  let codeRecord = null;
   if (code && record && record.exp > Date.now()) {
-    oidcNonceByCode.set(code, { ...record, callbackSignal: request.signal });
+    codeRecord = { ...record, callbackSignal: request.signal };
+    oidcNonceByCode.set(code, codeRecord);
   }
   try {
-    return await coreApp.fetch(request, ...rest);
+    const response = await coreApp.fetch(request, ...rest);
+    if (codeRecord?.identityConflict) {
+      return Response.json(
+        { error: 'federated identity conflicts with an existing account' },
+        { status: 409 },
+      );
+    }
+    if (
+      response.status === 302
+      && codeRecord?.verifiedIdentity?.needsFinalization
+    ) {
+      try {
+        finalizeOidcIdentity(codeRecord.verifiedIdentity);
+      } catch (error) {
+        if (error instanceof OidcIdentityConflictError) {
+          return Response.json(
+            { error: 'federated identity conflicts with an existing account' },
+            { status: 409 },
+          );
+        }
+        throw error;
+      }
+    }
+    return response;
   } finally {
     if (code) oidcNonceByCode.delete(code);
   }
