@@ -350,13 +350,6 @@ function bindOidcStartNonce(request, response, discovery) {
   }
   const state = authorization.searchParams.get('state');
   if (!state) return response;
-  cleanupOidcNonces();
-  if (oidcNonceByState.size >= OIDC_STATE_MAX_ENTRIES) {
-    return Response.json(
-      { error: 'OIDC temporarily unavailable' },
-      { status: 503 },
-    );
-  }
   const nonce = randomBytes(16).toString('base64url');
   oidcNonceByState.set(state, { nonce, exp: Date.now() + OIDC_STATE_TTL_MS });
   authorization.searchParams.set('nonce', nonce);
@@ -380,6 +373,13 @@ async function coreFetchWithOidcBinding(request, rest) {
     return coreApp.fetch(request, ...rest);
   }
   if (requestUrl.pathname === '/api/auth/oidc/start') {
+    cleanupOidcNonces();
+    if (oidcNonceByState.size >= OIDC_STATE_MAX_ENTRIES) {
+      return Response.json(
+        { error: 'OIDC temporarily unavailable' },
+        { status: 503 },
+      );
+    }
     let discovery;
     try {
       discovery = await loadOidcDiscovery();
@@ -410,25 +410,28 @@ async function coreFetchWithOidcBinding(request, rest) {
 function authorizationProbeRequest(request) {
   const headers = new Headers(request.headers);
   headers.delete('content-length');
-  headers.delete('content-type');
+  headers.set('content-type', 'application/json');
   return new Request(request.url, {
-    method: 'GET',
+    method: 'POST',
     headers,
+    body: JSON.stringify({ url: '', events: [] }),
     signal: request.signal,
   });
 }
 
 /**
- * Ask the existing read-only webhook collection route to run the same real
- * authentication, tenant-role, rate-limit, and request middleware before this
- * facade returns a destination-policy error. Authorized managers receive the
- * collection route's explicit 200 result; every denial, rate limit, malformed
- * request, or internal failure is propagated unchanged. This avoids classifying
- * an arbitrary 400 from the legacy POST route as authorization success.
+ * Run a controlled, side-effect-free webhook registration through the real
+ * authentication, rate-limit, and tenant-role chain before this facade returns
+ * a destination-policy error. The synthetic payload is valid JSON but has an
+ * empty URL, so an authorized manager deterministically reaches the legacy
+ * pre-insert URL guard and receives 400. Every denial, rate limit, or internal
+ * failure is propagated unchanged. Because the probe uses the customer's real
+ * POST path and method, request metrics and structured logs reflect that
+ * customer-visible operation instead of a synthetic GET.
  */
 async function deniedRegistrationAuthorization(request, rest) {
   const response = await coreApp.fetch(authorizationProbeRequest(request), ...rest);
-  return response.status === 200 ? null : response;
+  return response.status === 400 ? null : response;
 }
 
 function declaredRegistrationBodyTooLarge(request) {
