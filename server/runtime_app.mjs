@@ -13,6 +13,7 @@ import {
 
 const MANAGER_ROLES = new Set(['owner', 'admin']);
 const CALENDAR_QUERY_PARAMETER = 'subscription';
+const CALENDAR_CONTENT_LINE_MAX_OCTETS = 75;
 const PRIVATE_NO_STORE_HEADERS = Object.freeze({
   'Cache-Control': 'private, no-store',
   'Referrer-Policy': 'no-referrer',
@@ -146,6 +147,26 @@ function escapeCalendarText(value) {
     .replace(/\r\n|\r|\n/g, '\\n');
 }
 
+function foldCalendarContentLine(line) {
+  const segments = [];
+  let segment = '';
+  let segmentBytes = 0;
+
+  for (const character of line) {
+    const characterBytes = Buffer.byteLength(character, 'utf8');
+    if (segmentBytes + characterBytes > CALENDAR_CONTENT_LINE_MAX_OCTETS) {
+      segments.push(segment);
+      segment = ' ';
+      segmentBytes = 1;
+    }
+    segment += character;
+    segmentBytes += characterBytes;
+  }
+
+  segments.push(segment);
+  return segments.join('\r\n');
+}
+
 function compactCalendarDay(value) {
   return String(value).replaceAll('-', '');
 }
@@ -199,7 +220,7 @@ function renderCalendarFeed(project) {
     );
   }
   lines.push('END:VCALENDAR');
-  return `${lines.join('\r\n')}\r\n`;
+  return `${lines.map(foldCalendarContentLine).join('\r\n')}\r\n`;
 }
 
 function calendarFeedResponse(c, project) {
