@@ -181,11 +181,22 @@ function frozenRecovery(row) {
 }
 
 function frozenEvent(row, attempts, recoveries) {
+  const processingState = processingStateValue(row.processing_state);
   const completedAtMs = nullableNonNegativeInteger(row.completed_at_ms);
   const lastErrorCode = nullableErrorCode(row.last_error_code);
   const claimDecisionId = nullablePositiveInteger(row.claim_decision_id);
   const attemptCount = nonNegativeInteger(row.attempt_count);
   if (attempts.length > attemptCount) throw exportError(undefined, 500);
+
+  const lifecycleInvalid =
+    (processingState === 'pending' && (completedAtMs != null || claimDecisionId != null))
+    || (processingState === 'processing'
+      && (completedAtMs != null || lastErrorCode != null || claimDecisionId != null))
+    || (processingState === 'succeeded'
+      && (completedAtMs == null || lastErrorCode != null || claimDecisionId == null))
+    || (processingState === 'dead_letter'
+      && (completedAtMs == null || lastErrorCode == null || claimDecisionId != null));
+  if (lifecycleInvalid) throw exportError(undefined, 500);
 
   return Object.freeze({
     eventId: boundedIdentifier(row.event_id),
@@ -195,7 +206,7 @@ function frozenEvent(row, attempts, recoveries) {
     payloadSha256: payloadSha256Value(row.payload_sha256),
     firstReceivedAtMs: nonNegativeInteger(row.first_received_at_ms),
     queuedAtMs: nonNegativeInteger(row.queued_at_ms),
-    processingState: processingStateValue(row.processing_state),
+    processingState,
     attemptCount,
     nextAttemptAtMs: nonNegativeInteger(row.next_attempt_at_ms),
     completedAtMs,
