@@ -36,6 +36,19 @@ try {
     warning: 'success_output_failed',
     action: 'verify_destination_before_retry',
   }]);
+
+  diagnostics.length = 0;
+  assert.equal(
+    runSqliteBackupCli(['verify', destination], closedSuccessSink),
+    0,
+    'a successful read-only verification must not be reclassified as a database failure merely because success output could not be written',
+  );
+  assert.deepEqual(diagnostics, [{
+    ok: true,
+    operation: 'verify',
+    warning: 'success_output_failed',
+    action: 'rerun_verify_if_output_is_required',
+  }]);
 } finally {
   rmSync(root, { recursive: true, force: true });
 }
