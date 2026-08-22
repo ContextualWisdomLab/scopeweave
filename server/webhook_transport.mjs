@@ -425,6 +425,8 @@ export function createWebhookTransport({ lookup = dnsLookup, request = httpsRequ
       }
 
       const candidates = await resolvePublicAddresses(destination, lookup, signal);
+      const requestHeaders = Object.fromEntries(new Headers(headers).entries());
+      delete requestHeaders['content-length'];
       let lastError;
       for (const candidate of candidates) {
         const attempt = { secureConnected: false };
@@ -432,7 +434,7 @@ export function createWebhookTransport({ lookup = dnsLookup, request = httpsRequ
           return await postToCandidate(
             destination,
             candidate,
-            { headers, body, signal, attempt },
+            { headers: requestHeaders, body, signal, attempt },
             request,
           );
         } catch (error) {
