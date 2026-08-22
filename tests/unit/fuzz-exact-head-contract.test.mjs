@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 
 const fuzzWorkflow = readFileSync(
   new URL('../../.github/workflows/fuzz.yml', import.meta.url),
@@ -60,5 +62,54 @@ assert.doesNotMatch(
   /\bpull_request_target\s*:/,
   'exact-head fuzzing must remain on the unprivileged pull_request trust boundary',
 );
+assert.match(
+  fuzzWorkflow,
+  /scripts\/ci\/select_fuzz_budget\.sh/,
+  'property fuzz must delegate workflow_dispatch input to the bounded selector',
+);
+assert.doesNotMatch(
+  fuzzWorkflow,
+  /echo\s+["']?runs=\$\{\{ github\.event\.inputs\.fuzz_runs \}\}/,
+  'property fuzz must never write raw workflow_dispatch input to GITHUB_OUTPUT',
+);
 
-console.log('✓ protected property fuzz exact-head and action-runtime contracts passed');
+const fuzzBudgetScript = fileURLToPath(
+  new URL('../../scripts/ci/select_fuzz_budget.sh', import.meta.url),
+);
+const budgetCases = [
+  ['schedule', 'not-a-number', '200000'],
+  ['workflow_dispatch', '1', '1'],
+  ['workflow_dispatch', '20000', '20000'],
+  ['workflow_dispatch', '200000', '200000'],
+  ['workflow_dispatch', '', '20000'],
+  ['workflow_dispatch', '0', '20000'],
+  ['workflow_dispatch', '-1', '20000'],
+  ['workflow_dispatch', 'abc', '20000'],
+  ['workflow_dispatch', '200001', '20000'],
+  ['workflow_dispatch', '1\n2', '20000'],
+  ['workflow_dispatch', ' 10 ', '20000'],
+];
+for (const [eventName, requestedRuns, expectedRuns] of budgetCases) {
+  const result = spawnSync(
+    'bash',
+    [fuzzBudgetScript, eventName, requestedRuns],
+    { encoding: 'utf8' },
+  );
+  assert.equal(
+    result.status,
+    0,
+    `${eventName}/${JSON.stringify(requestedRuns)} exits successfully`,
+  );
+  assert.equal(
+    result.stderr,
+    '',
+    `${eventName}/${JSON.stringify(requestedRuns)} produces no stderr`,
+  );
+  assert.equal(
+    result.stdout,
+    `${expectedRuns}\n`,
+    `${eventName}/${JSON.stringify(requestedRuns)} selects a bounded run count`,
+  );
+}
+
+console.log('✓ protected property fuzz exact-head, action-runtime, and dispatch-budget contracts passed');
