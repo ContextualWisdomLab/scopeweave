@@ -63,12 +63,38 @@ function observeFacadeResponse(request, response, startedAt = Date.now()) {
   return response;
 }
 
+function mergePrometheusFacadeMetrics(payload) {
+  let merged = payload;
+  for (const [key, value] of Object.entries(facadeMetrics)) {
+    const metric = `scopeweave_${key}`;
+    merged = merged.replace(
+      new RegExp(`^(${metric}\\s+)(-?\\d+(?:\\.\\d+)?)$`, 'm'),
+      (_, prefix, current) => `${prefix}${Number(current) + value}`,
+    );
+  }
+  return merged;
+}
+
 async function mergeFacadeMetricsResponse(request, response) {
+  const url = new URL(request.url);
   if (
     request.method !== 'GET'
-    || new URL(request.url).pathname !== METRICS_PATH
+    || url.pathname !== METRICS_PATH
     || !response.ok
   ) return response;
+
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+  if (url.searchParams.get('format') === 'prometheus') {
+    return new Response(
+      mergePrometheusFacadeMetrics(await response.clone().text()),
+      {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      },
+    );
+  }
 
   const payload = await response.clone().json().catch(() => null);
   if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return response;
@@ -76,8 +102,6 @@ async function mergeFacadeMetricsResponse(request, response) {
   for (const key of Object.keys(facadeMetrics)) {
     merged[key] = (Number(merged[key]) || 0) + facadeMetrics[key];
   }
-  const headers = new Headers(response.headers);
-  headers.delete('content-length');
   return new Response(JSON.stringify(merged), {
     status: response.status,
     statusText: response.statusText,
