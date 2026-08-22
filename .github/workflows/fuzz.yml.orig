@@ -1,0 +1,66 @@
+name: Fuzz
+
+on:
+  pull_request:
+    branches:
+      - develop
+      - master
+  push:
+    branches:
+      - develop
+  schedule:
+    # Nightly deeper run (03:17 UTC) with a much larger iteration budget.
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+    inputs:
+      fuzz_runs:
+        description: 'fast-check iterations per property'
+        required: false
+        default: '20000'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz:
+    name: property fuzz
+    runs-on: ubuntu-latest
+    # Hard wall-clock cap so the job can never blow up CI cost.
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@39370e3970a6d050c480ffad4ff0ed4d3fdee5af # v4.1.0
+        with:
+          node-version: '22.13.0'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Select iteration budget
+        id: budget
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            echo "runs=200000" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.inputs.fuzz_runs }}" ]; then
+            echo "runs=${{ github.event.inputs.fuzz_runs }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "runs=20000" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run property fuzz targets
+        env:
+          # Bounded per-property iteration count; the 10-minute job timeout is
+          # the hard ceiling. PRs stay short (~60-120s total), nightly digs deeper.
+          FUZZ_RUNS: ${{ steps.budget.outputs.runs }}
+        run: npm run fuzz
