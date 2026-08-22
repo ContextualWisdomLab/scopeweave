@@ -292,6 +292,7 @@ async function verifyOidcIdToken(idToken, expectedNonce, discovery) {
   if (!Number.isInteger(claims.iat) || claims.iat > now + OIDC_CLOCK_SKEW_SECONDS) throw new Error('invalid issued-at');
   if (typeof claims.sub !== 'string' || !claims.sub || claims.nonce !== expectedNonce) throw new Error('invalid subject or nonce');
   if (typeof claims.email !== 'string' || !claims.email.trim()) throw new Error('missing email');
+  if (claims.email !== claims.email.trim()) throw new Error('invalid email claim');
   if (claims.email_verified !== true) throw new Error('unverified email');
   return claims;
 }
