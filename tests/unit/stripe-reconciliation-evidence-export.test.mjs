@@ -241,6 +241,40 @@ db.exec(`
    WHERE event_id = 'evt_one_new';
 `);
 
+// The production worker constrains lease expiry and completion to occur no earlier
+// than lease start. A damaged restore that bypasses those CHECKs must not become a
+// plausible-looking audit timeline.
+db.exec(`
+  UPDATE billing_stripe_reconciliation_attempts
+     SET lease_expires_at_ms = 2100
+   WHERE event_id = 'evt_one_new' AND attempt_number = 1;
+`);
+assert.throws(
+  () => repository.exportTenantEvidence({ organizationId: 1, limit: 1 }),
+  (error) => error instanceof StripeReconciliationEvidenceExportError
+    && error.status === 500,
+  'attempt lease expiry before lease start fails closed',
+);
+db.exec(`
+  UPDATE billing_stripe_reconciliation_attempts
+     SET lease_expires_at_ms = 999999999999
+   WHERE event_id = 'evt_one_new' AND attempt_number = 1;
+  UPDATE billing_stripe_reconciliation_attempts
+     SET finished_at_ms = 1100
+   WHERE event_id = 'evt_one_old' AND attempt_number = 1;
+`);
+assert.throws(
+  () => repository.exportTenantEvidence({ organizationId: 1, limit: 10 }),
+  (error) => error instanceof StripeReconciliationEvidenceExportError
+    && error.status === 500,
+  'attempt completion before lease start fails closed',
+);
+db.exec(`
+  UPDATE billing_stripe_reconciliation_attempts
+     SET finished_at_ms = 1200
+   WHERE event_id = 'evt_one_old' AND attempt_number = 1;
+`);
+
 // A single selected event with more nested rows than the hard response budget must
 // fail closed instead of allocating an arbitrarily large JSON evidence document.
 db.exec(`
