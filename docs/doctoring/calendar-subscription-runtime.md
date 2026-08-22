@@ -34,7 +34,7 @@ A subscription feed request is accepted only when all of these are true:
 - the SQLite atomic usage transition independently rechecks the same live epoch; and
 - no session query token or `Authorization` credential is mixed into the same subscription request.
 
-Successful subscription-feed responses set `Cache-Control: private, no-store`, `Referrer-Policy: no-referrer`, and `X-Content-Type-Options: nosniff`. The application does not log request bodies or credential values. Calendar values are escaped for RFC 5545 text and all-day `DTEND` remains exclusive.
+Successful subscription-feed responses set `Cache-Control: private, no-store`, `Referrer-Policy: no-referrer`, and `X-Content-Type-Options: nosniff`. The application does not log request bodies or credential values. Calendar values are escaped for RFC 5545 text and all-day `DTEND` remains exclusive. Every emitted RFC 5545 content line is folded to at most 75 UTF-8 octets using `CRLF` plus one SPACE for continuation, and folding iterates Unicode code points so it never splits a UTF-8 multi-octet character. Unfolding therefore reconstructs the complete customer-visible project/task text instead of truncating or corrupting non-ASCII names.
 
 Project task persistence predates the calendar runtime and can contain malformed or impossible date strings. Feed rendering therefore treats persisted task dates as untrusted input: a task is emitted only when both dates are canonical real `YYYY-MM-DD` UTC calendar days and its exclusive next-day `DTEND` is itself representable by RFC 5545's four-digit basic `DATE` form. Invalid months, normalized impossible days, and the `9999-12-31` upper boundary are omitted rather than causing HTTP 500 responses, silently changing the scheduled day, or emitting an extended-year value such as `+01000001`.
 
@@ -58,6 +58,8 @@ The runtime API contract was committed before the production composition existed
 
 Two later feed-validity repairs were also established with executed RED evidence before production changes. Test-only `44eec30eb31f43ce9658c97d99af12f4f4d09ac0` persisted `2026-13-01` and `2026-02-30`; Server Tests run `32088800210`, job `95566742208`, reproduced the `RangeError: Invalid time value` feed failure before `isCalendarDay()` was hardened. Test-only `fa55b6f535d6f2c2f5a3420d31f1ae3425b38173` then persisted `9999-12-31`; Server Tests run `32089288786`, job `95568160158`, proved the feed emitted the malformed `DTEND;VALUE=DATE:+01000001` before exclusive-end rendering was bounded. Production commit `f25941198928ad285a2165f7785f27c0fba3bc71` made the second regression GREEN; Server Tests run `32089452553` completed successfully with both `unit-and-api` and `cloud-e2e` passing, while Dependency Review `32089452544` and OSV Scanner `32089452867` also passed on that contributor head. These runs are causal evidence, not final merge authority after later head movement.
 
+The interoperability repair was likewise test-first. Test-only head `e3bd931539f19ea342042a7c11aeaab78fe7af1e` added a long Korean task summary and required every physical iCalendar line to remain within 75 UTF-8 octets while unfolding preserved the complete Unicode value. Server Tests run `32583307921`, `unit-and-api` job `97055782749`, failed at the intended assertion because the renderer emitted an overlong line. Production commit `a73f974efc81085703fe3fe49233fce2162aebca` added UTF-8-safe RFC 5545 content-line folding. Server Tests run `32583381045` then completed successfully: `unit-and-api` job `97055956846` passed the registered API regression and the full unit/API suite, and `cloud-e2e` job `97055956941` passed. Dependency Review `32583381120` and OSV Scanner `32583381290` were also terminal success on that contributor head. The hosted Server Tests checked synthetic merge `cdac7ea7f6f61642d79b959691d74f2fe88317b9` (`Merge a73f974e... into 422f754e...`), so this is causal merge-result evidence rather than exact-contributor-head merge authorization until #523 reaches protected `develop`.
+
 The current regression covers:
 
 - unauthenticated and cross-tenant management rejection;
@@ -66,6 +68,7 @@ The current regression covers:
 - project/purpose/audience-bound feed authorization;
 - private/no-store/no-referrer/nosniff response policy;
 - malformed, impossible, and unrepresentable-exclusive-end task-date omission;
+- RFC 5545 UTF-8 content-line folding with complete Unicode text after unfolding;
 - mixed-credential fail-closed behavior;
 - rotation and immediate previous-secret invalidation;
 - explicit revocation;
