@@ -132,6 +132,9 @@ function deliver(orgId, event, payload) {
 }
 const quietLogs = String(process.env.SCOPEWEAVE_DB || '').includes(':memory:'); // silence during tests
 app.use('*', async (c, next) => {
+  c.header('X-Content-Type-Options', 'nosniff');
+  c.header('X-Frame-Options', 'DENY');
+  c.header('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   const t = Date.now();
   await next();
   try {

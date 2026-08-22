@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2026-08-22 - Missing Security Headers
+**Vulnerability:** Missing standard HTTP security headers.
+**Learning:** The application lacks default security headers like X-Frame-Options and X-Content-Type-Options.
+**Prevention:** Implement a global middleware to enforce X-Frame-Options, X-Content-Type-Options, and HSTS.
