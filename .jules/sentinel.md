@@ -133,7 +133,7 @@
 **Learning:** Hono의 `secureHeaders` 미들웨어를 사용하면 단일 호출만으로 Clickjacking, MIME-sniffing 등 광범위한 취약점을 완화할 수 있으며, 정적인 문자열이라도 `innerHTML`을 사용하면 스캐너가 잠재적 Stored XSS로 식별할 수 있으므로 항상 `document.createElement()` 및 DOM API를 사용하는 것이 안전합니다.
 **Prevention:** 백엔드에서는 항상 보안 헤더 미들웨어를 기본으로 적용하고 프론트엔드에서는 템플릿 렌더링 시 `innerHTML` 대신 안전한 DOM 조작 메서드를 사용합니다.
 
-## 2026-08-22 - Fix SSRF in webhook endpoint
-**Vulnerability:** The POST `/api/orgs/:id/webhooks` endpoint accepted arbitrary URLs without validating if they resolved to internal, loopback, or cloud metadata endpoints. This allowed an authenticated user to perform Server-Side Request Forgery (SSRF).
-**Learning:** Outbound network requests triggered by user input must always validate the destination to prevent SSRF, specifically protecting against loopback (`127.0.0.1`), private networks (`10.x.x.x`, `192.168.x.x`), and cloud metadata IP addresses (`169.254.169.254`).
-**Prevention:** Apply an explicit blocklist (or allowlist) to parsed URLs before issuing HTTP requests, ensuring `hostname` does not resolve to internal network spaces.
+## 2026-08-22 - Fix IDOR in webhook delivery lookup
+**Vulnerability:** The POST `/api/webhooks/:provider` endpoint (or similar `GET /api/orgs/:id/webhooks/:whId/deliveries`) failed to verify that a webhook belongs to the project/org specified in the payload or path, allowing an attacker to modify or view data for any project by supplying a known webhook ID.
+**Learning:** Proper Object-Level Authorization (BOLA/IDOR protection) must verify ownership of the specific resource against the authenticated user's organization context, not just rely on the webhook secret or a global ID.
+**Prevention:** Always validate that `row.org_id` or `row.project_id` matches the authenticated/requested `org_id` or `project_id` when performing operations on resources like webhooks.
