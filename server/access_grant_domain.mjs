@@ -19,10 +19,10 @@ export const ACCESS_GRANT_AUDIENCES = Object.freeze({
   ATTACHMENT_VIEW: 'scopeweave:attachment-view',
 });
 
-const PURPOSE_AUDIENCE = Object.freeze({
+const PURPOSE_AUDIENCE = Object.freeze(Object.assign(Object.create(null), {
   [ACCESS_GRANT_PURPOSES.STREAM]: ACCESS_GRANT_AUDIENCES.STREAM,
   [ACCESS_GRANT_PURPOSES.ATTACHMENT_VIEW]: ACCESS_GRANT_AUDIENCES.ATTACHMENT_VIEW,
-});
+}));
 
 /**
  * Stable domain error safe for route adapters to map without exposing grant state.
@@ -93,6 +93,25 @@ function unauthorizedGrant() {
   return new AccessGrantError('access_grant_unauthorized', 401);
 }
 
+function snapshotUnconsumedGrant(existing) {
+  if (
+    !existing
+    || typeof existing !== 'object'
+    || Array.isArray(existing)
+    || existing.used_at_ms !== null
+  ) {
+    throw unauthorizedGrant();
+  }
+  return Object.freeze({
+    grant_id: existing.grant_id,
+    subject_id: existing.subject_id,
+    project_id: existing.project_id,
+    purpose: existing.purpose,
+    audience: existing.audience,
+    attachment_id: existing.attachment_id ?? null,
+  });
+}
+
 function validateConsumedGrant(existing, consumed, {
   purpose,
   audience,
@@ -104,7 +123,6 @@ function validateConsumedGrant(existing, consumed, {
     !consumed
     || typeof consumed !== 'object'
     || Array.isArray(consumed)
-    || existing.used_at_ms !== null
     || consumed.used_at_ms !== nowMs
     || consumed.grant_id !== existing.grant_id
     || consumed.subject_id !== existing.subject_id
@@ -114,7 +132,7 @@ function validateConsumedGrant(existing, consumed, {
     || consumed.purpose !== purpose
     || consumed.audience !== existing.audience
     || consumed.audience !== audience
-    || (consumed.attachment_id ?? null) !== (existing.attachment_id ?? null)
+    || (consumed.attachment_id ?? null) !== existing.attachment_id
     || (consumed.attachment_id ?? null) !== (attachmentId ?? null)
   ) {
     throw unauthorizedGrant();
@@ -190,9 +208,10 @@ async function recordAuditBestEffort(auditSink, event) {
  * revoke-between-check-and-consume race. Adapters without a shared transaction
  * boundary must atomically revoke affected grants when membership changes
  * instead. The atomic consume return value is still treated as untrusted port
- * data: it must match the pre-consume grant and requested binding, and must
- * prove the previously unused grant became used at this consume attempt's exact
- * timestamp before it can become the redeemed principal or an audit identity.
+ * data: it must match an immutable snapshot of the pre-consume grant and the
+ * requested binding, and must prove the previously unused grant became used at
+ * this consume attempt's exact timestamp before it can become the redeemed
+ * principal or an audit identity.
  *
  * Audit delivery is post-commit and best-effort at this domain boundary so a
  * sink outage never changes the result of an already durable grant operation.
@@ -294,19 +313,19 @@ export function createAccessGrantService({
     const { normalizedAttachmentId } = validateRedeemBinding({ purpose, audience, projectId, attachmentId });
     const tokenHash = hashSecret(secret);
     const existing = await repository.findGrantByHash(tokenHash);
-    if (!existing) throw unauthorizedGrant();
+    const existingSnapshot = snapshotUnconsumedGrant(existing);
     let membershipVersion;
     try {
       membershipVersion = normalizeMembershipVersion(await membershipRevocation.assertActive({
-        subjectId: existing.subject_id,
-        projectId: existing.project_id,
+        subjectId: existingSnapshot.subject_id,
+        projectId: existingSnapshot.project_id,
       }));
     } catch {
       throw unauthorizedGrant();
     }
     const nowMs = readNow(clock);
     const consumed = validateConsumedGrant(
-      existing,
+      existingSnapshot,
       await repository.consumeGrantAtomically(tokenHash, {
         now_ms: nowMs,
         purpose,
