@@ -176,18 +176,13 @@ try {
   const whitespaceEmail = await callback('whitespace-email-code');
   assert.equal(
     whitespaceEmail.status,
-    302,
-    'provider whitespace around an otherwise stable verified email is tolerated',
+    400,
+    'a verified email claim outside canonical addr-spec form is rejected before account mutation',
   );
   assert.equal(
-    sessionSubject(whitespaceEmail),
-    initialUserId,
-    'the core callback must not create a shadow user from an untrimmed copy of the verified email',
-  );
-  assert.equal(
-    sessionClaims(whitespaceEmail).email,
-    renamedEmail,
-    'the issued session carries the canonical trimmed verified email',
+    whitespaceEmail.headers.get('location'),
+    null,
+    'a non-canonical verified email claim must not return a session redirect',
   );
   assert.equal(
     db.prepare('SELECT COUNT(*) AS count FROM users').get().count,
@@ -198,7 +193,7 @@ try {
   assert.equal(
     metricsAfterWhitespace.signups,
     1,
-    're-authentication of an existing federated subject does not count as a new signup',
+    'a rejected non-canonical federated claim does not count as a new signup',
   );
 
   const unverified = await callback('unverified-email-code');
