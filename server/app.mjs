@@ -1394,6 +1394,7 @@ const STATIC = {
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/cloud-sync.js': ['cloud-sync.js', 'text/javascript; charset=utf-8'],
   '/analytics.js': ['analytics.js', 'text/javascript; charset=utf-8'],
+  '/dialog-accessibility.js': ['dialog-accessibility.js', 'text/javascript; charset=utf-8'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
   '/toast-state.css': ['toast-state.css', 'text/css; charset=utf-8'],
   '/wbs.json': ['wbs.json', 'application/json; charset=utf-8'],
