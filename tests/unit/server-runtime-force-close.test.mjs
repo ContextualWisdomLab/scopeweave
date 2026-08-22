@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { test } from 'node:test';
 
 await import('./stripe-reconciliation-evidence-export.test.mjs');
+await import('../api/stripe-reconciliation-evidence-export.test.mjs');
 
 import { bindScopeWeaveRuntime } from '../../server/server_runtime.mjs';
 
