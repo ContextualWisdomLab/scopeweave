@@ -2,7 +2,7 @@
 //
 // OpenID Connect only guarantees the pair (issuer, subject) as a stable user
 // identifier. Verified email remains useful profile data, but it must not become
-// the long-lived account key after a federated identity has been observed.
+// the long-lived account key or implicitly authorize cross-method account linking.
 import { db } from './db.mjs';
 
 db.exec(`
@@ -56,10 +56,11 @@ function linkedUser(issuer, subject) {
  * Prepare a verified OIDC identity before the legacy callback consumes it.
  *
  * Existing issuer/subject links remain authoritative even when the provider's
- * verified email changes. A one-time compatibility adoption is allowed for a
- * unique pre-existing email row, after which another subject or issuer cannot
- * silently claim that account by presenting the same mutable email address.
- * New federated users are finalized only after the core callback creates them.
+ * verified email changes. An unlinked local row with the same email is rejected
+ * rather than silently adopted: verified email proves the provider's assertion,
+ * not authorization to merge a password account or an unverifiable legacy SSO
+ * account. New federated users are finalized only after the core callback creates
+ * the user and workspace for this same successful OIDC flow.
  */
 export function prepareOidcIdentity(identity) {
   const { issuer, subject, email } = validatedIdentity(identity);
@@ -81,24 +82,8 @@ export function prepareOidcIdentity(identity) {
   }
 
   const users = matchingUsers(email);
-  if (users.length > 1) throw new OidcIdentityConflictError();
-  const existing = users[0];
-  if (!existing) return { userId: null, needsFinalization: true };
-
-  const priorFederatedLink = db.prepare(
-    `SELECT issuer_url, subject_identifier
-     FROM oidc_identity_links
-     WHERE user_id = ?
-     LIMIT 1`,
-  ).get(existing.id);
-  if (priorFederatedLink) throw new OidcIdentityConflictError();
-
-  db.prepare(
-    `INSERT INTO oidc_identity_links(
-       issuer_url, subject_identifier, user_id, email_at_link
-     ) VALUES(?,?,?,?)`,
-  ).run(issuer, subject, existing.id, email);
-  return { userId: existing.id, needsFinalization: false };
+  if (users.length > 0) throw new OidcIdentityConflictError();
+  return { userId: null, needsFinalization: true };
 }
 
 /**
