@@ -18,6 +18,7 @@ const nativeFetch = globalThis.fetch.bind(globalThis);
 const webhookFetchBoundaryKey = Symbol.for('scopeweave.webhook-fetch-boundary');
 const WEBHOOK_REGISTRATION_PATH = /^\/api\/orgs\/[^/]+\/webhooks$/;
 const WEBHOOK_REGISTRATION_BODY_MAX_BYTES = 16 * 1024;
+const AUTH_REQUEST_BODY_MAX_BYTES = 16 * 1024;
 const AUDIT_PATH = /^\/api\/orgs\/[^/]+\/audit$/;
 const AUTH_EMAIL_PATH = /^\/api\/auth\/(?:signup|login)$/;
 const METRICS_PATH = '/api/metrics';
@@ -363,23 +364,6 @@ function requestWithJson(request, payload) {
 async function canonicalInboundRequest(request) {
   const url = new URL(request.url);
 
-  if (request.method === 'POST' && AUTH_EMAIL_PATH.test(url.pathname)) {
-    const payload = await request.clone().json().catch(() => null);
-    if (
-      payload
-      && typeof payload === 'object'
-      && !Array.isArray(payload)
-      && typeof payload.email === 'string'
-    ) {
-      const trimmedEmail = payload.email.trim();
-      const storedMatches = matchingStoredEmails(trimmedEmail);
-      const email = url.pathname.endsWith('/signup')
-        ? (storedMatches[0]?.email || trimmedEmail.toLowerCase())
-        : (storedMatches.length === 1 ? storedMatches[0].email : trimmedEmail);
-      if (email !== payload.email) return requestWithJson(request, { ...payload, email });
-    }
-  }
-
   if (request.method === 'GET' && AUDIT_PATH.test(url.pathname)) {
     const rawLimit = url.searchParams.get('limit');
     if (rawLimit !== null) {
@@ -523,13 +507,13 @@ function declaredRegistrationBodyTooLarge(request) {
 }
 
 /**
- * Read one webhook-registration payload with an explicit memory budget.
+ * Read one JSON request payload with an explicit memory budget.
  *
  * The original request stream is consumed directly instead of cloning it: a
  * cloned stream can let the unread tee branch buffer attacker-controlled data.
  * Callers reconstruct the small JSON request only after this bounded read.
  */
-async function readBoundedRegistrationJson(request) {
+async function readBoundedJsonBody(request, maxBytes) {
   if (!request.body) return { payload: {}, tooLarge: false };
   const reader = request.body.getReader();
   const chunks = [];
@@ -540,7 +524,7 @@ async function readBoundedRegistrationJson(request) {
       if (done) break;
       const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
       totalBytes += chunk.byteLength;
-      if (totalBytes > WEBHOOK_REGISTRATION_BODY_MAX_BYTES) {
+      if (totalBytes > maxBytes) {
         await reader.cancel().catch(() => {});
         return { payload: {}, tooLarge: true };
       }
@@ -568,6 +552,40 @@ async function readBoundedRegistrationJson(request) {
   }
 }
 
+async function authenticationPolicyResult(request) {
+  const url = new URL(request.url);
+  if (request.method !== 'POST' || !AUTH_EMAIL_PATH.test(url.pathname)) return null;
+
+  const { payload: parsedPayload, tooLarge } = await readBoundedJsonBody(
+    request,
+    AUTH_REQUEST_BODY_MAX_BYTES,
+  );
+  if (tooLarge) {
+    return {
+      response: Response.json(
+        { error: 'authentication request body too large' },
+        { status: 413 },
+      ),
+    };
+  }
+
+  let payload = parsedPayload;
+  if (
+    payload
+    && typeof payload === 'object'
+    && !Array.isArray(payload)
+    && typeof payload.email === 'string'
+  ) {
+    const trimmedEmail = payload.email.trim();
+    const storedMatches = matchingStoredEmails(trimmedEmail);
+    const email = url.pathname.endsWith('/signup')
+      ? (storedMatches[0]?.email || trimmedEmail.toLowerCase())
+      : (storedMatches.length === 1 ? storedMatches[0].email : trimmedEmail);
+    if (email !== payload.email) payload = { ...payload, email };
+  }
+  return { request: requestWithJson(request, payload) };
+}
+
 function canonicalRegistrationRequest(request, payload, canonicalUrl) {
   return requestWithJson(request, { ...payload, url: canonicalUrl });
 }
@@ -586,7 +604,7 @@ async function registrationPolicyResult(request, rest) {
   let payload;
   let tooLarge = declaredRegistrationBodyTooLarge(request);
   if (!tooLarge) {
-    const parsed = await readBoundedRegistrationJson(request);
+    const parsed = await readBoundedJsonBody(request, WEBHOOK_REGISTRATION_BODY_MAX_BYTES);
     payload = parsed.payload;
     tooLarge = parsed.tooLarge;
   }
@@ -629,7 +647,9 @@ async function registrationPolicyResult(request, rest) {
 }
 
 async function secureFetch(request, ...rest) {
-  const canonicalRequest = await canonicalInboundRequest(request);
+  const authPolicy = await authenticationPolicyResult(request);
+  if (authPolicy?.response) return observeFacadeResponse(request, authPolicy.response);
+  const canonicalRequest = await canonicalInboundRequest(authPolicy?.request || request);
   const policy = await registrationPolicyResult(canonicalRequest, rest);
   if (policy?.response) return policy.response;
   const effectiveRequest = policy?.request || canonicalRequest;
