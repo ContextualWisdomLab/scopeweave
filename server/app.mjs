@@ -20,6 +20,8 @@ const WEBHOOK_REGISTRATION_PATH = /^\/api\/orgs\/[^/]+\/webhooks$/;
 const WEBHOOK_REGISTRATION_BODY_MAX_BYTES = 16 * 1024;
 const AUDIT_PATH = /^\/api\/orgs\/[^/]+\/audit$/;
 const AUTH_EMAIL_PATH = /^\/api\/auth\/(?:signup|login)$/;
+const METRICS_PATH = '/api/metrics';
+const LEGACY_WEBHOOK_URL_REQUIRED_ERROR = 'valid http(s) url required';
 const OIDC_ISSUER = process.env.OIDC_ISSUER
   ? process.env.OIDC_ISSUER.replace(/\/$/, '')
   : null;
@@ -33,6 +35,8 @@ const OIDC_STATE_MAX_ENTRIES = 256;
 const OIDC_CLOCK_SKEW_SECONDS = 60;
 const oidcNonceByState = new Map();
 const oidcNonceByCode = new Map();
+const facadeMetrics = { requests: 0, s2xx: 0, s4xx: 0, s5xx: 0 };
+const quietFacadeLogs = String(process.env.SCOPEWEAVE_DB || '').includes(':memory:');
 let oidcDiscoveryCache = null;
 let oidcSigningKeyCache = null;
 
@@ -40,6 +44,45 @@ function matchingStoredEmails(email) {
   return db.prepare(
     'SELECT email FROM users WHERE email = ? COLLATE NOCASE ORDER BY id LIMIT 2',
   ).all(email);
+}
+
+function observeFacadeResponse(request, response, startedAt = Date.now()) {
+  facadeMetrics.requests += 1;
+  if (response.status >= 500) facadeMetrics.s5xx += 1;
+  else if (response.status >= 400) facadeMetrics.s4xx += 1;
+  else if (response.status >= 200) facadeMetrics.s2xx += 1;
+  if (!quietFacadeLogs) {
+    console.log(JSON.stringify({
+      ts: new Date().toISOString(),
+      method: request.method,
+      path: new URL(request.url).pathname,
+      status: response.status,
+      ms: Date.now() - startedAt,
+    }));
+  }
+  return response;
+}
+
+async function mergeFacadeMetricsResponse(request, response) {
+  if (
+    request.method !== 'GET'
+    || new URL(request.url).pathname !== METRICS_PATH
+    || !response.ok
+  ) return response;
+
+  const payload = await response.clone().json().catch(() => null);
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return response;
+  const merged = { ...payload };
+  for (const key of Object.keys(facadeMetrics)) {
+    merged[key] = (Number(merged[key]) || 0) + facadeMetrics[key];
+  }
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+  return new Response(JSON.stringify(merged), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
 }
 
 function isSignedWebhookRequest(request) {
@@ -359,13 +402,18 @@ function bindOidcStartNonce(request, response, discovery) {
 }
 
 async function coreFetchWithOidcBinding(request, rest) {
+  const startedAt = Date.now();
   const requestUrl = new URL(request.url);
   if (!OIDC_ISSUER) {
     if (
       process.env.SCOPEWEAVE_DEV !== '1'
       && requestUrl.pathname.startsWith('/api/auth/oidc/')
     ) {
-      return Response.json({ error: 'not found' }, { status: 404 });
+      return observeFacadeResponse(
+        request,
+        Response.json({ error: 'not found' }, { status: 404 }),
+        startedAt,
+      );
     }
     return coreApp.fetch(request, ...rest);
   }
@@ -375,16 +423,24 @@ async function coreFetchWithOidcBinding(request, rest) {
   if (requestUrl.pathname === '/api/auth/oidc/start') {
     cleanupOidcNonces();
     if (oidcNonceByState.size >= OIDC_STATE_MAX_ENTRIES) {
-      return Response.json(
-        { error: 'OIDC temporarily unavailable' },
-        { status: 503 },
+      return observeFacadeResponse(
+        request,
+        Response.json(
+          { error: 'OIDC temporarily unavailable' },
+          { status: 503 },
+        ),
+        startedAt,
       );
     }
     let discovery;
     try {
       discovery = await loadOidcDiscovery();
     } catch {
-      return Response.json({ error: 'OIDC provider unavailable' }, { status: 502 });
+      return observeFacadeResponse(
+        request,
+        Response.json({ error: 'OIDC provider unavailable' }, { status: 502 }),
+        startedAt,
+      );
     }
     const response = await coreApp.fetch(request, ...rest);
     return bindOidcStartNonce(request, response, discovery);
@@ -431,7 +487,9 @@ function authorizationProbeRequest(request) {
  */
 async function deniedRegistrationAuthorization(request, rest) {
   const response = await coreApp.fetch(authorizationProbeRequest(request), ...rest);
-  return response.status === 400 ? null : response;
+  if (response.status !== 400) return response;
+  const payload = await response.clone().json().catch(() => null);
+  return payload?.error === LEGACY_WEBHOOK_URL_REQUIRED_ERROR ? null : response;
 }
 
 function declaredRegistrationBodyTooLarge(request) {
@@ -552,7 +610,9 @@ async function secureFetch(request, ...rest) {
   const canonicalRequest = await canonicalInboundRequest(request);
   const policy = await registrationPolicyResult(canonicalRequest, rest);
   if (policy?.response) return policy.response;
-  return coreFetchWithOidcBinding(policy?.request || canonicalRequest, rest);
+  const effectiveRequest = policy?.request || canonicalRequest;
+  const response = await coreFetchWithOidcBinding(effectiveRequest, rest);
+  return mergeFacadeMetricsResponse(effectiveRequest, response);
 }
 
 async function secureRequest(input, init, ...rest) {
