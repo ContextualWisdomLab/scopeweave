@@ -214,6 +214,17 @@ function frozenEvent(row, attempts, recoveries) {
       && (completedAtMs == null || lastErrorCode == null || claimDecisionId != null));
   if (lifecycleInvalid) throw exportError(undefined, 500);
 
+  const latestAttempt = attempts.at(-1) ?? null;
+  const latestAttemptLifecycleInvalid =
+    (processingState === 'pending' && latestAttempt != null && latestAttempt.outcome !== 'retry')
+    || (processingState === 'processing'
+      && (latestAttempt == null || latestAttempt.outcome !== null))
+    || (processingState === 'succeeded'
+      && (latestAttempt == null || latestAttempt.outcome !== 'succeeded'))
+    || (processingState === 'dead_letter'
+      && (latestAttempt == null || latestAttempt.outcome !== 'dead_letter'));
+  if (latestAttemptLifecycleInvalid) throw exportError(undefined, 500);
+
   return Object.freeze({
     eventId: boundedIdentifier(row.event_id),
     subscriptionId: boundedIdentifier(row.subscription_id),
