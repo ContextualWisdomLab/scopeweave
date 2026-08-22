@@ -218,6 +218,29 @@ for (const input of [
   );
 }
 
+// Export is an audit boundary over persisted state, so it must not serialize a
+// contradictory terminal job as authoritative evidence even if a damaged restore or
+// manually altered database bypassed the worker table's normal CHECK constraints.
+db.exec(`
+  UPDATE billing_stripe_reconciliation_jobs
+     SET processing_state = 'succeeded', completed_at_ms = NULL,
+         last_error_code = NULL, claim_decision_id = 42
+   WHERE event_id = 'evt_one_new';
+`);
+assert.throws(
+  () => repository.exportTenantEvidence({ organizationId: 1, limit: 1 }),
+  (error) => error instanceof StripeReconciliationEvidenceExportError
+    && error.code === 'stripe_reconciliation_evidence_export_invalid'
+    && error.status === 500,
+  'contradictory persisted job state fails closed instead of becoming audit evidence',
+);
+db.exec(`
+  UPDATE billing_stripe_reconciliation_jobs
+     SET processing_state = 'processing', completed_at_ms = NULL,
+         last_error_code = NULL, claim_decision_id = NULL
+   WHERE event_id = 'evt_one_new';
+`);
+
 // A single selected event with more nested rows than the hard response budget must
 // fail closed instead of allocating an arbitrarily large JSON evidence document.
 db.exec(`
