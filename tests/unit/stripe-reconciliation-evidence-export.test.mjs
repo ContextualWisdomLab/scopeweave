@@ -275,6 +275,25 @@ db.exec(`
    WHERE event_id = 'evt_one_old' AND attempt_number = 1;
 `);
 
+// Recovery completion chronology is persisted evidence too; a damaged restore that
+// predates completion before the operator request must fail closed.
+db.exec(`
+  UPDATE billing_stripe_reconciliation_recoveries
+     SET completed_at_ms = 1400
+   WHERE event_id = 'evt_one_old' AND recovery_id = 1;
+`);
+assert.throws(
+  () => repository.exportTenantEvidence({ organizationId: 1, limit: 10 }),
+  (error) => error instanceof StripeReconciliationEvidenceExportError
+    && error.status === 500,
+  'recovery completion before request fails closed',
+);
+db.exec(`
+  UPDATE billing_stripe_reconciliation_recoveries
+     SET completed_at_ms = 1460
+   WHERE event_id = 'evt_one_old' AND recovery_id = 1;
+`);
+
 // A single selected event with more nested rows than the hard response budget must
 // fail closed instead of allocating an arbitrarily large JSON evidence document.
 db.exec(`
