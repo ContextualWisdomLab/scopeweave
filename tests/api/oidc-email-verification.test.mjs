@@ -189,7 +189,7 @@ try {
   const identityLinks = db.prepare(
     `SELECT issuer_url AS issuer, subject_identifier AS subject, user_id AS userId
      FROM oidc_identity_links ORDER BY id`,
-  ).all();
+  ).all().map((row) => ({ ...row }));
   assert.deepEqual(
     identityLinks,
     [{ issuer, subject: primarySubject, userId: Number(initialUserId) }],
