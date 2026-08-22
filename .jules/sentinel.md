@@ -134,6 +134,6 @@
 **Prevention:** 백엔드에서는 항상 보안 헤더 미들웨어를 기본으로 적용하고 프론트엔드에서는 템플릿 렌더링 시 `innerHTML` 대신 안전한 DOM 조작 메서드를 사용합니다.
 
 ## 2026-08-22 - Fix IDOR in webhook delivery lookup
-**Vulnerability:** The POST `/api/webhooks/:provider` endpoint (or similar `GET /api/orgs/:id/webhooks/:whId/deliveries`) failed to verify that a webhook belongs to the project/org specified in the payload or path, allowing an attacker to modify or view data for any project by supplying a known webhook ID.
-**Learning:** Proper Object-Level Authorization (BOLA/IDOR protection) must verify ownership of the specific resource against the authenticated user's organization context, not just rely on the webhook secret or a global ID.
-**Prevention:** Always validate that `row.org_id` or `row.project_id` matches the authenticated/requested `org_id` or `project_id` when performing operations on resources like webhooks.
+**Vulnerability:** `GET /api/orgs/:id/webhooks/:whId/deliveries` could expose delivery history if a webhook ID were looked up without also binding it to the requested organization.
+**Learning:** Object-level authorization for nested resources must verify both the authenticated user's management role in the requested organization and that the specific webhook belongs to that same organization.
+**Prevention:** Look up the webhook with both `id = :whId` and `org_id = :id` before returning delivery records; return not found when that ownership binding fails.
