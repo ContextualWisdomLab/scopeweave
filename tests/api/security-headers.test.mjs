@@ -121,7 +121,11 @@ assert.match(
   /^text\/javascript(?:;|$)/i,
   'the canonical dialog accessibility route must preserve its executable MIME type',
 );
-assertBaselineSecurityHeaders(canonicalDialogModule, 'canonical dialog accessibility module response');
+assert.equal(
+  canonicalDialogModule.headers.get('x-content-type-options'),
+  null,
+  'the inner application must not install runtime-owned security-header middleware',
+);
 assert.match(
   await canonicalDialogModule.text(),
   /export function labelUnnamedDialogs\(/,
