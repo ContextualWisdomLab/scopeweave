@@ -82,7 +82,11 @@ export function bindScopeWeaveRuntime({
 
   function forceCloseAfterGrace() {
     shutdownTimer = null;
-    forceCloseConnections();
+    try {
+      forceCloseConnections();
+    } catch {
+      reportShutdownFailure(onShutdownFailure, 'scopeweave_server_shutdown_failed');
+    }
   }
 
   function shutdown() {
