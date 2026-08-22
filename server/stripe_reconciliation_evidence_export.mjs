@@ -193,7 +193,12 @@ function frozenEvent(row, attempts, recoveries) {
   const lastErrorCode = nullableErrorCode(row.last_error_code);
   const claimDecisionId = nullablePositiveInteger(row.claim_decision_id);
   const attemptCount = nonNegativeInteger(row.attempt_count);
-  if (attempts.length > attemptCount) throw exportError(undefined, 500);
+  if (
+    attempts.length !== attemptCount
+    || attempts.some((attempt, index) => attempt.attemptNumber !== index + 1)
+  ) {
+    throw exportError(undefined, 500);
+  }
   const attemptNumbers = new Set(attempts.map((attempt) => attempt.attemptNumber));
   if (recoveries.some((recovery) => !attemptNumbers.has(recovery.attemptNumber))) {
     throw exportError(undefined, 500);
