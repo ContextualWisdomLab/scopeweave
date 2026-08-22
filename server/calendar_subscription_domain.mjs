@@ -151,6 +151,21 @@ function viewOf(record, nowMs) {
   });
 }
 
+function validateListedSubscription(record, { subjectId, projectId }) {
+  if (
+    !record
+    || typeof record !== 'object'
+    || Array.isArray(record)
+    || record.subject_id !== subjectId
+    || record.project_id !== projectId
+    || (record.purpose ?? CALENDAR_SUBSCRIPTION_PURPOSE) !== CALENDAR_SUBSCRIPTION_PURPOSE
+    || record.audience !== CALENDAR_SUBSCRIPTION_AUDIENCE
+  ) {
+    throw notFoundSubscription();
+  }
+  return record;
+}
+
 async function recordAuditBestEffort(auditSink, event) {
   try {
     await auditSink.record(event);
@@ -290,7 +305,10 @@ export function createCalendarSubscriptionService({
     const nowMs = readNow(clock);
     const records = await repository.listSubscriptions({ subject_id: subjectId, project_id: projectId });
     if (!Array.isArray(records)) throw new TypeError('calendar-subscription repository must return an array from listSubscriptions()');
-    return Object.freeze(records.map((record) => viewOf(record, nowMs)));
+    return Object.freeze(records.map((record) => viewOf(
+      validateListedSubscription(record, { subjectId, projectId }),
+      nowMs,
+    )));
   }
 
   /**
