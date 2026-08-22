@@ -40,14 +40,12 @@ try {
   diagnostics.length = 0;
   assert.equal(
     runSqliteBackupCli(['verify', destination], closedSuccessSink),
-    0,
-    'a successful read-only verification must not be reclassified as a database failure merely because success output could not be written',
+    1,
+    'verify must report failure when its successful result cannot be delivered because the read-only operation is safe to retry',
   );
   assert.deepEqual(diagnostics, [{
-    ok: true,
-    operation: 'verify',
-    warning: 'success_output_failed',
-    action: 'rerun_verify_if_output_is_required',
+    ok: false,
+    error: 'success_output_failed',
   }]);
 } finally {
   rmSync(root, { recursive: true, force: true });
