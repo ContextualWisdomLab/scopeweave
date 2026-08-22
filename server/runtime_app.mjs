@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { bodyLimit } from 'hono/body-limit';
 import { randomBytes } from 'node:crypto';
 import { app as coreApp } from './app.mjs';
 import { db } from './db.mjs';
@@ -14,6 +15,7 @@ import {
 const MANAGER_ROLES = new Set(['owner', 'admin']);
 const CALENDAR_QUERY_PARAMETER = 'subscription';
 const CALENDAR_CONTENT_LINE_MAX_OCTETS = 75;
+const CALENDAR_MANAGEMENT_BODY_MAX_BYTES = 4 * 1024;
 const PRIVATE_NO_STORE_HEADERS = Object.freeze({
   'Cache-Control': 'private, no-store',
   'Referrer-Policy': 'no-referrer',
@@ -105,6 +107,15 @@ const calendarSubscriptionService = createCalendarSubscriptionService({
   auditSink,
   projectAuthorization,
   membershipRevocation,
+});
+
+const calendarManagementBodyLimit = bodyLimit({
+  maxSize: CALENDAR_MANAGEMENT_BODY_MAX_BYTES,
+  onError: (c) => c.json(
+    { error: 'calendar_subscription_body_too_large' },
+    413,
+    { 'Cache-Control': 'no-store' },
+  ),
 });
 
 async function authenticatedUserFromAuthorization(authorization) {
@@ -239,20 +250,24 @@ function calendarFeedResponse(c, project) {
  */
 export const app = new Hono();
 
-app.post('/api/projects/:id/calendar-subscriptions', (c) => calendarOperation(c, async (subjectId) => {
-  const projectId = c.req.param('id');
-  const body = await c.req.json().catch(() => ({}));
-  const created = await calendarSubscriptionService.create({
-    subjectId,
-    projectId,
-    name: body.name,
-    expiresAtMs: body.expiresAtMs,
-  });
-  return Object.freeze({
-    ...created,
-    feedPath: `/api/projects/${encodeURIComponent(projectId)}/calendar.ics?${CALENDAR_QUERY_PARAMETER}=${encodeURIComponent(created.secret)}`,
-  });
-}, 201));
+app.post(
+  '/api/projects/:id/calendar-subscriptions',
+  calendarManagementBodyLimit,
+  (c) => calendarOperation(c, async (subjectId) => {
+    const projectId = c.req.param('id');
+    const body = await c.req.json().catch(() => ({}));
+    const created = await calendarSubscriptionService.create({
+      subjectId,
+      projectId,
+      name: body.name,
+      expiresAtMs: body.expiresAtMs,
+    });
+    return Object.freeze({
+      ...created,
+      feedPath: `/api/projects/${encodeURIComponent(projectId)}/calendar.ics?${CALENDAR_QUERY_PARAMETER}=${encodeURIComponent(created.secret)}`,
+    });
+  }, 201),
+);
 
 app.get('/api/projects/:id/calendar-subscriptions', (c) => calendarOperation(c, async (subjectId) => ({
   subscriptions: await calendarSubscriptionService.list({
@@ -261,19 +276,23 @@ app.get('/api/projects/:id/calendar-subscriptions', (c) => calendarOperation(c, 
   }),
 })));
 
-app.post('/api/projects/:id/calendar-subscriptions/:subscriptionId/rotate', (c) => calendarOperation(c, async (subjectId) => {
-  const body = await c.req.json().catch(() => ({}));
-  const rotated = await calendarSubscriptionService.rotate({
-    subjectId,
-    projectId: c.req.param('id'),
-    subscriptionId: c.req.param('subscriptionId'),
-    expiresAtMs: body.expiresAtMs,
-  });
-  return Object.freeze({
-    ...rotated,
-    feedPath: `/api/projects/${encodeURIComponent(c.req.param('id'))}/calendar.ics?${CALENDAR_QUERY_PARAMETER}=${encodeURIComponent(rotated.secret)}`,
-  });
-}));
+app.post(
+  '/api/projects/:id/calendar-subscriptions/:subscriptionId/rotate',
+  calendarManagementBodyLimit,
+  (c) => calendarOperation(c, async (subjectId) => {
+    const body = await c.req.json().catch(() => ({}));
+    const rotated = await calendarSubscriptionService.rotate({
+      subjectId,
+      projectId: c.req.param('id'),
+      subscriptionId: c.req.param('subscriptionId'),
+      expiresAtMs: body.expiresAtMs,
+    });
+    return Object.freeze({
+      ...rotated,
+      feedPath: `/api/projects/${encodeURIComponent(c.req.param('id'))}/calendar.ics?${CALENDAR_QUERY_PARAMETER}=${encodeURIComponent(rotated.secret)}`,
+    });
+  }),
+);
 
 app.delete('/api/projects/:id/calendar-subscriptions/:subscriptionId', (c) => calendarOperation(c, (subjectId) => (
   calendarSubscriptionService.revoke({
