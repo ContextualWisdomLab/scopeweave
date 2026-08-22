@@ -98,6 +98,9 @@ for (const returned of [
 }
 
 for (const returned of [
+  null,
+  'not-a-record',
+  [],
   { ...baseRecord, subject_id: 'user-2' },
   { ...baseRecord, project_id: 'project-2' },
   { ...baseRecord, purpose: 'session' },
