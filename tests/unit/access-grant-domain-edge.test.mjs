@@ -223,4 +223,26 @@ for (const membershipVersion of [
   }), (error) => error.code === 'access_grant_unauthorized' && error.status === 401);
 }
 
+{
+  const repository = new ConsumableRepository();
+  repository.consumeGrantAtomically = async (hash) => {
+    const record = repository.records.get(hash);
+    return record ? structuredClone(record) : null;
+  };
+  const service = createAccessGrantService({ ...validPorts(), repository });
+  const grant = await service.mint({
+    subjectId: 'uncommitted-return-user',
+    projectId: 'uncommitted-return-project',
+    purpose: 'stream',
+    audience: 'scopeweave:stream',
+    ttlSeconds: 10,
+  });
+  await assert.rejects(service.redeem({
+    secret: grant.secret,
+    purpose: 'stream',
+    audience: 'scopeweave:stream',
+    projectId: 'uncommitted-return-project',
+  }), (error) => error.code === 'access_grant_unauthorized' && error.status === 401);
+}
+
 console.log('✓ access-grant domain edge coverage passed');
