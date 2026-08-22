@@ -64,6 +64,7 @@ CREATE TABLE IF NOT EXISTS webhooks (
   secret TEXT NOT NULL,
   events TEXT NOT NULL DEFAULT '*',
   active INTEGER NOT NULL DEFAULT 1,
+  blocked_reason TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_webhooks_org ON webhooks(org_id);
@@ -172,10 +173,48 @@ CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(org_id);
 CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);
 `);
 
-// Migration for pre-existing DBs: add token_version if missing (idempotent).
+// Migrations for pre-existing DBs. These ALTERs are intentionally idempotent.
 try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
 try { db.exec('ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
 try { db.exec("ALTER TABLE projects ADD COLUMN methodology TEXT NOT NULL DEFAULT 'waterfall'"); } catch { /* already there */ }
+try { db.exec('ALTER TABLE webhooks ADD COLUMN blocked_reason TEXT'); } catch { /* already there */ }
+
+// Historical versions accepted http:// webhook destinations. Once outbound
+// delivery requires public HTTPS, fail those rows closed exactly once instead
+// of retrying a destination that policy will always reject. The audit record is
+// durable buyer-facing evidence and contains no webhook secret.
+try {
+  db.exec('BEGIN IMMEDIATE');
+  db.exec(`
+    INSERT INTO audit_log(org_id, user_id, action, target_type, target_id, meta)
+    SELECT
+      w.org_id,
+      NULL,
+      'webhook.security_block',
+      'webhook',
+      CAST(w.id AS TEXT),
+      '{"reason":"insecure_scheme","nextAction":"register_public_https_replacement"}'
+    FROM webhooks w
+    WHERE lower(w.url) LIKE 'http://%'
+      AND NOT EXISTS (
+        SELECT 1
+        FROM audit_log a
+        WHERE a.org_id = w.org_id
+          AND a.action = 'webhook.security_block'
+          AND a.target_type = 'webhook'
+          AND a.target_id = CAST(w.id AS TEXT)
+      );
+
+    UPDATE webhooks
+    SET active = 0,
+        blocked_reason = 'insecure_scheme'
+    WHERE lower(url) LIKE 'http://%';
+  `);
+  db.exec('COMMIT');
+} catch (error) {
+  try { db.exec('ROLLBACK'); } catch { /* transaction did not begin */ }
+  throw error;
+}
 
 // node:sqlite returns lastInsertRowid as number|bigint; normalize to Number.
 export const rowid = (r) => Number(r.lastInsertRowid);
