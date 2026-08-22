@@ -54,6 +54,11 @@ const claimCases = {
     email: renamedEmail,
     email_verified: true,
   },
+  'whitespace-email-code': {
+    sub: primarySubject,
+    email: `  ${renamedEmail}  `,
+    email_verified: true,
+  },
   'reassigned-email-code': {
     sub: 'oidc-subject-reassigned',
     email: primaryEmail,
@@ -110,12 +115,13 @@ globalThis.fetch = async (input, init) => {
   });
 };
 
-const sessionSubject = (response) => {
+const sessionClaims = (response) => {
   const location = response.headers.get('location') || '';
   const token = location.split('#token=')[1] || '';
   const payload = token.split('.')[1] || '';
-  return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8')).sub;
+  return JSON.parse(Buffer.from(payload, 'base64url').toString('utf8'));
 };
+const sessionSubject = (response) => sessionClaims(response).sub;
 
 try {
   const { app } = await import('../../server/app.mjs');
@@ -165,6 +171,34 @@ try {
     sessionSubject(renamed),
     initialUserId,
     'federated identity follows stable issuer/subject rather than a mutable email claim',
+  );
+
+  const whitespaceEmail = await callback('whitespace-email-code');
+  assert.equal(
+    whitespaceEmail.status,
+    302,
+    'provider whitespace around an otherwise stable verified email is tolerated',
+  );
+  assert.equal(
+    sessionSubject(whitespaceEmail),
+    initialUserId,
+    'the core callback must not create a shadow user from an untrimmed copy of the verified email',
+  );
+  assert.equal(
+    sessionClaims(whitespaceEmail).email,
+    renamedEmail,
+    'the issued session carries the canonical trimmed verified email',
+  );
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS count FROM users').get().count,
+    1,
+    'whitespace in a verified email claim does not create a duplicate local user',
+  );
+  const metricsAfterWhitespace = await (await app.request('/api/metrics')).json();
+  assert.equal(
+    metricsAfterWhitespace.signups,
+    1,
+    're-authentication of an existing federated subject does not count as a new signup',
   );
 
   const unverified = await callback('unverified-email-code');
