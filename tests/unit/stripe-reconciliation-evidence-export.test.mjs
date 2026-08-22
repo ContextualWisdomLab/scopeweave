@@ -314,6 +314,25 @@ db.exec(`
    WHERE event_id = 'evt_one_old' AND recovery_id = 1;
 `);
 
+// attempt_count is the worker's durable count of append-only attempts. If a damaged
+// restore loses an attempt row, the export must not present a plausible but incomplete
+// audit history merely because the surviving attempt numbers are individually valid.
+db.exec(`
+  DELETE FROM billing_stripe_reconciliation_attempts
+   WHERE event_id = 'evt_one_old' AND attempt_number = 1;
+`);
+assert.throws(
+  () => repository.exportTenantEvidence({ organizationId: 1, limit: 10 }),
+  (error) => error instanceof StripeReconciliationEvidenceExportError
+    && error.status === 500,
+  'missing append-only attempt history fails closed instead of producing incomplete audit evidence',
+);
+db.exec(`
+  INSERT INTO billing_stripe_reconciliation_attempts(
+    event_id,attempt_number,lease_started_at_ms,lease_expires_at_ms,finished_at_ms,outcome,error_code
+  ) VALUES('evt_one_old',1,1110,1210,1200,'retry','stripe_provider_timeout');
+`);
+
 // A single selected event with more nested rows than the hard response budget must
 // fail closed instead of allocating an arbitrarily large JSON evidence document.
 db.exec(`
