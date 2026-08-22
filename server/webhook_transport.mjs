@@ -244,6 +244,7 @@ function appendResponseHeaders(target, source) {
 
 function identityEncodedHeaders(headers) {
   const normalized = Object.fromEntries(new Headers(headers).entries());
+  delete normalized['content-length'];
   normalized['accept-encoding'] = 'identity';
   return normalized;
 }
