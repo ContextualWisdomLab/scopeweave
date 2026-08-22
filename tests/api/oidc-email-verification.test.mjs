@@ -222,10 +222,16 @@ try {
       SELECT RAISE(ABORT, 'simulated OIDC identity-link persistence failure');
     END;
   `);
-  await assert.rejects(
-    () => callback('link-failure-code'),
-    /simulated OIDC identity-link persistence failure/,
-    'identity-link persistence failure is surfaced instead of returning an unbound session',
+  const failedLink = await callback('link-failure-code');
+  assert.equal(
+    failedLink.status,
+    400,
+    'identity-link persistence failure must fail closed before any federated session is returned',
+  );
+  assert.equal(
+    failedLink.headers.get('location'),
+    null,
+    'identity-link persistence failure must not return a session redirect',
   );
   assert.equal(
     db.prepare('SELECT COUNT(*) AS count FROM users').get().count,
