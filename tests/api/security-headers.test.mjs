@@ -57,6 +57,26 @@ function assertBaselineSecurityHeaders(response, label) {
     `${label} carries the application-owned HSTS policy`,
   );
   assert.equal(
+    response.headers.get('x-dns-prefetch-control'),
+    'off',
+    `${label} disables DNS prefetching`,
+  );
+  assert.equal(
+    response.headers.get('x-download-options'),
+    'noopen',
+    `${label} prevents automatic opening of downloaded content`,
+  );
+  assert.equal(
+    response.headers.get('x-permitted-cross-domain-policies'),
+    'none',
+    `${label} disables cross-domain policy files`,
+  );
+  assert.equal(
+    response.headers.get('x-xss-protection'),
+    '0',
+    `${label} disables legacy browser XSS filtering`,
+  );
+  assert.equal(
     response.headers.get('x-powered-by'),
     null,
     `${label} does not disclose the framework through X-Powered-By`,
