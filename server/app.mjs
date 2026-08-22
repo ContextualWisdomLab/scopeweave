@@ -42,7 +42,13 @@ const OIDC_STATE_MAX_ENTRIES = 256;
 const OIDC_CLOCK_SKEW_SECONDS = 60;
 const oidcNonceByState = new Map();
 const oidcNonceByCode = new Map();
-const facadeMetrics = { requests: 0, s2xx: 0, s4xx: 0, s5xx: 0 };
+const facadeMetrics = {
+  requests: 0,
+  signups: 0,
+  s2xx: 0,
+  s4xx: 0,
+  s5xx: 0,
+};
 const quietFacadeLogs = String(process.env.SCOPEWEAVE_DB || '').includes(':memory:');
 let oidcDiscoveryCache = null;
 const oidcSigningKeyCache = new Map();
@@ -322,6 +328,7 @@ async function boundedOidcFetch(request) {
     const prepared = prepareOidcIdentity(identity);
     expectedNonce.verifiedIdentity = {
       ...identity,
+      created: prepared.created,
       needsFinalization: prepared.needsFinalization,
     };
   } catch (error) {
@@ -511,6 +518,9 @@ async function coreFetchWithOidcBinding(request, rest) {
         }
         throw error;
       }
+    }
+    if (response.status === 302 && codeRecord?.verifiedIdentity?.created) {
+      facadeMetrics.signups += 1;
     }
     return response;
   } finally {
