@@ -86,15 +86,24 @@ class FakeMutationObserver {
 globalThis.document = fakeDocument;
 globalThis.MutationObserver = FakeMutationObserver;
 
-const initialDialog = new FakeDialog({ heading: { textContent: '초기 프로젝트 대화상자' } });
+const initialHeading = { textContent: '초기 프로젝트 대화상자' };
+const initialDialog = new FakeDialog({ heading: initialHeading });
 dialogs.push(initialDialog);
 
 const { labelUnnamedDialogs } = await import(`../../dialog-accessibility.js?test=${Date.now()}`);
 
+assert.equal(initialDialog.getAttribute('aria-label'), null, 'derived names must not be copied into aria-label');
+assert.match(
+  initialDialog.getAttribute('aria-labelledby') ?? '',
+  /^scopeweave-dialog-title-\d+$/,
+  'module initialization links existing dialogs to their visible heading',
+);
+assert.equal(initialHeading.id, initialDialog.getAttribute('aria-labelledby'));
+initialHeading.textContent = '수정된 프로젝트 대화상자';
 assert.equal(
-  initialDialog.getAttribute('aria-label'),
-  '초기 프로젝트 대화상자',
-  'module initialization labels dialogs that already exist in the document',
+  initialDialog.getAttribute('aria-labelledby'),
+  initialHeading.id,
+  'heading text changes remain reflected through the live aria-labelledby relationship',
 );
 assert.deepEqual(FakeMutationObserver.latest.observed, {
   target: fakeDocument.documentElement,
@@ -121,10 +130,14 @@ const mutationSubtree = {
 const documentScansBeforeMutation = documentQueryCount;
 
 FakeMutationObserver.latest.callback([{ addedNodes: [teamDialog, mutationSubtree, { nodeType: 3 }] }]);
-assert.equal(teamDialog.getAttribute('aria-label'), '팀 멤버');
-assert.equal(nestedDialog.getAttribute('aria-label'), '읽기 전용 공유');
+assert.equal(teamDialog.getAttribute('aria-label'), null);
+assert.equal(teamDialog.getAttribute('aria-labelledby'), teamDialog.heading.id);
+assert.equal(nestedDialog.getAttribute('aria-label'), null);
+assert.equal(nestedDialog.getAttribute('aria-labelledby'), nestedDialog.heading.id);
 assert.equal(blankHeadingDialog.getAttribute('aria-label'), null);
+assert.equal(blankHeadingDialog.getAttribute('aria-labelledby'), null);
 assert.equal(missingHeadingDialog.getAttribute('aria-label'), null);
+assert.equal(missingHeadingDialog.getAttribute('aria-labelledby'), null);
 assert.equal(alreadyNamedDialog.getAttribute('aria-label'), '명시 이름');
 assert.equal(alreadyLabelledbyDialog.getAttribute('aria-labelledby'), 'existing-title');
 assert.equal(
@@ -135,7 +148,7 @@ assert.equal(
 
 const delayedDialog = new FakeDialog();
 FakeMutationObserver.latest.callback([{ addedNodes: [delayedDialog] }]);
-assert.equal(delayedDialog.getAttribute('aria-label'), null);
+assert.equal(delayedDialog.getAttribute('aria-labelledby'), null);
 const delayedHeading = {
   textContent: '나중에 추가된 제목',
   parentElement: {
@@ -147,10 +160,11 @@ const delayedHeading = {
 };
 delayedDialog.heading = delayedHeading;
 FakeMutationObserver.latest.callback([{ addedNodes: [delayedHeading] }]);
+assert.equal(delayedDialog.getAttribute('aria-label'), null);
 assert.equal(
-  delayedDialog.getAttribute('aria-label'),
-  '나중에 추가된 제목',
-  'a dialog inserted before its heading must be labeled when that heading is added later',
+  delayedDialog.getAttribute('aria-labelledby'),
+  delayedHeading.id,
+  'a dialog inserted before its heading must link to that heading when it is added later',
 );
 assert.equal(
   documentQueryCount,
@@ -161,7 +175,8 @@ assert.equal(
 const anotherDialog = new FakeDialog({ heading: { textContent: '추가 프로젝트 대화상자' } });
 dialogs.push(anotherDialog);
 assert.equal(labelUnnamedDialogs(fakeDocument), 1);
-assert.equal(anotherDialog.getAttribute('aria-label'), '추가 프로젝트 대화상자');
+assert.equal(anotherDialog.getAttribute('aria-label'), null);
+assert.equal(anotherDialog.getAttribute('aria-labelledby'), anotherDialog.heading.id);
 assert.equal(labelUnnamedDialogs(fakeDocument), 0);
 
 delete globalThis.document;
