@@ -16,6 +16,7 @@ const tokenEndpoint = 'http://127.0.0.1:19103/oauth2/token';
 const jwksEndpoint = 'http://127.0.0.1:19104/jwks';
 const primaryEmail = 'verified@scopeweave.test';
 const renamedEmail = 'renamed@scopeweave.test';
+const passwordEmail = 'password-account@scopeweave.test';
 const primarySubject = 'oidc-subject-verified';
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const publicJwk = {
@@ -54,6 +55,11 @@ const claimCases = {
   'reassigned-email-code': {
     sub: 'oidc-subject-reassigned',
     email: primaryEmail,
+    email_verified: true,
+  },
+  'password-email-code': {
+    sub: 'oidc-subject-password-collision',
+    email: passwordEmail,
     email_verified: true,
   },
   'unverified-email-code': {
@@ -160,6 +166,26 @@ try {
     1,
     'email changes and reassignment attempts do not create shadow federated users',
   );
+
+  const passwordSignup = await app.request('/api/auth/signup', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ email: passwordEmail, password: 'a-secure-password' }),
+  });
+  assert.equal(passwordSignup.status, 200, 'password account fixture is created through the public boundary');
+
+  const passwordCollision = await callback('password-email-code');
+  assert.equal(
+    passwordCollision.status,
+    409,
+    'a verified OIDC email must not silently link to a pre-existing password account',
+  );
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS count FROM users').get().count,
+    2,
+    'the password account remains distinct after the rejected federated linking attempt',
+  );
+
   const identityLinks = db.prepare(
     `SELECT issuer_url AS issuer, subject_identifier AS subject, user_id AS userId
      FROM oidc_identity_links ORDER BY id`,
