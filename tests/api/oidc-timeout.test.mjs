@@ -18,9 +18,13 @@ const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 20
 const publicJwk = {
   ...publicKey.export({ format: 'jwk' }),
   alg: 'RS256',
-  kid: 'scopeweave-test-key',
+  kid: 'scopeweave-test-key-1',
   use: 'sig',
 };
+const signingJwks = Array.from({ length: 9 }, (_, index) => ({
+  ...publicJwk,
+  kid: `scopeweave-test-key-${index + 1}`,
+}));
 const expectedNonceByCode = new Map();
 let discoveryMode = 'private-metadata';
 let observedTimeout = null;
@@ -33,8 +37,8 @@ const originalFetch = globalThis.fetch;
 const originalDateNow = Date.now;
 
 const encoded = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
-const signIdToken = (claims) => {
-  const header = encoded({ alg: 'RS256', kid: publicJwk.kid, typ: 'JWT' });
+const signIdToken = (claims, kid = publicJwk.kid) => {
+  const header = encoded({ alg: 'RS256', kid, typ: 'JWT' });
   const payload = encoded(claims);
   const input = `${header}.${payload}`;
   const signature = createSign('RSA-SHA256').update(input).end().sign(privateKey).toString('base64url');
@@ -79,7 +83,7 @@ globalThis.fetch = async (input, init) => {
       'error',
       'OIDC JWKS retrieval must reject redirects before trusting signing-key bytes',
     );
-    return Response.json({ keys: [publicJwk] });
+    return Response.json({ keys: signingJwks });
   }
   if (url !== tokenEndpoint) {
     throw new Error(`unexpected outbound fetch: ${url}`);
@@ -107,6 +111,15 @@ globalThis.fetch = async (input, init) => {
 
   if (code === 'valid-code' || code === 'valid-code-cache' || code === 'exact-expiry-code') {
     return Response.json({ id_token: signIdToken(baseClaims) });
+  }
+  const signingKeyMatch = /^valid-code-key-(\d+)$/.exec(code || '');
+  if (signingKeyMatch) {
+    const keyIndex = Number(signingKeyMatch[1]);
+    if (keyIndex >= 1 && keyIndex <= signingJwks.length) {
+      return Response.json({
+        id_token: signIdToken(baseClaims, signingJwks[keyIndex - 1].kid),
+      });
+    }
   }
   if (code === 'forged-code') {
     const valid = signIdToken(baseClaims).split('.');
@@ -190,6 +203,36 @@ try {
     jwksFetches,
     1,
     'repeated logins with the same signing key reuse bounded JWKS evidence instead of amplifying provider traffic',
+  );
+
+  const secondKeyLogin = await callback('valid-code-key-2');
+  assert.equal(secondKeyLogin.status, 302, 'a concurrently published second signing key is accepted');
+  assert.equal(jwksFetches, 2, 'a new kid requires one bounded JWKS refresh');
+
+  const firstKeyAgain = await callback('valid-code-key-1');
+  assert.equal(firstKeyAgain.status, 302, 'the first signing key remains usable during provider key overlap');
+  assert.equal(
+    jwksFetches,
+    2,
+    'alternating between two active kids reuses per-kid signing evidence instead of refetching JWKS',
+  );
+
+  for (let keyIndex = 3; keyIndex <= signingJwks.length; keyIndex += 1) {
+    const rotated = await callback(`valid-code-key-${keyIndex}`);
+    assert.equal(rotated.status, 302, `signing key ${keyIndex} is accepted during bounded rotation`);
+  }
+  assert.equal(
+    jwksFetches,
+    signingJwks.length,
+    'each previously unseen kid causes at most one JWKS refresh while the cache fills',
+  );
+
+  const evictedFirstKey = await callback('valid-code-key-1');
+  assert.equal(evictedFirstKey.status, 302, 'an evicted signing key can be revalidated from current JWKS');
+  assert.equal(
+    jwksFetches,
+    signingJwks.length + 1,
+    'the fixed-size signing-key cache evicts old evidence instead of growing without bound',
   );
 
   const forged = await callback('forged-code');
@@ -284,4 +327,4 @@ try {
   delete process.env.SCOPEWEAVE_DEV;
 }
 
-console.log('oidc discovery, private-endpoint, validation, not-before, cancellation, inclusive facade expiry, redirect, timeout, bounded JWKS reuse, and state-capacity regression passed');
+console.log('oidc discovery, private-endpoint, validation, not-before, cancellation, inclusive facade expiry, redirect, timeout, bounded per-kid JWKS reuse, and state-capacity regression passed');
