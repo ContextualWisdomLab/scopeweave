@@ -93,11 +93,19 @@ function unauthorizedGrant() {
   return new AccessGrantError('access_grant_unauthorized', 401);
 }
 
-function validateConsumedGrant(existing, consumed, { purpose, audience, projectId, attachmentId }) {
+function validateConsumedGrant(existing, consumed, {
+  purpose,
+  audience,
+  projectId,
+  attachmentId,
+  nowMs,
+}) {
   if (
     !consumed
     || typeof consumed !== 'object'
     || Array.isArray(consumed)
+    || existing.used_at_ms !== null
+    || consumed.used_at_ms !== nowMs
     || consumed.grant_id !== existing.grant_id
     || consumed.subject_id !== existing.subject_id
     || consumed.project_id !== existing.project_id
@@ -182,8 +190,9 @@ async function recordAuditBestEffort(auditSink, event) {
  * revoke-between-check-and-consume race. Adapters without a shared transaction
  * boundary must atomically revoke affected grants when membership changes
  * instead. The atomic consume return value is still treated as untrusted port
- * data and must match the pre-consume grant plus requested binding before it can
- * become the redeemed principal or an audit identity.
+ * data: it must match the pre-consume grant and requested binding, and must
+ * prove the previously unused grant became used at this consume attempt's exact
+ * timestamp before it can become the redeemed principal or an audit identity.
  *
  * Audit delivery is post-commit and best-effort at this domain boundary so a
  * sink outage never changes the result of an already durable grant operation.
@@ -295,10 +304,11 @@ export function createAccessGrantService({
     } catch {
       throw unauthorizedGrant();
     }
+    const nowMs = readNow(clock);
     const consumed = validateConsumedGrant(
       existing,
       await repository.consumeGrantAtomically(tokenHash, {
-        now_ms: readNow(clock),
+        now_ms: nowMs,
         purpose,
         audience,
         project_id: projectId,
@@ -310,6 +320,7 @@ export function createAccessGrantService({
         audience,
         projectId,
         attachmentId: normalizedAttachmentId,
+        nowMs,
       },
     );
     await recordAuditBestEffort(auditSink, {
