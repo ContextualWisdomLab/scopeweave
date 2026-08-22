@@ -7,7 +7,14 @@ import { EventEmitter } from 'node:events';
 import fc from 'fast-check';
 import { createWebhookTransport } from '../../server/webhook_transport.mjs';
 
-const RUNS = Math.min(Number(process.env.FUZZ_RUNS || 3000), 500);
+const requestedRuns = (value) => Math.min(Number(value || 3000), 500);
+const RUNS = requestedRuns(process.env.FUZZ_RUNS);
+
+test('fuzz iteration budget preserves the documented default and workflow budgets', () => {
+  assert.equal(requestedRuns(undefined), 3000, 'local default stays at 3000 property cases');
+  assert.equal(requestedRuns('20000'), 20000, 'pull-request workflow budget is honored');
+  assert.equal(requestedRuns('200000'), 200000, 'scheduled workflow budget is honored');
+});
 
 test('webhook transport strips caller-supplied Content-Length before writing the body', async () => {
   await fc.assert(
