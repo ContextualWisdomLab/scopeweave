@@ -199,9 +199,16 @@ function frozenEvent(row, attempts, recoveries) {
   ) {
     throw exportError(undefined, 500);
   }
-  const attemptNumbers = new Set(attempts.map((attempt) => attempt.attemptNumber));
-  if (recoveries.some((recovery) => !attemptNumbers.has(recovery.attemptNumber))) {
-    throw exportError(undefined, 500);
+  const attemptsByNumber = new Map(attempts.map((attempt) => [attempt.attemptNumber, attempt]));
+  for (const recovery of recoveries) {
+    const attempt = attemptsByNumber.get(recovery.attemptNumber);
+    if (
+      attempt == null
+      || recovery.outcome !== attempt.outcome
+      || recovery.errorCode !== attempt.errorCode
+    ) {
+      throw exportError(undefined, 500);
+    }
   }
 
   const lifecycleInvalid =
