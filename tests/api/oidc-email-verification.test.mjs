@@ -129,6 +129,13 @@ try {
   );
   const initialUserId = sessionSubject(verified);
 
+  const reassigned = await callback('reassigned-email-code');
+  assert.equal(
+    reassigned.status,
+    409,
+    'a different subject cannot take over an existing federated account by reusing its current verified email',
+  );
+
   const renamed = await callback('renamed-email-code');
   assert.equal(
     renamed.status,
@@ -139,13 +146,6 @@ try {
     sessionSubject(renamed),
     initialUserId,
     'federated identity follows stable issuer/subject rather than a mutable email claim',
-  );
-
-  const reassigned = await callback('reassigned-email-code');
-  assert.equal(
-    reassigned.status,
-    409,
-    'a different subject cannot take over an existing federated account by reusing its verified email',
   );
 
   const unverified = await callback('unverified-email-code');
