@@ -104,6 +104,7 @@ globalThis.fetch = async (input, init) => {
     aud: clientId,
     sub: 'oidc-subject-123',
     email: 'oidc-timeout@scopeweave.test',
+    email_verified: true,
     nonce: expectedNonce,
     iat: now,
     exp: now + 300,
