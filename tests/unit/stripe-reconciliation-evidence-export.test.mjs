@@ -333,6 +333,31 @@ db.exec(`
   ) VALUES('evt_one_old',1,1110,1210,1200,'retry','stripe_provider_timeout');
 `);
 
+// Job and attempt rows are written in one worker savepoint and describe one lifecycle.
+// A damaged restore with a terminal job but an unfinished latest attempt must not be
+// presented as internally coherent audit evidence merely because each row is valid alone.
+db.exec(`
+  UPDATE billing_stripe_reconciliation_jobs
+     SET processing_state = 'succeeded', completed_at_ms = 2300,
+         last_error_code = NULL, claim_decision_id = 42,
+         lease_token_sha256 = NULL, lease_expires_at_ms = NULL
+   WHERE event_id = 'evt_one_new';
+`);
+assert.throws(
+  () => repository.exportTenantEvidence({ organizationId: 1, limit: 1 }),
+  (error) => error instanceof StripeReconciliationEvidenceExportError
+    && error.status === 500,
+  'terminal job with unfinished latest attempt fails closed as contradictory audit evidence',
+);
+db.exec(`
+  UPDATE billing_stripe_reconciliation_jobs
+     SET processing_state = 'processing', completed_at_ms = NULL,
+         last_error_code = NULL, claim_decision_id = NULL,
+         lease_token_sha256 = 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+         lease_expires_at_ms = 999999999999
+   WHERE event_id = 'evt_one_new';
+`);
+
 // A single selected event with more nested rows than the hard response budget must
 // fail closed instead of allocating an arbitrarily large JSON evidence document.
 db.exec(`
