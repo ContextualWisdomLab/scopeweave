@@ -159,9 +159,11 @@ function frozenAttempt(row) {
 
 function frozenRecovery(row) {
   const outcome = nullableOutcome(row.outcome, RECOVERY_OUTCOMES);
+  const requestedAtMs = nonNegativeInteger(row.requested_at_ms);
   const completedAtMs = nullableNonNegativeInteger(row.completed_at_ms);
   const errorCode = nullableErrorCode(row.error_code);
   const claimDecisionId = nullablePositiveInteger(row.claim_decision_id);
+  if (completedAtMs != null && completedAtMs < requestedAtMs) throw exportError(undefined, 500);
   if (outcome == null && (completedAtMs != null || errorCode != null || claimDecisionId != null)) {
     throw exportError(undefined, 500);
   }
@@ -177,7 +179,7 @@ function frozenRecovery(row) {
     attemptNumber: positiveInteger(Number(row.attempt_number)),
     actorUserId: positiveInteger(Number(row.actor_user_id)),
     evidenceReferenceSha256: evidenceReferenceDigest(row.evidence_reference),
-    requestedAtMs: nonNegativeInteger(row.requested_at_ms),
+    requestedAtMs,
     completedAtMs,
     outcome,
     errorCode,
