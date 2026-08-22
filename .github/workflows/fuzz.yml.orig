@@ -49,13 +49,11 @@ jobs:
       - name: Select iteration budget
         id: budget
         shell: bash
-        env:
-          INPUT_FUZZ_RUNS: ${{ github.event.inputs.fuzz_runs }}
         run: |
           if [ "${{ github.event_name }}" = "schedule" ]; then
             echo "runs=200000" >> "$GITHUB_OUTPUT"
-          elif [ -n "$INPUT_FUZZ_RUNS" ]; then
-            echo "runs=$INPUT_FUZZ_RUNS" >> "$GITHUB_OUTPUT"
+          elif [ -n "${{ github.event.inputs.fuzz_runs }}" ]; then
+            echo "runs=${{ github.event.inputs.fuzz_runs }}" >> "$GITHUB_OUTPUT"
           else
             echo "runs=20000" >> "$GITHUB_OUTPUT"
           fi
