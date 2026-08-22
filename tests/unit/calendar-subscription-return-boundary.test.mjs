@@ -97,4 +97,21 @@ for (const returned of [
   );
 }
 
+for (const returned of [
+  null,
+  'not-a-record',
+  [],
+  { ...baseRecord, subject_id: 'user-2' },
+  { ...baseRecord, project_id: 'project-2' },
+  { ...baseRecord, purpose: 'session' },
+  { ...baseRecord, audience: 'scopeweave:other' },
+]) {
+  const candidate = service({ listSubscriptions: async () => [returned] });
+  await expectDomainError(
+    candidate.list({ subjectId: 'user-1', projectId: 'project-1' }),
+    'calendar_subscription_not_found',
+    404,
+  );
+}
+
 console.log('calendar subscription atomic return boundary tests passed');
