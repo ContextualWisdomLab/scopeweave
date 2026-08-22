@@ -29,6 +29,12 @@ const request = (target, options = {}) => app.request(target, {
   },
 });
 
+function prometheusMetric(text, name) {
+  const match = text.match(new RegExp(`^${name}\\s+(-?\\d+(?:\\.\\d+)?)$`, 'm'));
+  assert.ok(match, `Prometheus output includes ${name}`);
+  return Number(match[1]);
+}
+
 async function createOwner(email) {
   const response = await request('/api/auth/signup', {
     method: 'POST',
@@ -284,5 +290,39 @@ test('facade OIDC rejection is observed as the real request exactly once', async
     after.s4xx,
     before.s4xx + 1,
     'the facade-generated OIDC 404 is counted as the customer-visible outcome',
+  );
+});
+
+test('Prometheus metrics include facade-only request outcomes', async () => {
+  const beforeText = await (await request('/api/metrics?format=prometheus')).text();
+  const before = {
+    requests: prometheusMetric(beforeText, 'scopeweave_requests'),
+    s2xx: prometheusMetric(beforeText, 'scopeweave_s2xx'),
+    s4xx: prometheusMetric(beforeText, 'scopeweave_s4xx'),
+  };
+
+  const rejected = await request('/api/auth/oidc/start');
+  assert.equal(rejected.status, 404, 'facade-only OIDC rejection is reproduced');
+
+  const afterText = await (await request('/api/metrics?format=prometheus')).text();
+  const after = {
+    requests: prometheusMetric(afterText, 'scopeweave_requests'),
+    s2xx: prometheusMetric(afterText, 'scopeweave_s2xx'),
+    s4xx: prometheusMetric(afterText, 'scopeweave_s4xx'),
+  };
+  assert.equal(
+    after.requests,
+    before.requests + 2,
+    'Prometheus request totals include the baseline scrape and the facade-only rejection',
+  );
+  assert.equal(
+    after.s2xx,
+    before.s2xx + 1,
+    'Prometheus success totals include only the baseline scrape',
+  );
+  assert.equal(
+    after.s4xx,
+    before.s4xx + 1,
+    'Prometheus client-error totals include the facade-only rejection',
   );
 });
