@@ -171,10 +171,13 @@ assert.equal(
 );
 
 let postTlsAttempts = 0;
+let forwardedContentLength;
 const noReplayAfterSecureConnect = createPublicHttpsTransport({
   lookup: async () => [PUBLIC_A, PUBLIC_B],
   request: (_url, options) => {
     postTlsAttempts += 1;
+    forwardedContentLength = options.headers?.get?.('content-length')
+      ?? options.headers?.['content-length'];
     const req = new EventEmitter();
     req.end = () => {
       options.lookup('ignored.example', {}, (error) => {
@@ -193,6 +196,7 @@ const noReplayAfterSecureConnect = createPublicHttpsTransport({
 await assert.rejects(
   noReplayAfterSecureConnect.fetch('https://idp.example.test/token', {
     method: 'POST',
+    headers: { 'content-length': '9999' },
     body: 'grant_type=authorization_code',
   }),
   WebhookTransportError,
@@ -202,6 +206,11 @@ assert.equal(
   postTlsAttempts,
   1,
   'a post-handshake failure is ambiguous and must not consume an authorization code twice',
+);
+assert.equal(
+  forwardedContentLength,
+  undefined,
+  'public HTTPS transport owns body framing and strips stale caller content-length',
 );
 
 await assert.rejects(
