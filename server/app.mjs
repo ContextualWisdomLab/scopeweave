@@ -208,6 +208,10 @@ async function verifyOidcIdToken(idToken, expectedNonce, discovery) {
   const now = Math.floor(Date.now() / 1000);
   if (claims.iss !== OIDC_ISSUER || !audienceMatches(claims)) throw new Error('invalid token binding');
   if (!Number.isInteger(claims.exp) || claims.exp <= now - OIDC_CLOCK_SKEW_SECONDS) throw new Error('expired token');
+  if (
+    claims.nbf !== undefined
+    && (!Number.isInteger(claims.nbf) || claims.nbf > now + OIDC_CLOCK_SKEW_SECONDS)
+  ) throw new Error('token not active');
   if (!Number.isInteger(claims.iat) || claims.iat > now + OIDC_CLOCK_SKEW_SECONDS) throw new Error('invalid issued-at');
   if (typeof claims.sub !== 'string' || !claims.sub || claims.nonce !== expectedNonce) throw new Error('invalid subject or nonce');
   if (typeof claims.email !== 'string' || !claims.email.trim()) throw new Error('missing email');
