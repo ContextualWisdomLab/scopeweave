@@ -343,17 +343,19 @@ export function runSqliteBackupCli(args, io = console) {
     try {
       io.log(JSON.stringify({ ok: true, operation, ...result }));
     } catch {
-      // The operation has already succeeded before success output is emitted.
-      // A closed stdout/pipeline is an observability failure, not a reason to
-      // report a durable backup or successful read-only verification as failed.
-      const action = operation === 'backup'
-        ? 'verify_destination_before_retry'
-        : 'rerun_verify_if_output_is_required';
+      if (operation !== 'backup') {
+        // Verification is read-only and safe to retry. If its result cannot be
+        // delivered, fail the command so automation does not treat missing
+        // verification evidence as a successful verification.
+        throw fail('success_output_failed');
+      }
+      // Publication is the durable backup boundary. Once it succeeds, a closed
+      // output sink must not invite an unsafe retry against the same path.
       runBestEffortCleanup(() => io.error(JSON.stringify({
         ok: true,
-        operation,
+        operation: 'backup',
         warning: 'success_output_failed',
-        action,
+        action: 'verify_destination_before_retry',
       })));
       return 0;
     }
