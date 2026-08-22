@@ -233,3 +233,32 @@ test('webhook authorization probing never treats an arbitrary 400 as authorizati
     'only an explicit successful authorization probe may be replaced by the public destination-policy error',
   );
 });
+
+test('facade webhook rejection is observed as the real POST exactly once', async () => {
+  const { token, org } = await createOwner('facade-observability@scopeweave.test');
+  const before = await (await request('/api/metrics')).json();
+
+  const rejected = await request(`/api/orgs/${org.id}/webhooks`, {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}` },
+    body: body({ url: 'http://127.0.0.1/private', events: ['project.update'] }),
+  });
+  assert.equal(rejected.status, 400, 'authorized private destination is rejected by the facade');
+
+  const after = await (await request('/api/metrics')).json();
+  assert.equal(
+    after.requests,
+    before.requests + 2,
+    'metrics include the baseline metrics GET and one customer-visible rejected POST, not an internal probe',
+  );
+  assert.equal(
+    after.s2xx,
+    before.s2xx + 1,
+    'the internal authorization probe is not counted as a successful customer request',
+  );
+  assert.equal(
+    after.s4xx,
+    before.s4xx + 1,
+    'the facade-generated 400 is counted as the customer-visible request outcome',
+  );
+});
