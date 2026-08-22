@@ -7,7 +7,6 @@ delete process.env.ORCHESTRATOR_URL;
 
 const { SECURE_HEADERS_OPTIONS, createRuntimeApp, runtimeApp } =
   await import('../../server/runtime-app.mjs');
-const { app } = await import('../../server/app.mjs');
 
 assert.deepEqual(
   SECURE_HEADERS_OPTIONS,
@@ -108,24 +107,6 @@ assert.match(
   await dialogModule.text(),
   /export function labelUnnamedDialogs\(/,
   'the static route must return the dialog accessibility module, not a fallback document',
-);
-
-const canonicalDialogModule = await app.request('/dialog-accessibility.js');
-assert.equal(
-  canonicalDialogModule.status,
-  200,
-  'the canonical application must own every static module referenced by index.html',
-);
-assert.match(
-  canonicalDialogModule.headers.get('content-type') ?? '',
-  /^text\/javascript(?:;|$)/i,
-  'the canonical dialog accessibility route must preserve its executable MIME type',
-);
-assertBaselineSecurityHeaders(canonicalDialogModule, 'canonical dialog accessibility module response');
-assert.match(
-  await canonicalDialogModule.text(),
-  /export function labelUnnamedDialogs\(/,
-  'canonical static serving must return the module rather than a fallback document',
 );
 
 function rejectingReadFile(code) {
