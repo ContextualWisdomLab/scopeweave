@@ -262,3 +262,27 @@ test('facade webhook rejection is observed as the real POST exactly once', async
     'the facade-generated 400 is counted as the customer-visible request outcome',
   );
 });
+
+test('facade OIDC rejection is observed as the real request exactly once', async () => {
+  const before = await (await request('/api/metrics')).json();
+
+  const rejected = await request('/api/auth/oidc/start');
+  assert.equal(rejected.status, 404, 'unconfigured production OIDC remains hidden as not found');
+
+  const after = await (await request('/api/metrics')).json();
+  assert.equal(
+    after.requests,
+    before.requests + 2,
+    'metrics include the baseline metrics GET and one facade-rejected OIDC request',
+  );
+  assert.equal(
+    after.s2xx,
+    before.s2xx + 1,
+    'only the follow-up metrics request increments the success class',
+  );
+  assert.equal(
+    after.s4xx,
+    before.s4xx + 1,
+    'the facade-generated OIDC 404 is counted as the customer-visible outcome',
+  );
+});
