@@ -45,9 +45,11 @@ process.env.SCOPEWEAVE_DB = databasePath;
 try {
   const moduleUrl = pathToFileURL(join(process.cwd(), 'server', 'db.mjs')).href;
   const first = await import(`${moduleUrl}?legacy-http-migration=first`);
-  const migrated = first.db.prepare(
-    'SELECT active, blocked_reason AS blockedReason FROM webhooks WHERE id = 41',
-  ).get();
+  const migrated = {
+    ...first.db.prepare(
+      'SELECT active, blocked_reason AS blockedReason FROM webhooks WHERE id = 41',
+    ).get(),
+  };
   assert.deepEqual(
     migrated,
     { active: 0, blockedReason: 'insecure_scheme' },
@@ -79,9 +81,11 @@ try {
   ).get();
   assert.equal(secondAudit.count, 1, 'restarting after migration does not duplicate buyer audit evidence');
   assert.deepEqual(
-    second.db.prepare(
-      'SELECT active, blocked_reason AS blockedReason FROM webhooks WHERE id = 41',
-    ).get(),
+    {
+      ...second.db.prepare(
+        'SELECT active, blocked_reason AS blockedReason FROM webhooks WHERE id = 41',
+      ).get(),
+    },
     { active: 0, blockedReason: 'insecure_scheme' },
     'migration remains fail-closed and idempotent on subsequent starts',
   );
