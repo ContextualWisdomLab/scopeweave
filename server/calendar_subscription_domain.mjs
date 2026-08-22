@@ -158,7 +158,7 @@ function validateListedSubscription(record, { subjectId, projectId }) {
     || Array.isArray(record)
     || record.subject_id !== subjectId
     || record.project_id !== projectId
-    || record.purpose !== CALENDAR_SUBSCRIPTION_PURPOSE
+    || (record.purpose ?? CALENDAR_SUBSCRIPTION_PURPOSE) !== CALENDAR_SUBSCRIPTION_PURPOSE
     || record.audience !== CALENDAR_SUBSCRIPTION_AUDIENCE
   ) {
     throw notFoundSubscription();
