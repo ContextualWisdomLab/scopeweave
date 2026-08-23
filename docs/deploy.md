@@ -47,18 +47,25 @@ persists the database in the `scopeweave-data` volume.
 | `SCOPEWEAVE_RATE_LIMIT_MAX` | recommended | Per-client fixed-window request allowance. Unset or explicit `0` disables the limiter. Any other configured value must be a non-negative safe integer or startup fails. |
 | `SCOPEWEAVE_RATE_LIMIT_WINDOW_MS` | no (default 60000) | Fixed-window duration in milliseconds. An explicit value must be a positive safe integer or startup fails. |
 | `SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX` | no (default 10000) | Maximum number of live per-client limiter buckets held by one ScopeWeave process. An explicit value must be a positive safe integer or startup fails. Once capacity is reached, previously unseen identities share a fail-closed overflow bucket until expired regular buckets are reclaimed. |
-| `SCOPEWEAVE_TRUSTED_PROXY_IPS` | only behind trusted reverse proxies | Comma-separated **immediate or chained proxy peer IPs** that ScopeWeave is allowed to trust when interpreting `X-Forwarded-For`. Leave unset for direct deployments. |
+| `SCOPEWEAVE_TRUSTED_PROXY_IPS` | only behind trusted reverse proxies | Comma-separated **immediate or chained proxy peer IPs** that ScopeWeave is allowed to trust when interpreting `X-Forwarded-For`. Configure the actual IP once; dotted IPv4-mapped Node spellings such as `::ffff:127.0.0.1` are normalized to their IPv4 address before trust comparison. Leave unset for direct deployments. |
 
 ### Rate-limit capacity and tuning
 
 When the limiter is enabled, `429` responses include `Retry-After`. Client
 identity is anchored to the actual network peer unless that peer is explicitly
-trusted through `SCOPEWEAVE_TRUSTED_PROXY_IPS`. The regular in-memory bucket map
-is deliberately bounded by `SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX`; attacker-driven
-high-cardinality source identities therefore cannot create unbounded limiter
-state. At capacity, new identities use one shared overflow bucket rather than
-allocating new map entries. Expired regular buckets are reclaimed by a bounded
-sweep before admitting new identities.
+trusted through `SCOPEWEAVE_TRUSTED_PROXY_IPS`. Valid dotted IPv4-mapped IPv6
+peer and forwarded-hop spellings are canonicalized to their underlying IPv4
+address before trust comparison and limiter-key selection. This prevents a
+Node dual-stack listener from collapsing all proxied clients into one limiter
+bucket merely because the socket exposed an IPv4 proxy as `::ffff:a.b.c.d`.
+Invalid address text is never admitted as a trusted identity.
+
+The regular in-memory bucket map is deliberately bounded by
+`SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX`; attacker-driven high-cardinality source
+identities therefore cannot create unbounded limiter state. At capacity, new
+identities use one shared overflow bucket rather than allocating new map entries.
+Expired regular buckets are reclaimed by a bounded sweep before admitting new
+identities.
 
 Size `SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX` for the maximum legitimate concurrent
 client-identity population expected **per process**, with headroom for normal
@@ -165,10 +172,13 @@ needed.
 `X-Forwarded-For` is **ignored for the security rate-limit identity by default**.
 If a reverse proxy is the only permitted ingress to ScopeWeave, list its actual
 network peer address in `SCOPEWEAVE_TRUSTED_PROXY_IPS`. For multiple trusted
-proxy hops, list every trusted hop. ScopeWeave then walks `X-Forwarded-For` from
-right to left, skips explicitly trusted proxy addresses, and chooses the first
-untrusted valid IP as the client identity. Missing, malformed, or all-trusted
-forwarding evidence falls back to the actual socket peer.
+proxy hops, list every trusted hop. You do not need to duplicate an IPv4 proxy
+as both `a.b.c.d` and Node's dotted IPv4-mapped `::ffff:a.b.c.d` representation;
+ScopeWeave canonicalizes that mapped socket/hop spelling before the trust
+comparison. ScopeWeave then walks `X-Forwarded-For` from right to left, skips
+explicitly trusted proxy addresses, and chooses the first untrusted valid IP as
+the client identity. Missing, malformed, or all-trusted forwarding evidence
+falls back to the actual socket peer.
 
 Do not configure this trust list while untrusted clients can connect directly to
 the backend. The proxy must overwrite or append forwarding information according
