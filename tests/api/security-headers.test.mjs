@@ -1,30 +1,13 @@
 import assert from 'node:assert/strict';
-import { Hono } from 'hono';
 
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_DEV = '1';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 delete process.env.ORCHESTRATOR_URL;
-delete process.env.SCOPEWEAVE_HSTS_INCLUDE_SUBDOMAINS;
 
-const {
-  SECURE_HEADERS_OPTIONS,
-  createRuntimeApp,
-  runtimeApp,
-  strictTransportSecurityValue,
-} = await import('../../server/runtime-app.mjs');
+const { SECURE_HEADERS_OPTIONS, createRuntimeApp, runtimeApp } =
+  await import('../../server/runtime-app.mjs');
 const { app } = await import('../../server/app.mjs');
-
-assert.equal(
-  strictTransportSecurityValue(false),
-  'max-age=15552000',
-  'host-only HSTS is the safe default when deployment-domain ownership is not proven',
-);
-assert.equal(
-  strictTransportSecurityValue(true),
-  'max-age=15552000; includeSubDomains',
-  'operators can opt into subdomain HSTS after confirming every descendant host supports HTTPS',
-);
 
 assert.deepEqual(
   SECURE_HEADERS_OPTIONS,
@@ -32,7 +15,7 @@ assert.deepEqual(
     crossOriginResourcePolicy: 'same-origin',
     crossOriginOpenerPolicy: 'same-origin',
     referrerPolicy: 'no-referrer',
-    strictTransportSecurity: 'max-age=15552000',
+    strictTransportSecurity: 'max-age=15552000; includeSubDomains',
     xContentTypeOptions: 'nosniff',
     xDnsPrefetchControl: 'off',
     xDownloadOptions: 'noopen',
@@ -71,8 +54,8 @@ function assertBaselineSecurityHeaders(response, label) {
   );
   assert.equal(
     response.headers.get('strict-transport-security'),
-    'max-age=15552000',
-    `${label} carries the deployment-safe host-only HSTS policy`,
+    'max-age=15552000; includeSubDomains',
+    `${label} carries the application-owned HSTS policy`,
   );
   assert.equal(
     response.headers.get('x-dns-prefetch-control'),
@@ -149,27 +132,23 @@ assert.match(
   'canonical static serving must return the module rather than a fallback document',
 );
 
-const delegatedApplication = new Hono();
-delegatedApplication.get('/dialog-accessibility.js', (c) => c.text('canonical-static-sentinel'));
-delegatedApplication.get('/missing-static', (c) => c.notFound());
-delegatedApplication.get('/static-read-failure', (c) => c.text('Internal Server Error', 500));
-const delegatedRuntime = createRuntimeApp({ application: delegatedApplication });
+function rejectingReadFile(code) {
+  return async () => {
+    const error = new Error(`fixture read failure: ${code}`);
+    error.code = code;
+    throw error;
+  };
+}
 
-const delegatedStatic = await delegatedRuntime.request('/dialog-accessibility.js');
-assert.equal(
-  await delegatedStatic.text(),
-  'canonical-static-sentinel',
-  'the runtime must delegate static routes to its canonical application instead of shadowing them',
-);
-assertBaselineSecurityHeaders(delegatedStatic, 'delegated canonical static response');
+const missingStaticApp = createRuntimeApp({ readStaticFile: rejectingReadFile('ENOENT') });
+const missingStatic = await missingStaticApp.request('/dialog-accessibility.js');
+assert.equal(missingStatic.status, 404, 'missing static module is reported as not found');
+assertBaselineSecurityHeaders(missingStatic, 'missing static module response');
 
-const delegatedMissing = await delegatedRuntime.request('/missing-static');
-assert.equal(delegatedMissing.status, 404, 'runtime preserves canonical not-found semantics');
-assertBaselineSecurityHeaders(delegatedMissing, 'delegated not-found response');
-
-const delegatedFailure = await delegatedRuntime.request('/static-read-failure');
-assert.equal(delegatedFailure.status, 500, 'runtime preserves canonical server-error semantics');
-assert.equal(await delegatedFailure.text(), 'Internal Server Error');
-assertBaselineSecurityHeaders(delegatedFailure, 'delegated server-error response');
+const unreadableStaticApp = createRuntimeApp({ readStaticFile: rejectingReadFile('EACCES') });
+const unreadableStatic = await unreadableStaticApp.request('/dialog-accessibility.js');
+assert.equal(unreadableStatic.status, 500, 'unexpected static I/O failure is not misreported as 404');
+assert.equal(await unreadableStatic.text(), 'Internal Server Error');
+assertBaselineSecurityHeaders(unreadableStatic, 'static I/O failure response');
 
 console.log('security header regression passed');

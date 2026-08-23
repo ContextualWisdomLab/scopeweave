@@ -1,23 +1,7 @@
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
+import { readFile } from 'node:fs/promises';
 import { app } from './app.mjs';
-
-const HSTS_MAX_AGE_SECONDS = 15552000;
-
-/**
- * Build the Strict-Transport-Security value for the verified deployment scope.
- *
- * Host-only HSTS is the safe default for custom or shared deployment domains.
- * Descendant hosts are included only after the operator explicitly confirms
- * that every current and future subdomain is HTTPS-capable.
- *
- * @param {boolean} [includeSubDomains=false] Whether HSTS may cover descendant hosts.
- * @returns {string} The application-owned Strict-Transport-Security header value.
- */
-export function strictTransportSecurityValue(includeSubDomains = false) {
-  const hostOnly = `max-age=${HSTS_MAX_AGE_SECONDS}`;
-  return includeSubDomains ? `${hostOnly}; includeSubDomains` : hostOnly;
-}
 
 /**
  * Security-sensitive response header policy owned by the ScopeWeave runtime.
@@ -30,9 +14,7 @@ export const SECURE_HEADERS_OPTIONS = Object.freeze({
   crossOriginResourcePolicy: 'same-origin',
   crossOriginOpenerPolicy: 'same-origin',
   referrerPolicy: 'no-referrer',
-  strictTransportSecurity: strictTransportSecurityValue(
-    process.env.SCOPEWEAVE_HSTS_INCLUDE_SUBDOMAINS === '1',
-  ),
+  strictTransportSecurity: 'max-age=15552000; includeSubDomains',
   xContentTypeOptions: 'nosniff',
   xDnsPrefetchControl: 'off',
   xDownloadOptions: 'noopen',
@@ -44,19 +26,28 @@ export const SECURE_HEADERS_OPTIONS = Object.freeze({
 /**
  * Build the Hono application served by the Node runtime.
  *
- * Route ownership stays in the canonical application. The runtime adds only
- * deployment-wide response headers, then delegates every path to that
- * application. Tests may inject a small application to verify this boundary
- * without opening a TCP listener or duplicating production route logic.
+ * The optional file reader keeps runtime-only static routes testable without
+ * importing the listener entrypoint or opening a TCP port. Production callers
+ * use Node's `readFile`; tests may inject a reader to reproduce I/O failures.
  *
- * @param {{application?: Hono}} [options] Runtime dependencies.
- * @returns {Hono} A fresh runtime application with security headers and delegated routes.
+ * @param {{readStaticFile?: typeof readFile}} [options] Runtime dependencies.
+ * @returns {Hono} A fresh runtime application with static and API routes.
  */
-export function createRuntimeApp({ application = app } = {}) {
+export function createRuntimeApp({ readStaticFile = readFile } = {}) {
   const runtimeApp = new Hono();
 
   runtimeApp.use('*', secureHeaders(SECURE_HEADERS_OPTIONS));
-  runtimeApp.route('/', application);
+  runtimeApp.get('/dialog-accessibility.js', async (c) => {
+    try {
+      const body = await readStaticFile(new URL('../dialog-accessibility.js', import.meta.url));
+      return c.body(body, 200, { 'Content-Type': 'text/javascript; charset=utf-8' });
+    } catch (error) {
+      if (error?.code === 'ENOENT') return c.notFound();
+      return c.text('Internal Server Error', 500);
+    }
+  });
+
+  runtimeApp.route('/', app);
   return runtimeApp;
 }
 
