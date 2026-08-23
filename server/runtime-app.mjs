@@ -2,6 +2,23 @@ import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
 import { app } from './app.mjs';
 
+const HSTS_MAX_AGE_SECONDS = 15552000;
+
+/**
+ * Build the Strict-Transport-Security value for the verified deployment scope.
+ *
+ * Host-only HSTS is the safe default for custom or shared deployment domains.
+ * Descendant hosts are included only after the operator explicitly confirms
+ * that every current and future subdomain is HTTPS-capable.
+ *
+ * @param {boolean} [includeSubDomains=false] Whether HSTS may cover descendant hosts.
+ * @returns {string} The application-owned Strict-Transport-Security header value.
+ */
+export function strictTransportSecurityValue(includeSubDomains = false) {
+  const hostOnly = `max-age=${HSTS_MAX_AGE_SECONDS}`;
+  return includeSubDomains ? `${hostOnly}; includeSubDomains` : hostOnly;
+}
+
 /**
  * Security-sensitive response header policy owned by the ScopeWeave runtime.
  *
@@ -13,7 +30,9 @@ export const SECURE_HEADERS_OPTIONS = Object.freeze({
   crossOriginResourcePolicy: 'same-origin',
   crossOriginOpenerPolicy: 'same-origin',
   referrerPolicy: 'no-referrer',
-  strictTransportSecurity: 'max-age=15552000; includeSubDomains',
+  strictTransportSecurity: strictTransportSecurityValue(
+    process.env.SCOPEWEAVE_HSTS_INCLUDE_SUBDOMAINS === '1',
+  ),
   xContentTypeOptions: 'nosniff',
   xDnsPrefetchControl: 'off',
   xDownloadOptions: 'noopen',
