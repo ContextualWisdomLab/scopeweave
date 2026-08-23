@@ -2,32 +2,34 @@ import { validateWebhookRegistrationUrl } from './webhook_transport.mjs';
 
 const SECURITY_ACTION = 'webhook.security_block';
 const SECURITY_META = JSON.stringify({
-  reason: 'insecure_scheme',
+  reason: 'destination_policy',
   nextAction: 'register_public_https_replacement',
 });
 
-function isPreservedDevelopmentLoopback(url, allowDevelopmentLoopback) {
-  if (!allowDevelopmentLoopback) return false;
+function isCurrentDestinationAllowed(url, allowDevelopmentLoopback) {
   try {
-    const canonical = validateWebhookRegistrationUrl(url, {
-      allowDevelopmentLoopback: true,
-    });
-    return new URL(canonical).protocol === 'http:';
+    validateWebhookRegistrationUrl(url, { allowDevelopmentLoopback });
+    return true;
   } catch {
     return false;
   }
 }
 
 /**
- * Disable previously accepted HTTP webhook destinations before requests serve.
+ * Disable active legacy webhook destinations rejected by current registration policy.
  *
- * Historical ScopeWeave releases accepted arbitrary `http://` webhook URLs.
- * Production delivery now requires public HTTPS, so leaving those rows active
- * would create an endless silent retry loop. This migration disables only
- * active legacy HTTP rows, writes one tenant-visible audit event with a concrete
- * replacement action, and never reads or copies the webhook signing secret.
- * Explicit development mode preserves only loopback HTTP URLs that the current
- * destination policy still permits.
+ * Historical ScopeWeave releases accepted arbitrary HTTP(S) webhook URLs,
+ * including local/private HTTPS literals and names. Current production
+ * registration requires public HTTPS, so leaving policy-incompatible rows active
+ * would create an endless silent retry loop. This migration examines every active
+ * row, disables only destinations rejected by the current synchronous registration
+ * policy, writes one tenant-visible audit event with a concrete replacement action,
+ * and never reads or copies the webhook signing secret. Explicit development mode
+ * preserves only destinations that the same current development registration
+ * policy still permits, including loopback HTTP.
+ *
+ * DNS-backed hostnames remain subject to per-attempt address authorization at
+ * delivery time; this startup migration deliberately does not perform network I/O.
  *
  * @param {import('node:sqlite').DatabaseSync} database Open ScopeWeave database.
  * @param {{allowDevelopmentLoopback?: boolean}} [options] Migration policy.
@@ -42,7 +44,7 @@ export function migrateLegacyWebhookDestinations(
     const candidates = database.prepare(
       `SELECT id, org_id AS orgId, url
          FROM webhooks
-        WHERE active = 1 AND lower(url) LIKE 'http://%'
+        WHERE active = 1
         ORDER BY id`,
     ).all();
     const disable = database.prepare(
@@ -63,7 +65,7 @@ export function migrateLegacyWebhookDestinations(
 
     let disabled = 0;
     for (const candidate of candidates) {
-      if (isPreservedDevelopmentLoopback(candidate.url, allowDevelopmentLoopback)) {
+      if (isCurrentDestinationAllowed(candidate.url, allowDevelopmentLoopback)) {
         continue;
       }
       const targetId = String(candidate.id);
