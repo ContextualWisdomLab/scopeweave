@@ -9,32 +9,34 @@ import { validateWebhookRegistrationUrl } from './webhook_transport.mjs';
 
 const WEBHOOK_REGISTRATION_PATH = '/api/orgs/:id/webhooks';
 const WEBHOOK_REGISTRATION_BODY_MAX_BYTES = 16 * 1024;
-const WEBHOOK_REGISTRATION_EVIDENCE = Symbol.for('scopeweave.webhookRegistrationEvidence');
+const webhookRegistrationEvidence = new WeakMap();
 const STRIPE_WEBHOOK_PATH = '/api/stripe/webhook';
 
 // Registration requests need the core logger/rate-limit/auth/RBAC stack to run
 // exactly once, but an oversized authorized body must become 413 *inside* that
 // stack so the structured access record and counters match the public response.
-// Replay only global middleware plus this route, and insert the translation after
-// global middleware but before route-local auth/handler entries. Hono preserves
-// registration order in routes; the public facade below relies on the same
-// contract when replaying the protected core graph.
+// Replay only global middleware plus this route. Registration handlers are
+// wrapped at their existing position so the bounded-body result is translated
+// before the inherited request logger resumes. The evidence stays process-local
+// in a WeakMap keyed by the forwarded Request, so clients cannot spoof it.
 const registrationCoreApp = new Hono();
-let registrationEvidenceBoundaryInstalled = false;
+let registrationRouteInstalled = false;
 for (const route of coreApp.routes) {
   if (route.path !== '*' && route.path !== WEBHOOK_REGISTRATION_PATH) continue;
-  if (!registrationEvidenceBoundaryInstalled && route.path === WEBHOOK_REGISTRATION_PATH) {
-    registrationCoreApp.use(WEBHOOK_REGISTRATION_PATH, async (c, next) => {
-      await next();
-      if (c.env?.[WEBHOOK_REGISTRATION_EVIDENCE]?.tooLarge === true) {
-        c.res = c.json({ error: 'webhook registration body too large' }, 413);
+  if (route.path === WEBHOOK_REGISTRATION_PATH) {
+    registrationRouteInstalled = true;
+    registrationCoreApp.on(route.method, route.path, async (c, next) => {
+      const response = await route.handler(c, next);
+      if (webhookRegistrationEvidence.get(c.req.raw)?.tooLarge === true) {
+        return c.json({ error: 'webhook registration body too large' }, 413);
       }
+      return response;
     });
-    registrationEvidenceBoundaryInstalled = true;
+    continue;
   }
   registrationCoreApp.on(route.method, route.path, route.handler);
 }
-if (!registrationEvidenceBoundaryInstalled) {
+if (!registrationRouteInstalled) {
   throw new Error('ScopeWeave webhook registration core route is unavailable');
 }
 
@@ -101,9 +103,9 @@ function canonicalRegistrationBody(original) {
             try { await source.cancel('webhook registration body too large'); } catch { /* best effort */ }
             try { source.releaseLock(); } catch { /* cancellation may release it */ }
             // Feed the core route a side-effect-free invalid registration after
-            // auth/RBAC has already admitted this request. The evidence boundary
-            // above replaces that route response with the stable 413 before the
-            // inherited request logger resumes.
+            // auth/RBAC has already admitted this request. The wrapped core route
+            // replaces that invalid-registration response with the stable 413
+            // before inherited request observability resumes.
             controller.enqueue(encoder.encode(JSON.stringify({ url: '' })));
             controller.close();
             return;
@@ -150,15 +152,15 @@ function requestWithCanonicalRegistration(original) {
 async function registrationPolicyResponse(c) {
   // Route the request through the core exactly once. The forwarding stream has
   // no eager queue, so core rate-limit/auth/RBAC middleware can reject a request
-  // without the facade draining an attacker-controlled body first. The mutable
-  // evidence object is process-local Hono env state, not a spoofable HTTP header.
+  // without the facade draining an attacker-controlled body first. Bounded-body
+  // evidence is keyed to this Request in process memory, not in an HTTP header.
   const { request, state } = requestWithCanonicalRegistration(c.req.raw);
+  webhookRegistrationEvidence.set(request, state);
   let response;
   try {
-    response = await registrationCoreApp.fetch(request, {
-      [WEBHOOK_REGISTRATION_EVIDENCE]: state,
-    });
+    response = await registrationCoreApp.fetch(request);
   } finally {
+    webhookRegistrationEvidence.delete(request);
     // Authentication/RBAC/rate-limit rejection can return without consuming the
     // forwarding body. Cancel that unread stream so its reader releases the
     // original network body instead of keeping the connection resource locked.
