@@ -9,15 +9,16 @@ process.env.STRIPE_WEBHOOK_SECRET = 'whsec_scopeweave_invite_secret';
 
 const { app } = await import('../../server/app.mjs?invite-security=1');
 const { app: applicationRoutes } = await import('../../server/application_routes.mjs');
-const { app: implementationRoutes } = await import('../../server/application_routes_core.mjs');
+const { db } = await import('../../server/db.mjs');
 const body = (value) => JSON.stringify(value);
-const withJson = (router) => (path, options = {}) => router.request(path, {
+const request = (path, options = {}) => app.request(path, {
   ...options,
   headers: { 'content-type': 'application/json', ...(options.headers || {}) },
 });
-const request = withJson(app);
-const coreRequest = withJson(applicationRoutes);
-const implementationRequest = withJson(implementationRoutes);
+const coreRequest = (path, options = {}) => applicationRoutes.request(path, {
+  ...options,
+  headers: { 'content-type': 'application/json', ...(options.headers || {}) },
+});
 
 async function signup(email) {
   const response = await request('/api/auth/signup', {
@@ -71,46 +72,21 @@ assert.ok(pendingTarget, 'pending invitation remains visible as workflow state')
 assert.equal('token' in pendingTarget, false, 'roster never discloses pending invite bearer tokens');
 
 response = await coreRequest(`/api/orgs/${orgId}/members`, { headers: viewerAuth });
-assert.equal(response.status, 200, 'the supported shared route graph exposes the same safe roster contract');
+assert.equal(response.status, 200, 'the protected route graph exposes the same safe roster contract');
 const coreRoster = await response.json();
 const corePendingTarget = coreRoster.invites.find((invite) => invite.email === 'target.invitee@example.com');
-assert.ok(corePendingTarget, 'supported shared route graph preserves pending invitation workflow state');
+assert.ok(corePendingTarget, 'protected route graph preserves pending invitation workflow state');
 assert.equal(
   'token' in corePendingTarget,
   false,
-  'supported shared route graph cannot bypass pending-invite bearer-token redaction',
+  'protected route graph cannot bypass pending-invite bearer-token redaction',
 );
-
-response = await implementationRequest(`/api/orgs/${orgId}/members`, { headers: viewerAuth });
-assert.equal(response.status, 200, 'internal implementation keeps the same non-secret roster projection');
-const implementationRoster = await response.json();
-const implementationPendingTarget = implementationRoster.invites.find((invite) => invite.email === 'target.invitee@example.com');
-assert.ok(implementationPendingTarget, 'internal implementation preserves pending invitation workflow state');
-assert.equal(
-  'token' in implementationPendingTarget,
-  false,
-  'internal implementation must not retain a reusable bearer-token disclosure path',
-);
-
-response = await request(`/api/orgs/${orgId}/invites`, {
-  method: 'POST',
-  headers: ownerAuth,
-  body: body({ email: 'target.invitee@example.com', role: 'member' }),
-});
-assert.equal(response.status, 200);
-const implementationInvite = await response.json();
-response = await implementationRequest(`/api/invites/${implementationInvite.token}/accept`, {
-  method: 'POST',
-  headers: attackerAuth,
-});
-assert.equal(response.status, 404, 'internal implementation cannot retain a bypass around invited-identity binding');
-assert.deepEqual(await response.json(), { error: 'invalid or used invite' });
 
 response = await coreRequest(`/api/invites/${targetInvite.token}/accept`, {
   method: 'POST',
   headers: attackerAuth,
 });
-assert.equal(response.status, 404, 'supported shared route graph binds invite redemption to the invited identity');
+assert.equal(response.status, 404, 'protected route graph binds invite redemption to the invited identity');
 assert.deepEqual(await response.json(), { error: 'invalid or used invite' });
 
 response = await request(`/api/invites/${targetInvite.token}/accept`, {
@@ -140,5 +116,26 @@ response = await request(`/api/invites/${targetInvite.token}/accept`, {
   headers: targetAuth,
 });
 assert.equal(response.status, 404, 'accepted invitation cannot be replayed');
+
+response = await request(`/api/orgs/${orgId}/invites`, {
+  method: 'POST',
+  headers: ownerAuth,
+  body: body({ email: 'target.invitee@example.com', role: 'member' }),
+});
+assert.equal(response.status, 200);
+const revokedCredentialProbeInvite = await response.json();
+const attackerUser = db.prepare('SELECT id FROM users WHERE email = ?').get('invite-attacker@example.com');
+assert.ok(attackerUser?.id, 'attacker account exists before session revocation');
+db.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?').run(attackerUser.id);
+response = await request(`/api/invites/${revokedCredentialProbeInvite.token}/accept`, {
+  method: 'POST',
+  headers: attackerAuth,
+});
+assert.equal(
+  response.status,
+  401,
+  'revoked credentials are rejected by authentication before invite identity comparison can become an oracle',
+);
+assert.deepEqual(await response.json(), { error: 'unauthorized' });
 
 console.log('invite identity-boundary regression passed');
