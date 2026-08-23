@@ -1,6 +1,6 @@
 # HSTS deployment scope
 
-**Status:** Active pull-request evidence for #576. This decision is not protected-`develop` shipped truth until the pull request is integrated.
+**Status:** Accepted deployment decision. This document records the intended HSTS policy; protected-`develop` shipping truth is determined by the current integrated code and release/traceability records, not by this status line.
 
 ## Problem
 
