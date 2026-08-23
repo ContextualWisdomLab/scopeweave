@@ -1,10 +1,8 @@
 // Security invariant: logout-all revocation and strict session-claim validation
-// must apply uniformly to every supported JWT transport. Calendar clients and
-// EventSource cannot reliably send Authorization headers, so their query-token
-// routes share the same fail-closed verifier as bearer middleware. Attachment
-// views no longer accept broad session JWTs in query parameters; their direct
-// session path is Authorization-header only and scoped grants are covered by
-// the dedicated attachment-view access-grant regression.
+// must apply uniformly to every supported JWT transport. Calendar subscription
+// clients retain their dedicated query-token transport; realtime SSE and
+// attachment views no longer accept broad session JWTs in query parameters and
+// use Authorization-header sessions plus scoped access-grant paths instead.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
@@ -49,9 +47,18 @@ function signUnsafe(
 
 async function expectStreamStatus(projectId, token, status, message) {
   const response = await req(
-    `/api/projects/${projectId}/stream?token=${encodeURIComponent(token)}`,
+    `/api/projects/${projectId}/stream`,
+    { headers: { authorization: `Bearer ${token}` } },
   );
   assert.equal(response.status, status, message);
+  await response.body?.cancel?.();
+}
+
+async function expectLegacyStreamQueryRejected(projectId, token, message) {
+  const response = await req(
+    `/api/projects/${projectId}/stream?token=${encodeURIComponent(token)}`,
+  );
+  assert.equal(response.status, 401, message);
   await response.body?.cancel?.();
 }
 
@@ -80,7 +87,7 @@ async function expectBearerStatus(token, status, message) {
 /**
  * Assert that one invalid session token is rejected by every supported transport.
  *
- * @param {number} projectId - Accessible project used by URL-token routes.
+ * @param {number} projectId - Accessible project used by scoped transports.
  * @param {string} token - Invalid or revoked compact JWT.
  * @param {string} label - Diagnostic label for assertion messages.
  * @returns {Promise<void>} Resolves after all four transport assertions.
@@ -88,7 +95,7 @@ async function expectBearerStatus(token, status, message) {
 async function expectRejectedEverywhere(projectId, token, label) {
   await expectBearerStatus(token, 401, `bearer rejects ${label}`);
   await expectCalendarStatus(projectId, token, 401, `calendar rejects ${label}`);
-  await expectStreamStatus(projectId, token, 401, `SSE rejects ${label}`);
+  await expectStreamStatus(projectId, token, 401, `SSE bearer rejects ${label}`);
   await expectAttachmentViewStatus(projectId, token, 401, `attachment view rejects ${label}`);
 }
 
@@ -189,8 +196,10 @@ test('logout-all and strict JWT validation cover every session transport', async
   await expectBearerStatus(tokenB, 200, 'bearer accepts token B before revocation');
   await expectCalendarStatus(projectId, tokenA, 200, 'calendar accepts token A before revocation');
   await expectCalendarStatus(projectId, tokenB, 200, 'calendar accepts token B before revocation');
-  await expectStreamStatus(projectId, tokenA, 200, 'SSE accepts token A before revocation');
-  await expectStreamStatus(projectId, tokenB, 200, 'SSE accepts token B before revocation');
+  await expectLegacyStreamQueryRejected(projectId, tokenA, 'SSE rejects token A in the retired query transport');
+  await expectLegacyStreamQueryRejected(projectId, tokenB, 'SSE rejects token B in the retired query transport');
+  await expectStreamStatus(projectId, tokenA, 200, 'SSE bearer accepts token A before revocation');
+  await expectStreamStatus(projectId, tokenB, 200, 'SSE bearer accepts token B before revocation');
   await expectAttachmentViewStatus(projectId, tokenA, 404, 'attachment view authenticates token A before lookup');
   await expectAttachmentViewStatus(projectId, tokenB, 404, 'attachment view authenticates token B before lookup');
 
@@ -207,6 +216,7 @@ test('logout-all and strict JWT validation cover every session transport', async
 
   await expectBearerStatus(freshToken, 200, 'bearer accepts replacement token');
   await expectCalendarStatus(projectId, freshToken, 200, 'calendar accepts replacement token');
-  await expectStreamStatus(projectId, freshToken, 200, 'SSE accepts replacement token');
+  await expectLegacyStreamQueryRejected(projectId, freshToken, 'SSE query transport rejects even a fresh broad token');
+  await expectStreamStatus(projectId, freshToken, 200, 'SSE bearer accepts replacement token');
   await expectAttachmentViewStatus(projectId, freshToken, 404, 'attachment view accepts replacement token before lookup');
 });

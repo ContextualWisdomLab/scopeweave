@@ -1,7 +1,8 @@
 // Security envelope for the existing cloud client. The established planner
 // implementation remains in cloud-sync-core.js; this module preserves its
-// exports while preventing broad session JWTs from becoming navigated document
-// URLs during the staged attachment-view migration in #413.
+// exports while preventing broad session JWTs from becoming browser URL
+// credentials during the staged attachment-view and realtime migrations in #413.
+import { installStreamGrantEventSource } from './stream-access-grant.js';
 export * from './cloud-sync-core.js';
 
 const ATTACHMENT_VIEW_PATH = /^\/api\/projects\/([1-9][0-9]*)\/attachments\/([1-9][0-9]*)\/view$/;
@@ -171,4 +172,10 @@ export function installAttachmentViewGrantWindowOpen(windowLike, {
   return true;
 }
 
-if (typeof window !== 'undefined') installAttachmentViewGrantWindowOpen(window);
+if (typeof window !== 'undefined') {
+  // Install before app boot calls cloud-sync-core's subscribe(). The realtime
+  // compatibility bridge consumes the legacy token-bearing constructor string
+  // locally and never sends that broad credential over HTTP.
+  installStreamGrantEventSource(window);
+  installAttachmentViewGrantWindowOpen(window);
+}
