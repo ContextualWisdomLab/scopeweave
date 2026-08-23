@@ -2682,22 +2682,32 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+// Bolt: 성능 최적화를 위해 String.padStart() 대신 삼항 연산자를 사용한 인라인 문자열 연결 방식으로 개선했습니다.
+// 이는 핫 루프에서 불필요한 문자열 할당과 JS-C++ 간의 오버헤드를 방지하여 성능을 높입니다.
 function formatDateInput(date) {
   const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
+  const m = date.getUTCMonth() + 1;
+  const d = date.getUTCDate();
+  const month = m < 10 ? '0' + m : m;
+  const day = d < 10 ? '0' + d : d;
   return `${year}-${month}-${day}`;
 }
 
 function formatLocalDateInput(date) {
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
+  const month = m < 10 ? '0' + m : m;
+  const day = d < 10 ? '0' + d : d;
   return `${year}-${month}-${day}`;
 }
 
 function formatCompactDate(date) {
-  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+  const m = date.getMonth() + 1;
+  const d = date.getDate();
+  const month = m < 10 ? '0' + m : m;
+  const day = d < 10 ? '0' + d : d;
+  return `${date.getFullYear()}${month}${day}`;
 }
 
 function formatPercent(value, digits) {
