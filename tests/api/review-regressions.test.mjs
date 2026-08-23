@@ -309,6 +309,44 @@ test('facade webhook rejection is observed as the real POST exactly once', async
   );
 });
 
+test('oversized webhook authorization probe is not observed as a synthetic core request', async () => {
+  const { token, org } = await createOwner('oversized-webhook-observability@scopeweave.test');
+  const coreBefore = await (await coreApp.request('/api/metrics')).json();
+
+  const rejected = await request(`/api/orgs/${org.id}/webhooks`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-length': String(17 * 1024),
+    },
+    body: body({ url: 'https://hooks.example.test', events: ['project.update'] }),
+  });
+  assert.equal(rejected.status, 413, 'authorized oversized registration is rejected by the facade');
+
+  const coreAfter = await (await coreApp.request('/api/metrics')).json();
+  assert.equal(
+    coreAfter.requests,
+    coreBefore.requests + 1,
+    'the authorization probe must not appear as a second customer request in core metrics',
+  );
+  assert.equal(
+    coreAfter.s2xx,
+    coreBefore.s2xx + 1,
+    'only the baseline core metrics request is observed between snapshots',
+  );
+  assert.equal(
+    coreAfter.s4xx,
+    coreBefore.s4xx,
+    'the probe 400 must not be recorded in place of the customer-visible 413',
+  );
+
+  const combined = await (await request('/api/metrics')).json();
+  assert.ok(
+    combined.s4xx >= coreAfter.s4xx + 1,
+    'the customer-visible facade rejection remains represented in combined metrics',
+  );
+});
+
 test('facade OIDC rejection is observed as the real request exactly once', async () => {
   const before = await (await request('/api/metrics')).json();
 
