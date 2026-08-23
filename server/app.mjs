@@ -28,7 +28,12 @@ for (const route of coreApp.routes) {
     registrationCoreApp.on(route.method, route.path, async (c, next) => {
       const response = await route.handler(c, next);
       if (webhookRegistrationEvidence.get(c.req.raw)?.tooLarge === true) {
-        return c.json({ error: 'webhook registration body too large' }, 413);
+        const oversizedResponse = c.json({ error: 'webhook registration body too large' }, 413);
+        // Hono's outer logger observes c.res after next() returns. Assign the
+        // replacement here, before control unwinds, so access evidence records
+        // the same 413 that the customer receives instead of the core's probe 400.
+        c.res = oversizedResponse;
+        return oversizedResponse;
       }
       return response;
     });
