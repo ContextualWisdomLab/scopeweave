@@ -1,5 +1,7 @@
 const UNNAMED_DIALOG_SELECTOR = '[role="dialog"]:not([aria-label]):not([aria-labelledby])';
+const RELABELABLE_DIALOG_SELECTOR = '[role="dialog"]:not([aria-label])';
 const HEADING_SELECTOR = 'h1,h2,h3,h4,h5,h6';
+const GENERATED_HEADING_ID_PREFIX = 'scopeweave-dialog-title-';
 let generatedHeadingId = 0;
 
 function ensureHeadingId(heading) {
@@ -9,11 +11,29 @@ function ensureHeadingId(heading) {
   let candidate;
   do {
     generatedHeadingId += 1;
-    candidate = `scopeweave-dialog-title-${generatedHeadingId}`;
+    candidate = `${GENERATED_HEADING_ID_PREFIX}${generatedHeadingId}`;
   } while (document.getElementById?.(candidate));
 
   heading.id = candidate;
   return candidate;
+}
+
+function labelDialogFromHeading(dialog) {
+  const explicitLabel = String(dialog?.getAttribute?.('aria-label') || '').trim();
+  if (explicitLabel) return false;
+
+  const labelledBy = String(dialog?.getAttribute?.('aria-labelledby') || '').trim();
+  if (labelledBy && !labelledBy.startsWith(GENERATED_HEADING_ID_PREFIX)) return false;
+
+  const heading = dialog?.querySelector?.(HEADING_SELECTOR);
+  const name = heading?.textContent?.trim();
+  if (!name) return false;
+
+  const headingId = ensureHeadingId(heading);
+  if (labelledBy === headingId) return false;
+
+  dialog.setAttribute('aria-labelledby', headingId);
+  return true;
 }
 
 /**
@@ -22,8 +42,8 @@ function ensureHeadingId(heading) {
  * ScopeWeave creates several dialogs dynamically. Linking each derived name with
  * `aria-labelledby` keeps assistive-technology output synchronized when visible
  * heading text changes, without duplicating component-specific accessibility
- * code. Dialogs that already declare `aria-label` or `aria-labelledby` are
- * intentionally left unchanged.
+ * code. Dialogs that already declare `aria-label` or an application-owned
+ * `aria-labelledby` are intentionally left unchanged.
  *
  * The root itself is checked when it is an element, then only descendant
  * dialogs are scanned. This lets the mutation observer inspect newly inserted
@@ -43,11 +63,7 @@ export function labelUnnamedDialogs(root) {
 
   let labeled = 0;
   for (const dialog of dialogs) {
-    const heading = dialog.querySelector(HEADING_SELECTOR);
-    const name = heading?.textContent?.trim();
-    if (!name) continue;
-    dialog.setAttribute('aria-labelledby', ensureHeadingId(heading));
-    labeled += 1;
+    if (labelDialogFromHeading(dialog)) labeled += 1;
   }
   return labeled;
 }
@@ -59,12 +75,14 @@ const dialogObserver = new MutationObserver((mutations) => {
   for (const mutation of mutations) {
     for (const node of mutation.addedNodes) {
       labelUnnamedDialogs(node);
-      const ancestorDialog = (node?.parentElement || node?.parentNode)?.closest?.(UNNAMED_DIALOG_SELECTOR);
+      const ancestorDialog = (node?.parentElement || node?.parentNode)?.closest?.(
+        RELABELABLE_DIALOG_SELECTOR,
+      );
       if (ancestorDialog) ancestorDialogs.add(ancestorDialog);
     }
   }
   for (const dialog of ancestorDialogs) {
-    labelUnnamedDialogs(dialog);
+    labelDialogFromHeading(dialog);
   }
 });
 
