@@ -1,6 +1,7 @@
 // ScopeWeave SaaS API. Multi-tenant (org-scoped), optimistic concurrency on
 // project docs, SSE realtime fan-out per project. The existing static client
 // (index.html/app.js) becomes the frontend that talks to these routes.
+import { StripeWebhookError, verifyStripeWebhookRequest } from './stripe_webhook.mjs';
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
@@ -601,15 +602,23 @@ app.post('/api/orgs/:id/checkout', requireAuth, async (c) => {
   return c.json(session);
 });
 
-// Stripe webhook (stub). Live mode should verify the signature with
-// STRIPE_WEBHOOK_SECRET before trusting the event — named ceiling.
+// Stripe webhook authenticity only. The public app excludes this route and
+// registers the same fail-closed HMAC verifier so unsigned JSON can never
+// upgrade orgs.plan. This protected-graph copy must also refuse entitlement
+// mutation; a future composer that mounts the graph directly still fails closed
+// (Krawczyk et al., 1997; Stripe webhook signatures).
 app.post('/api/stripe/webhook', async (c) => {
-  const event = await c.req.json().catch(() => ({}));
-  if (event?.type === 'checkout.session.completed') {
-    const orgId = event.data?.object?.client_reference_id || event.data?.object?.metadata?.orgId;
-    if (orgId) db.prepare("UPDATE orgs SET plan = 'pro' WHERE id = ?").run(orgId);
+  try {
+    await verifyStripeWebhookRequest(c.req.raw, {
+      secret: process.env.STRIPE_WEBHOOK_SECRET,
+    });
+    return c.json({ received: true }, 200, { 'Cache-Control': 'no-store' });
+  } catch (error) {
+    if (error instanceof StripeWebhookError) {
+      return c.json({ error: error.code }, error.status, { 'Cache-Control': 'no-store' });
+    }
+    return c.json({ error: 'stripe_webhook_unavailable' }, 500, { 'Cache-Control': 'no-store' });
   }
-  return c.json({ received: true });
 });
 
 // Dev-only: simulate a successful checkout upgrading the org to Pro.
