@@ -24,23 +24,30 @@ function parseSafeIntegerSetting(name, raw, fallback, minimum) {
 }
 
 /**
- * Return a stable IP spelling for trust comparisons and limiter keys.
+ * Return one canonical IP spelling for trust comparisons and limiter keys.
  *
- * Node can expose an IPv4 connection accepted by an IPv6 dual-stack listener
- * as an IPv4-mapped address such as `::ffff:127.0.0.1`. Operators should be
- * able to configure the actual IPv4 proxy address once, rather than having to
- * predict the listener representation. Invalid values return null so they can
+ * Equivalent IPv6 text (for example `0:0:0:0:0:0:0:1` and `::1`) must compare
+ * equal. IPv4-mapped IPv6 values are reduced to the underlying IPv4 identity,
+ * so operators can configure the proxy's actual IPv4 address regardless of
+ * whether a dual-stack listener exposes it as `::ffff:127.0.0.1` or an
+ * equivalent hexadecimal IPv6 spelling. Invalid values return null and can
  * never become trusted identities.
  */
 function canonicalIp(value) {
   const candidate = String(value ?? '').trim();
   const family = isIP(candidate);
   if (family === 0) return null;
-  if (family === 6) {
-    const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(candidate);
-    if (mapped && isIP(mapped[1]) === 4) return mapped[1];
-  }
-  return family === 6 ? candidate.toLowerCase() : candidate;
+  if (family === 4) return candidate;
+
+  // WHATWG URL host serialization provides a deterministic compressed IPv6
+  // spelling for every address Node's net.isIP() accepts.
+  const normalized = new URL(`http://[${candidate}]/`).hostname.slice(1, -1).toLowerCase();
+  const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(normalized);
+  if (!mapped) return normalized;
+
+  const high = Number.parseInt(mapped[1], 16);
+  const low = Number.parseInt(mapped[2], 16);
+  return `${high >>> 8}.${high & 0xff}.${low >>> 8}.${low & 0xff}`;
 }
 
 const configuredRateLimitMax = process.env.SCOPEWEAVE_RATE_LIMIT_MAX;
