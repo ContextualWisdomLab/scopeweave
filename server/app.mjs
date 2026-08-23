@@ -1,13 +1,15 @@
 // ScopeWeave API security facade for outbound webhook registration.
-// The protected-develop route graph lives in app_core.mjs; this module adds one
-// bounded fail-closed destination-registration policy without rewriting tenant,
-// auth, billing, attachment, Clearfolio, or project-planning behavior.
+// The protected-develop route graph lives in app_core.mjs; this module adds
+// bounded fail-closed policies without rewriting tenant, auth, billing,
+// attachment, Clearfolio, or project-planning behavior.
 import { Hono } from 'hono';
 import { app as coreApp } from './app_core.mjs';
+import { StripeWebhookError, verifyStripeWebhookRequest } from './stripe_webhook.mjs';
 import { validateWebhookRegistrationUrl } from './webhook_transport.mjs';
 
 const WEBHOOK_REGISTRATION_PATH = '/api/orgs/:id/webhooks';
 const WEBHOOK_REGISTRATION_BODY_MAX_BYTES = 16 * 1024;
+const STRIPE_WEBHOOK_PATH = '/api/stripe/webhook';
 
 function canonicalRegistrationUrl(value) {
   return validateWebhookRegistrationUrl(value, {
@@ -127,14 +129,39 @@ async function registrationPolicyResponse(c) {
   return c.json({ error: 'webhook registration body too large' }, 413);
 }
 
+async function stripeWebhookResponse(c) {
+  try {
+    await verifyStripeWebhookRequest(c.req.raw, {
+      secret: process.env.STRIPE_WEBHOOK_SECRET,
+    });
+    // Authentication of a provider delivery is not entitlement authority. A
+    // later durable event ledger/provider-state reconciliation owns plan writes.
+    return c.json({ received: true }, 200, { 'Cache-Control': 'no-store' });
+  } catch (error) {
+    if (error instanceof StripeWebhookError) {
+      return c.json({ error: error.code }, error.status, { 'Cache-Control': 'no-store' });
+    }
+    return c.json({ error: 'stripe_webhook_unavailable' }, 500, { 'Cache-Control': 'no-store' });
+  }
+}
+
 /**
- * Public ScopeWeave HTTP application with fail-closed webhook registration.
- * All non-registration routes are delegated unchanged to the protected-develop
- * core application; webhook POST registration is canonicalized before storage.
+ * Public ScopeWeave HTTP application with fail-closed webhook boundaries.
+ *
+ * The core route and middleware graph is preserved in registration order, but
+ * the historical unsigned Stripe route is deliberately omitted from the public
+ * graph and replaced after the inherited request logging/rate-limit middleware.
+ * This makes unsigned plan escalation unreachable from the shipped server while
+ * retaining the existing destination-registration facade and all other routes.
  */
 export const app = new Hono();
 app.use(WEBHOOK_REGISTRATION_PATH, async (c, next) => {
   if (c.req.method !== 'POST') return next();
   return registrationPolicyResponse(c);
 });
-app.route('/', coreApp);
+for (const route of coreApp.routes.filter(
+  ({ method, path }) => !(method === 'POST' && path === STRIPE_WEBHOOK_PATH),
+)) {
+  app.on(route.method, route.path, route.handler);
+}
+app.post(STRIPE_WEBHOOK_PATH, stripeWebhookResponse);
