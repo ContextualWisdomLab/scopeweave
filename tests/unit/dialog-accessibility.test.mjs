@@ -25,6 +25,17 @@ assert.match(
 );
 
 const unnamedSelector = '[role="dialog"]:not([aria-label]):not([aria-labelledby])';
+const relabelableSelector = '[role="dialog"]:not([aria-label])';
+
+function matchesDialogSelector(dialog, selector) {
+  if (selector === unnamedSelector) {
+    return !dialog.getAttribute('aria-label') && !dialog.getAttribute('aria-labelledby');
+  }
+  if (selector === relabelableSelector) {
+    return !dialog.getAttribute('aria-label');
+  }
+  assert.fail(`unexpected dialog selector: ${selector}`);
+}
 
 class FakeDialog {
   constructor({ heading = null, ariaLabel = '', ariaLabelledby = '' } = {}) {
@@ -35,8 +46,7 @@ class FakeDialog {
   }
 
   matches(selector) {
-    assert.equal(selector, unnamedSelector);
-    return !this.getAttribute('aria-label') && !this.getAttribute('aria-labelledby');
+    return matchesDialogSelector(this, selector);
   }
 
   querySelector(selector) {
@@ -45,7 +55,7 @@ class FakeDialog {
   }
 
   querySelectorAll(selector) {
-    assert.equal(selector, unnamedSelector);
+    assert.ok(selector === unnamedSelector || selector === relabelableSelector);
     return [];
   }
 
@@ -63,9 +73,9 @@ let documentQueryCount = 0;
 const fakeDocument = {
   documentElement: { nodeName: 'HTML' },
   querySelectorAll(selector) {
-    assert.equal(selector, unnamedSelector);
+    assert.ok(selector === unnamedSelector || selector === relabelableSelector);
     documentQueryCount += 1;
-    return dialogs.filter((dialog) => !dialog.getAttribute('aria-label') && !dialog.getAttribute('aria-labelledby'));
+    return dialogs.filter((dialog) => matchesDialogSelector(dialog, selector));
   },
 };
 
@@ -118,13 +128,13 @@ const alreadyNamedDialog = new FakeDialog({ heading: { textContent: '기존 이�
 const alreadyLabelledbyDialog = new FakeDialog({ heading: { textContent: '제목 참조' }, ariaLabelledby: 'existing-title' });
 const mutationSubtree = {
   matches(selector) {
-    assert.equal(selector, unnamedSelector);
+    assert.ok(selector === unnamedSelector || selector === relabelableSelector);
     return false;
   },
   querySelectorAll(selector) {
-    assert.equal(selector, unnamedSelector);
+    assert.ok(selector === unnamedSelector || selector === relabelableSelector);
     return [nestedDialog, blankHeadingDialog, missingHeadingDialog, alreadyNamedDialog, alreadyLabelledbyDialog]
-      .filter((dialog) => !dialog.getAttribute('aria-label') && !dialog.getAttribute('aria-labelledby'));
+      .filter((dialog) => matchesDialogSelector(dialog, selector));
   },
 };
 const documentScansBeforeMutation = documentQueryCount;
@@ -153,7 +163,7 @@ const delayedHeading = {
   textContent: '나중에 추가된 제목',
   parentElement: {
     closest(selector) {
-      assert.equal(selector, unnamedSelector);
+      assert.ok(selector === unnamedSelector || selector === relabelableSelector);
       return delayedDialog;
     },
   },
@@ -170,6 +180,33 @@ assert.equal(
   documentQueryCount,
   documentScansBeforeMutation,
   'delayed dialog labeling must remain bounded to the mutated subtree and ancestor dialog',
+);
+
+const reopeningDialog = new FakeDialog({ heading: { textContent: '첫 번째 제목' } });
+FakeMutationObserver.latest.callback([{ addedNodes: [reopeningDialog] }]);
+const firstHeadingId = reopeningDialog.getAttribute('aria-labelledby');
+assert.match(firstHeadingId ?? '', /^scopeweave-dialog-title-\d+$/);
+const rebuiltHeading = {
+  textContent: '다시 열린 대화상자 제목',
+  parentElement: {
+    closest(selector) {
+      if (selector === unnamedSelector) return null;
+      if (selector === relabelableSelector) return reopeningDialog;
+      assert.fail(`unexpected dialog selector: ${selector}`);
+    },
+  },
+};
+reopeningDialog.heading = rebuiltHeading;
+FakeMutationObserver.latest.callback([{ addedNodes: [rebuiltHeading] }]);
+assert.equal(
+  reopeningDialog.getAttribute('aria-labelledby'),
+  rebuiltHeading.id,
+  'rebuilding a dialog panel must replace a stale generated aria-labelledby reference with the new visible heading',
+);
+assert.notEqual(
+  reopeningDialog.getAttribute('aria-labelledby'),
+  firstHeadingId,
+  'a reopened dialog must not retain the generated id of a removed heading',
 );
 
 const anotherDialog = new FakeDialog({ heading: { textContent: '추가 프로젝트 대화상자' } });
