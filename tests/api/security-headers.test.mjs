@@ -5,10 +5,26 @@ process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_DEV = '1';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 delete process.env.ORCHESTRATOR_URL;
+delete process.env.SCOPEWEAVE_HSTS_INCLUDE_SUBDOMAINS;
 
-const { SECURE_HEADERS_OPTIONS, createRuntimeApp, runtimeApp } =
-  await import('../../server/runtime-app.mjs');
+const {
+  SECURE_HEADERS_OPTIONS,
+  createRuntimeApp,
+  runtimeApp,
+  strictTransportSecurityValue,
+} = await import('../../server/runtime-app.mjs');
 const { app } = await import('../../server/app.mjs');
+
+assert.equal(
+  strictTransportSecurityValue(false),
+  'max-age=15552000',
+  'host-only HSTS is the safe default when deployment-domain ownership is not proven',
+);
+assert.equal(
+  strictTransportSecurityValue(true),
+  'max-age=15552000; includeSubDomains',
+  'operators can opt into subdomain HSTS after confirming every descendant host supports HTTPS',
+);
 
 assert.deepEqual(
   SECURE_HEADERS_OPTIONS,
@@ -16,7 +32,7 @@ assert.deepEqual(
     crossOriginResourcePolicy: 'same-origin',
     crossOriginOpenerPolicy: 'same-origin',
     referrerPolicy: 'no-referrer',
-    strictTransportSecurity: 'max-age=15552000; includeSubDomains',
+    strictTransportSecurity: 'max-age=15552000',
     xContentTypeOptions: 'nosniff',
     xDnsPrefetchControl: 'off',
     xDownloadOptions: 'noopen',
@@ -55,8 +71,8 @@ function assertBaselineSecurityHeaders(response, label) {
   );
   assert.equal(
     response.headers.get('strict-transport-security'),
-    'max-age=15552000; includeSubDomains',
-    `${label} carries the application-owned HSTS policy`,
+    'max-age=15552000',
+    `${label} carries the deployment-safe host-only HSTS policy`,
   );
   assert.equal(
     response.headers.get('x-dns-prefetch-control'),
