@@ -5,6 +5,10 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 
+function plainRows(rows) {
+  return rows.map((row) => ({ ...row }));
+}
+
 const directory = mkdtempSync(join(tmpdir(), 'scopeweave-webhook-migration-'));
 const databasePath = join(directory, 'legacy.sqlite');
 const legacy = new DatabaseSync(databasePath);
@@ -49,7 +53,8 @@ INSERT INTO orgs(id,name,owner_id) VALUES(1,'Legacy Buyer',1);
 INSERT INTO webhooks(id,org_id,url,secret,events,active) VALUES
   (41,1,'http://legacy-webhook.example.test/callback','whsec_legacy_active','project.update',1),
   (42,1,'https://webhook.example.test/callback','whsec_public_https','project.update',1),
-  (43,1,'http://retired-webhook.example.test/callback','whsec_legacy_inactive','project.update',0);
+  (43,1,'http://retired-webhook.example.test/callback','whsec_legacy_inactive','project.update',0),
+  (44,1,'https://127.0.0.1/callback','whsec_legacy_private_https','project.update',1);
 `);
 legacy.close();
 
@@ -57,16 +62,17 @@ process.env.SCOPEWEAVE_DB = databasePath;
 
 try {
   const moduleUrl = pathToFileURL(join(process.cwd(), 'server', 'db.mjs')).href;
-  const first = await import(`${moduleUrl}?legacy-http-migration=first`);
+  const first = await import(`${moduleUrl}?legacy-destination-migration=first`);
 
   assert.deepEqual(
-    first.db.prepare('SELECT id, active FROM webhooks ORDER BY id').all(),
+    plainRows(first.db.prepare('SELECT id, active FROM webhooks ORDER BY id').all()),
     [
       { id: 41, active: 0 },
       { id: 42, active: 1 },
       { id: 43, active: 0 },
+      { id: 44, active: 0 },
     ],
-    'startup disables only previously active insecure HTTP webhooks and preserves HTTPS/inactive rows',
+    'startup disables active legacy destinations rejected by current policy and preserves public HTTPS/inactive rows',
   );
 
   const firstAudit = first.db.prepare(
@@ -75,38 +81,47 @@ try {
       WHERE org_id = 1 AND action = 'webhook.security_block'
       ORDER BY id`,
   ).all();
-  assert.equal(firstAudit.length, 1, 'migration emits one durable buyer-visible security audit event');
-  assert.equal(firstAudit[0].targetType, 'webhook');
-  assert.equal(firstAudit[0].targetId, '41');
+  assert.equal(firstAudit.length, 2, 'migration emits one durable buyer-visible security audit event per disabled destination');
   assert.deepEqual(
-    JSON.parse(firstAudit[0].meta),
-    {
-      reason: 'insecure_scheme',
-      nextAction: 'register_public_https_replacement',
-    },
-    'audit evidence gives the operator a concrete remediation action',
+    firstAudit.map((row) => row.targetId),
+    ['41', '44'],
+    'audit events identify both legacy HTTP and private-HTTPS rows',
   );
-  assert.equal(
-    firstAudit[0].meta.includes('whsec_'),
-    false,
-    'buyer-visible audit evidence never includes the webhook signing secret',
-  );
+  for (const audit of firstAudit) {
+    assert.equal(audit.targetType, 'webhook');
+    assert.deepEqual(
+      JSON.parse(audit.meta),
+      {
+        reason: 'destination_policy',
+        nextAction: 'register_public_https_replacement',
+      },
+      'audit evidence gives the operator a concrete remediation action without misclassifying the scheme',
+    );
+    assert.equal(
+      audit.meta.includes('whsec_'),
+      false,
+      'buyer-visible audit evidence never includes the webhook signing secret',
+    );
+  }
   first.db.close();
 
-  const second = await import(`${moduleUrl}?legacy-http-migration=second`);
+  const second = await import(`${moduleUrl}?legacy-destination-migration=second`);
   assert.equal(
     second.db.prepare(
       `SELECT COUNT(*) AS count
          FROM audit_log
-        WHERE org_id = 1 AND action = 'webhook.security_block' AND target_id = '41'`,
+        WHERE org_id = 1 AND action = 'webhook.security_block'`,
     ).get().count,
-    1,
-    'restart is idempotent and does not duplicate the security audit event',
+    2,
+    'restart is idempotent and does not duplicate security audit events',
   );
-  assert.equal(
-    second.db.prepare('SELECT active FROM webhooks WHERE id = 41').get().active,
-    0,
-    'restart remains fail-closed for the migrated insecure destination',
+  assert.deepEqual(
+    plainRows(second.db.prepare('SELECT id, active FROM webhooks WHERE id IN (41, 44) ORDER BY id').all()),
+    [
+      { id: 41, active: 0 },
+      { id: 44, active: 0 },
+    ],
+    'restart remains fail-closed for every migrated policy-incompatible destination',
   );
   second.db.close();
 } finally {
@@ -114,4 +129,4 @@ try {
   rmSync(directory, { recursive: true, force: true });
 }
 
-console.log('legacy HTTP webhook migration regression passed');
+console.log('legacy webhook destination migration regression passed');
