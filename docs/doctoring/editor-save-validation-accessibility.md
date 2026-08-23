@@ -49,8 +49,7 @@ debounced presentation state catches up. The implementation must not treat
 The existing full-browser suite is updated to activate invalid save controls and
 assert that task count and editor state are unchanged for reversed dates,
 invalid calendar dates, and HTML input. It also re-enables the complete
-`scopeweave.spec.js` cloud path and restores module-preload assertions for the
-three production modules.
+`scopeweave.spec.js` cloud path for the editor acceptance boundary.
 
 ## Compatibility and rollback
 
@@ -59,9 +58,9 @@ or server storage. It changes only the editor's presentation semantics and keeps
 existing synchronous validation behavior as the persistence authority.
 
 Rollback must revert the button-state implementation, focused browser tests,
-full-suite expectations, module-preload restoration, package script, CHANGELOG
-entry, and this record together. Reintroducing native `disabled` requires a new
-proof that immediate correction cannot be blocked by stale debounced state.
+full-suite expectations, package script, CHANGELOG entry, and this record
+together. Reintroducing native `disabled` requires a new proof that immediate
+correction cannot be blocked by stale debounced state.
 
 ## References
 
