@@ -4,6 +4,7 @@
 // policy can be added without rewriting unrelated tenant, auth, billing, or
 // Clearfolio behavior. Every production server and in-process caller imports
 // this facade; app_core.mjs is an implementation module, not a public entrypoint.
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { createPublicKey, randomBytes, verify as verifySignature } from 'node:crypto';
 import { app as coreApp } from './app_core.mjs';
 import { db } from './db.mjs';
@@ -21,6 +22,9 @@ import {
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 const webhookFetchBoundaryKey = Symbol.for('scopeweave.webhook-fetch-boundary');
+const coreProbeContextKey = Symbol.for('scopeweave.core-probe-observability-context');
+const coreProbeConsoleBoundaryKey = Symbol.for('scopeweave.core-probe-console-boundary');
+const authorizationProbeObservabilityKey = Symbol('scopeweave.authorization-probe-observability');
 const WEBHOOK_REGISTRATION_PATH = /^\/api\/orgs\/[^/]+\/webhooks$/;
 const WEBHOOK_REGISTRATION_BODY_MAX_BYTES = 16 * 1024;
 const AUTH_REQUEST_BODY_MAX_BYTES = 16 * 1024;
@@ -49,9 +53,39 @@ const facadeMetrics = {
   s4xx: 0,
   s5xx: 0,
 };
+const suppressedCoreMetrics = {
+  requests: 0,
+  s2xx: 0,
+  s4xx: 0,
+  s5xx: 0,
+};
 const quietFacadeLogs = String(process.env.SCOPEWEAVE_DB || '').includes(':memory:');
 let oidcDiscoveryCache = null;
 const oidcSigningKeyCache = new Map();
+
+if (!globalThis[coreProbeContextKey]) {
+  Object.defineProperty(globalThis, coreProbeContextKey, {
+    value: new AsyncLocalStorage(),
+    configurable: false,
+    enumerable: false,
+    writable: false,
+  });
+}
+const coreProbeContext = globalThis[coreProbeContextKey];
+
+if (!globalThis[coreProbeConsoleBoundaryKey]) {
+  const nativeConsoleLog = console.log.bind(console);
+  console.log = (...args) => {
+    if (coreProbeContext.getStore() === true) return;
+    nativeConsoleLog(...args);
+  };
+  Object.defineProperty(globalThis, coreProbeConsoleBoundaryKey, {
+    value: true,
+    configurable: false,
+    enumerable: false,
+    writable: false,
+  });
+}
 
 function matchingStoredEmails(email) {
   return db.prepare(
@@ -121,6 +155,69 @@ async function mergeFacadeMetricsResponse(request, response) {
     headers,
   });
 }
+
+function recordSuppressedCoreResponse(response) {
+  suppressedCoreMetrics.requests += 1;
+  if (response.status >= 500) suppressedCoreMetrics.s5xx += 1;
+  else if (response.status >= 400) suppressedCoreMetrics.s4xx += 1;
+  else if (response.status >= 200) suppressedCoreMetrics.s2xx += 1;
+}
+
+function subtractPrometheusCoreMetrics(payload) {
+  let adjusted = payload;
+  for (const [key, value] of Object.entries(suppressedCoreMetrics)) {
+    const metric = `scopeweave_${key}`;
+    adjusted = adjusted.replace(
+      new RegExp(`^(${metric}\\s+)(-?\\d+(?:\\.\\d+)?)$`, 'm'),
+      (_, prefix, current) => `${prefix}${Math.max(0, Number(current) - value)}`,
+    );
+  }
+  return adjusted;
+}
+
+async function subtractSuppressedCoreMetricsResponse(request, response) {
+  const url = new URL(request.url);
+  if (
+    request.method !== 'GET'
+    || url.pathname !== METRICS_PATH
+    || !response.ok
+  ) return response;
+
+  const headers = new Headers(response.headers);
+  headers.delete('content-length');
+  if (url.searchParams.get('format') === 'prometheus') {
+    return new Response(
+      subtractPrometheusCoreMetrics(await response.clone().text()),
+      {
+        status: response.status,
+        statusText: response.statusText,
+        headers,
+      },
+    );
+  }
+
+  const payload = await response.clone().json().catch(() => null);
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return response;
+  const adjusted = { ...payload };
+  for (const [key, value] of Object.entries(suppressedCoreMetrics)) {
+    adjusted[key] = Math.max(0, (Number(adjusted[key]) || 0) - value);
+  }
+  return new Response(JSON.stringify(adjusted), {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+const nativeCoreFetch = coreApp.fetch.bind(coreApp);
+coreApp.fetch = async (request, ...rest) => {
+  const internalAuthorizationProbe = request?.[authorizationProbeObservabilityKey] === true;
+  const response = internalAuthorizationProbe
+    ? await coreProbeContext.run(true, () => nativeCoreFetch(request, ...rest))
+    : await nativeCoreFetch(request, ...rest);
+  if (internalAuthorizationProbe) recordSuppressedCoreResponse(response);
+  return subtractSuppressedCoreMetricsResponse(request, response);
+};
 
 function isSignedWebhookRequest(request) {
   if (request.method.toUpperCase() !== 'POST') return false;
@@ -533,12 +630,19 @@ function authorizationProbeRequest(request) {
   const headers = new Headers(request.headers);
   headers.delete('content-length');
   headers.set('content-type', 'application/json');
-  return new Request(request.url, {
+  const probe = new Request(request.url, {
     method: 'POST',
     headers,
     body: JSON.stringify({ url: '', events: [] }),
     signal: request.signal,
   });
+  Object.defineProperty(probe, authorizationProbeObservabilityKey, {
+    value: true,
+    configurable: false,
+    enumerable: false,
+    writable: false,
+  });
+  return probe;
 }
 
 /**
@@ -547,9 +651,9 @@ function authorizationProbeRequest(request) {
  * a destination-policy error. The synthetic payload is valid JSON but has an
  * empty URL, so an authorized manager deterministically reaches the legacy
  * pre-insert URL guard and receives 400. Every denial, rate limit, or internal
- * failure is propagated unchanged. Because the probe uses the customer's real
- * POST path and method, request metrics and structured logs reflect that
- * customer-visible operation instead of a synthetic GET.
+ * failure is propagated unchanged. The internal probe is omitted from customer
+ * metrics and request logs; secureFetch records only the actual customer-visible
+ * policy outcome after the authorization decision completes.
  */
 async function deniedRegistrationAuthorization(request, rest) {
   const response = await coreApp.fetch(authorizationProbeRequest(request), ...rest);
@@ -711,7 +815,7 @@ async function secureFetch(request, ...rest) {
   if (authPolicy?.response) return observeFacadeResponse(request, authPolicy.response);
   const canonicalRequest = await canonicalInboundRequest(authPolicy?.request || request);
   const policy = await registrationPolicyResult(canonicalRequest, rest);
-  if (policy?.response) return policy.response;
+  if (policy?.response) return observeFacadeResponse(canonicalRequest, policy.response);
   const effectiveRequest = policy?.request || canonicalRequest;
   const response = await coreFetchWithOidcBinding(effectiveRequest, rest);
   return mergeFacadeMetricsResponse(effectiveRequest, response);
