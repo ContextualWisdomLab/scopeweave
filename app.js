@@ -790,6 +790,9 @@ function renderEditorRow(anchorId) {
   panel.className = 'editor-panel';
   const form = document.createElement('form');
   form.dataset.editorForm = 'true';
+  // ScopeWeave validation is the sole persistence gate; native constraint
+  // validation would intercept submission and move focus before saveEditor().
+  form.noValidate = true;
   const editorGrid = document.createElement('div');
   editorGrid.className = 'editor-grid';
 
