@@ -180,6 +180,48 @@ try {
     [{ eventId: 'evt_snapshot', processingState: 'processing', attemptCount: 1, attempts: 1 }],
     'a later export observes the committed reconciliation state after the snapshot is released',
   );
+
+  writer.exec(`
+    INSERT INTO billing_stripe_webhook_events(
+      event_id, provider_created_at_sec, event_type, object_id, object_type,
+      api_version, request_id, payload_sha256, first_received_at_ms
+    ) VALUES(
+      'evt_queued_unseeded', 1787000100, 'customer.subscription.updated',
+      'sub_snapshot', 'subscription', '2025-03-31.basil', 'req_queued_unseeded',
+      'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 6000
+    );
+    INSERT INTO billing_stripe_reconciliation_triggers(
+      event_id, subscription_id, queued_at_ms, processing_state
+    ) VALUES('evt_queued_unseeded', 'sub_snapshot', 6100, 'pending');
+  `);
+
+  const queuedBeforeWorkerSeed = repository.exportTenantEvidence({ organizationId: 1, limit: 10 });
+  assert.deepEqual(
+    queuedBeforeWorkerSeed.events.map((event) => ({
+      eventId: event.eventId,
+      processingState: event.processingState,
+      attemptCount: event.attemptCount,
+      nextAttemptAtMs: event.nextAttemptAtMs,
+      attempts: event.attempts.length,
+    })),
+    [
+      {
+        eventId: 'evt_queued_unseeded',
+        processingState: 'pending',
+        attemptCount: 0,
+        nextAttemptAtMs: 6100,
+        attempts: 0,
+      },
+      {
+        eventId: 'evt_snapshot',
+        processingState: 'processing',
+        attemptCount: 1,
+        nextAttemptAtMs: 1200,
+        attempts: 1,
+      },
+    ],
+    'durable queued evidence must remain visible before the polling worker seeds its job row',
+  );
 } finally {
   try { writer?.close(); } catch {}
   try { reader?.close(); } catch {}
