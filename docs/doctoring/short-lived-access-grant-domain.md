@@ -71,7 +71,12 @@ separate check followed by an unconditional consume is not compliant.
 The eventual SQLite and PostgreSQL adapters must run the same repository
 contract. The repository—not the HTTP framework—owns the atomic state transition
 that makes concurrent one-time consumption yield at most one success and closes
-the revoke-between-check-and-consume race.
+the revoke-between-check-and-consume race. A successful repository mutation does
+not make its returned object trusted: the domain rechecks grant, subject,
+project, purpose, audience, and attachment identity against the pre-consume
+record and caller binding before that object may become a principal or audit
+identity. A mismatched atomic return fails closed even though the one-time grant
+may already have been consumed.
 
 ## Security invariants
 
@@ -105,6 +110,11 @@ The implementation enforces these invariants before route integration:
     client-visible failure that could trigger unsafe retry. Production adapters
     that require durable audit evidence must persist an audit outbox in the same
     transaction and deliver it asynchronously.
+12. The object returned by `consumeGrantAtomically` is untrusted adapter output.
+    Its grant, subject, project, purpose, audience, and attachment identities
+    must exactly match the pre-consume grant and requested binding before the
+    domain emits a principal or audit event. A forged or stale return object is
+    rejected with the same tenant-nondisclosing unauthorized result.
 
 The generated `grant_id` is an operational correlation identifier, not a bearer
 credential. It uses an independent 16 random bytes and is never derived from the
@@ -146,6 +156,8 @@ Focused contract tests cover:
 - maximum and exact TTL boundaries;
 - inaccessible-project and revoked-membership behavior;
 - revocation occurring after the membership check but before atomic consumption;
+- forged atomic-consume return identities that attempt to substitute a different
+  subject or project after the durable one-time transition;
 - audit-sink rejection after durable mint and consume transitions;
 - malformed and unknown secrets;
 - exact-expiry rejection;
