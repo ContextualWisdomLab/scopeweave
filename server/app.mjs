@@ -52,30 +52,10 @@ if (!globalThis[webhookFetchBoundaryKey]) {
   });
 }
 
-function canonicalDevelopmentLoopback(value) {
-  if (process.env.SCOPEWEAVE_DEV !== '1') return null;
-  let destination;
-  try {
-    destination = new URL(String(value ?? ''));
-  } catch {
-    return null;
-  }
-  if (destination.protocol !== 'http:'
-      || destination.username
-      || destination.password
-      || destination.hash) return null;
-  const host = destination.hostname.toLowerCase();
-  const ipv4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/.exec(host);
-  const loopbackV4 = ipv4
-    && Number(ipv4[1]) === 127
-    && ipv4.slice(1).every((part) => Number(part) >= 0 && Number(part) <= 255);
-  if (!(host === 'localhost' || host === '[::1]' || loopbackV4)) return null;
-  return destination.href;
-}
-
 function canonicalRegistrationUrl(value) {
-  const developmentLoopback = canonicalDevelopmentLoopback(value);
-  return developmentLoopback || validateWebhookRegistrationUrl(value);
+  return validateWebhookRegistrationUrl(value, {
+    allowDevelopmentLoopback: process.env.SCOPEWEAVE_DEV === '1',
+  });
 }
 
 function requestWithJson(original, payload) {
