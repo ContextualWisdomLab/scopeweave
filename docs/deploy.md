@@ -44,8 +44,36 @@ persists the database in the `scopeweave-data` volume.
 | `SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY` | no (default 8, maximum 32) | Maximum concurrent Clearfolio status lookups during one attachment-list request. Invalid values fall back to 8; values above 32 are clamped. |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS` | no (default 3000, maximum 30000) | Hard caller-side timeout for each Clearfolio status lookup. The AbortSignal is also forwarded downstream. |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_BUDGET_MS` | no (default 5000, maximum 60000) | Wall-clock budget for the entire best-effort refresh pass. Work not started before the deadline is deferred to a later list request. |
-| `SCOPEWEAVE_RATE_LIMIT_MAX` (+ `SCOPEWEAVE_RATE_LIMIT_WINDOW_MS`) | recommended | Per-client fixed-window rate limiting (429 + Retry-After). Off when unset. Client identity is anchored to the network peer unless the peer is explicitly trusted below. |
+| `SCOPEWEAVE_RATE_LIMIT_MAX` | recommended | Per-client fixed-window request allowance. Unset or explicit `0` disables the limiter. Any other configured value must be a non-negative safe integer or startup fails. |
+| `SCOPEWEAVE_RATE_LIMIT_WINDOW_MS` | no (default 60000) | Fixed-window duration in milliseconds. An explicit value must be a positive safe integer or startup fails. |
+| `SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX` | no (default 10000) | Maximum number of live per-client limiter buckets held by one ScopeWeave process. An explicit value must be a positive safe integer or startup fails. Once capacity is reached, previously unseen identities share a fail-closed overflow bucket until expired regular buckets are reclaimed. |
 | `SCOPEWEAVE_TRUSTED_PROXY_IPS` | only behind trusted reverse proxies | Comma-separated **immediate or chained proxy peer IPs** that ScopeWeave is allowed to trust when interpreting `X-Forwarded-For`. Leave unset for direct deployments. |
+
+### Rate-limit capacity and tuning
+
+When the limiter is enabled, `429` responses include `Retry-After`. Client
+identity is anchored to the actual network peer unless that peer is explicitly
+trusted through `SCOPEWEAVE_TRUSTED_PROXY_IPS`. The regular in-memory bucket map
+is deliberately bounded by `SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX`; attacker-driven
+high-cardinality source identities therefore cannot create unbounded limiter
+state. At capacity, new identities use one shared overflow bucket rather than
+allocating new map entries. Expired regular buckets are reclaimed by a bounded
+sweep before admitting new identities.
+
+Size `SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX` for the maximum legitimate concurrent
+client-identity population expected **per process**, with headroom for normal
+bursts. Do not increase it merely to make overflow throttling disappear: first
+confirm that trusted-proxy identity extraction is correct and that the observed
+cardinality is legitimate. In horizontally scaled deployments, each replica has
+its own limiter state; this fixed-window implementation is a process-local abuse
+control, not a globally coordinated quota system. Use a shared rate-limit store
+or edge control plane when a cross-replica/global quota is required.
+
+Limiter numeric configuration is fail-closed. A malformed, infinite, negative,
+or otherwise unsafe explicit value causes startup failure instead of silently
+disabling protection or resetting windows on every request. Treat such a startup
+failure as a configuration incident; correct the setting rather than removing
+or bypassing the limiter gate.
 
 ## Attachment status refresh operations
 
