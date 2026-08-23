@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 
 const indexHtml = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
@@ -35,11 +36,34 @@ test('sync status uses the same explicit advisory status semantics', () => {
 });
 
 test('cloud toast stylesheet is on every production serve path', () => {
-  const serverApp = readFileSync(new URL('../../server/app.mjs', import.meta.url), 'utf8');
   const pagesWorkflow = readFileSync(new URL('../../.github/workflows/pages.yml', import.meta.url), 'utf8');
   const staticDockerfile = readFileSync(new URL('../../Dockerfile', import.meta.url), 'utf8');
   const serverDockerfile = readFileSync(new URL('../../Dockerfile.server', import.meta.url), 'utf8');
-  assert.match(serverApp, /['"]\/toast-state\.css['"]/, 'SaaS allowlist serves the cloud toast stylesheet');
+  const child = spawnSync(process.execPath, ['--input-type=module', '--eval', `
+    process.env.SCOPEWEAVE_DB = ':memory:';
+    delete process.env.SCOPEWEAVE_DEV;
+    process.env.SCOPEWEAVE_PUBLIC_ORIGIN = 'https://scopeweave.example';
+    process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_scopeweave_toast';
+    process.env.STRIPE_PRICE_ID = 'price_scopeweave_toast';
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_scopeweave_toast_secret';
+    const { app } = await import('./server/app.mjs?toast-route-contract=1');
+    const toastRoutes = app.routes.filter(
+      ({ method, path }) => method === 'GET' && path === '/toast-state.css',
+    );
+    process.stdout.write(JSON.stringify({ toastRouteCount: toastRoutes.length }));
+  `], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+
+  assert.equal(child.status, 0, child.stderr);
+  const resultLine = child.stdout.trim().split('\n').at(-1);
+  assert.deepEqual(
+    JSON.parse(resultLine),
+    { toastRouteCount: 1 },
+    'SaaS route graph exposes the shipped toast stylesheet exactly once',
+  );
   assert.match(pagesWorkflow, /\btoast-state\.css\b/, 'GitHub Pages stages the cloud toast stylesheet');
   assert.match(staticDockerfile, /\btoast-state\.css\b/, 'static image copies the cloud toast stylesheet');
   assert.match(serverDockerfile, /\btoast-state\.css\b/, 'SaaS image copies the cloud toast stylesheet');

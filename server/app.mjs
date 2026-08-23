@@ -13,10 +13,6 @@ import { StripeWebhookError, verifyStripeWebhookRequest } from './stripe_webhook
  */
 export const app = new Hono();
 
-// Keep the shipped cloud-toast asset on the public entry path while delegating
-// its existing implementation to the protected route graph.
-app.get('/toast-state.css', (c) => applicationRoutes.fetch(c.req.raw));
-
 // Copy every shipped route and middleware except the historical unsigned Stripe
 // handler. Registering the authenticated replacement after this copy keeps the
 // original logging/metrics and rate-limit middleware ahead of the endpoint and
