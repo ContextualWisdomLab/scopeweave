@@ -1,6 +1,5 @@
 import { Hono } from 'hono';
 import { secureHeaders } from 'hono/secure-headers';
-import { readFile } from 'node:fs/promises';
 import { app } from './app.mjs';
 
 /**
@@ -26,28 +25,19 @@ export const SECURE_HEADERS_OPTIONS = Object.freeze({
 /**
  * Build the Hono application served by the Node runtime.
  *
- * The optional file reader keeps runtime-only static routes testable without
- * importing the listener entrypoint or opening a TCP port. Production callers
- * use Node's `readFile`; tests may inject a reader to reproduce I/O failures.
+ * Route ownership stays in the canonical application. The runtime adds only
+ * deployment-wide response headers, then delegates every path to that
+ * application. Tests may inject a small application to verify this boundary
+ * without opening a TCP listener or duplicating production route logic.
  *
- * @param {{readStaticFile?: typeof readFile}} [options] Runtime dependencies.
- * @returns {Hono} A fresh runtime application with static and API routes.
+ * @param {{application?: Hono}} [options] Runtime dependencies.
+ * @returns {Hono} A fresh runtime application with security headers and delegated routes.
  */
-export function createRuntimeApp({ readStaticFile = readFile } = {}) {
+export function createRuntimeApp({ application = app } = {}) {
   const runtimeApp = new Hono();
 
   runtimeApp.use('*', secureHeaders(SECURE_HEADERS_OPTIONS));
-  runtimeApp.get('/dialog-accessibility.js', async (c) => {
-    try {
-      const body = await readStaticFile(new URL('../dialog-accessibility.js', import.meta.url));
-      return c.body(body, 200, { 'Content-Type': 'text/javascript; charset=utf-8' });
-    } catch (error) {
-      if (error?.code === 'ENOENT') return c.notFound();
-      return c.text('Internal Server Error', 500);
-    }
-  });
-
-  runtimeApp.route('/', app);
+  runtimeApp.route('/', application);
   return runtimeApp;
 }
 
