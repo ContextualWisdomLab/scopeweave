@@ -3,6 +3,7 @@ import { app as coreRoutes } from './application_routes_core.mjs';
 import { db } from './db.mjs';
 import { hashApiToken, verifyToken } from './auth.mjs';
 
+const GUARD_ACCOUNTING_METHOD = Symbol.for('scopeweave.guard_accounting.original_method');
 const MEMBERS_PATH = '/api/orgs/:id/members';
 const INVITE_ACCEPT_PATH = '/api/invites/:token/accept';
 const OIDC_ROUTE_PREFIX = '/api/auth/oidc/*';
@@ -39,13 +40,21 @@ async function guardRejectionThroughCoreAbuseControls(c, errorBody) {
   // The security guards intentionally run before the legacy implementation
   // graph so a rejected request cannot reach the unsafe historical handler.
   // A non-mutating OPTIONS probe at the same path lets the existing core
-  // request logger, metrics and rate limiter account for that rejection. The
-  // original environment is forwarded so trusted-proxy/socket identity remains
-  // available to the core limiter; request bodies and authorization are not.
+  // request logger, metrics and rate limiter account for that rejection. Only
+  // the current forwarded-address input is copied into probe headers so the
+  // present core limiter sees the same input; bodies and authorization are not.
+  // A process-local environment symbol retains the attempted method solely for
+  // structured logging while routing the probe as OPTIONS.
   const headers = new Headers();
   const forwardedFor = c.req.header('x-forwarded-for');
   if (forwardedFor) headers.set('x-forwarded-for', forwardedFor);
-  const probe = await coreRoutes.request(c.req.url, { method: 'OPTIONS', headers }, c.env);
+  const accountingEnvironment = Object.assign(Object.create(null), c.env || {});
+  accountingEnvironment[GUARD_ACCOUNTING_METHOD] = c.req.method;
+  const probe = await coreRoutes.request(
+    c.req.url,
+    { method: 'OPTIONS', headers },
+    accountingEnvironment,
+  );
   if (probe.status === 429) return probe;
   return c.json(errorBody, 404);
 }
