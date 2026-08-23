@@ -47,8 +47,8 @@ test('cloud toast stylesheet is on every production serve path', () => {
   );
   assert.match(
     serverFacade,
-    /app\.route\(\s*['"]\/['"]\s*,\s*coreApp\s*\)/,
-    'SaaS facade delegates the root route graph to the core application',
+    /for\s*\(const\s+route\s+of\s+coreApp\.routes\.filter\([\s\S]*?\)\)\s*\{\s*app\.on\(route\.method,\s*route\.path,\s*route\.handler\);\s*\}/,
+    'SaaS facade replays the inherited core route graph after applying its bounded route exclusions',
   );
   assert.match(serverCore, /['"]\/toast-state\.css['"]/, 'SaaS core allowlist serves the cloud toast stylesheet');
   assert.match(pagesWorkflow, /\btoast-state\.css\b/, 'GitHub Pages stages the cloud toast stylesheet');
