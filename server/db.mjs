@@ -8,6 +8,8 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.SCOPEWEAVE_DB || join(__dirname, '..', 'data.db');
 export const db = new DatabaseSync(dbPath);
+// Wait briefly for an existing SQLite writer instead of failing startup on a transient lock.
+db.exec("PRAGMA busy_timeout = 5000");
 db.exec("PRAGMA journal_mode = WAL");
 db.exec("PRAGMA foreign_keys = ON");
 
