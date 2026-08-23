@@ -35,6 +35,21 @@ function authenticatedIdentityHint(c) {
   }
 }
 
+async function guardRejectionThroughCoreAbuseControls(c, errorBody) {
+  // The security guards intentionally run before the legacy implementation
+  // graph so a rejected request cannot reach the unsafe historical handler.
+  // A non-mutating OPTIONS probe at the same path lets the existing core
+  // request logger, metrics and rate limiter account for that rejection. The
+  // original environment is forwarded so trusted-proxy/socket identity remains
+  // available to the core limiter; request bodies and authorization are not.
+  const headers = new Headers();
+  const forwardedFor = c.req.header('x-forwarded-for');
+  if (forwardedFor) headers.set('x-forwarded-for', forwardedFor);
+  const probe = await coreRoutes.request(c.req.url, { method: 'OPTIONS', headers }, c.env);
+  if (probe.status === 429) return probe;
+  return c.json(errorBody, 404);
+}
+
 async function bindInviteToAuthenticatedIdentity(c, next) {
   // This guard only narrows access after confirming that the presented
   // credential is still live. The core requireAuth middleware remains the
@@ -49,7 +64,7 @@ async function bindInviteToAuthenticatedIdentity(c, next) {
 
   const invitedEmail = normalizeIdentityEmail(invite.email);
   if (!invitedEmail || !identity.email || invitedEmail !== identity.email) {
-    return c.json({ error: 'invalid or used invite' }, 404);
+    return guardRejectionThroughCoreAbuseControls(c, { error: 'invalid or used invite' });
   }
   return next();
 }
@@ -79,7 +94,7 @@ async function redactPendingInviteTokens(c, next) {
 
 async function failClosedWhenOidcIsUnconfigured(c, next) {
   if (process.env.SCOPEWEAVE_DEV !== '1' && !process.env.OIDC_ISSUER) {
-    return c.json({ error: 'sso not configured' }, 404);
+    return guardRejectionThroughCoreAbuseControls(c, { error: 'sso not configured' });
   }
   return next();
 }
@@ -89,8 +104,8 @@ async function failClosedWhenOidcIsUnconfigured(c, next) {
  *
  * Every consumer, including the public server and tests that mount this route
  * graph directly, passes through the same invite and OIDC trust controls before
- * the protected implementation graph runs. The implementation module remains
- * internal; this module is the supported route-graph entry point.
+ * the protected implementation graph runs. Rejected guards are still accounted
+ * by the core graph's existing abuse-control and observability middleware.
  */
 export const app = new Hono();
 
