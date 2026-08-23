@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 process.env.SCOPEWEAVE_DB = ':memory:';
 delete process.env.SCOPEWEAVE_DEV;
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
+
+const facadeSource = readFileSync(new URL('../../server/app.mjs', import.meta.url), 'utf8');
+assert.doesNotMatch(
+  facadeSource,
+  /valid http\(s\) url required/,
+  'registration facade does not retain the superseded core error contract',
+);
 
 const { app } = await import('../../server/app.mjs');
 const { app: coreApp } = await import('../../server/app_core.mjs');
