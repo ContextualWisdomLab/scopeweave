@@ -81,6 +81,30 @@ function evidenceExportFailure(c, error) {
   );
 }
 
+function auditEvidenceExport(organizationId, actorUserId, report) {
+  try {
+    db.prepare(`
+      INSERT INTO audit_log(org_id,user_id,action,target_type,target_id,meta)
+      VALUES(?,?,?,?,?,?)
+    `).run(
+      organizationId,
+      actorUserId,
+      'billing.reconciliation.evidence_export',
+      'organization',
+      String(organizationId),
+      JSON.stringify({
+        schemaVersion: report.schemaVersion,
+        eventCount: report.events.length,
+      }),
+    );
+  } catch {
+    throw new StripeReconciliationEvidenceExportError(
+      'stripe_reconciliation_evidence_export_audit_failed',
+      500,
+    );
+  }
+}
+
 function auditRecovery(organizationId, actorUserId, result) {
   try {
     db.prepare(`
@@ -112,9 +136,11 @@ function auditRecovery(organizationId, actorUserId, result) {
  * The route graph deliberately exposes no lease token, provider secret, raw webhook
  * payload, or caller-selected Subscription identity. Owners/admins can export their
  * bounded reconciliation evidence, inspect their bounded backlog, and retry one exact
- * verified Event using a durable evidence reference. Recovery JSON is capped at 4 KiB
- * by Hono's body-limit middleware, which checks declared Content-Length and streamed
- * bytes before the JSON parser can buffer an unbounded privileged request.
+ * verified Event using a durable evidence reference. Successful evidence disclosure
+ * is fail-closed on its durable access-audit write, without copying private recovery
+ * text into the audit metadata. Recovery JSON is capped at 4 KiB by Hono's body-limit
+ * middleware, which checks declared Content-Length and streamed bytes before the JSON
+ * parser can buffer an unbounded privileged request.
  */
 export const stripeReconciliationRecoveryRoutes = new Hono();
 
@@ -137,6 +163,7 @@ stripeReconciliationRecoveryRoutes.get(
         organizationId,
         limit,
       });
+      auditEvidenceExport(organizationId, actorUserId, report);
       return c.json(report, 200, EVIDENCE_EXPORT_DOWNLOAD_HEADERS);
     } catch (error) {
       return evidenceExportFailure(c, error);
