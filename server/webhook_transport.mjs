@@ -6,6 +6,7 @@ import { BlockList, isIP } from 'node:net';
 const DENIED_IPV4_BLOCKS = new BlockList();
 const DENIED_IPV6_BLOCKS = new BlockList();
 const PUBLIC_IPV6_UNICAST = new BlockList();
+const DEFAULT_WEBHOOK_TRANSPORT_TIMEOUT_MS = 3000;
 PUBLIC_IPV6_UNICAST.addSubnet('2000::', 3, 'ipv6');
 
 for (const [address, prefix, family] of [
@@ -225,6 +226,7 @@ function requestOptions(destination, candidate, headers, signal) {
     method: 'POST',
     headers,
     signal,
+    timeout: DEFAULT_WEBHOOK_TRANSPORT_TIMEOUT_MS,
     agent: false,
     lookup: pinnedLookup(candidate.address, candidate.family),
     ...(destination.protocol === 'https:' && !isIP(tlsHost) ? { servername: tlsHost } : {}),
@@ -261,6 +263,13 @@ async function postToCandidate(destination, candidate, { headers, body, signal, 
       }
       trackConnection(req, attempt, destination.protocol === 'https:');
       req.once?.('error', () => reject(new WebhookTransportError()));
+      req.once?.('timeout', () => {
+        try {
+          req.destroy?.();
+        } finally {
+          reject(new WebhookTransportError());
+        }
+      });
       req.end(body);
     }), signal);
   } catch (error) {
@@ -273,9 +282,10 @@ async function postToCandidate(destination, candidate, { headers, body, signal, 
  * Build the outbound webhook transport around injectable DNS and network seams.
  * Every POST resolves afresh, rejects unauthorized mixed answers, pins the socket
  * to a validated candidate, preserves HTTPS Host/TLS authority, disables pooling,
- * and never follows redirects. A pre-connect failure may fall through to another
- * already-validated candidate; after a connection is established delivery is
- * ambiguous and the signed body is never replayed within the same attempt.
+ * and bounds stalled peers with a transport-owned timeout. A pre-connect failure
+ * may fall through to another already-validated candidate; after a connection is
+ * established delivery is ambiguous and the signed body is never replayed within
+ * the same attempt.
  */
 export function createWebhookTransport({
   lookup = dnsLookup,
