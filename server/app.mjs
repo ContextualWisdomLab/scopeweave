@@ -450,7 +450,7 @@ app.get('/api/orgs/:id/members', requireAuth, (c) => {
      JOIN users u ON u.id = m.user_id WHERE m.org_id = ? ORDER BY m.id`
   ).all(orgId);
   const invites = db.prepare(
-    `SELECT id, email, role, token, created_at AS createdAt FROM invites
+    `SELECT id, email, role, created_at AS createdAt FROM invites
      WHERE org_id = ? AND accepted_at IS NULL ORDER BY id DESC`
   ).all(orgId);
   return c.json({ members, invites });
@@ -487,11 +487,15 @@ app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
   return c.json({ token, email, role: inviteRole });
 });
 
-// Accept an invite (any authenticated user holding the token). Idempotent.
+// Accept an invite only for the authenticated identity named by the invite.
 app.post('/api/invites/:token/accept', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const inv = db.prepare('SELECT * FROM invites WHERE token = ?').get(c.req.param('token'));
   if (!inv || inv.accepted_at) return c.json({ error: 'invalid or used invite' }, 404);
+  const user = db.prepare('SELECT email FROM users WHERE id = ?').get(uid);
+  if (user.email.trim().toLowerCase() !== inv.email.trim().toLowerCase()) {
+    return c.json({ error: 'invalid or used invite' }, 404);
+  }
   const existing = orgRole(uid, inv.org_id);
   if (!existing) {
     if (wouldExceed(db, getOrg(inv.org_id), 'members')) {
