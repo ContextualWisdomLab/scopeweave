@@ -5,6 +5,7 @@ import { readFileSync } from 'node:fs';
 const indexHtml = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
 const toastStateCss = readFileSync(new URL('../../toast-state.css', import.meta.url), 'utf8');
 const cloudSyncJs = readFileSync(new URL('../../cloud-sync.js', import.meta.url), 'utf8');
+const cloudSyncCoreJs = readFileSync(new URL('../../cloud-sync-core.js', import.meta.url), 'utf8');
 
 function toastElementMarkup(html) {
   const match = html.match(/<div\s+[^>]*\bid=["']toast["'][^>]*>/i);
@@ -36,20 +37,27 @@ test('sync status uses the same explicit advisory status semantics', () => {
 
 test('cloud toast stylesheet is on every production serve path', () => {
   const serverApp = readFileSync(new URL('../../server/app.mjs', import.meta.url), 'utf8');
+  const serverAppCore = readFileSync(new URL('../../server/app_core.mjs', import.meta.url), 'utf8');
   const pagesWorkflow = readFileSync(new URL('../../.github/workflows/pages.yml', import.meta.url), 'utf8');
   const staticDockerfile = readFileSync(new URL('../../Dockerfile', import.meta.url), 'utf8');
   const serverDockerfile = readFileSync(new URL('../../Dockerfile.server', import.meta.url), 'utf8');
-  assert.match(serverApp, /['"]\/toast-state\.css['"]/, 'SaaS allowlist serves the cloud toast stylesheet');
+  assert.match(serverApp, /coreApp\.fetch\(/, 'security envelope delegates unmatched SaaS requests to the production core');
+  assert.match(serverAppCore, /['"]\/toast-state\.css['"]/, 'delegated SaaS core allowlist serves the cloud toast stylesheet');
   assert.match(pagesWorkflow, /\btoast-state\.css\b/, 'GitHub Pages stages the cloud toast stylesheet');
   assert.match(staticDockerfile, /\btoast-state\.css\b/, 'static image copies the cloud toast stylesheet');
   assert.match(serverDockerfile, /\btoast-state\.css\b/, 'SaaS image copies the cloud toast stylesheet');
 });
 
-test('cloud toast state is visibly rendered by a shipped stylesheet', () => {
+test('cloud toast state is visibly rendered by the delegated client core', () => {
   assert.match(
     cloudSyncJs,
+    /export\s+\*\s+from\s+["']\.\/cloud-sync-core\.js["']/,
+    'security envelope delegates the established cloud client exports to the production core',
+  );
+  assert.match(
+    cloudSyncCoreJs,
     /classList\.add\(["']visible["']\)/,
-    'cloud status messages activate the visible toast state',
+    'delegated cloud status messages activate the visible toast state',
   );
   assert.match(
     indexHtml,
