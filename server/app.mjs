@@ -58,35 +58,69 @@ function canonicalRegistrationUrl(value) {
   });
 }
 
+function canonicalRegistrationPayload(text) {
+  let payload = {};
+  try {
+    const value = JSON.parse(text);
+    if (value && typeof value === 'object' && !Array.isArray(value)) payload = value;
+  } catch { /* malformed JSON follows the core route's stable 400 path */ }
+
+  let canonicalUrl = '';
+  try {
+    canonicalUrl = canonicalRegistrationUrl(payload.url);
+  } catch { /* the core legacy URL guard is translated after auth/authorization */ }
+
+  return JSON.stringify({
+    ...payload,
+    url: canonicalUrl,
+  });
+}
+
 function canonicalRegistrationBody(original) {
   if (!original.body) return JSON.stringify({ url: '' });
 
+  const source = original.body.getReader();
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let text = '';
-  return original.body.pipeThrough(new TransformStream({
-    transform(chunk) {
-      text += decoder.decode(chunk, { stream: true });
-    },
-    flush(controller) {
-      text += decoder.decode();
-      let payload = {};
-      try {
-        const value = JSON.parse(text);
-        if (value && typeof value === 'object' && !Array.isArray(value)) payload = value;
-      } catch { /* malformed JSON follows the core route's stable 400 path */ }
+  let finished = false;
 
-      let canonicalUrl = '';
+  // A zero-sized queue is deliberate: creating the forwarding Request must not
+  // pull attacker-controlled bytes. The core rate-limit/auth/RBAC middleware
+  // therefore runs first; only its route-level c.req.json() read starts source
+  // consumption for an already-authorized registration request.
+  return new ReadableStream({
+    async pull(controller) {
+      if (finished) return;
       try {
-        canonicalUrl = canonicalRegistrationUrl(payload.url);
-      } catch { /* the core legacy URL guard is translated after auth/authorization */ }
-
-      controller.enqueue(encoder.encode(JSON.stringify({
-        ...payload,
-        url: canonicalUrl,
-      })));
+        while (true) {
+          const { done, value } = await source.read();
+          if (done) {
+            text += decoder.decode();
+            controller.enqueue(encoder.encode(canonicalRegistrationPayload(text)));
+            controller.close();
+            finished = true;
+            source.releaseLock();
+            return;
+          }
+          text += decoder.decode(value, { stream: true });
+        }
+      } catch (error) {
+        finished = true;
+        try { source.releaseLock(); } catch { /* already released/cancelled */ }
+        controller.error(error);
+      }
     },
-  }));
+    async cancel(reason) {
+      if (finished) return;
+      finished = true;
+      try {
+        await source.cancel(reason);
+      } finally {
+        try { source.releaseLock(); } catch { /* cancellation can release it */ }
+      }
+    },
+  }, { highWaterMark: 0 });
 }
 
 function requestWithCanonicalRegistration(original) {
@@ -104,9 +138,9 @@ function requestWithCanonicalRegistration(original) {
 }
 
 async function registrationPolicyResponse(c) {
-  // Route the request through the core exactly once. The transformed body is a
-  // backpressured stream, so core rate-limit/auth/RBAC middleware can reject a
-  // request without the facade draining an attacker-controlled body first.
+  // Route the request through the core exactly once. The forwarding stream has
+  // no eager queue, so core rate-limit/auth/RBAC middleware can reject a request
+  // without the facade draining an attacker-controlled body first.
   const response = await coreApp.fetch(requestWithCanonicalRegistration(c.req.raw));
   if (response.status !== 400) return response;
   const responseBody = await response.clone().json().catch(() => null);
