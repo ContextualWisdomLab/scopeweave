@@ -35,7 +35,10 @@ test('sync status uses the same explicit advisory status semantics', () => {
 });
 
 test('cloud toast stylesheet is on every production serve path', () => {
-  const serverApp = readFileSync(new URL('../../server/app.mjs', import.meta.url), 'utf8');
+  const serverApp = [
+    readFileSync(new URL('../../server/app.mjs', import.meta.url), 'utf8'),
+    readFileSync(new URL('../../server/app_core.mjs', import.meta.url), 'utf8'),
+  ].join('\n');
   const pagesWorkflow = readFileSync(new URL('../../.github/workflows/pages.yml', import.meta.url), 'utf8');
   const staticDockerfile = readFileSync(new URL('../../Dockerfile', import.meta.url), 'utf8');
   const serverDockerfile = readFileSync(new URL('../../Dockerfile.server', import.meta.url), 'utf8');
