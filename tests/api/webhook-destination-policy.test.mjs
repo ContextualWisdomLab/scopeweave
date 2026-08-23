@@ -71,6 +71,31 @@ assert.ok(
   `unauthenticated webhook body must not be drained before auth; observed ${unauthenticatedBodyPulls} stream pulls`,
 );
 
+let authorizedBodyPulls = 0;
+const oversizedAuthorizedBody = new ReadableStream({
+  pull(controller) {
+    authorizedBodyPulls += 1;
+    controller.enqueue(new TextEncoder().encode('x'.repeat(8192)));
+    if (authorizedBodyPulls >= 8) controller.close();
+  },
+});
+response = await request(`/api/orgs/${organizationId}/webhooks`, {
+  method: 'POST',
+  headers: authorization,
+  body: oversizedAuthorizedBody,
+  duplex: 'half',
+});
+assert.equal(response.status, 413, 'authorized webhook registration bodies have a bounded memory budget');
+assert.deepEqual(
+  await response.json(),
+  { error: 'webhook registration body too large' },
+  'oversized registration returns a stable buyer-actionable error',
+);
+assert.ok(
+  authorizedBodyPulls <= 3,
+  `oversized webhook body must stop near the 16 KiB budget; observed ${authorizedBodyPulls} stream pulls`,
+);
+
 for (const headers of [{}, { authorization: 'Bearer invalid-token' }]) {
   response = await request(`/api/orgs/${organizationId}/webhooks`, {
     method: 'POST',
