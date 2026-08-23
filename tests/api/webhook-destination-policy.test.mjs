@@ -53,11 +53,17 @@ assert.deepEqual(
 );
 
 let unauthenticatedBodyPulls = 0;
+let unauthenticatedBodyCancels = 0;
+let unauthenticatedBodyCancelReason = '';
 const unauthenticatedBody = new ReadableStream({
   pull(controller) {
     unauthenticatedBodyPulls += 1;
     controller.enqueue(new TextEncoder().encode('x'.repeat(8192)));
     if (unauthenticatedBodyPulls >= 8) controller.close();
+  },
+  cancel(reason) {
+    unauthenticatedBodyCancels += 1;
+    unauthenticatedBodyCancelReason = String(reason);
   },
 });
 response = await request(`/api/orgs/${organizationId}/webhooks`, {
@@ -69,6 +75,16 @@ assert.equal(response.status, 401, 'webhook registration authenticates before re
 assert.ok(
   unauthenticatedBodyPulls <= 1,
   `unauthenticated webhook body must not be drained before auth; observed ${unauthenticatedBodyPulls} stream pulls`,
+);
+assert.equal(
+  unauthenticatedBodyCancels,
+  1,
+  'early authentication rejection cancels the unread upstream registration body exactly once',
+);
+assert.equal(
+  unauthenticatedBodyCancelReason,
+  'webhook registration request completed',
+  'early rejection releases the upstream body with a stable non-secret cancellation reason',
 );
 
 let authorizedBodyPulls = 0;
