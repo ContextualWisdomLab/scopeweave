@@ -10,7 +10,7 @@ import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
-import { postWebhook } from './webhook_transport.mjs';
+import { postWebhook, validateWebhookRegistrationUrl, WebhookDestinationError } from './webhook_transport.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
@@ -747,12 +747,22 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   const orgId = c.req.param('id');
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
-  if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  let canonicalUrl;
+  try {
+    canonicalUrl = validateWebhookRegistrationUrl(url, {
+      allowDevelopmentLoopback: process.env.SCOPEWEAVE_DEV === '1',
+    });
+  } catch (error) {
+    if (error instanceof WebhookDestinationError) {
+      return c.json({ error: 'valid public https webhook URL required' }, 400);
+    }
+    throw error;
+  }
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
-  const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
-  logAudit(orgId, uid, 'webhook.create', 'webhook', id, { url, events: evs });
-  return c.json({ id, url, events: evs, secret }); // secret shown once for signature verification
+  const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, canonicalUrl, secret, evs));
+  logAudit(orgId, uid, 'webhook.create', 'webhook', id, { url: canonicalUrl, events: evs });
+  return c.json({ id, url: canonicalUrl, events: evs, secret }); // secret shown once for signature verification
 });
 
 app.get('/api/orgs/:id/webhooks/:whId/deliveries', requireAuth, (c) => {
