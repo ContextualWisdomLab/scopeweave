@@ -7,6 +7,7 @@ import { app as coreApp } from './app_core.mjs';
 import { validateWebhookRegistrationUrl } from './webhook_transport.mjs';
 
 const WEBHOOK_REGISTRATION_PATH = '/api/orgs/:id/webhooks';
+const WEBHOOK_REGISTRATION_BODY_MAX_BYTES = 16 * 1024;
 
 function canonicalRegistrationUrl(value) {
   return validateWebhookRegistrationUrl(value, {
@@ -33,19 +34,22 @@ function canonicalRegistrationPayload(text) {
 }
 
 function canonicalRegistrationBody(original) {
-  if (!original.body) return JSON.stringify({ url: '' });
+  const state = { tooLarge: false };
+  if (!original.body) return { body: JSON.stringify({ url: '' }), state };
 
   const source = original.body.getReader();
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   let text = '';
+  let totalBytes = 0;
   let finished = false;
 
   // A zero-sized queue is deliberate: creating the forwarding Request must not
   // pull attacker-controlled bytes. The core rate-limit/auth/RBAC middleware
   // therefore runs first; only its route-level c.req.json() read starts source
-  // consumption for an already-authorized registration request.
-  return new ReadableStream({
+  // consumption for an already-authorized registration request. Once that read
+  // begins, the facade enforces a small explicit memory budget before decoding.
+  const body = new ReadableStream({
     async pull(controller) {
       if (finished) return;
       try {
@@ -59,7 +63,22 @@ function canonicalRegistrationBody(original) {
             source.releaseLock();
             return;
           }
-          text += decoder.decode(value, { stream: true });
+
+          const chunk = value instanceof Uint8Array ? value : new Uint8Array(value);
+          totalBytes += chunk.byteLength;
+          if (totalBytes > WEBHOOK_REGISTRATION_BODY_MAX_BYTES) {
+            state.tooLarge = true;
+            finished = true;
+            try { await source.cancel('webhook registration body too large'); } catch { /* best effort */ }
+            try { source.releaseLock(); } catch { /* cancellation may release it */ }
+            // Feed the core route a side-effect-free invalid registration after
+            // auth/RBAC has already admitted this request. The facade converts
+            // that route response into the stable 413 below.
+            controller.enqueue(encoder.encode(JSON.stringify({ url: '' })));
+            controller.close();
+            return;
+          }
+          text += decoder.decode(chunk, { stream: true });
         }
       } catch (error) {
         finished = true;
@@ -77,27 +96,35 @@ function canonicalRegistrationBody(original) {
       }
     },
   }, { highWaterMark: 0 });
+
+  return { body, state };
 }
 
 function requestWithCanonicalRegistration(original) {
   const headers = new Headers(original.headers);
   headers.delete('content-length');
   headers.set('content-type', 'application/json');
-  const body = canonicalRegistrationBody(original);
-  return new Request(original.url, {
-    method: original.method,
-    headers,
-    body,
-    signal: original.signal,
-    ...(body instanceof ReadableStream ? { duplex: 'half' } : {}),
-  });
+  const { body, state } = canonicalRegistrationBody(original);
+  return {
+    request: new Request(original.url, {
+      method: original.method,
+      headers,
+      body,
+      signal: original.signal,
+      ...(body instanceof ReadableStream ? { duplex: 'half' } : {}),
+    }),
+    state,
+  };
 }
 
 async function registrationPolicyResponse(c) {
   // Route the request through the core exactly once. The forwarding stream has
   // no eager queue, so core rate-limit/auth/RBAC middleware can reject a request
   // without the facade draining an attacker-controlled body first.
-  return coreApp.fetch(requestWithCanonicalRegistration(c.req.raw));
+  const { request, state } = requestWithCanonicalRegistration(c.req.raw);
+  const response = await coreApp.fetch(request);
+  if (!state.tooLarge) return response;
+  return c.json({ error: 'webhook registration body too large' }, 413);
 }
 
 /**
