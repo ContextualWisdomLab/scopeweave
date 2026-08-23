@@ -23,6 +23,26 @@ function parseSafeIntegerSetting(name, raw, fallback, minimum) {
   return value;
 }
 
+/**
+ * Return a stable IP spelling for trust comparisons and limiter keys.
+ *
+ * Node can expose an IPv4 connection accepted by an IPv6 dual-stack listener
+ * as an IPv4-mapped address such as `::ffff:127.0.0.1`. Operators should be
+ * able to configure the actual IPv4 proxy address once, rather than having to
+ * predict the listener representation. Invalid values return null so they can
+ * never become trusted identities.
+ */
+function canonicalIp(value) {
+  const candidate = String(value ?? '').trim();
+  const family = isIP(candidate);
+  if (family === 0) return null;
+  if (family === 6) {
+    const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(candidate);
+    if (mapped && isIP(mapped[1]) === 4) return mapped[1];
+  }
+  return family === 6 ? candidate.toLowerCase() : candidate;
+}
+
 const configuredRateLimitMax = process.env.SCOPEWEAVE_RATE_LIMIT_MAX;
 const RL_MAX = parseSafeIntegerSetting('SCOPEWEAVE_RATE_LIMIT_MAX', configuredRateLimitMax, 0, 0);
 const RL_WINDOW_MS = parseSafeIntegerSetting(
@@ -40,8 +60,8 @@ const RL_BUCKET_LIMIT = parseSafeIntegerSetting(
 const trustedProxyIps = new Set(
   String(process.env.SCOPEWEAVE_TRUSTED_PROXY_IPS || '')
     .split(',')
-    .map((value) => value.trim())
-    .filter((value) => isIP(value) !== 0)
+    .map(canonicalIp)
+    .filter(Boolean)
 );
 const rlBuckets = new Map();
 let overflowBucket;
@@ -66,10 +86,8 @@ try {
  * requests deliberately share the fail-closed `local` bucket.
  */
 function connectionPeerIp(c) {
-  const raw = c.env?.incoming?.socket?.remoteAddress;
-  if (typeof raw !== 'string') return 'local';
-  const candidate = raw.trim();
-  return isIP(candidate) ? candidate : 'local';
+  const peer = canonicalIp(c.env?.incoming?.socket?.remoteAddress);
+  return peer || 'local';
 }
 
 /**
@@ -89,8 +107,8 @@ function rateLimitClientIp(c) {
   if (forwarded.length === 0) return peer;
 
   for (let i = forwarded.length - 1; i >= 0; i--) {
-    const hop = forwarded[i];
-    if (!isIP(hop)) return peer;
+    const hop = canonicalIp(forwarded[i]);
+    if (!hop) return peer;
     if (!trustedProxyIps.has(hop)) return hop;
   }
   return peer;
