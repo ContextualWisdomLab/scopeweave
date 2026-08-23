@@ -87,8 +87,9 @@ export function migrateLegacyWebhookDestinations(
   } catch (error) {
     try {
       database.exec('ROLLBACK');
-    } finally {
-      throw error;
+    } catch {
+      // Preserve the causal migration failure if rollback itself also fails.
     }
+    throw error;
   }
 }
