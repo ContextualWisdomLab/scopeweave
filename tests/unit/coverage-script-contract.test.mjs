@@ -57,8 +57,8 @@ assert.match(
 );
 assert.match(
   publicApp,
-  /app\.route\(\s*['"]\/['"]\s*,\s*applicationRoutes\s*\)/,
-  'the public app delegates unrelated routes to the protected application graph',
+  /applicationRoutes\.routes\.filter\([\s\S]*method === ['"]POST['"][\s\S]*path === ['"]\/api\/stripe\/webhook['"][\s\S]*app\.on\(route\.method, route\.path, route\.handler\)/,
+  'the public app preserves the protected route graph while excluding the historical unsigned Stripe handler',
 );
 assert.match(
   scripts['test:coverage:cases'],
