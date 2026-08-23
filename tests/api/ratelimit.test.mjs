@@ -19,8 +19,9 @@ const limited = await req('/api/health');
 assert.equal(limited.status, 429, 'still limited within the window');
 assert.ok(limited.headers.get('retry-after'), 'Retry-After header present');
 
-// a different client IP has its own bucket
-const other = await req('/api/health', { headers: { 'x-forwarded-for': '198.51.100.9' } });
-assert.equal(other.status, 200, 'different IP not limited');
+// Untrusted callers must not be able to evade the security boundary by
+// choosing a fresh client-supplied forwarding header on every request.
+const spoofed = await req('/api/health', { headers: { 'x-forwarded-for': '198.51.100.9' } });
+assert.equal(spoofed.status, 429, 'untrusted X-Forwarded-For cannot select a new rate-limit bucket');
 
 console.log('✓ rate-limit tests passed');
