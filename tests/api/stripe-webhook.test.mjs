@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createHmac } from 'node:crypto';
 import test from 'node:test';
 
@@ -65,6 +66,44 @@ function checkoutCompletedBody(orgId) {
     },
   });
 }
+
+test('Stripe webhook stays behind the application abuse-control middleware', () => {
+  const child = spawnSync(process.execPath, ['--input-type=module', '--eval', `
+    process.env.SCOPEWEAVE_DB = ':memory:';
+    delete process.env.SCOPEWEAVE_DEV;
+    process.env.SCOPEWEAVE_PUBLIC_ORIGIN = 'https://scopeweave.example';
+    process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
+    process.env.STRIPE_SECRET_KEY = 'sk_test_scopeweave_webhook';
+    process.env.STRIPE_PRICE_ID = 'price_scopeweave_webhook';
+    process.env.STRIPE_WEBHOOK_SECRET = 'whsec_scopeweave_api_webhook_secret';
+    process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '1';
+    process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS = '60000';
+
+    const { app } = await import('./server/app.mjs?stripe-webhook-middleware-regression=1');
+    const request = () => app.request('https://scopeweave.example/api/stripe/webhook', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ id: 'evt_unsigned_flood', type: 'checkout.session.completed' }),
+    });
+    const first = await request();
+    const second = await request();
+    process.stdout.write(JSON.stringify({
+      first: first.status,
+      second: second.status,
+      secondBody: await second.json(),
+    }));
+  `], {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+  });
+
+  assert.equal(child.status, 0, child.stderr);
+  assert.deepEqual(JSON.parse(child.stdout.trim()), {
+    first: 400,
+    second: 429,
+    secondBody: { error: 'rate limit exceeded' },
+  });
+});
 
 test('unsigned Stripe webhook cannot upgrade an organization', async () => {
   const { token, orgId } = await signupAndOrg();
