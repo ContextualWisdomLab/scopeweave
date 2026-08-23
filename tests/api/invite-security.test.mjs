@@ -9,6 +9,7 @@ process.env.STRIPE_WEBHOOK_SECRET = 'whsec_scopeweave_invite_secret';
 
 const { app } = await import('../../server/app.mjs?invite-security=1');
 const { app: applicationRoutes } = await import('../../server/application_routes.mjs');
+const { app: internalCoreRoutes } = await import('../../server/application_routes_core.mjs?invite-internal-security=1');
 const { db } = await import('../../server/db.mjs');
 const body = (value) => JSON.stringify(value);
 const request = (path, options = {}) => app.request(path, {
@@ -16,6 +17,10 @@ const request = (path, options = {}) => app.request(path, {
   headers: { 'content-type': 'application/json', ...(options.headers || {}) },
 });
 const coreRequest = (path, options = {}) => applicationRoutes.request(path, {
+  ...options,
+  headers: { 'content-type': 'application/json', ...(options.headers || {}) },
+});
+const internalCoreRequest = (path, options = {}) => internalCoreRoutes.request(path, {
   ...options,
   headers: { 'content-type': 'application/json', ...(options.headers || {}) },
 });
@@ -63,6 +68,24 @@ response = await request(`/api/orgs/${orgId}/invites`, {
 assert.equal(response.status, 200);
 const targetInvite = await response.json();
 assert.ok(targetInvite.token, 'creator receives the bearer token for delivery');
+
+response = await internalCoreRequest(`/api/orgs/${orgId}/members`, { headers: viewerAuth });
+assert.equal(response.status, 200, 'internal core roster remains safe even when mounted without the outer boundary');
+const internalCoreRoster = await response.json();
+const internalCorePendingTarget = internalCoreRoster.invites.find((invite) => invite.email === 'target.invitee@example.com');
+assert.ok(internalCorePendingTarget, 'internal core preserves pending invitation workflow state');
+assert.equal(
+  'token' in internalCorePendingTarget,
+  false,
+  'internal core never retrieves pending-invite bearer tokens for roster responses',
+);
+
+response = await internalCoreRequest(`/api/invites/${targetInvite.token}/accept`, {
+  method: 'POST',
+  headers: attackerAuth,
+});
+assert.equal(response.status, 404, 'internal core binds invite redemption to the invited identity');
+assert.deepEqual(await response.json(), { error: 'invalid or used invite' });
 
 response = await request(`/api/orgs/${orgId}/members`, { headers: viewerAuth });
 assert.equal(response.status, 200, 'viewer may inspect the organization roster');
