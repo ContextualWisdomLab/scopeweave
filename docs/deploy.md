@@ -44,7 +44,8 @@ persists the database in the `scopeweave-data` volume.
 | `SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY` | no (default 8, maximum 32) | Maximum concurrent Clearfolio status lookups during one attachment-list request. Invalid values fall back to 8; values above 32 are clamped. |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS` | no (default 3000, maximum 30000) | Hard caller-side timeout for each Clearfolio status lookup. The AbortSignal is also forwarded downstream. |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_BUDGET_MS` | no (default 5000, maximum 60000) | Wall-clock budget for the entire best-effort refresh pass. Work not started before the deadline is deferred to a later list request. |
-| `SCOPEWEAVE_RATE_LIMIT_MAX` (+ `SCOPEWEAVE_RATE_LIMIT_WINDOW_MS`) | recommended | Per-IP fixed-window rate limiting (429 + Retry-After). Off when unset. |
+| `SCOPEWEAVE_RATE_LIMIT_MAX` (+ `SCOPEWEAVE_RATE_LIMIT_WINDOW_MS`) | recommended | Per-client fixed-window rate limiting (429 + Retry-After). Off when unset. Client identity is anchored to the network peer unless the peer is explicitly trusted below. |
+| `SCOPEWEAVE_TRUSTED_PROXY_IPS` | only behind trusted reverse proxies | Comma-separated **immediate or chained proxy peer IPs** that ScopeWeave is allowed to trust when interpreting `X-Forwarded-For`. Leave unset for direct deployments. |
 
 ## Attachment status refresh operations
 
@@ -132,6 +133,19 @@ logs, traces, or alert annotations.
 Terminate TLS at a reverse proxy (nginx/Caddy/ALB) in front of the backend and
 forward to `:8787`. The client and API share the origin, so no CORS config is
 needed.
+
+`X-Forwarded-For` is **ignored for the security rate-limit identity by default**.
+If a reverse proxy is the only permitted ingress to ScopeWeave, list its actual
+network peer address in `SCOPEWEAVE_TRUSTED_PROXY_IPS`. For multiple trusted
+proxy hops, list every trusted hop. ScopeWeave then walks `X-Forwarded-For` from
+right to left, skips explicitly trusted proxy addresses, and chooses the first
+untrusted valid IP as the client identity. Missing, malformed, or all-trusted
+forwarding evidence falls back to the actual socket peer.
+
+Do not configure this trust list while untrusted clients can connect directly to
+the backend. The proxy must overwrite or append forwarding information according
+to a controlled ingress policy; accepting a caller-selected forwarding header
+without an authenticated/trusted peer would make rate limiting bypassable.
 
 ## Kubernetes
 
