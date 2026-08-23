@@ -138,6 +138,13 @@ response = await request(`${ownerPath}?limit=0`, {
 assert.equal(response.status, 400, 'invalid export bounds fail closed');
 assert.deepEqual(await response.json(), { error: 'stripe_reconciliation_evidence_export_invalid' });
 
+assert.equal(
+  db.prepare("SELECT COUNT(*) AS count FROM audit_log WHERE action = 'billing.reconciliation.evidence_export'")
+    .get().count,
+  0,
+  'denied and invalid requests do not create successful-export audit records',
+);
+
 response = await request(ownerPath, {
   headers: { authorization: `Bearer ${owner.token}` },
 });
@@ -159,6 +166,25 @@ assert.equal(
   createHash('sha256').update('INC-PRIVATE-EXPORT-OWNER', 'utf8').digest('hex'),
 );
 
+const ownerAudit = db.prepare(`
+  SELECT org_id, user_id, target_type, target_id, meta
+    FROM audit_log
+   WHERE action = 'billing.reconciliation.evidence_export'
+     AND org_id = ? AND user_id = ?
+`).get(owner.organizationId, owner.userId);
+assert.ok(ownerAudit, 'each successful evidence export is durably access-logged');
+assert.equal(ownerAudit.target_type, 'organization');
+assert.equal(ownerAudit.target_id, String(owner.organizationId));
+assert.deepEqual(JSON.parse(ownerAudit.meta), {
+  schemaVersion: 'scopeweave.stripe-reconciliation-evidence/v1',
+  eventCount: 1,
+});
+assert.equal(
+  JSON.stringify(ownerAudit).includes('INC-PRIVATE-EXPORT-OWNER'),
+  false,
+  'export audit metadata never copies private recovery evidence text',
+);
+
 response = await request(
   `/api/orgs/${member.organizationId}/billing/reconciliation/evidence`,
   { headers: { authorization: `Bearer ${member.token}` } },
@@ -167,5 +193,20 @@ assert.equal(response.status, 200, 'a second tenant owner can export only its ow
 const memberReport = await response.json();
 assert.deepEqual(memberReport.events.map((event) => event.eventId), ['evt_export_foreign']);
 assert.equal(JSON.stringify(memberReport).includes('evt_export_owner'), false);
+assert.equal(
+  db.prepare("SELECT COUNT(*) AS count FROM audit_log WHERE action = 'billing.reconciliation.evidence_export'")
+    .get().count,
+  2,
+  'successful exports are independently logged for each tenant actor',
+);
+
+db.exec('DROP TABLE audit_log');
+response = await request(ownerPath, {
+  headers: { authorization: `Bearer ${owner.token}` },
+});
+assert.equal(response.status, 500, 'evidence disclosure fails closed when its audit sink is unavailable');
+assert.deepEqual(await response.json(), {
+  error: 'stripe_reconciliation_evidence_export_audit_failed',
+});
 
 db.close();
