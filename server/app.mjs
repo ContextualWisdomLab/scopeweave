@@ -58,51 +58,60 @@ function canonicalRegistrationUrl(value) {
   });
 }
 
-function requestWithJson(original, payload) {
+function canonicalRegistrationBody(original) {
+  if (!original.body) return JSON.stringify({ url: '' });
+
+  const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
+  let text = '';
+  return original.body.pipeThrough(new TransformStream({
+    transform(chunk) {
+      text += decoder.decode(chunk, { stream: true });
+    },
+    flush(controller) {
+      text += decoder.decode();
+      let payload = {};
+      try {
+        const value = JSON.parse(text);
+        if (value && typeof value === 'object' && !Array.isArray(value)) payload = value;
+      } catch { /* malformed JSON follows the core route's stable 400 path */ }
+
+      let canonicalUrl = '';
+      try {
+        canonicalUrl = canonicalRegistrationUrl(payload.url);
+      } catch { /* the core legacy URL guard is translated after auth/authorization */ }
+
+      controller.enqueue(encoder.encode(JSON.stringify({
+        ...payload,
+        url: canonicalUrl,
+      })));
+    },
+  }));
+}
+
+function requestWithCanonicalRegistration(original) {
   const headers = new Headers(original.headers);
   headers.delete('content-length');
   headers.set('content-type', 'application/json');
+  const body = canonicalRegistrationBody(original);
   return new Request(original.url, {
     method: original.method,
     headers,
-    body: JSON.stringify(payload),
+    body,
     signal: original.signal,
+    ...(body instanceof ReadableStream ? { duplex: 'half' } : {}),
   });
 }
 
-async function registrationPayload(request) {
-  try {
-    const value = JSON.parse(await request.text());
-    return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
-  } catch {
-    return {};
-  }
-}
-
 async function registrationPolicyResponse(c) {
-  const payload = await registrationPayload(c.req.raw);
-  let canonicalUrl;
-  try {
-    canonicalUrl = canonicalRegistrationUrl(payload.url);
-  } catch {
-    // Preserve the core route's authentication/rate-limit/tenant precedence by
-    // executing exactly one side-effect-free invalid-registration request. An
-    // authorized manager deterministically reaches the legacy URL guard (400);
-    // all earlier 401/403/429 outcomes are returned unchanged.
-    const probe = await coreApp.fetch(requestWithJson(c.req.raw, {
-      url: '',
-      events: payload.events,
-    }));
-    if (probe.status !== 400) return probe;
-    const probeBody = await probe.clone().json().catch(() => null);
-    if (probeBody?.error !== 'valid http(s) url required') return probe;
-    return c.json({ error: 'valid public https webhook URL required' }, 400);
-  }
-
-  return coreApp.fetch(requestWithJson(c.req.raw, {
-    ...payload,
-    url: canonicalUrl,
-  }));
+  // Route the request through the core exactly once. The transformed body is a
+  // backpressured stream, so core rate-limit/auth/RBAC middleware can reject a
+  // request without the facade draining an attacker-controlled body first.
+  const response = await coreApp.fetch(requestWithCanonicalRegistration(c.req.raw));
+  if (response.status !== 400) return response;
+  const responseBody = await response.clone().json().catch(() => null);
+  if (responseBody?.error !== 'valid http(s) url required') return response;
+  return c.json({ error: 'valid public https webhook URL required' }, 400);
 }
 
 /**
