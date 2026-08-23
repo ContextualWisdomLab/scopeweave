@@ -5,6 +5,7 @@ import { StripeWebhookError, verifyStripeWebhookRequest } from './stripe_webhook
 
 const MEMBERS_PATH = '/api/orgs/:id/members';
 const INVITE_ACCEPT_PATH = '/api/invites/:token/accept';
+const OIDC_ROUTE_PREFIX = '/api/auth/oidc/';
 
 function normalizeIdentityEmail(value) {
   return String(value ?? '').trim().toLowerCase();
@@ -50,7 +51,19 @@ function redactPendingInviteTokens(handler) {
   };
 }
 
+function failClosedWhenOidcIsUnconfigured(handler) {
+  return async (c, next) => {
+    if (process.env.SCOPEWEAVE_DEV !== '1' && !process.env.OIDC_ISSUER) {
+      return c.json({ error: 'sso not configured' }, 404);
+    }
+    return handler(c, next);
+  };
+}
+
 function secureCopiedHandler(route) {
+  if (route.method === 'GET' && route.path.startsWith(OIDC_ROUTE_PREFIX)) {
+    return failClosedWhenOidcIsUnconfigured(route.handler);
+  }
   if (route.method === 'POST' && route.path === INVITE_ACCEPT_PATH) {
     return bindInviteToAuthenticatedIdentity(route.handler);
   }
@@ -66,9 +79,9 @@ function secureCopiedHandler(route) {
  * The protected-develop route graph remains in `application_routes.mjs`. This
  * entry point composes that graph while replacing its historical unsigned
  * Stripe stub with a fail-closed raw-body verification boundary. The composer
- * also closes the protected-develop invite bearer-token disclosure and binds
- * redemption to the authenticated invited identity. Copying route metadata
- * preserves the original observability and abuse-control middleware order.
+ * also closes protected-develop invite and unconfigured mock-OIDC privilege
+ * boundaries. Copying route metadata preserves the original observability and
+ * abuse-control middleware order.
  */
 export const app = new Hono();
 
