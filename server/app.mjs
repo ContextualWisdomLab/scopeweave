@@ -207,7 +207,12 @@ for (const route of coreApp.routes.filter(({ path }) => path === '*')) {
 
 app.use(WEBHOOK_REGISTRATION_PATH, async (c, next) => {
   if (c.req.method !== 'POST') return next();
-  return registrationPolicyResponse(c);
+  const response = await registrationPolicyResponse(c);
+  // Assign the facade's final response before outer global middleware resumes.
+  // Hono's access logger reads c.res after await next(), so merely returning the
+  // replacement Response can leave it observing the private probe's 400 status.
+  c.res = response;
+  return response;
 });
 
 for (const route of coreApp.routes.filter(
