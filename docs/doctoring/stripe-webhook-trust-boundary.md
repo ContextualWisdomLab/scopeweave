@@ -7,18 +7,24 @@ Protected `develop` previously accepted an unauthenticated
 is a privilege-escalation window: any caller who can POST to
 `/api/stripe/webhook` can grant paid entitlements.
 
-The public application now:
+The supported HTTP composition now has one explicit security boundary:
 
-1. copies the protected route graph, including logging and rate-limit
-   middleware, except the historical Stripe handler;
-2. registers a fail-closed verifier that HMAC-SHA-256-checks
-   `timestamp + "." + raw body` against `STRIPE_WEBHOOK_SECRET` before parsing
-   JSON;
-3. acknowledges an authentic delivery with `{ received: true }` and does **not**
-   mutate `orgs.plan`; and
-4. keeps the protected-graph copy of the same route fail-closed so a future
-   composer that mounts `application_routes` directly cannot restore unsigned
-   plan upgrades.
+1. `server/app.mjs` re-exports the supported shared application from
+   `server/application_routes.mjs`;
+2. that shared boundary installs the production OIDC fail-closed guard, invite
+   identity binding, and pending-invite-token redaction before mounting the
+   internal implementation graph from `server/application_routes_core.mjs`;
+3. the internal graph retains the existing request logging, metrics, and
+   rate-limit middleware and contains the single `POST /api/stripe/webhook`
+   route; and
+4. that route HMAC-SHA-256-checks the exact bounded raw body using the Stripe
+   `t` and `v1` signature values before parsing JSON, acknowledges an authentic
+   delivery with `{ received: true }`, and does **not** mutate `orgs.plan`.
+
+`server/application_routes_core.mjs` is an internal implementation module, not
+a supported application entry point. Consumers must import
+`server/application_routes.mjs` or `server/app.mjs`; bypassing the supported
+boundary would also bypass its OIDC and invitation controls.
 
 Signature validity authenticates the delivery only. Durable event
 deduplication, provider-state reconciliation, and entitlement writes remain
@@ -35,9 +41,9 @@ rather than accepting unsigned traffic.
 
 OAuth bearer-token rules (RFC 6750; RFC 9700) do not apply to this provider
 callback; the webhook secret is a shared HMAC key, not an access token. The
-endpoint remains behind the same abuse-control middleware as the rest of the
-application so unsigned floods are rate-limited instead of skipping the limiter
-through a first-match public route.
+endpoint remains inside the implementation graph's abuse-control and
+observability middleware so unsigned floods remain subject to the same rate
+limit and request accounting as the surrounding API.
 
 ## Verification contract
 
@@ -47,11 +53,15 @@ Regression tests must prove:
 - a correctly signed delivery is acknowledged and still leaves plan unchanged;
 - a stale timestamp or a JSON-equivalent mutated body fails signature checks;
 - when `SCOPEWEAVE_RATE_LIMIT_MAX=1`, the second webhook in the window is `429`;
-- the public app does not `app.route('/', applicationRoutes)`;
-- the public app copies protected routes except `POST /api/stripe/webhook` and
-  then registers `verifyStripeWebhookRequest`; and
-- `application_routes.mjs` no longer contains a `checkout.session.completed`
-  plan-upgrade path.
+- `server/app.mjs` re-exports the supported shared application boundary rather
+  than maintaining a second route graph;
+- the shared boundary installs OIDC and invitation guards before
+  `app.route('/', coreRoutes)`;
+- both the public app and the supported shared route graph fail closed when
+  production OIDC is unconfigured;
+- the internal core Stripe route invokes `verifyStripeWebhookRequest`; and
+- the core graph contains no `checkout.session.completed` path that treats
+  callback JSON as entitlement authority.
 
 ## Officer next action
 

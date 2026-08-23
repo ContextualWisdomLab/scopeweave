@@ -36,6 +36,6 @@ response = await applicationRoutes.request(
 );
 assert.equal(response.status, 404, 'shared route graph keeps the mock authorize endpoint closed outside explicit development mode');
 assert.equal(response.headers.get('location'), null, 'shared route graph cannot mint a production callback code');
-assert.deepEqual(await response.json(), { error: 'mock disabled' });
+assert.deepEqual(await response.json(), { error: 'sso not configured' });
 
 console.log('OIDC production fail-closed regression passed');
