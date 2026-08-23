@@ -5,17 +5,28 @@ import { StripeWebhookError, verifyStripeWebhookRequest } from './stripe_webhook
 /**
  * Public ScopeWeave HTTP application.
  *
- * The protected-develop route graph remains byte-for-byte in
- * `application_routes.mjs`. This entry point owns the emergency Stripe webhook
- * trust boundary so unsigned provider-shaped JSON cannot reach the historical
- * entitlement mutation while the full durable #488 reconciliation stack is
- * still integrating. All unrelated routes delegate unchanged.
+ * The protected-develop route graph remains in `application_routes.mjs`. This
+ * entry point composes that graph while replacing its historical unsigned
+ * Stripe stub with a fail-closed raw-body verification boundary. Copying the
+ * existing route metadata preserves the original observability and abuse-
+ * control middleware order for every public route, including Stripe.
  */
 export const app = new Hono();
 
 // Keep the shipped cloud-toast asset on the public entry path while delegating
 // its existing implementation to the protected route graph.
 app.get('/toast-state.css', (c) => applicationRoutes.fetch(c.req.raw));
+
+// Copy every shipped route and middleware except the historical unsigned Stripe
+// handler. Registering the authenticated replacement after this copy keeps the
+// original logging/metrics and rate-limit middleware ahead of the endpoint and
+// makes the insecure handler absent from the public route graph rather than
+// merely shadowed by registration order.
+for (const route of applicationRoutes.routes.filter(
+  ({ method, path }) => !(method === 'POST' && path === '/api/stripe/webhook'),
+)) {
+  app.on(route.method, route.path, route.handler);
+}
 
 app.post('/api/stripe/webhook', async (c) => {
   try {
@@ -33,5 +44,3 @@ app.post('/api/stripe/webhook', async (c) => {
     return c.json({ error: 'stripe_webhook_unavailable' }, 500, { 'Cache-Control': 'no-store' });
   }
 });
-
-app.route('/', applicationRoutes);
