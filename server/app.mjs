@@ -24,7 +24,7 @@ function canonicalRegistrationPayload(text) {
   let canonicalUrl = '';
   try {
     canonicalUrl = canonicalRegistrationUrl(payload.url);
-  } catch { /* the core legacy URL guard is translated after auth/authorization */ }
+  } catch { /* the core registration route owns the stable destination error */ }
 
   return JSON.stringify({
     ...payload,
@@ -97,11 +97,7 @@ async function registrationPolicyResponse(c) {
   // Route the request through the core exactly once. The forwarding stream has
   // no eager queue, so core rate-limit/auth/RBAC middleware can reject a request
   // without the facade draining an attacker-controlled body first.
-  const response = await coreApp.fetch(requestWithCanonicalRegistration(c.req.raw));
-  if (response.status !== 400) return response;
-  const responseBody = await response.clone().json().catch(() => null);
-  if (responseBody?.error !== 'valid http(s) url required') return response;
-  return c.json({ error: 'valid public https webhook URL required' }, 400);
+  return coreApp.fetch(requestWithCanonicalRegistration(c.req.raw));
 }
 
 /**
