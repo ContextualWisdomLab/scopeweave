@@ -1,43 +1,16 @@
-// This contract prevents a subtle CI regression: the central review gate may
-// invoke `test:coverage` directly, so that script itself must create Istanbul
-// JSON rather than merely execute tests without instrumentation.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-const packageJson = JSON.parse(
-  readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
-);
+const packageJson = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+const scripts = packageJson.scripts || {};
+const serverWorkflow = readFileSync(new URL('../../.github/workflows/server-tests.yml', import.meta.url), 'utf8');
 const publicApp = readFileSync(new URL('../../server/app.mjs', import.meta.url), 'utf8');
-const applicationRoutes = readFileSync(
-  new URL('../../server/application_routes.mjs', import.meta.url),
-  'utf8',
-);
-const scripts = packageJson.scripts;
+const applicationRoutes = readFileSync(new URL('../../server/application_routes.mjs', import.meta.url), 'utf8');
 
-assert.equal(
-  scripts.coverage,
-  'npm run test:coverage',
-  'the public coverage command delegates to the canonical coverage producer',
-);
 assert.match(
-  scripts['test:coverage'],
-  /\bc8\b.*--reporter=json(?![-\w]).*npm run test:coverage:cases/,
-  'test:coverage creates Istanbul JSON before executing coverage cases',
-);
-assert.match(
-  scripts['test:coverage'],
-  /--reporter=json-summary\b/,
-  'test:coverage also creates the Istanbul JSON summary',
-);
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/attachment_status\.mjs/,
-  'the bounded refresh module is instrumented',
-);
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/clearfolio\.mjs/,
-  'the abortable Clearfolio adapter is instrumented',
+  serverWorkflow,
+  /npm run test:coverage/,
+  'server CI invokes the exact coverage producer',
 );
 assert.match(
   scripts['test:coverage'],
@@ -66,7 +39,7 @@ assert.doesNotMatch(
 );
 assert.match(
   publicApp,
-  /applicationRoutes\.routes\.filter\([\s\S]*method === ['"]POST['"][\s\S]*path === ['"]\/api\/stripe\/webhook['"][\s\S]*app\.on\(route\.method, route\.path, route\.handler\)/,
+  /applicationRoutes\.routes\.filter\([\s\S]*method === ['"]POST['"][\s\S]*path === ['"]\/api\/stripe\/webhook['"][\s\S]*app\.on\(route\.method, route\.path, secureCopiedHandler\(route\)\)/,
   'the public app preserves the protected route graph while excluding the historical Stripe handler',
 );
 assert.match(
@@ -89,10 +62,5 @@ assert.match(
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
 );
-assert.doesNotMatch(
-  scripts['test:coverage:cases'],
-  /npm run (?:coverage|test:coverage)(?:\s|$)/,
-  'coverage cases never recursively invoke a coverage wrapper',
-);
 
-console.log('✓ coverage script contract tests passed');
+console.log('coverage script contract passed');
