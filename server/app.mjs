@@ -8,13 +8,35 @@
 import { Hono } from 'hono';
 import { isIP } from 'node:net';
 
+/**
+ * Parse one explicit limiter setting without silently weakening protection.
+ * Empty or absent values use the documented fallback; configured values must
+ * be finite safe integers within the caller's accepted range.
+ */
+function parseSafeIntegerSetting(name, raw, fallback, minimum) {
+  if (raw === undefined || String(raw).trim() === '') return fallback;
+  const value = Number(raw);
+  if (!Number.isSafeInteger(value) || value < minimum) {
+    const range = minimum === 0 ? 'a non-negative' : 'a positive';
+    throw new Error(`${name} must be ${range} safe integer`);
+  }
+  return value;
+}
+
 const configuredRateLimitMax = process.env.SCOPEWEAVE_RATE_LIMIT_MAX;
-const RL_MAX = Number(configuredRateLimitMax) || 0;
-const RL_WINDOW_MS = Number(process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS) || 60000;
-const configuredBucketLimit = Number(process.env.SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX);
-const RL_BUCKET_LIMIT = Number.isSafeInteger(configuredBucketLimit) && configuredBucketLimit > 0
-  ? configuredBucketLimit
-  : 10000;
+const RL_MAX = parseSafeIntegerSetting('SCOPEWEAVE_RATE_LIMIT_MAX', configuredRateLimitMax, 0, 0);
+const RL_WINDOW_MS = parseSafeIntegerSetting(
+  'SCOPEWEAVE_RATE_LIMIT_WINDOW_MS',
+  process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS,
+  60000,
+  1,
+);
+const RL_BUCKET_LIMIT = parseSafeIntegerSetting(
+  'SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX',
+  process.env.SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX,
+  10000,
+  1,
+);
 const trustedProxyIps = new Set(
   String(process.env.SCOPEWEAVE_TRUSTED_PROXY_IPS || '')
     .split(',')
