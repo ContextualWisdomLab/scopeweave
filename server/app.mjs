@@ -25,7 +25,7 @@ async function protectedWebhookFetch(input, init) {
   const request = input instanceof Request
     ? new Request(input, init)
     : new Request(input, init);
-  if (!isSignedWebhookRequest(request)) return nativeFetch(input, init);
+  if (!isSignedWebhookRequest(request)) return nativeFetch(request);
 
   const body = request.body
     ? new Uint8Array(await request.clone().arrayBuffer())
