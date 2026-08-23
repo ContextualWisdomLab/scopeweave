@@ -1,9 +1,27 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { readFileSync } from 'node:fs';
 
-process.env.SCOPEWEAVE_DB = ':memory:';
+const tempDirectory = mkdtempSync(join(tmpdir(), 'scopeweave-webhook-policy-'));
+process.env.SCOPEWEAVE_DB = join(tempDirectory, 'webhook-policy.sqlite');
 delete process.env.SCOPEWEAVE_DEV;
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
+
+const requestLogs = [];
+const originalConsoleLog = console.log;
+console.log = (...args) => {
+  if (args.length !== 1 || typeof args[0] !== 'string') return;
+  try {
+    const record = JSON.parse(args[0]);
+    if (record && typeof record === 'object' && typeof record.path === 'string') {
+      requestLogs.push(record);
+    }
+  } catch {
+    // Test progress output is intentionally ignored while structured request logs are captured.
+  }
+};
 
 const facadeSource = readFileSync(new URL('../../server/app.mjs', import.meta.url), 'utf8');
 assert.doesNotMatch(
@@ -14,6 +32,7 @@ assert.doesNotMatch(
 
 const { app } = await import('../../server/app.mjs');
 const { app: coreApp } = await import('../../server/app_core.mjs');
+const { db } = await import('../../server/db.mjs');
 
 const request = (path, options = {}) => app.request(path, {
   ...options,
@@ -127,6 +146,17 @@ assert.equal(
   'webhook registration body too large',
   'oversized webhook cancellation records the bounded-body reason',
 );
+const oversizedAccessLog = requestLogs
+  .filter((record) => (
+    record.method === 'POST'
+    && record.path === `/api/orgs/${organizationId}/webhooks`
+  ))
+  .at(-1);
+assert.equal(
+  oversizedAccessLog?.status,
+  413,
+  'structured access evidence must record the same 413 status returned to the customer',
+);
 
 for (const headers of [{}, { authorization: 'Bearer invalid-token' }]) {
   response = await request(`/api/orgs/${organizationId}/webhooks`, {
@@ -207,4 +237,7 @@ assert.equal(
   'canonical destination is durable in storage and therefore reused by later delivery attempts',
 );
 
+db.close();
+console.log = originalConsoleLog;
+rmSync(tempDirectory, { recursive: true, force: true });
 console.log('webhook destination registration policy tests passed');
