@@ -1,56 +1,12 @@
-// ScopeWeave API security facade for outbound webhook registration and delivery.
-// The protected-develop route graph lives in app_core.mjs unchanged; this module
-// adds one bounded fail-closed destination policy without rewriting tenant/auth,
-// billing, attachment, Clearfolio, or project-planning behavior.
+// ScopeWeave API security facade for outbound webhook registration.
+// The protected-develop route graph lives in app_core.mjs; this module adds one
+// bounded fail-closed destination-registration policy without rewriting tenant,
+// auth, billing, attachment, Clearfolio, or project-planning behavior.
 import { Hono } from 'hono';
 import { app as coreApp } from './app_core.mjs';
-import {
-  postWebhook,
-  validateWebhookRegistrationUrl,
-} from './webhook_transport.mjs';
+import { validateWebhookRegistrationUrl } from './webhook_transport.mjs';
 
 const WEBHOOK_REGISTRATION_PATH = '/api/orgs/:id/webhooks';
-const webhookFetchBoundaryKey = Symbol.for('scopeweave.webhook-fetch-boundary');
-const nativeFetch = globalThis.fetch.bind(globalThis);
-
-function isSignedWebhookInput(input, init) {
-  const requestInput = input instanceof Request ? input : null;
-  const method = String(init?.method ?? requestInput?.method ?? 'GET').toUpperCase();
-  const headers = new Headers(init?.headers ?? requestInput?.headers);
-  return method === 'POST'
-    && Boolean(headers.get('x-scopeweave-event'))
-    && /^sha256=[0-9a-f]{64}$/i.test(
-      headers.get('x-scopeweave-signature') || '',
-    );
-}
-
-async function protectedWebhookFetch(input, init) {
-  if (!isSignedWebhookInput(input, init)) return nativeFetch(input, init);
-  const request = new Request(input, init);
-
-  const body = request.body
-    ? new Uint8Array(await request.clone().arrayBuffer())
-    : '';
-  const result = await postWebhook(request.url, {
-    headers: Object.fromEntries(request.headers.entries()),
-    body,
-    signal: request.signal,
-  });
-  if (result.status >= 200 && result.status <= 599) {
-    return new Response(null, { status: result.status });
-  }
-  return Response.error();
-}
-
-if (!globalThis[webhookFetchBoundaryKey]) {
-  globalThis.fetch = protectedWebhookFetch;
-  Object.defineProperty(globalThis, webhookFetchBoundaryKey, {
-    value: true,
-    configurable: false,
-    enumerable: false,
-    writable: false,
-  });
-}
 
 function canonicalRegistrationUrl(value) {
   return validateWebhookRegistrationUrl(value, {
@@ -149,7 +105,7 @@ async function registrationPolicyResponse(c) {
 }
 
 /**
- * Public ScopeWeave HTTP application with fail-closed outbound webhook policy.
+ * Public ScopeWeave HTTP application with fail-closed webhook registration.
  * All non-registration routes are delegated unchanged to the protected-develop
  * core application; webhook POST registration is canonicalized before storage.
  */
