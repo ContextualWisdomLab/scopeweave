@@ -1,4 +1,5 @@
 import { lookup as dnsLookup } from 'node:dns/promises';
+import { request as httpRequest } from 'node:http';
 import { request as httpsRequest } from 'node:https';
 import { BlockList, isIP } from 'node:net';
 
@@ -82,6 +83,26 @@ function isLocalHostname(hostname) {
     || host.endsWith('.home.arpa');
 }
 
+function isLoopbackAddress(address) {
+  const family = isIP(address);
+  if (family === 6) return address === '::1';
+  if (family !== 4) return false;
+  const [first] = address.split('.').map(Number);
+  return first === 127;
+}
+
+function isDevelopmentLoopbackUrl(destination) {
+  if (destination.protocol !== 'http:'
+      || destination.username
+      || destination.password
+      || destination.hash
+      || !destination.hostname) return false;
+  const host = destination.hostname.toLowerCase().replace(/\.$/, '');
+  if (host === 'localhost') return true;
+  const literal = hostAddress(host);
+  return isLoopbackAddress(literal);
+}
+
 /**
  * Return whether an address is an ordinary Internet-routable webhook target.
  * IPv4 special-purpose ranges are denied. IPv6 must be within the ordinary
@@ -96,15 +117,20 @@ export function isPublicWebhookAddress(address) {
 }
 
 /**
- * Parse and canonicalize a production webhook URL without performing DNS.
- * DNS authorization is repeated immediately before each network attempt.
+ * Parse and canonicalize a webhook URL without performing DNS. Production
+ * destinations are public HTTPS only. Explicit development mode may admit
+ * HTTP only for localhost or literal loopback addresses; the transport still
+ * revalidates every resolved address immediately before each connection.
  */
-export function validateWebhookRegistrationUrl(value) {
+export function validateWebhookRegistrationUrl(value, { allowDevelopmentLoopback = false } = {}) {
   let destination;
   try {
     destination = new URL(String(value ?? ''));
   } catch {
     throw new WebhookDestinationError();
+  }
+  if (allowDevelopmentLoopback && isDevelopmentLoopbackUrl(destination)) {
+    return destination.href;
   }
   if (destination.protocol !== 'https:'
       || destination.username
@@ -136,12 +162,9 @@ async function withAbort(promise, signal) {
   }
 }
 
-async function resolvePublicAddresses(destination, lookup, signal) {
+async function lookupAddresses(destination, lookup, signal) {
   const literal = hostAddress(destination.hostname);
-  if (isIP(literal)) {
-    if (!isPublicWebhookAddress(literal)) throw new WebhookDestinationError();
-    return [{ address: literal, family: isIP(literal) }];
-  }
+  if (isIP(literal)) return [{ address: literal, family: isIP(literal) }];
 
   let answers;
   try {
@@ -161,9 +184,7 @@ async function resolvePublicAddresses(destination, lookup, signal) {
     const address = String(answer?.address || '');
     const actualFamily = isIP(address);
     const family = Number(answer?.family) || actualFamily;
-    if ((family !== 4 && family !== 6)
-        || actualFamily !== family
-        || !isPublicWebhookAddress(address)) {
+    if ((family !== 4 && family !== 6) || actualFamily !== family) {
       throw new WebhookDestinationError();
     }
     const key = `${family}:${address}`;
@@ -174,6 +195,18 @@ async function resolvePublicAddresses(destination, lookup, signal) {
   }
   if (!normalized.length) throw new WebhookTransportError();
   return normalized;
+}
+
+async function resolveAuthorizedAddresses(destination, lookup, signal, allowDevelopmentLoopback) {
+  const candidates = await lookupAddresses(destination, lookup, signal);
+  const developmentLoopback = allowDevelopmentLoopback && isDevelopmentLoopbackUrl(destination);
+  for (const candidate of candidates) {
+    const allowed = developmentLoopback
+      ? isLoopbackAddress(candidate.address)
+      : isPublicWebhookAddress(candidate.address);
+    if (!allowed) throw new WebhookDestinationError();
+  }
+  return candidates;
 }
 
 function pinnedLookup(address, family) {
@@ -194,14 +227,15 @@ function requestOptions(destination, candidate, headers, signal) {
     signal,
     agent: false,
     lookup: pinnedLookup(candidate.address, candidate.family),
-    ...(isIP(tlsHost) ? {} : { servername: tlsHost }),
+    ...(destination.protocol === 'https:' && !isIP(tlsHost) ? { servername: tlsHost } : {}),
   };
 }
 
-function trackSecureConnect(request, attempt) {
+function trackConnection(request, attempt, secure) {
   request.once?.('socket', (socket) => {
-    socket?.once?.('secureConnect', () => {
-      attempt.secureConnected = true;
+    const event = secure ? 'secureConnect' : 'connect';
+    socket?.once?.(event, () => {
+      attempt.connected = true;
     });
   });
 }
@@ -225,7 +259,7 @@ async function postToCandidate(destination, candidate, { headers, body, signal, 
         reject(new WebhookTransportError());
         return;
       }
-      trackSecureConnect(req, attempt);
+      trackConnection(req, attempt, destination.protocol === 'https:');
       req.once?.('error', () => reject(new WebhookTransportError()));
       req.end(body);
     }), signal);
@@ -236,15 +270,22 @@ async function postToCandidate(destination, candidate, { headers, body, signal, 
 }
 
 /**
- * Build the outbound webhook transport around injectable DNS and HTTPS seams.
- * Every POST resolves afresh, rejects mixed/private answers, pins the socket to
- * a validated candidate, preserves Host/TLS authority, disables pooling, and
- * never follows redirects. A pre-handshake connect failure may fall through to
- * another already-validated candidate; after TLS succeeds delivery is ambiguous
- * and the signed body is never replayed within the same attempt.
+ * Build the outbound webhook transport around injectable DNS and network seams.
+ * Every POST resolves afresh, rejects unauthorized mixed answers, pins the socket
+ * to a validated candidate, preserves HTTPS Host/TLS authority, disables pooling,
+ * and never follows redirects. A pre-connect failure may fall through to another
+ * already-validated candidate; after a connection is established delivery is
+ * ambiguous and the signed body is never replayed within the same attempt.
  */
-export function createWebhookTransport({ lookup = dnsLookup, request = httpsRequest } = {}) {
-  if (typeof lookup !== 'function' || typeof request !== 'function') {
+export function createWebhookTransport({
+  lookup = dnsLookup,
+  request = httpsRequest,
+  httpRequest: developmentHttpRequest = httpRequest,
+  allowDevelopmentLoopback = false,
+} = {}) {
+  if (typeof lookup !== 'function'
+      || typeof request !== 'function'
+      || typeof developmentHttpRequest !== 'function') {
     throw new TypeError('webhook transport dependencies must be functions');
   }
 
@@ -252,29 +293,35 @@ export function createWebhookTransport({ lookup = dnsLookup, request = httpsRequ
     async post(url, { headers = {}, body = '', signal } = {}) {
       let destination;
       try {
-        destination = new URL(validateWebhookRegistrationUrl(url));
+        destination = new URL(validateWebhookRegistrationUrl(url, { allowDevelopmentLoopback }));
       } catch (error) {
         if (error instanceof WebhookDestinationError) throw error;
         throw new WebhookDestinationError();
       }
 
-      const candidates = await resolvePublicAddresses(destination, lookup, signal);
+      const candidates = await resolveAuthorizedAddresses(
+        destination,
+        lookup,
+        signal,
+        allowDevelopmentLoopback,
+      );
       const requestHeaders = Object.fromEntries(new Headers(headers).entries());
       delete requestHeaders['content-length'];
+      const connector = destination.protocol === 'http:' ? developmentHttpRequest : request;
       let lastError;
       for (const candidate of candidates) {
-        const attempt = { secureConnected: false };
+        const attempt = { connected: false };
         try {
           return await postToCandidate(
             destination,
             candidate,
             { headers: requestHeaders, body, signal, attempt },
-            request,
+            connector,
           );
         } catch (error) {
           if (!(error instanceof WebhookTransportError)) throw error;
           lastError = error;
-          if (signal?.aborted || attempt.secureConnected) throw error;
+          if (signal?.aborted || attempt.connected) throw error;
         }
       }
       throw lastError || new WebhookTransportError();
@@ -282,7 +329,9 @@ export function createWebhookTransport({ lookup = dnsLookup, request = httpsRequ
   });
 }
 
-const webhookTransport = createWebhookTransport();
+const webhookTransport = createWebhookTransport({
+  allowDevelopmentLoopback: process.env.SCOPEWEAVE_DEV === '1',
+});
 
-/** Send one signed webhook attempt through the production SSRF-safe transport. */
+/** Send one signed webhook attempt through the SSRF-safe transport policy. */
 export const postWebhook = (url, options) => webhookTransport.post(url, options);
