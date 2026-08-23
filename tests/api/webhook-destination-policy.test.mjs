@@ -28,6 +28,25 @@ assert.equal(response.status, 200, 'fixture owner can resolve organization');
 const me = await response.json();
 const organizationId = me.orgs[0].id;
 
+let unauthenticatedBodyPulls = 0;
+const unauthenticatedBody = new ReadableStream({
+  pull(controller) {
+    unauthenticatedBodyPulls += 1;
+    controller.enqueue(new TextEncoder().encode('x'.repeat(8192)));
+    if (unauthenticatedBodyPulls >= 8) controller.close();
+  },
+});
+response = await request(`/api/orgs/${organizationId}/webhooks`, {
+  method: 'POST',
+  body: unauthenticatedBody,
+  duplex: 'half',
+});
+assert.equal(response.status, 401, 'webhook registration authenticates before reading an untrusted request body');
+assert.ok(
+  unauthenticatedBodyPulls <= 1,
+  `unauthenticated webhook body must not be drained before auth; observed ${unauthenticatedBodyPulls} stream pulls`,
+);
+
 for (const headers of [{}, { authorization: 'Bearer invalid-token' }]) {
   response = await request(`/api/orgs/${organizationId}/webhooks`, {
     method: 'POST',
