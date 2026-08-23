@@ -6,6 +6,7 @@ import { serve } from '@hono/node-server';
 
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '3';
+process.env.SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX = '7';
 process.env.SCOPEWEAVE_TRUSTED_PROXY_IPS = '127.0.0.1,::1,::ffff:127.0.0.1';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 const { app } = await import('../../server/app.mjs');
@@ -82,6 +83,19 @@ try {
   assert.equal((await viaProxy('not-an-ip-two')).status, 200);
   assert.equal((await viaProxy('not-an-ip-three')).status, 429);
   assert.equal((await viaProxy('127.0.0.1')).status, 429);
+
+  // Distinct trusted-proxy client addresses must not grow in-memory limiter
+  // state without bound. Once the configured bucket cardinality is exhausted,
+  // previously unseen clients share one fail-closed overflow bucket instead of
+  // allocating attacker-controlled Map entries forever.
+  assert.equal((await viaProxy('192.0.2.201')).status, 200);
+  assert.equal((await viaProxy('192.0.2.202')).status, 200);
+  assert.equal((await viaProxy('192.0.2.203')).status, 200);
+  assert.equal(
+    (await viaProxy('192.0.2.204')).status,
+    429,
+    'new client identities share a bounded overflow bucket after capacity is reached'
+  );
 } finally {
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
 }
