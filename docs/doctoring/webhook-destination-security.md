@@ -74,4 +74,4 @@ Internet Assigned Numbers Authority. (n.d.). *IPv4 special-purpose address space
 
 Node.js contributors. (2025). *HTTPS: Node.js v22 documentation*. Node.js. https://nodejs.org/docs/v22.13.0/api/https.html
 
-OWASP Foundation. (n.d.). *Server side request forgery prevention cheat sheet*. Retrieved August 23, 2026, from https://cheatsheetseries.owasp.org/cheatsheetsheetseries/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html
+OWASP Foundation. (n.d.). *Server side request forgery prevention cheat sheet*. Retrieved August 23, 2026, from https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html
