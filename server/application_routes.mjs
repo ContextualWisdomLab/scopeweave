@@ -16,25 +16,30 @@ function authenticatedIdentityHint(c) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
   if (!token) return null;
 
-  let uid;
   if (token.startsWith('swk_')) {
-    uid = db.prepare('SELECT user_id FROM api_tokens WHERE token_hash = ?')
-      .get(hashApiToken(token))?.user_id;
-  } else {
-    try {
-      uid = verifyToken(token).sub;
-    } catch {
-      return null;
-    }
+    const user = db.prepare(
+      `SELECT u.id, u.email FROM api_tokens t
+       JOIN users u ON u.id = t.user_id
+       WHERE t.token_hash = ?`,
+    ).get(hashApiToken(token));
+    return user ? { id: user.id, email: normalizeIdentityEmail(user.email) } : null;
   }
-  if (uid === undefined || uid === null) return null;
-  const user = db.prepare('SELECT id, email FROM users WHERE id = ?').get(uid);
-  return user ? { id: user.id, email: normalizeIdentityEmail(user.email) } : null;
+
+  try {
+    const payload = verifyToken(token);
+    const user = db.prepare('SELECT id, email, token_version FROM users WHERE id = ?').get(payload.sub);
+    if (!user || Number(payload.tv ?? 0) !== Number(user.token_version ?? 0)) return null;
+    return { id: user.id, email: normalizeIdentityEmail(user.email) };
+  } catch {
+    return null;
+  }
 }
 
 async function bindInviteToAuthenticatedIdentity(c, next) {
-  // This guard only narrows access. The core requireAuth middleware remains the
-  // authority that accepts/rejects the credential and enforces token_version.
+  // This guard only narrows access after confirming that the presented
+  // credential is still live. The core requireAuth middleware remains the
+  // authoritative authentication/RBAC boundary and repeats that validation
+  // before any invite mutation.
   const identity = authenticatedIdentityHint(c);
   if (!identity) return next();
 
