@@ -78,6 +78,36 @@ assert.equal(
   `IPv4-mapped trusted-proxy regression failed:\n${mappedPeerProbe.stderr}`,
 );
 
+const equivalentIpv6PeerProbe = spawnSync(
+  process.execPath,
+  [
+    '--input-type=module',
+    '--eval',
+    `import assert from 'node:assert/strict';
+     process.env.SCOPEWEAVE_DB = ':memory:';
+     process.env.SCOPEWEAVE_JWT_SECRET = '${validJwtSecret}';
+     process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '3';
+     process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS = '60000';
+     process.env.SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX = '20';
+     process.env.SCOPEWEAVE_TRUSTED_PROXY_IPS = '0:0:0:0:0:0:0:1';
+     const { app } = await import('./server/app.mjs');
+     const nodeEnv = { incoming: { socket: { remoteAddress: '::1' } } };
+     const requestFrom = (client) => app.request('/api/health', { headers: { 'x-forwarded-for': client } }, nodeEnv);
+     for (let i = 0; i < 3; i++) assert.equal((await requestFrom('203.0.113.71')).status, 200);
+     assert.equal(
+       (await requestFrom('198.51.100.71')).status,
+       200,
+       'equivalent IPv6 spellings for a trusted proxy must resolve to the same identity and preserve separate client buckets',
+     );`,
+  ],
+  { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env } },
+);
+assert.equal(
+  equivalentIpv6PeerProbe.status,
+  0,
+  `Equivalent-IPv6 trusted-proxy regression failed:\n${equivalentIpv6PeerProbe.stderr}`,
+);
+
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '3';
 process.env.SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX = '7';
