@@ -315,9 +315,10 @@ function withReadSnapshot(database, operation) {
  * webhook payloads, provider credentials, active lease-token hashes, or free-form
  * recovery evidence text. Operator evidence remains correlatable through SHA-256.
  * Event selection is capped at 100 and the combined nested attempt/recovery history
- * is capped at 1,000 rows before those histories are materialized. Every exported
- * document is read from one SQLite snapshot so the row cap and lifecycle evidence
- * cannot be invalidated by a concurrent reconciliation commit.
+ * is capped at 1,000 rows before those histories are materialized. Durable triggers
+ * remain visible immediately even before the polling worker lazily seeds a job row.
+ * Every exported document is read from one SQLite snapshot so the row cap and
+ * lifecycle evidence cannot be invalidated by a concurrent reconciliation commit.
  *
  * @param {import('node:sqlite').DatabaseSync} database bootstrapped SQLite database
  * @returns {{exportTenantEvidence(input:{organizationId:number,limit?:number}):Readonly<object>}}
@@ -330,28 +331,28 @@ export function createSqliteStripeReconciliationEvidenceExportRepository(databas
 
   const selectEvents = database.prepare(`
     SELECT
-      j.event_id,
+      t.event_id,
       t.subscription_id,
       e.event_type,
       e.provider_created_at_sec,
       e.payload_sha256,
       e.first_received_at_ms,
       t.queued_at_ms,
-      j.processing_state,
-      j.attempt_count,
-      j.next_attempt_at_ms,
+      COALESCE(j.processing_state, 'pending') AS processing_state,
+      COALESCE(j.attempt_count, 0) AS attempt_count,
+      COALESCE(j.next_attempt_at_ms, t.queued_at_ms) AS next_attempt_at_ms,
       j.lease_token_sha256,
       j.lease_expires_at_ms,
       j.completed_at_ms,
       j.last_error_code,
       j.claim_decision_id
-    FROM billing_stripe_reconciliation_jobs AS j
-    JOIN billing_stripe_reconciliation_triggers AS t ON t.event_id = j.event_id
-    JOIN billing_stripe_webhook_events AS e ON e.event_id = j.event_id
+    FROM billing_stripe_reconciliation_triggers AS t
+    JOIN billing_stripe_webhook_events AS e ON e.event_id = t.event_id
     JOIN billing_stripe_subscriptions AS s ON s.subscription_id = t.subscription_id
     JOIN billing_stripe_customers AS c ON c.customer_id = s.customer_id
+    LEFT JOIN billing_stripe_reconciliation_jobs AS j ON j.event_id = t.event_id
     WHERE c.organization_id = ?
-    ORDER BY t.queued_at_ms DESC, j.event_id DESC
+    ORDER BY t.queued_at_ms DESC, t.event_id DESC
     LIMIT ?
   `);
   const countNestedEvidence = database.prepare(`
