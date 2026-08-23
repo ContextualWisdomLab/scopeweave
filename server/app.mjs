@@ -1,17 +1,15 @@
 // Security envelope for the ScopeWeave SaaS routes.
 //
 // The route implementation remains in app_routes.mjs so the client-IP trust
-// boundary stays small, reviewable, and independently testable. The outer
-// limiter is authoritative for abuse protection; the route module's historic
-// limiter remains in place for backward compatibility until that code is
-// retired in a later focused change.
+// boundary stays small, reviewable, and independently testable. Rate limiting
+// is authoritative only in this envelope: the legacy route-module limiter is
+// initialized disabled so spoofable left-side forwarding data cannot create a
+// second, contradictory client bucket behind a trusted proxy.
 import { Hono } from 'hono';
 import { isIP } from 'node:net';
-import { app as routeApp } from './app_routes.mjs';
 
-export * from './app_routes.mjs';
-
-const RL_MAX = Number(process.env.SCOPEWEAVE_RATE_LIMIT_MAX) || 0;
+const configuredRateLimitMax = process.env.SCOPEWEAVE_RATE_LIMIT_MAX;
+const RL_MAX = Number(configuredRateLimitMax) || 0;
 const RL_WINDOW_MS = Number(process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS) || 60000;
 const trustedProxyIps = new Set(
   String(process.env.SCOPEWEAVE_TRUSTED_PROXY_IPS || '')
@@ -20,6 +18,19 @@ const trustedProxyIps = new Set(
     .filter((value) => isIP(value) !== 0)
 );
 const rlBuckets = new Map();
+
+// app_routes.mjs predates the transport-peer trust boundary and still contains
+// its historical header-keyed limiter. Load it with that limiter disabled so
+// only the security envelope below can consume rate-limit state. Restore the
+// operator environment immediately after module initialization.
+let routeApp;
+try {
+  process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '0';
+  ({ app: routeApp } = await import('./app_routes.mjs'));
+} finally {
+  if (configuredRateLimitMax === undefined) delete process.env.SCOPEWEAVE_RATE_LIMIT_MAX;
+  else process.env.SCOPEWEAVE_RATE_LIMIT_MAX = configuredRateLimitMax;
+}
 
 /**
  * Resolve the network peer that directly connected to the Node server.
