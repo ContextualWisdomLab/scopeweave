@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs';
 const packageJson = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 );
+const publicApp = readFileSync(new URL('../../server/app.mjs', import.meta.url), 'utf8');
 const scripts = packageJson.scripts;
 
 assert.equal(
@@ -33,6 +34,31 @@ assert.match(
   scripts['test:coverage'],
   /--include=server\/clearfolio\.mjs/,
   'the abortable Clearfolio adapter is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
+  /--include=server\/application_routes\.mjs/,
+  'the protected application route graph remains owned-production coverage',
+);
+assert.match(
+  scripts['test:coverage'],
+  /--include=server\/stripe_webhook\.mjs/,
+  'the Stripe webhook verifier is owned-production coverage',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/stripe-webhook-boundary\.test\.mjs/,
+  'the raw-body Stripe trust-boundary regression executes under c8',
+);
+assert.match(
+  scripts['test:api'],
+  /tests\/api\/stripe-webhook\.test\.mjs/,
+  'the public Stripe webhook entitlement regression executes in normal API CI',
+);
+assert.match(
+  publicApp,
+  /app\.route\(\s*['"]\/['"]\s*,\s*applicationRoutes\s*\)/,
+  'the public app delegates unrelated routes to the protected application graph',
 );
 assert.match(
   scripts['test:coverage:cases'],
