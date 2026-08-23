@@ -5,6 +5,7 @@ delete process.env.SCOPEWEAVE_DEV;
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 
 const { app } = await import('../../server/app.mjs');
+const { app: coreApp } = await import('../../server/app_core.mjs');
 
 const request = (path, options = {}) => app.request(path, {
   ...options,
@@ -27,6 +28,21 @@ response = await request('/api/me', { headers: authorization });
 assert.equal(response.status, 200, 'fixture owner can resolve organization');
 const me = await response.json();
 const organizationId = me.orgs[0].id;
+
+response = await coreApp.request(`/api/orgs/${organizationId}/webhooks`, {
+  method: 'POST',
+  headers: {
+    'content-type': 'application/json',
+    ...authorization,
+  },
+  body: json({ url: 'https://127.0.0.1/private', events: ['project.updated'] }),
+});
+assert.equal(response.status, 400, 'core webhook registration cannot bypass the destination policy');
+assert.deepEqual(
+  await response.json(),
+  { error: 'valid public https webhook URL required' },
+  'core registration rejects private destinations without resolver details',
+);
 
 let unauthenticatedBodyPulls = 0;
 const unauthenticatedBody = new ReadableStream({
