@@ -1,14 +1,58 @@
 // Rate-limit test — runs in its own process with the limiter enabled low.
 // Run: node tests/api/ratelimit.test.mjs
 import assert from 'node:assert';
+import { spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { serve } from '@hono/node-server';
+
+const validJwtSecret = '0123456789abcdef0123456789abcdef';
+const importRateLimitApp = (overrides) => spawnSync(
+  process.execPath,
+  ['--input-type=module', '--eval', "await import('./server/app.mjs')"],
+  {
+    cwd: process.cwd(),
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      SCOPEWEAVE_DB: ':memory:',
+      SCOPEWEAVE_JWT_SECRET: validJwtSecret,
+      SCOPEWEAVE_RATE_LIMIT_MAX: '3',
+      SCOPEWEAVE_RATE_LIMIT_WINDOW_MS: '60000',
+      SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX: '7',
+      ...overrides,
+    },
+  },
+);
+
+for (const [name, value] of [
+  ['SCOPEWEAVE_RATE_LIMIT_MAX', '-1'],
+  ['SCOPEWEAVE_RATE_LIMIT_MAX', 'not-a-number'],
+  ['SCOPEWEAVE_RATE_LIMIT_MAX', 'Infinity'],
+  ['SCOPEWEAVE_RATE_LIMIT_WINDOW_MS', '0'],
+  ['SCOPEWEAVE_RATE_LIMIT_WINDOW_MS', '-1'],
+  ['SCOPEWEAVE_RATE_LIMIT_WINDOW_MS', 'not-a-number'],
+  ['SCOPEWEAVE_RATE_LIMIT_WINDOW_MS', 'Infinity'],
+  ['SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX', '0'],
+  ['SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX', '-1'],
+  ['SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX', 'not-a-number'],
+  ['SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX', 'Infinity'],
+]) {
+  const result = importRateLimitApp({ [name]: value });
+  assert.notEqual(result.status, 0, `${name}=${value} must fail startup instead of weakening limiter semantics`);
+  assert.match(result.stderr, new RegExp(name), 'startup error identifies the invalid limiter setting');
+}
+
+assert.equal(
+  importRateLimitApp({ SCOPEWEAVE_RATE_LIMIT_MAX: '0' }).status,
+  0,
+  'explicit zero keeps the documented disabled-limiter contract',
+);
 
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '3';
 process.env.SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX = '7';
 process.env.SCOPEWEAVE_TRUSTED_PROXY_IPS = '127.0.0.1,::1,::ffff:127.0.0.1';
-process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
+process.env.SCOPEWEAVE_JWT_SECRET = validJwtSecret;
 const { app } = await import('../../server/app.mjs');
 
 const req = (path, opts = {}) =>
