@@ -76,6 +76,20 @@ test('signature verification fails when JSON-equivalent bytes differ from the si
   );
 });
 
+test('signature verification preserves the literal signed timestamp bytes', async () => {
+  const bytes = encoded('{"id":"evt_literal_timestamp","type":"invoice.paid"}');
+  const literalTimestamp = `0${NOW_SECONDS}`;
+  const request = webhookRequest(bytes, {
+    signature: signatureHeader(bytes, literalTimestamp),
+  });
+
+  const event = await verifyStripeWebhookRequest(request, {
+    secret: SECRET,
+    nowSeconds: NOW_SECONDS,
+  });
+  assert.equal(event.id, 'evt_literal_timestamp');
+});
+
 test('signature parser accepts one matching v1 value and rejects malformed, missing, stale, or future signatures', async () => {
   const bytes = encoded('{"id":"evt_sig","type":"invoice.paid"}');
   const valid = signatureHeader(bytes);
