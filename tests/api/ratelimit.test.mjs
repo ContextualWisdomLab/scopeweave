@@ -48,6 +48,36 @@ assert.equal(
   'explicit zero keeps the documented disabled-limiter contract',
 );
 
+const mappedPeerProbe = spawnSync(
+  process.execPath,
+  [
+    '--input-type=module',
+    '--eval',
+    `import assert from 'node:assert/strict';
+     process.env.SCOPEWEAVE_DB = ':memory:';
+     process.env.SCOPEWEAVE_JWT_SECRET = '${validJwtSecret}';
+     process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '3';
+     process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS = '60000';
+     process.env.SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX = '20';
+     process.env.SCOPEWEAVE_TRUSTED_PROXY_IPS = '127.0.0.1';
+     const { app } = await import('./server/app.mjs');
+     const nodeEnv = { incoming: { socket: { remoteAddress: '::ffff:127.0.0.1' } } };
+     const requestFrom = (client) => app.request('/api/health', { headers: { 'x-forwarded-for': client } }, nodeEnv);
+     for (let i = 0; i < 3; i++) assert.equal((await requestFrom('203.0.113.70')).status, 200);
+     assert.equal(
+       (await requestFrom('198.51.100.70')).status,
+       200,
+       'an IPv4-mapped Node peer must match the configured IPv4 trusted proxy and preserve separate client buckets',
+     );`,
+  ],
+  { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env } },
+);
+assert.equal(
+  mappedPeerProbe.status,
+  0,
+  `IPv4-mapped trusted-proxy regression failed:\n${mappedPeerProbe.stderr}`,
+);
+
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '3';
 process.env.SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX = '7';
