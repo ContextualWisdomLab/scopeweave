@@ -35,6 +35,7 @@ persists the database in the `scopeweave-data` volume.
 | `PORT` | no (default 8787) | Listen port |
 | `SCOPEWEAVE_DB` | no (default `/data/scopeweave.db`) | SQLite file path (on the volume) |
 | `SCOPEWEAVE_DEV` | no | Must be `1` to enable the dev `activate-pro` endpoint. **Never set in production.** |
+| `SCOPEWEAVE_HSTS_INCLUDE_SUBDOMAINS` | no (default unset) | Set to exactly `1` only after verifying that every current and future descendant host under the deployment domain is HTTPS-capable. Unset keeps HSTS scoped to the exact ScopeWeave host. |
 | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | for live billing | Enables real Stripe Checkout (`npm i stripe` too). Without them, billing uses the mock path. |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI` | for real SSO | Points the OIDC login at your IdP. Unset → a built-in mock IdP (dev/test only). |
 | `ORCHESTRATOR_URL` | for AI 브리핑 | contextual-orchestrator 주소. Unset → deterministic mock. |
@@ -132,6 +133,22 @@ logs, traces, or alert annotations.
 Terminate TLS at a reverse proxy (nginx/Caddy/ALB) in front of the backend and
 forward to `:8787`. The client and API share the origin, so no CORS config is
 needed.
+
+The application emits `Strict-Transport-Security: max-age=15552000` by default.
+That host-only policy protects the exact ScopeWeave origin without asserting
+control over sibling or descendant hosts. Set
+`SCOPEWEAVE_HSTS_INCLUDE_SUBDOMAINS=1` only after a deployment-domain inventory
+proves that every current and future subdomain is served exclusively over HTTPS
+and that certificate and reverse-proxy routing cover those hosts. Do not enable
+it blindly on a shared apex, customer-managed domain, or any domain that still
+contains an HTTP-only descendant: browsers that have observed the policy will
+upgrade those subdomain requests to HTTPS for the HSTS lifetime.
+
+If the TLS terminator overwrites application response headers, configure it to
+preserve the ScopeWeave HSTS value or to emit an equivalent, deliberately owned
+policy. Treat changing HSTS scope or lifetime as a deployment-security change
+that requires canary verification and rollback planning; it is not a generic
+performance toggle.
 
 ## Kubernetes
 
