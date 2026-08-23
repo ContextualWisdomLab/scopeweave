@@ -20,6 +20,13 @@ all-trusted forwarding evidence fails closed to the actual peer. In adapters
 where the socket peer is unavailable, requests share one `local` bucket rather
 than accepting an unauthenticated forwarding value.
 
+Only the security envelope in `server/app.mjs` is allowed to consume rate-limit
+state. The older route-module limiter is initialized disabled when loaded by the
+production envelope. Keeping two active limiters would let an attacker place a
+victim address on the spoofable left side of an appended forwarding chain and
+consume the victim's legacy bucket even though the trusted-boundary limiter had
+correctly attributed the request to the attacker's nearest hop.
+
 This is intentionally an allow-list trust model. It avoids treating a header
 that an Internet client can normally set itself as authenticated evidence. The
 operator contract in `docs/deploy.md` therefore requires direct access to the
@@ -35,13 +42,22 @@ backend to be denied before proxy addresses are added to the trust list.
 3. changing spoofable left-side forwarding values while keeping the nearest
    untrusted client hop fixed still returns `429` after the configured limit;
 4. a different nearest client hop receives a separate bucket;
-5. trusted proxy hops are skipped right-to-left;
-6. missing, malformed, and all-trusted forwarding evidence falls back to the
+5. repeated attacker requests with a spoofed victim address on the left do not
+   consume the victim's rate-limit bucket;
+6. trusted proxy hops are skipped right-to-left;
+7. missing, malformed, and all-trusted forwarding evidence falls back to the
    transport peer.
 
-The original RED evidence was the hosted Server Tests failure at contributor
-head `c4a3b2f6429634c4165f7efdc71734384241e574`: the spoofed forwarding value
-returned `200` where the regression required `429`.
+The original bypass RED evidence was the hosted Server Tests failure at
+contributor head `c4a3b2f6429634c4165f7efdc71734384241e574`: the spoofed
+forwarding value returned `200` where the regression required `429`.
+
+The cross-client poisoning RED evidence was Server Tests run `32614096313` on
+the merge result containing contributor head
+`dc2fe13b1825975bc38459862f48e2c645351924`: a legitimate victim request
+returned `429` where the regression required `200`. The subsequent product fix
+is on the same contributor branch; exact-head gate acceptance remains separate
+from this behavioral regression evidence.
 
 ## References (APA 7)
 
