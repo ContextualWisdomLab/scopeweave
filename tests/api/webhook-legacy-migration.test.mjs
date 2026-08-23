@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { once } from 'node:events';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -41,6 +43,33 @@ VALUES(41,1,'http://legacy-webhook.example.test/callback','whsec_legacy','projec
 legacy.close();
 
 process.env.SCOPEWEAVE_DB = databasePath;
+let locker = null;
+
+function waitForMarker(child, marker) {
+  return new Promise((resolve, reject) => {
+    let output = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    const onData = (chunk) => {
+      output += chunk;
+      if (output.includes(marker)) {
+        child.stdout.off('data', onData);
+        resolve();
+      }
+    };
+    child.stdout.on('data', onData);
+    child.once('error', reject);
+    child.once('exit', (code) => {
+      if (!output.includes(marker)) {
+        reject(new Error(`lock helper exited before ${marker.trim()}: ${code}; ${stderr}`));
+      }
+    });
+  });
+}
 
 try {
   const moduleUrl = pathToFileURL(join(process.cwd(), 'server', 'db.mjs')).href;
@@ -90,7 +119,52 @@ try {
     'migration remains fail-closed and idempotent on subsequent starts',
   );
   second.db.close();
+
+  const lockedDatabasePath = join(directory, 'transient-lock.sqlite');
+  const bootstrap = new DatabaseSync(lockedDatabasePath);
+  bootstrap.exec(`
+    PRAGMA journal_mode = WAL;
+    CREATE TABLE lock_probe (
+      probe_id INTEGER PRIMARY KEY,
+      probe_value TEXT NOT NULL
+    );
+  `);
+  bootstrap.close();
+
+  const lockScript = String.raw`
+    const { DatabaseSync } = require('node:sqlite');
+    const db = new DatabaseSync(process.env.SCOPEWEAVE_LOCK_DB);
+    db.exec('PRAGMA journal_mode = WAL');
+    db.exec('BEGIN IMMEDIATE');
+    db.prepare('INSERT INTO lock_probe(probe_value) VALUES (?)').run('held');
+    process.stdout.write('locked\\n');
+    setTimeout(() => {
+      db.exec('COMMIT');
+      db.close();
+    }, 300);
+  `;
+  locker = spawn(process.execPath, ['-e', lockScript], {
+    env: { ...process.env, SCOPEWEAVE_LOCK_DB: lockedDatabasePath },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  await waitForMarker(locker, 'locked\n');
+
+  process.env.SCOPEWEAVE_DB = lockedDatabasePath;
+  const concurrent = await import(`${moduleUrl}?legacy-http-migration=transient-lock`);
+  concurrent.db.close();
+
+  if (locker.exitCode === null) {
+    const [exitCode] = await once(locker, 'exit');
+    assert.equal(exitCode, 0, 'transient lock helper exits cleanly after releasing its writer lock');
+  } else {
+    assert.equal(locker.exitCode, 0, 'transient lock helper exits cleanly after releasing its writer lock');
+  }
+  locker = null;
 } finally {
+  if (locker && locker.exitCode === null) {
+    locker.kill();
+    await once(locker, 'exit').catch(() => {});
+  }
   delete process.env.SCOPEWEAVE_DB;
   rmSync(directory, { recursive: true, force: true });
 }
