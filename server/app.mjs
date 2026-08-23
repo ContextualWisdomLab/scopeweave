@@ -13,17 +13,20 @@ const WEBHOOK_REGISTRATION_PATH = '/api/orgs/:id/webhooks';
 const webhookFetchBoundaryKey = Symbol.for('scopeweave.webhook-fetch-boundary');
 const nativeFetch = globalThis.fetch.bind(globalThis);
 
-function isSignedWebhookRequest(request) {
-  return request.method.toUpperCase() === 'POST'
-    && Boolean(request.headers.get('x-scopeweave-event'))
+function isSignedWebhookInput(input, init) {
+  const requestInput = input instanceof Request ? input : null;
+  const method = String(init?.method ?? requestInput?.method ?? 'GET').toUpperCase();
+  const headers = new Headers(init?.headers ?? requestInput?.headers);
+  return method === 'POST'
+    && Boolean(headers.get('x-scopeweave-event'))
     && /^sha256=[0-9a-f]{64}$/i.test(
-      request.headers.get('x-scopeweave-signature') || '',
+      headers.get('x-scopeweave-signature') || '',
     );
 }
 
 async function protectedWebhookFetch(input, init) {
+  if (!isSignedWebhookInput(input, init)) return nativeFetch(input, init);
   const request = new Request(input, init);
-  if (!isSignedWebhookRequest(request)) return nativeFetch(input, init);
 
   const body = request.body
     ? new Uint8Array(await request.clone().arrayBuffer())
