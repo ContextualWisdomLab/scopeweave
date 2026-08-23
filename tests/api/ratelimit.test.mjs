@@ -55,6 +55,22 @@ try {
     'a genuinely different nearest client hop receives a separate bucket'
   );
 
+  // A trusted proxy appends the attacker's real nearest hop to any spoofable
+  // client-supplied left-side forwarding chain. That left-side value must not
+  // consume a different legitimate client's limiter state.
+  for (let i = 0; i < 3; i++) {
+    assert.equal(
+      (await viaProxy('203.0.113.50, 198.51.100.50')).status,
+      200,
+      'attacker requests stay in the attacker bucket'
+    );
+  }
+  assert.equal(
+    (await viaProxy('203.0.113.50')).status,
+    200,
+    'spoofable left-side forwarding data cannot poison another client bucket'
+  );
+
   // Trusted proxy chains are skipped from right to left until the first
   // untrusted client IP is reached.
   assert.equal((await viaProxy('198.51.100.10, 127.0.0.1')).status, 200);
