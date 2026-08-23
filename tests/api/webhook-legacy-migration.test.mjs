@@ -137,7 +137,7 @@ try {
     db.exec('PRAGMA journal_mode = WAL');
     db.exec('BEGIN IMMEDIATE');
     db.prepare('INSERT INTO lock_probe(probe_value) VALUES (?)').run('held');
-    process.stdout.write('locked\\n');
+    process.stdout.write('locked\n');
     setTimeout(() => {
       db.exec('COMMIT');
       db.close();
