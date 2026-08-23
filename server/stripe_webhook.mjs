@@ -131,7 +131,8 @@ function parseStripeSignatureHeader(header) {
   if (timestamps.length !== 1 || !DECIMAL_INTEGER_PATTERN.test(timestamps[0])) {
     throw webhookError('stripe_webhook_signature_invalid');
   }
-  const timestamp = Number(timestamps[0]);
+  const timestampText = timestamps[0];
+  const timestamp = Number(timestampText);
   if (!Number.isSafeInteger(timestamp) || timestamp < 0 || signatures.length === 0) {
     throw webhookError('stripe_webhook_signature_invalid');
   }
@@ -140,17 +141,17 @@ function parseStripeSignatureHeader(header) {
   if (validSignatures.length === 0) {
     throw webhookError('stripe_webhook_signature_invalid');
   }
-  return { timestamp, signatures: validSignatures };
+  return { timestamp, timestampText, signatures: validSignatures };
 }
 
 function signatureMatches(body, signatureHeader, secret, nowSeconds) {
-  const { timestamp, signatures } = parseStripeSignatureHeader(signatureHeader);
+  const { timestamp, timestampText, signatures } = parseStripeSignatureHeader(signatureHeader);
   if (Math.abs(nowSeconds - timestamp) > STRIPE_SIGNATURE_TOLERANCE_SECONDS) {
     return false;
   }
 
   const expected = createHmac('sha256', secret)
-    .update(String(timestamp))
+    .update(timestampText)
     .update('.')
     .update(body)
     .digest();
@@ -195,9 +196,10 @@ function parseVerifiedEvent(body) {
  *
  * Stripe signs `timestamp + "." + raw request body`; JSON parsing therefore
  * happens only after constant-time HMAC verification over the exact streamed
- * bytes. The request body is capped at 256 KiB before buffering, the signature
- * header is bounded, and the signed timestamp must be within five minutes of the
- * server clock. Multiple `v1` values are accepted for endpoint-secret rotation.
+ * bytes and the literal timestamp value supplied in the signature header. The
+ * request body is capped at 256 KiB before buffering, the signature header is
+ * bounded, and the numeric timestamp must be within five minutes of the server
+ * clock. Multiple `v1` values are accepted for endpoint-secret rotation.
  *
  * This function establishes transport authenticity only. It intentionally does
  * not deduplicate event IDs, assume delivery ordering, or grant billing
