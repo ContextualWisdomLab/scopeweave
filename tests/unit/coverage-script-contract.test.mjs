@@ -6,6 +6,7 @@ const scripts = packageJson.scripts || {};
 const serverWorkflow = readFileSync(new URL('../../.github/workflows/server-tests.yml', import.meta.url), 'utf8');
 const publicApp = readFileSync(new URL('../../server/app.mjs', import.meta.url), 'utf8');
 const applicationRoutes = readFileSync(new URL('../../server/application_routes.mjs', import.meta.url), 'utf8');
+const applicationRoutesCore = readFileSync(new URL('../../server/application_routes_core.mjs', import.meta.url), 'utf8');
 
 assert.match(
   serverWorkflow,
@@ -15,7 +16,12 @@ assert.match(
 assert.match(
   scripts['test:coverage'],
   /--include=server\/application_routes\.mjs/,
-  'the protected application route graph remains owned-production coverage',
+  'the shared security boundary remains owned-production coverage',
+);
+assert.match(
+  scripts['test:coverage'],
+  /--include=server\/application_routes_core\.mjs/,
+  'the protected application implementation remains owned-production coverage',
 );
 assert.match(
   scripts['test:coverage'],
@@ -32,28 +38,23 @@ assert.match(
   /tests\/api\/stripe-webhook\.test\.mjs/,
   'the public Stripe webhook entitlement regression executes in normal API CI',
 );
-assert.doesNotMatch(
-  publicApp,
-  /app\.route\(\s*['"]\/['"]\s*,\s*applicationRoutes\s*\)/,
-  'the public app does not mount the protected graph via app.route, which would first-match unsigned Stripe or skip abuse-control middleware',
-);
 assert.match(
   publicApp,
-  /applicationRoutes\.routes\.filter\([\s\S]*method === ['"]POST['"][\s\S]*path === ['"]\/api\/stripe\/webhook['"][\s\S]*app\.on\(route\.method, route\.path, secureCopiedHandler\(route\)\)/,
-  'the public app preserves the protected route graph while excluding the historical Stripe handler',
-);
-assert.match(
-  publicApp,
-  /verifyStripeWebhookRequest/,
-  'the public Stripe webhook uses the raw-body HMAC verifier',
+  /export \{ app \} from ['"]\.\/application_routes\.mjs['"]/,
+  'the public app reuses the supported shared security boundary without a second route copier',
 );
 assert.match(
   applicationRoutes,
+  /app\.use\(OIDC_ROUTE_PREFIX, failClosedWhenOidcIsUnconfigured\)[\s\S]*app\.use\(INVITE_ACCEPT_PATH, bindInviteToAuthenticatedIdentity\)[\s\S]*app\.use\(MEMBERS_PATH, redactPendingInviteTokens\)[\s\S]*app\.route\(\s*['"]\/['"]\s*,\s*coreRoutes\s*\)/,
+  'shared OIDC and invitation controls wrap the implementation graph before it is mounted',
+);
+assert.match(
+  applicationRoutesCore,
   /verifyStripeWebhookRequest/,
-  'the protected Stripe route is also fail-closed so a direct mount cannot escalate plan',
+  'the protected Stripe route is fail-closed so every supported mount verifies raw-body authenticity',
 );
 assert.doesNotMatch(
-  applicationRoutes,
+  applicationRoutesCore,
   /checkout\.session\.completed[\s\S]{0,500}UPDATE orgs SET plan = 'pro'/,
   'checkout.session.completed JSON is never authority to upgrade orgs.plan',
 );
