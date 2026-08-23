@@ -11,6 +11,10 @@ import { isIP } from 'node:net';
 const configuredRateLimitMax = process.env.SCOPEWEAVE_RATE_LIMIT_MAX;
 const RL_MAX = Number(configuredRateLimitMax) || 0;
 const RL_WINDOW_MS = Number(process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS) || 60000;
+const configuredBucketLimit = Number(process.env.SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX);
+const RL_BUCKET_LIMIT = Number.isSafeInteger(configuredBucketLimit) && configuredBucketLimit > 0
+  ? configuredBucketLimit
+  : 10000;
 const trustedProxyIps = new Set(
   String(process.env.SCOPEWEAVE_TRUSTED_PROXY_IPS || '')
     .split(',')
@@ -18,6 +22,8 @@ const trustedProxyIps = new Set(
     .filter((value) => isIP(value) !== 0)
 );
 const rlBuckets = new Map();
+let overflowBucket;
+let nextBucketSweepAt = 0;
 
 // app_routes.mjs predates the transport-peer trust boundary and still contains
 // its historical header-keyed limiter. Load it with that limiter disabled so
@@ -68,17 +74,48 @@ function rateLimitClientIp(c) {
   return peer;
 }
 
+/**
+ * Return bounded fixed-window state for one client identity.
+ *
+ * The regular client map never grows beyond RL_BUCKET_LIMIT. Once that many
+ * distinct identities are live, unseen clients share a separate fail-closed
+ * overflow bucket. Expired regular buckets are swept at most once per window,
+ * keeping both memory and sweep CPU bounded under high-cardinality traffic.
+ */
+function rateLimitBucket(key, now) {
+  let bucket = rlBuckets.get(key);
+  if (bucket?.resetAt <= now) {
+    rlBuckets.delete(key);
+    bucket = undefined;
+  }
+  if (bucket) return bucket;
+
+  if (rlBuckets.size >= RL_BUCKET_LIMIT && now >= nextBucketSweepAt) {
+    for (const [bucketKey, candidate] of rlBuckets) {
+      if (candidate.resetAt <= now) rlBuckets.delete(bucketKey);
+    }
+    nextBucketSweepAt = now + RL_WINDOW_MS;
+  }
+
+  if (rlBuckets.size < RL_BUCKET_LIMIT) {
+    bucket = { count: 0, resetAt: now + RL_WINDOW_MS };
+    rlBuckets.set(key, bucket);
+    return bucket;
+  }
+
+  if (!overflowBucket || overflowBucket.resetAt <= now) {
+    overflowBucket = { count: 0, resetAt: now + RL_WINDOW_MS };
+  }
+  return overflowBucket;
+}
+
 export const app = new Hono();
 
 if (RL_MAX > 0) {
   app.use('*', async (c, next) => {
     const key = rateLimitClientIp(c);
     const now = Date.now();
-    let bucket = rlBuckets.get(key);
-    if (!bucket || bucket.resetAt <= now) {
-      bucket = { count: 0, resetAt: now + RL_WINDOW_MS };
-      rlBuckets.set(key, bucket);
-    }
+    const bucket = rateLimitBucket(key, now);
     bucket.count++;
     if (bucket.count > RL_MAX) {
       const retry = Math.ceil((bucket.resetAt - now) / 1000);
