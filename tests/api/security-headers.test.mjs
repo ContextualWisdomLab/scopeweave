@@ -1,0 +1,175 @@
+import assert from 'node:assert/strict';
+import { Hono } from 'hono';
+
+process.env.SCOPEWEAVE_DB = ':memory:';
+process.env.SCOPEWEAVE_DEV = '1';
+process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
+delete process.env.ORCHESTRATOR_URL;
+delete process.env.SCOPEWEAVE_HSTS_INCLUDE_SUBDOMAINS;
+
+const {
+  SECURE_HEADERS_OPTIONS,
+  createRuntimeApp,
+  runtimeApp,
+  strictTransportSecurityValue,
+} = await import('../../server/runtime-app.mjs');
+const { app } = await import('../../server/app.mjs');
+
+assert.equal(
+  strictTransportSecurityValue(false),
+  'max-age=15552000',
+  'host-only HSTS is the safe default when deployment-domain ownership is not proven',
+);
+assert.equal(
+  strictTransportSecurityValue(true),
+  'max-age=15552000; includeSubDomains',
+  'operators can opt into subdomain HSTS after confirming every descendant host supports HTTPS',
+);
+
+assert.deepEqual(
+  SECURE_HEADERS_OPTIONS,
+  {
+    crossOriginResourcePolicy: 'same-origin',
+    crossOriginOpenerPolicy: 'same-origin',
+    referrerPolicy: 'no-referrer',
+    strictTransportSecurity: 'max-age=15552000',
+    xContentTypeOptions: 'nosniff',
+    xDnsPrefetchControl: 'off',
+    xDownloadOptions: 'noopen',
+    xFrameOptions: 'SAMEORIGIN',
+    xPermittedCrossDomainPolicies: 'none',
+    xXssProtection: '0',
+  },
+  'security-sensitive response headers must be an app-owned policy rather than mutable framework defaults',
+);
+
+function assertBaselineSecurityHeaders(response, label) {
+  assert.equal(
+    response.headers.get('x-content-type-options'),
+    'nosniff',
+    `${label} prevents MIME sniffing`,
+  );
+  assert.equal(
+    response.headers.get('x-frame-options'),
+    'SAMEORIGIN',
+    `${label} prevents cross-origin framing`,
+  );
+  assert.equal(
+    response.headers.get('cross-origin-resource-policy'),
+    'same-origin',
+    `${label} keeps resources same-origin by default`,
+  );
+  assert.equal(
+    response.headers.get('cross-origin-opener-policy'),
+    'same-origin',
+    `${label} isolates the top-level browsing context`,
+  );
+  assert.equal(
+    response.headers.get('referrer-policy'),
+    'no-referrer',
+    `${label} does not disclose referrer URLs`,
+  );
+  assert.equal(
+    response.headers.get('strict-transport-security'),
+    'max-age=15552000',
+    `${label} carries the deployment-safe host-only HSTS policy`,
+  );
+  assert.equal(
+    response.headers.get('x-dns-prefetch-control'),
+    'off',
+    `${label} disables speculative DNS prefetching`,
+  );
+  assert.equal(
+    response.headers.get('x-download-options'),
+    'noopen',
+    `${label} prevents downloaded content from opening in the site context`,
+  );
+  assert.equal(
+    response.headers.get('x-permitted-cross-domain-policies'),
+    'none',
+    `${label} rejects legacy cross-domain policy files`,
+  );
+  assert.equal(
+    response.headers.get('x-xss-protection'),
+    '0',
+    `${label} disables legacy browser XSS filters`,
+  );
+  assert.equal(
+    response.headers.get('x-powered-by'),
+    null,
+    `${label} does not disclose the framework through X-Powered-By`,
+  );
+}
+
+const health = await runtimeApp.request('/api/health');
+assert.equal(health.status, 200, 'health route remains available');
+assertBaselineSecurityHeaders(health, 'successful API response');
+
+const missing = await runtimeApp.request('/api/definitely-missing');
+assert.equal(missing.status, 404, 'unknown route remains a normal not-found response');
+assertBaselineSecurityHeaders(missing, 'not-found response');
+
+const dialogModule = await runtimeApp.request('/dialog-accessibility.js');
+assert.equal(
+  dialogModule.status,
+  200,
+  'the runtime Hono app must serve every module referenced by index.html',
+);
+assert.match(
+  dialogModule.headers.get('content-type') ?? '',
+  /^text\/javascript(?:;|$)/i,
+  'the dialog accessibility module must be served as JavaScript',
+);
+assertBaselineSecurityHeaders(dialogModule, 'dialog accessibility module response');
+assert.match(
+  await dialogModule.text(),
+  /export function labelUnnamedDialogs\(/,
+  'the static route must return the dialog accessibility module, not a fallback document',
+);
+
+const canonicalDialogModule = await app.request('/dialog-accessibility.js');
+assert.equal(
+  canonicalDialogModule.status,
+  200,
+  'the canonical application must own every static module referenced by index.html',
+);
+assert.match(
+  canonicalDialogModule.headers.get('content-type') ?? '',
+  /^text\/javascript(?:;|$)/i,
+  'the canonical dialog accessibility route must preserve its executable MIME type',
+);
+assert.equal(
+  canonicalDialogModule.headers.get('x-content-type-options'),
+  null,
+  'the inner application must not install runtime-owned security-header middleware',
+);
+assert.match(
+  await canonicalDialogModule.text(),
+  /export function labelUnnamedDialogs\(/,
+  'canonical static serving must return the module rather than a fallback document',
+);
+
+const delegatedApplication = new Hono();
+delegatedApplication.get('/dialog-accessibility.js', (c) => c.text('canonical-static-sentinel'));
+delegatedApplication.get('/missing-static', (c) => c.notFound());
+delegatedApplication.get('/static-read-failure', (c) => c.text('Internal Server Error', 500));
+const delegatedRuntime = createRuntimeApp({ application: delegatedApplication });
+
+const delegatedStatic = await delegatedRuntime.request('/dialog-accessibility.js');
+assert.equal(
+  await delegatedStatic.text(),
+  'canonical-static-sentinel',
+  'the runtime must delegate static routes to its canonical application instead of shadowing them',
+);
+assertBaselineSecurityHeaders(delegatedStatic, 'delegated canonical static response');
+
+const delegatedMissing = await delegatedRuntime.request('/missing-static');
+assert.equal(delegatedMissing.status, 404, 'runtime preserves canonical not-found semantics');
+assertBaselineSecurityHeaders(delegatedMissing, 'delegated not-found response');
+
+const delegatedFailure = await delegatedRuntime.request('/static-read-failure');
+assert.equal(delegatedFailure.status, 500, 'runtime preserves canonical server-error semantics');
+assert.equal(await delegatedFailure.text(), 'Internal Server Error');
+assertBaselineSecurityHeaders(delegatedFailure, 'delegated server-error response');
+
+console.log('security header regression passed');

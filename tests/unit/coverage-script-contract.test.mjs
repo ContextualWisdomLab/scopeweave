@@ -1,6 +1,4 @@
-// This contract prevents a subtle CI regression: the central review gate may
-// invoke `test:coverage` directly, so that script itself must create Istanbul
-// JSON rather than merely execute tests without instrumentation.
+// This contract prevents subtle CI regressions in the coverage gate.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
@@ -33,6 +31,11 @@ assert.match(
   scripts['test:coverage'],
   /--include=server\/clearfolio\.mjs/,
   'the abortable Clearfolio adapter is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
+  /--include=server\/runtime-app\.mjs/,
+  'the deployed runtime routing module is instrumented',
 );
 assert.match(
   scripts['test:coverage:cases'],

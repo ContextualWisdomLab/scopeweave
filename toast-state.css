@@ -6,3 +6,12 @@
   opacity: 1;
   transform: translateY(0);
 }
+
+/* The cloud auth/team close buttons contain a decorative glyph. The modal
+ * delegates close handling from the button/backdrop dataset, so keep the
+ * decorative child out of pointer hit-testing and preserve the button as the
+ * event target across browsers and input devices. */
+.close-button > [aria-hidden="true"],
+[data-team-close="true"] > [aria-hidden="true"] {
+  pointer-events: none;
+}
