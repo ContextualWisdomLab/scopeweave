@@ -47,11 +47,14 @@ test('cloud toast stylesheet is on every production serve path', () => {
     process.env.STRIPE_SECRET_KEY = 'sk_test_scopeweave_toast';
     process.env.STRIPE_PRICE_ID = 'price_scopeweave_toast';
     process.env.STRIPE_WEBHOOK_SECRET = 'whsec_scopeweave_toast_secret';
-    const { app } = await import('./server/app.mjs?toast-route-contract=1');
-    const toastRoutes = app.routes.filter(
-      ({ method, path }) => method === 'GET' && path === '/toast-state.css',
-    );
-    process.stdout.write(JSON.stringify({ toastRouteCount: toastRoutes.length }));
+    const { app } = await import('./server/app.mjs?toast-route-contract=2');
+    const response = await app.request('https://scopeweave.example/toast-state.css');
+    const body = await response.text();
+    process.stdout.write(JSON.stringify({
+      status: response.status,
+      contentType: response.headers.get('content-type'),
+      hasVisibleState: /\\.toast\\.visible\\s*\\{/.test(body),
+    }));
   `], {
     cwd: process.cwd(),
     encoding: 'utf8',
@@ -61,8 +64,8 @@ test('cloud toast stylesheet is on every production serve path', () => {
   const resultLine = child.stdout.trim().split('\n').at(-1);
   assert.deepEqual(
     JSON.parse(resultLine),
-    { toastRouteCount: 1 },
-    'SaaS route graph exposes the shipped toast stylesheet exactly once',
+    { status: 200, contentType: 'text/css; charset=utf-8', hasVisibleState: true },
+    'SaaS wildcard static route serves the shipped toast stylesheet',
   );
   assert.match(pagesWorkflow, /\btoast-state\.css\b/, 'GitHub Pages stages the cloud toast stylesheet');
   assert.match(staticDockerfile, /\btoast-state\.css\b/, 'static image copies the cloud toast stylesheet');
