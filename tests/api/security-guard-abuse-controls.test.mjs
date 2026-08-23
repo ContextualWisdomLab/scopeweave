@@ -41,9 +41,12 @@ try {
     })
     .filter((entry) => entry?.path === '/api/auth/oidc/start');
   assert.deepEqual(
-    oidcLogs.map(({ status }) => status),
-    [404, 429],
-    'guard rejections remain in structured request observability instead of bypassing it',
+    oidcLogs.map(({ method, status }) => ({ method, status })),
+    [
+      { method: 'GET', status: 404 },
+      { method: 'GET', status: 429 },
+    ],
+    'guard rejections preserve the attempted HTTP method in structured request observability',
   );
 } finally {
   console.log = originalLog;
