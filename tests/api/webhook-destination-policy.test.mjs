@@ -72,11 +72,17 @@ assert.ok(
 );
 
 let authorizedBodyPulls = 0;
+let authorizedBodyCancels = 0;
+let authorizedBodyCancelReason = '';
 const oversizedAuthorizedBody = new ReadableStream({
   pull(controller) {
     authorizedBodyPulls += 1;
     controller.enqueue(new TextEncoder().encode('x'.repeat(8192)));
     if (authorizedBodyPulls >= 8) controller.close();
+  },
+  cancel(reason) {
+    authorizedBodyCancels += 1;
+    authorizedBodyCancelReason = String(reason);
   },
 });
 response = await request(`/api/orgs/${organizationId}/webhooks`, {
@@ -91,9 +97,19 @@ assert.deepEqual(
   { error: 'webhook registration body too large' },
   'oversized registration returns a stable buyer-actionable error',
 );
+// Constructing a Fetch Request may prefetch one upstream chunk before the
+// facade acquires the body reader. Detecting an unknown-length body above the
+// exact 16 KiB ceiling then requires reading the first over-budget chunk; the
+// facade must cancel immediately instead of draining the remaining stream.
 assert.ok(
-  authorizedBodyPulls <= 3,
-  `oversized webhook body must stop near the 16 KiB budget; observed ${authorizedBodyPulls} stream pulls`,
+  authorizedBodyPulls <= 4,
+  `oversized webhook body must stop at the Request prefetch plus first over-budget chunk; observed ${authorizedBodyPulls} stream pulls`,
+);
+assert.equal(authorizedBodyCancels, 1, 'oversized webhook registration cancels its upstream body exactly once');
+assert.equal(
+  authorizedBodyCancelReason,
+  'webhook registration body too large',
+  'oversized webhook cancellation records the bounded-body reason',
 );
 
 for (const headers of [{}, { authorization: 'Bearer invalid-token' }]) {
