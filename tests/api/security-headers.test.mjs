@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { Hono } from 'hono';
 
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_DEV = '1';
@@ -131,6 +132,17 @@ assert.match(
   /export function labelUnnamedDialogs\(/,
   'canonical static serving must return the module rather than a fallback document',
 );
+
+const delegatedApplication = new Hono();
+delegatedApplication.get('/dialog-accessibility.js', (c) => c.text('canonical-static-sentinel'));
+const delegatedRuntime = createRuntimeApp({ application: delegatedApplication });
+const delegatedStatic = await delegatedRuntime.request('/dialog-accessibility.js');
+assert.equal(
+  await delegatedStatic.text(),
+  'canonical-static-sentinel',
+  'the runtime must delegate static routes to its canonical application instead of shadowing them',
+);
+assertBaselineSecurityHeaders(delegatedStatic, 'delegated canonical static response');
 
 function rejectingReadFile(code) {
   return async () => {
