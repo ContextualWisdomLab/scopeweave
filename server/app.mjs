@@ -12,34 +12,27 @@ const WEBHOOK_REGISTRATION_BODY_MAX_BYTES = 16 * 1024;
 const webhookRegistrationEvidence = new WeakMap();
 const STRIPE_WEBHOOK_PATH = '/api/stripe/webhook';
 
-// Registration requests need the core logger/rate-limit/auth/RBAC stack to run
-// exactly once, but an oversized authorized body must become 413 *inside* that
-// stack so the structured access record and counters match the public response.
-// Replay only global middleware plus this route. Registration handlers are
-// wrapped at their existing position so the bounded-body result is translated
-// before the inherited request logger resumes. The evidence stays process-local
-// in a WeakMap keyed by the forwarded Request, so clients cannot spoof it.
+// The public app below owns the core's global logger/rate-limit middleware. The
+// private replay app therefore contains only the route-specific registration
+// chain (auth/RBAC + handler). That makes global accounting run exactly once and
+// lets the public logger observe the facade's final response status instead of
+// the side-effect-free probe used after an authorized body exceeds its budget.
+// Route handlers are wrapped at their existing position so the bounded-body
+// result is translated before the private route chain unwinds. Evidence remains
+// process-local in a WeakMap keyed by the forwarded Request, so clients cannot
+// spoof it.
 const registrationCoreApp = new Hono();
 let registrationRouteInstalled = false;
 for (const route of coreApp.routes) {
-  if (route.path !== '*' && route.path !== WEBHOOK_REGISTRATION_PATH) continue;
-  if (route.path === WEBHOOK_REGISTRATION_PATH) {
-    registrationRouteInstalled = true;
-    registrationCoreApp.on(route.method, route.path, async (c, next) => {
-      const response = await route.handler(c, next);
-      if (webhookRegistrationEvidence.get(c.req.raw)?.tooLarge === true) {
-        const oversizedResponse = c.json({ error: 'webhook registration body too large' }, 413);
-        // Hono's outer logger observes c.res after next() returns. Assign the
-        // replacement here, before control unwinds, so access evidence records
-        // the same 413 that the customer receives instead of the core's probe 400.
-        c.res = oversizedResponse;
-        return oversizedResponse;
-      }
-      return response;
-    });
-    continue;
-  }
-  registrationCoreApp.on(route.method, route.path, route.handler);
+  if (route.path !== WEBHOOK_REGISTRATION_PATH) continue;
+  registrationRouteInstalled = true;
+  registrationCoreApp.on(route.method, route.path, async (c, next) => {
+    const response = await route.handler(c, next);
+    if (webhookRegistrationEvidence.get(c.req.raw)?.tooLarge === true) {
+      return c.json({ error: 'webhook registration body too large' }, 413);
+    }
+    return response;
+  });
 }
 if (!registrationRouteInstalled) {
   throw new Error('ScopeWeave webhook registration core route is unavailable');
@@ -81,10 +74,11 @@ function canonicalRegistrationBody(original) {
   let finished = false;
 
   // A zero-sized queue is deliberate: creating the forwarding Request must not
-  // pull attacker-controlled bytes. The core rate-limit/auth/RBAC middleware
-  // therefore runs first; only its route-level c.req.json() read starts source
-  // consumption for an already-authorized registration request. Once that read
-  // begins, the facade enforces a small explicit memory budget before decoding.
+  // pull attacker-controlled bytes. Public global middleware has already run;
+  // only the private route's auth/RBAC chain can reach c.req.json(), so body
+  // consumption starts only for an authorized registration request. Once that
+  // read begins, the facade enforces a small explicit memory budget before
+  // decoding.
   const body = new ReadableStream({
     async pull(controller) {
       if (finished) return;
@@ -107,10 +101,10 @@ function canonicalRegistrationBody(original) {
             finished = true;
             try { await source.cancel('webhook registration body too large'); } catch { /* best effort */ }
             try { source.releaseLock(); } catch { /* cancellation may release it */ }
-            // Feed the core route a side-effect-free invalid registration after
-            // auth/RBAC has already admitted this request. The wrapped core route
-            // replaces that invalid-registration response with the stable 413
-            // before inherited request observability resumes.
+            // Feed the private core route a side-effect-free invalid registration
+            // after auth/RBAC has already admitted this request. The wrapped route
+            // translates that probe into the stable 413; the public logger then
+            // records the same final status returned to the customer.
             controller.enqueue(encoder.encode(JSON.stringify({ url: '' })));
             controller.close();
             return;
@@ -155,10 +149,11 @@ function requestWithCanonicalRegistration(original) {
 }
 
 async function registrationPolicyResponse(c) {
-  // Route the request through the core exactly once. The forwarding stream has
-  // no eager queue, so core rate-limit/auth/RBAC middleware can reject a request
-  // without the facade draining an attacker-controlled body first. Bounded-body
-  // evidence is keyed to this Request in process memory, not in an HTTP header.
+  // Public global middleware has already run exactly once. The zero-queue
+  // forwarding stream then enters only the route-specific core chain, where
+  // auth/RBAC can reject the request without draining attacker-controlled body
+  // bytes. Bounded-body evidence is keyed to this Request in process memory, not
+  // in an HTTP header.
   const { request, state } = requestWithCanonicalRegistration(c.req.raw);
   webhookRegistrationEvidence.set(request, state);
   let response;
@@ -166,9 +161,9 @@ async function registrationPolicyResponse(c) {
     response = await registrationCoreApp.fetch(request);
   } finally {
     webhookRegistrationEvidence.delete(request);
-    // Authentication/RBAC/rate-limit rejection can return without consuming the
-    // forwarding body. Cancel that unread stream so its reader releases the
-    // original network body instead of keeping the connection resource locked.
+    // Authentication/RBAC rejection can return without consuming the forwarding
+    // body. Cancel that unread stream so its reader releases the original network
+    // body instead of keeping the connection resource locked.
     if (request.body && !request.bodyUsed && !request.body.locked) {
       try { await request.body.cancel('webhook registration request completed'); } catch { /* best effort */ }
     }
@@ -195,19 +190,31 @@ async function stripeWebhookResponse(c) {
 /**
  * Public ScopeWeave HTTP application with fail-closed webhook boundaries.
  *
- * The core route and middleware graph is preserved in registration order, but
- * the historical unsigned Stripe route is deliberately omitted from the public
- * graph and replaced after the inherited request logging/rate-limit middleware.
- * This makes unsigned plan escalation unreachable from the shipped server while
- * retaining the existing destination-registration facade and all other routes.
+ * The core route and middleware graph is preserved in registration order. Core
+ * global middleware is mounted first so every public request, including the
+ * registration facade and verified Stripe route, retains the same logging and
+ * rate-limit envelope. The historical unsigned Stripe route is deliberately
+ * omitted and replaced after those inherited global controls.
  */
 export const app = new Hono();
+
+// Global core middleware must wrap the registration facade as well as ordinary
+// routes. Keeping it here (and out of registrationCoreApp) makes final response
+// status, metrics, and limiter state line up with the public request exactly once.
+for (const route of coreApp.routes.filter(({ path }) => path === '*')) {
+  app.on(route.method, route.path, route.handler);
+}
+
 app.use(WEBHOOK_REGISTRATION_PATH, async (c, next) => {
   if (c.req.method !== 'POST') return next();
   return registrationPolicyResponse(c);
 });
+
 for (const route of coreApp.routes.filter(
-  ({ method, path }) => !(method === 'POST' && path === STRIPE_WEBHOOK_PATH),
+  ({ method, path }) => (
+    path !== '*'
+    && !(method === 'POST' && path === STRIPE_WEBHOOK_PATH)
+  ),
 )) {
   app.on(route.method, route.path, route.handler);
 }
