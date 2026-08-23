@@ -61,6 +61,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mode, delegating provider/model/topology policy to the shared service without
   weakening ScopeWeave's authenticated, fail-closed transport or response
   boundary controls.
+- Kept invalid editor save actions keyboard-discoverable with
+  `aria-disabled="true"` and an explicit `aria-describedby` relationship while
+  preserving synchronous submit-time validation as the only persistence gate;
+  immediately corrected click and Enter submissions now use the latest draft.
 - Accepted XML whitespace before exact Microsoft Project element delimiters
   while preserving the linear, regex-free import scanner and rejecting
   attributes, longer names, non-XML whitespace, nested unmatched blocks, and

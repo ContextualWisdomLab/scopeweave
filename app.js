@@ -87,7 +87,7 @@ const CSV_HEADERS = [
   '스프린트',
   '스토리포인트'
 ];
-const CSV_FORMULA_PREFIX_PATTERN = /^\s*[=+\-@|]/;
+const CSV_FORMULA_PREFIX_PATTERN = /^\s*[=+\-@|＝＋－＠｜]/;
 const UNSAFE_JSON_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 const CSV_FIELD_LABELS = Object.freeze(Object.assign(Object.create(null), {
@@ -790,6 +790,9 @@ function renderEditorRow(anchorId) {
   panel.className = 'editor-panel';
   const form = document.createElement('form');
   form.dataset.editorForm = 'true';
+  // ScopeWeave validation is the sole persistence gate; native constraint
+  // validation would intercept submission and move focus before saveEditor().
+  form.noValidate = true;
   const editorGrid = document.createElement('div');
   editorGrid.className = 'editor-grid';
 
@@ -1068,7 +1071,13 @@ function renderEditorValidation() {
 
   const saveButton = form.querySelector('button[type="submit"]');
   if (saveButton) {
-    saveButton.disabled = errors.length > 0;
+    if (errors.length > 0) {
+      saveButton.setAttribute('aria-disabled', 'true');
+      saveButton.setAttribute('aria-describedby', 'editor-errors');
+    } else {
+      saveButton.removeAttribute('aria-disabled');
+      saveButton.removeAttribute('aria-describedby');
+    }
     saveButton.title = errors.length > 0 ? '입력값을 올바르게 수정해야 저장할 수 있습니다.' : '저장 (Enter)';
   }
 
