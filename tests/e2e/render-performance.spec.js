@@ -3,6 +3,8 @@ import { readFileSync } from 'node:fs';
 
 import { test, expect } from '@playwright/test';
 
+import { resolveBenchmarkBaseSha } from '../helpers/benchmark-base.mjs';
+
 const ROW_COUNT = 5_000;
 const SAMPLE_COUNT = 5;
 const STORAGE_KEY = 'scopeweave:planner-state:v1';
@@ -43,14 +45,13 @@ function createTask(index) {
   };
 }
 
-function protectedBaseSha() {
-  const override = String(process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA || '').trim();
-  if (override) return override;
-
+function benchmarkBaseSha() {
   const eventPath = process.env.GITHUB_EVENT_PATH;
-  if (!eventPath) return null;
-  const event = JSON.parse(readFileSync(eventPath, 'utf8'));
-  return event.pull_request?.base?.sha || null;
+  const event = eventPath ? JSON.parse(readFileSync(eventPath, 'utf8')) : {};
+  return resolveBenchmarkBaseSha({
+    override: process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA,
+    event,
+  });
 }
 
 function readGitFile(commitSha, path) {
@@ -218,37 +219,29 @@ function summarizeMeasurement(measurement) {
 test('5,000-row production rendering beats the exact protected-base median by at least 15%', async ({ browser }) => {
   test.setTimeout(180_000);
 
-  const baseSha = protectedBaseSha();
-  const baselineSource = baseSha ? readGitFile(baseSha, 'app.js') : null;
+  const baseSha = benchmarkBaseSha();
+  const baselineSource = readGitFile(baseSha, 'app.js');
   const optimizedMeasurement = await measureRenderer(browser, { label: 'optimized' });
   const optimized = summarizeMeasurement(optimizedMeasurement);
-
-  let baseline = null;
-  let optimizationDeltaPercent = null;
-  let targetMet = null;
-  if (baselineSource !== null) {
-    baseline = summarizeMeasurement(await measureRenderer(browser, {
-      appSource: baselineSource,
-      label: 'protected-base',
-    }));
-    optimizationDeltaPercent = ((baseline.medianDurationMs - optimized.medianDurationMs)
-      / baseline.medianDurationMs) * 100;
-    targetMet = optimizationDeltaPercent >= TARGET_IMPROVEMENT_PERCENT;
-  }
+  const baseline = summarizeMeasurement(await measureRenderer(browser, {
+    appSource: baselineSource,
+    label: 'protected-base',
+  }));
+  const optimizationDeltaPercent = ((baseline.medianDurationMs - optimized.medianDurationMs)
+    / baseline.medianDurationMs) * 100;
+  const targetMet = optimizationDeltaPercent >= TARGET_IMPROVEMENT_PERCENT;
 
   const report = {
     rowCount: ROW_COUNT,
     sampleCount: SAMPLE_COUNT,
     protectedBaseSha: baseSha,
-    protectedBaselineAvailable: baseline !== null,
+    protectedBaselineAvailable: true,
     targetPercent: TARGET_IMPROVEMENT_PERCENT,
     targetMet,
     optimizationDeltaPercent,
     baseline,
     optimized,
-    comparisonNote: baseline === null
-      ? 'Set SCOPEWEAVE_BENCHMARK_BASE_SHA outside pull-request CI to enable exact-base A/B evidence.'
-      : 'Both variants use the same browser, current static shell, 5,000-row state, and render trigger; only app.js is replaced with the immutable PR base source for the baseline.',
+    comparisonNote: 'Both variants use the same browser, current static shell, 5,000-row state, and render trigger; only app.js is replaced with the immutable PR-base or previous protected-branch source for the baseline.',
   };
   console.log(`SCOPEWEAVE_RENDER_BENCHMARK ${JSON.stringify(report)}`);
 
@@ -264,15 +257,13 @@ test('5,000-row production rendering beats the exact protected-base median by at
   expect(optimized.inlineProgressChanged).toBe(true);
   expect(optimized.dragReordered).toBe(true);
 
-  if (baseline !== null) {
-    expect(baseline.medianDurationMs).toBeGreaterThan(0);
-    expect(baseline.editOpened).toBe(true);
-    expect(baseline.inlineProgressChanged).toBe(true);
-    expect(baseline.dragReordered).toBe(true);
-    expect(optimized.medianCreateElementCalls).toBeLessThan(baseline.medianCreateElementCalls);
-    expect(
-      optimizationDeltaPercent,
-      `expected >=${TARGET_IMPROVEMENT_PERCENT}% median render improvement over ${baseSha}, got ${optimizationDeltaPercent.toFixed(2)}%`,
-    ).toBeGreaterThanOrEqual(TARGET_IMPROVEMENT_PERCENT);
-  }
+  expect(baseline.medianDurationMs).toBeGreaterThan(0);
+  expect(baseline.editOpened).toBe(true);
+  expect(baseline.inlineProgressChanged).toBe(true);
+  expect(baseline.dragReordered).toBe(true);
+  expect(optimized.medianCreateElementCalls).toBeLessThan(baseline.medianCreateElementCalls);
+  expect(
+    optimizationDeltaPercent,
+    `expected >=${TARGET_IMPROVEMENT_PERCENT}% median render improvement over ${baseSha}, got ${optimizationDeltaPercent.toFixed(2)}%`,
+  ).toBeGreaterThanOrEqual(TARGET_IMPROVEMENT_PERCENT);
 });
