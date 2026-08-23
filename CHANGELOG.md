@@ -25,9 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Constrained outbound webhook registration and delivery to public HTTPS with
   per-attempt DNS/IP authorization, validated-address pinning, redirect
   non-following, and replay-safe fallback; the explicit development exception
-  is limited to loopback HTTP. Active legacy HTTP webhook rows that production
-  can no longer deliver are transactionally disabled on startup with a
-  tenant-visible audit next action instead of silently retrying forever.
+  is limited to loopback HTTP. Active legacy webhook rows rejected by the
+  current synchronous destination policy, including HTTP and local/private
+  HTTPS literals, are transactionally disabled on startup with a tenant-visible
+  replacement action instead of silently retrying forever; DNS-backed names
+  remain re-authorized immediately before each delivery attempt.
 - Made contextual-orchestrator briefing requests fail closed unless an authenticated endpoint is configured. Deterministic generated text is restricted to explicit `SCOPEWEAVE_DEV=1`, message/provider responses are bounded and validated, and non-loopback HTTP transport is rejected.
 - Made `SCOPEWEAVE_JWT_SECRET` mandatory at startup and rejected weak or
   unexpanded placeholder values so production deployments fail closed.
