@@ -452,7 +452,7 @@ app.get('/api/orgs/:id/members', requireAuth, (c) => {
      JOIN users u ON u.id = m.user_id WHERE m.org_id = ? ORDER BY m.id`
   ).all(orgId);
   const invites = db.prepare(
-    `SELECT id, email, role, token, created_at AS createdAt FROM invites
+    `SELECT id, email, role, created_at AS createdAt FROM invites
      WHERE org_id = ? AND accepted_at IS NULL ORDER BY id DESC`
   ).all(orgId);
   return c.json({ members, invites });
@@ -489,11 +489,18 @@ app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
   return c.json({ token, email, role: inviteRole });
 });
 
-// Accept an invite (any authenticated user holding the token). Idempotent.
+// Accept an invite only for the authenticated account named by the invite.
 app.post('/api/invites/:token/accept', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const inv = db.prepare('SELECT * FROM invites WHERE token = ?').get(c.req.param('token'));
   if (!inv || inv.accepted_at) return c.json({ error: 'invalid or used invite' }, 404);
+  const identity = db.prepare('SELECT email FROM users WHERE id = ?').get(uid);
+  if (
+    String(inv.email || '').trim().toLowerCase()
+      !== String(identity?.email || '').trim().toLowerCase()
+  ) {
+    return c.json({ error: 'invalid or used invite' }, 404);
+  }
   const existing = orgRole(uid, inv.org_id);
   if (!existing) {
     if (wouldExceed(db, getOrg(inv.org_id), 'members')) {
@@ -603,10 +610,10 @@ app.post('/api/orgs/:id/checkout', requireAuth, async (c) => {
   return c.json(session);
 });
 
-// Stripe webhook authenticity only. The public app excludes this route and
-// registers the same fail-closed HMAC verifier so unsigned JSON can never
-// upgrade orgs.plan. This protected-graph copy must also refuse entitlement
-// mutation; a future composer that mounts the graph directly still fails closed
+// Stripe webhook authenticity only. The supported public/shared boundary mounts
+// this exact core route, so the route itself remains fail-closed even if a
+// future internal consumer bypasses outer composition. Authentic callbacks are
+// acknowledged but never mutate entitlements directly
 // (Krawczyk et al., 1997; Stripe webhook signatures).
 app.post('/api/stripe/webhook', async (c) => {
   try {
@@ -800,15 +807,17 @@ app.delete('/api/orgs/:id/webhooks/:whId', requireAuth, (c) => {
 });
 
 // ------------------------------------------------------------ SSO (OIDC)
-// Real IdP via env (OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI). When
-// unset, a built-in mock provider makes the whole flow self-contained + testable.
+// Real IdP via env (OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI). The
+// built-in mock provider is available only when OIDC is unconfigured and
+// SCOPEWEAVE_DEV=1; missing production configuration fails closed.
 const OIDC = {
   issuer: process.env.OIDC_ISSUER,
   clientId: process.env.OIDC_CLIENT_ID,
   clientSecret: process.env.OIDC_CLIENT_SECRET,
   redirectUri: process.env.OIDC_REDIRECT_URI,
 };
-const oidcMock = !OIDC.issuer;
+const oidcMock = !OIDC.issuer && process.env.SCOPEWEAVE_DEV === '1';
+const oidcConfigured = Boolean(OIDC.issuer) || oidcMock;
 const oidcStates = new Map(); // state -> { verifier, exp }
 const oidcCodes = new Map();  // mock only: code -> email
 
@@ -828,6 +837,7 @@ function upsertSsoUser(email) {
 }
 
 app.get('/api/auth/oidc/start', (c) => {
+  if (!oidcConfigured) return c.json({ error: 'sso not configured' }, 404);
   const origin = new URL(c.req.url).origin;
   const state = randomBytes(16).toString('hex');
   const verifier = randomBytes(32).toString('base64url');
