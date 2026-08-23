@@ -13,6 +13,7 @@ import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
+const GUARD_ACCOUNTING_METHOD = Symbol.for('scopeweave.guard_accounting.original_method');
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
 
 // Append-only audit trail. Never throws into the request path.
@@ -141,7 +142,7 @@ app.use('*', async (c, next) => {
     if (s >= 500) metrics.s5xx++; else if (s >= 400) metrics.s4xx++; else if (s >= 200) metrics.s2xx++;
     if (!quietLogs) {
       // structured; never logs bodies, tokens, or secrets
-      console.log(JSON.stringify({ ts: new Date().toISOString(), method: c.req.method, path: c.req.path, status: s, ms: Date.now() - t }));
+      console.log(JSON.stringify({ ts: new Date().toISOString(), method: c.env?.[GUARD_ACCOUNTING_METHOD] || c.req.method, path: c.req.path, status: s, ms: Date.now() - t }));
     }
   } catch { /* metrics/logging must never break a request */ }
 });
