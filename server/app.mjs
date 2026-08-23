@@ -124,7 +124,17 @@ async function registrationPolicyResponse(c) {
   // no eager queue, so core rate-limit/auth/RBAC middleware can reject a request
   // without the facade draining an attacker-controlled body first.
   const { request, state } = requestWithCanonicalRegistration(c.req.raw);
-  const response = await coreApp.fetch(request);
+  let response;
+  try {
+    response = await coreApp.fetch(request);
+  } finally {
+    // Authentication/RBAC/rate-limit rejection can return without consuming the
+    // forwarding body. Cancel that unread stream so its reader releases the
+    // original network body instead of keeping the connection resource locked.
+    if (request.body && !request.bodyUsed && !request.body.locked) {
+      try { await request.body.cancel('webhook registration request completed'); } catch { /* best effort */ }
+    }
+  }
   if (!state.tooLarge) return response;
   return c.json({ error: 'webhook registration body too large' }, 413);
 }
