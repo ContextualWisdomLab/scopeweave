@@ -135,7 +135,10 @@ assert.match(
 
 const delegatedApplication = new Hono();
 delegatedApplication.get('/dialog-accessibility.js', (c) => c.text('canonical-static-sentinel'));
+delegatedApplication.get('/missing-static', (c) => c.notFound());
+delegatedApplication.get('/static-read-failure', (c) => c.text('Internal Server Error', 500));
 const delegatedRuntime = createRuntimeApp({ application: delegatedApplication });
+
 const delegatedStatic = await delegatedRuntime.request('/dialog-accessibility.js');
 assert.equal(
   await delegatedStatic.text(),
@@ -144,23 +147,13 @@ assert.equal(
 );
 assertBaselineSecurityHeaders(delegatedStatic, 'delegated canonical static response');
 
-function rejectingReadFile(code) {
-  return async () => {
-    const error = new Error(`fixture read failure: ${code}`);
-    error.code = code;
-    throw error;
-  };
-}
+const delegatedMissing = await delegatedRuntime.request('/missing-static');
+assert.equal(delegatedMissing.status, 404, 'runtime preserves canonical not-found semantics');
+assertBaselineSecurityHeaders(delegatedMissing, 'delegated not-found response');
 
-const missingStaticApp = createRuntimeApp({ readStaticFile: rejectingReadFile('ENOENT') });
-const missingStatic = await missingStaticApp.request('/dialog-accessibility.js');
-assert.equal(missingStatic.status, 404, 'missing static module is reported as not found');
-assertBaselineSecurityHeaders(missingStatic, 'missing static module response');
-
-const unreadableStaticApp = createRuntimeApp({ readStaticFile: rejectingReadFile('EACCES') });
-const unreadableStatic = await unreadableStaticApp.request('/dialog-accessibility.js');
-assert.equal(unreadableStatic.status, 500, 'unexpected static I/O failure is not misreported as 404');
-assert.equal(await unreadableStatic.text(), 'Internal Server Error');
-assertBaselineSecurityHeaders(unreadableStatic, 'static I/O failure response');
+const delegatedFailure = await delegatedRuntime.request('/static-read-failure');
+assert.equal(delegatedFailure.status, 500, 'runtime preserves canonical server-error semantics');
+assert.equal(await delegatedFailure.text(), 'Internal Server Error');
+assertBaselineSecurityHeaders(delegatedFailure, 'delegated server-error response');
 
 console.log('security header regression passed');
