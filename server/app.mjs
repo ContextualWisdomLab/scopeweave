@@ -22,10 +22,6 @@ const REASON_ACTIONS = new Set(['schedule_outcome.skip', 'schedule_outcome.not_p
 
 installScheduleReasonEventSchema(db);
 const projectVersionPort = createSqliteScheduleReasonProjectVersionAdapter(db);
-const reasonRepository = createSqliteScheduleReasonEventRepository(db, {
-  advanceResourceVersion: projectVersionPort.advanceResourceVersion,
-  nextAuditRecordId: () => `audit_${randomBytes(16).toString('hex')}`,
-});
 
 const invalidRequest = (c) => c.json({
   error: 'Schedule reason request is invalid.',
@@ -70,6 +66,27 @@ function scheduleProjectAccess(userId, projectId) {
   ).get(projectId, userId);
 }
 
+/**
+ * Create a reason-event repository that rechecks write membership inside the
+ * repository savepoint immediately before the authoritative version transition.
+ */
+function createAuthorizedReasonRepository(userId) {
+  return createSqliteScheduleReasonEventRepository(db, {
+    advanceResourceVersion: (binding) => {
+      const currentProject = scheduleProjectAccess(userId, binding.projectId);
+      if (
+        !currentProject
+        || String(currentProject.org_id) !== binding.organizationId
+        || !WRITE_ROLES.has(currentProject.memberRole)
+      ) {
+        throw new Error('schedule reason event authorization denied');
+      }
+      return projectVersionPort.advanceResourceVersion(binding);
+    },
+    nextAuditRecordId: () => `audit_${randomBytes(16).toString('hex')}`,
+  });
+}
+
 /** Confirm the exact work-item identity once before user-facing validation. */
 function hasExactlyOneWorkItem(tasksJson, workItemId) {
   const tasks = JSON.parse(tasksJson);
@@ -92,7 +109,7 @@ app.post(
   }),
   async (c) => {
     const userId = c.get('scheduleUserId');
-    const project = scheduleProjectAccess(userId, c.req.param('id'));
+    let project = scheduleProjectAccess(userId, c.req.param('id'));
     if (!project) return c.json({ error: 'not found' }, 404);
     if (!WRITE_ROLES.has(project.memberRole)) return c.json({ error: 'forbidden: viewer role is read-only' }, 403);
 
@@ -104,6 +121,12 @@ app.post(
       || !Number.isSafeInteger(body.version)
       || body.version < 1
     ) return invalidRequest(c);
+
+    // Body parsing is asynchronous. Re-read tenant membership and project state
+    // afterwards so a revoked or downgraded member cannot use a stale snapshot.
+    project = scheduleProjectAccess(userId, c.req.param('id'));
+    if (!project) return c.json({ error: 'not found' }, 404);
+    if (!WRITE_ROLES.has(project.memberRole)) return c.json({ error: 'forbidden: viewer role is read-only' }, 403);
     if (body.version !== project.version) return versionConflict(c);
     if (body.type === 'cancelled') {
       return c.json({
@@ -120,16 +143,23 @@ app.post(
     const actorId = String(userId);
     const expectedResourceVersion = formatScheduleReasonResourceVersion(project.version);
     const authorizationPort = Object.freeze({
-      authorize: async (request) => ({
-        allowed: request.organizationId === organizationId
-          && request.projectId === projectId
-          && request.actorId === actorId
-          && request.expectedResourceVersion === expectedResourceVersion
-          && request.workItemId === body.workItemId
-          && REASON_ACTIONS.has(request.action),
-        authorizationId: `authz_${randomBytes(16).toString('hex')}`,
-        resourceVersion: expectedResourceVersion,
-      }),
+      authorize: async (request) => {
+        const currentProject = scheduleProjectAccess(userId, projectId);
+        return {
+          allowed: Boolean(currentProject)
+            && WRITE_ROLES.has(currentProject.memberRole)
+            && String(currentProject.org_id) === organizationId
+            && currentProject.version === project.version
+            && request.organizationId === organizationId
+            && request.projectId === projectId
+            && request.actorId === actorId
+            && request.expectedResourceVersion === expectedResourceVersion
+            && request.workItemId === body.workItemId
+            && REASON_ACTIONS.has(request.action),
+          authorizationId: `authz_${randomBytes(16).toString('hex')}`,
+          resourceVersion: expectedResourceVersion,
+        };
+      },
     });
 
     try {
@@ -148,7 +178,7 @@ app.post(
         randomSource: { nextOpaqueId: () => `evt_${randomBytes(16).toString('hex')}` },
         authorizationPort,
         approvalPort: { verifyCancellationApproval: async () => ({ valid: false }) },
-        repositoryPort: reasonRepository,
+        repositoryPort: createAuthorizedReasonRepository(userId),
       });
       return c.json({
         eventId: result.event.eventId,
