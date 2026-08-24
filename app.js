@@ -1312,16 +1312,24 @@ function saveEditor() {
   }
 
   if (state.editor.mode === 'create') {
-      const newTask = {
-        ...createEmptyTaskDraft(),
-        ...sanitizeDraft(state.editor.draft),
-        id: createId(),
-        parentId: state.editor.parentId,
-        depth: state.editor.depth,
-        expanded: true,
-        isSynthetic: false
-      };
+    const shouldFocusCreatedTask = state.previousFocus?.id === 'empty-state-add-root-task';
+    const newTask = {
+      ...createEmptyTaskDraft(),
+      ...sanitizeDraft(state.editor.draft),
+      id: createId(),
+      parentId: state.editor.parentId,
+      depth: state.editor.depth,
+      expanded: true,
+      isSynthetic: false
+    };
     insertTaskAfter(newTask, state.editor.insertAfterId);
+    if (shouldFocusCreatedTask) {
+      state.previousFocus = {
+        id: '',
+        action: 'edit',
+        taskId: newTask.id
+      };
+    }
   }
 
   closeEditor(true);
