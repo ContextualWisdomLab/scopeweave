@@ -97,6 +97,39 @@ test.describe('Focus Restoration after Editor Close', () => {
     await expect(editBtn).toBeFocused();
   });
 
+  test('restores a stable id when a future row action is not allowlisted', async ({ page }) => {
+    await page.goto('/');
+
+    await page.click('#add-root-task');
+    await page.waitForSelector('form[data-editor-form="true"]');
+    await page.fill('input[data-editor-field="phase"]', 'Future action fallback');
+    await page.click('button[type="submit"]');
+
+    const row = page.locator('tr.task-row').first();
+    await row.evaluate((taskRow) => {
+      const futureControl = document.createElement('span');
+      futureControl.id = 'future-row-control';
+      futureControl.tabIndex = 0;
+      futureControl.dataset.action = 'future-action';
+      taskRow.appendChild(futureControl);
+      futureControl.focus();
+
+      // Programmatic click on a non-focusable data cell leaves the synthetic
+      // control as activeElement while exercising the production row-to-editor path.
+      const cell = taskRow.querySelector('td:not(:first-child)');
+      if (!cell) throw new Error('expected data cell');
+      cell.click();
+    });
+
+    await expect(page.locator('form[data-editor-form="true"]')).toBeVisible();
+    await page.locator('button[data-action="cancel-editor"]').click();
+    await expect(page.locator('form[data-editor-form="true"]')).not.toBeVisible();
+
+    // The row itself was rerendered, so restoration must resolve the stable id
+    // instead of attempting to select an unallowlisted row action.
+    await expect(page.locator('#future-row-control')).toBeFocused();
+  });
+
   test('restores focus when a persisted task id contains CSS selector syntax', async ({ page }) => {
     await page.goto('/');
 
