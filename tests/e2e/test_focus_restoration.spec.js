@@ -27,7 +27,16 @@ test.describe('Focus Restoration after Editor Close', () => {
 
   test('restores focus to empty-state add root task button when cancelling root creator', async ({ page }) => {
     await page.goto('/');
-    await page.evaluate((storageKey) => localStorage.removeItem(storageKey), STORAGE_KEY);
+    await page.evaluate((storageKey) => {
+      // Persist an explicit empty planner so bootstrap does not fall back to the
+      // non-empty wbs.json seed fixture. This keeps the regression on the real
+      // production empty-state render path.
+      localStorage.setItem(storageKey, JSON.stringify({
+        projectName: 'ScopeWeave Planner',
+        baseDate: '2026-08-24',
+        tasks: []
+      }));
+    }, STORAGE_KEY);
     await page.reload();
 
     const emptyAddBtn = page.locator('#empty-state-add-root-task');
