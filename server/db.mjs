@@ -13,6 +13,10 @@ import {
   createSqliteStripeWebhookEventRepository,
   installStripeWebhookEventSchema,
 } from './stripe_webhook_event_ledger.mjs';
+import {
+  createSqliteStripeSubscriptionObservationRepository,
+  installStripeSubscriptionObservationSchema,
+} from './stripe_subscription_observation_ledger.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.SCOPEWEAVE_DB || join(__dirname, '..', 'data.db');
@@ -192,6 +196,8 @@ export const billingCheckoutAttempts = createSqliteBillingCheckoutAttemptReposit
 installStripeWebhookEventSchema(db);
 export const stripeWebhookEvents = createSqliteStripeWebhookEventRepository(db);
 configureStripeWebhookEventRecorder((evidence) => stripeWebhookEvents.recordVerifiedEvent(evidence));
+installStripeSubscriptionObservationSchema(db);
+export const stripeSubscriptionObservations = createSqliteStripeSubscriptionObservationRepository(db);
 
 // node:sqlite returns lastInsertRowid as number|bigint; normalize to Number.
 export const rowid = (r) => Number(r.lastInsertRowid);
