@@ -185,6 +185,7 @@ const state = {
   dragElement: null,
   dropTargetElement: null,
   toastTimer: null,
+  ganttPreviousFocus: null,
   previousFocus: null
 };
 
@@ -1221,6 +1222,14 @@ function handleRowAction(action, taskId) {
 }
 
 function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertAfterId = null, draft = null }) {
+  let editTask = null;
+  if (mode === 'edit') {
+    editTask = findTask(targetId);
+    if (!editTask) {
+      return;
+    }
+  }
+
   const activeEl = document.activeElement;
   state.previousFocus = null;
   if (activeEl) {
@@ -1232,10 +1241,7 @@ function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertA
     };
   }
   if (mode === 'edit') {
-    const task = findTask(targetId);
-    if (!task) {
-      return;
-    }
+    const task = editTask;
     state.editor = {
       mode,
       targetId,
@@ -2277,7 +2283,7 @@ function exportJsonArray() {
 }
 
 function openGanttModal() {
-  state.previousFocus = document.activeElement;
+  state.ganttPreviousFocus = document.activeElement;
   elements.ganttModal.classList.remove('hidden');
   renderGantt();
   // Focus the modal to handle Escape key properly
@@ -2286,9 +2292,9 @@ function openGanttModal() {
 
 function closeGanttModal() {
   elements.ganttModal.classList.add('hidden');
-  if (state.previousFocus) {
-    state.previousFocus.focus();
-    state.previousFocus = null;
+  if (state.ganttPreviousFocus) {
+    state.ganttPreviousFocus.focus();
+    state.ganttPreviousFocus = null;
   }
 }
 
