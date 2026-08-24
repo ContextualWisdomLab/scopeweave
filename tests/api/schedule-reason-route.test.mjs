@@ -117,7 +117,7 @@ const durableEvent = db.prepare(`
     FROM schedule_reason_events
    WHERE event_id = ?
 `).get(skipped.eventId);
-assert.deepEqual(durableEvent, {
+assert.deepEqual({ ...durableEvent }, {
   organization_id: String(organizationId),
   project_id: String(project.id),
   work_item_id: 'task-1',
