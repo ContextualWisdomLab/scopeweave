@@ -14,7 +14,7 @@ async function openRootEditor(page) {
 test('valid final edit can submit immediately without waiting for debounced validation', async ({ page }) => {
   const { initialTaskCount, editor, phaseInput, saveButton } = await openRootEditor(page);
 
-  await expect(saveButton).toBeEnabled();
+  await expect(saveButton).toHaveJSProperty('disabled', false);
   await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
   await expect(saveButton).toHaveAttribute('aria-describedby', 'editor-errors');
 
@@ -50,7 +50,7 @@ test('invalid immediate activation stays focusable, refreshes errors, and persis
 
   await expect(editor).toBeVisible();
   await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(initialTaskCount);
-  await expect(saveButton).toBeEnabled();
+  await expect(saveButton).toHaveJSProperty('disabled', false);
   await expect(saveButton).toBeFocused();
   await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
   await expect(saveButton).toHaveAttribute('aria-describedby', 'editor-errors');
