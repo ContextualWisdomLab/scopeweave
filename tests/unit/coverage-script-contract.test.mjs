@@ -41,6 +41,11 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage'],
+  /--include=server\/orchestrator\.mjs/,
+  'the contextual-orchestrator production boundary is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
   /--include=server\/billing_checkout_attempt\.mjs/,
   'the durable Checkout-attempt repository is instrumented',
 );
@@ -50,9 +55,29 @@ assert.match(
   'the Stripe webhook trust boundary is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/stripe_webhook_event_ledger\.mjs/,
+  'the verified Stripe webhook event ledger is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/orchestrator\.test\.mjs/,
+  'the contextual-orchestrator behavior regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/orchestrator-coverage\.test\.mjs/,
+  'the contextual-orchestrator edge coverage regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/orchestrator-attribution\.test\.mjs/,
+  'the contextual-orchestrator attribution regression executes under c8',
 );
 assert.match(
   scripts['test:coverage:cases'],
@@ -73,6 +98,21 @@ assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/stripe-webhook-boundary\.test\.mjs/,
   'the Stripe webhook trust regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/stripe-webhook-event-ledger\.test\.mjs/,
+  'the durable Stripe webhook event-ledger regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/stripe-webhook-recorder-integration\.test\.mjs/,
+  'the verified-event recorder integration regression executes under c8',
+);
+assert.match(
+  scripts['test:unit'],
+  /tests\/unit\/stripe-webhook-recorder-integration\.test\.mjs/,
+  'normal unit CI executes the verified-event recorder integration regression',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
