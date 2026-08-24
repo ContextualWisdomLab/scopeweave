@@ -14,6 +14,10 @@ const webhookRegistrationEvidence = new WeakMap();
 const STRIPE_WEBHOOK_PATH = '/api/stripe/webhook';
 const STRIPE_CHECKOUT_AUDIT_ACTION = 'billing.checkout_completed';
 const STRIPE_EVENT_TARGET_TYPE = 'stripe_event';
+const STRIPE_ENTITLEMENT_EVENTS = new Set([
+  'checkout.session.completed',
+  'checkout.session.async_payment_succeeded',
+]);
 const POSITIVE_DECIMAL_ID = /^[1-9]\d*$/;
 
 // The public app below owns the core's global logger/rate-limit middleware. The
@@ -181,12 +185,13 @@ async function registrationPolicyResponse(c) {
  * ScopeWeave creates Stripe Checkout sessions with both client_reference_id and
  * metadata.orgId set to the same server-selected organization identifier. Both
  * fields must therefore be present, canonical positive integers, and equal. The
- * checkout must also report subscription mode and a paid status before a provider
- * event can become entitlement authority. Provider-shaped but inconsistent or
- * unpaid events are acknowledged without mutating tenant state.
+ * checkout must also report subscription mode and a paid status before either
+ * the immediate completion event or Stripe's delayed-payment success event can
+ * become entitlement authority. Provider-shaped but inconsistent or unpaid
+ * events are acknowledged without mutating tenant state.
  */
 function checkoutOrganizationId(event) {
-  if (event?.type !== 'checkout.session.completed') return null;
+  if (!STRIPE_ENTITLEMENT_EVENTS.has(event?.type)) return null;
   const checkout = event?.data?.object;
   if (
     !checkout
