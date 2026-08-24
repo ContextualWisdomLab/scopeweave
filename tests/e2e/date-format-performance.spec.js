@@ -9,21 +9,36 @@ const ITERATION_COUNT = 400_000;
 const SAMPLE_COUNT = 7;
 const WARMUP_COUNT = 3;
 const TARGET_IMPROVEMENT_PERCENT = 10;
-const CANDIDATE_APP_SOURCE = readFileSync(new URL('../../app.js', import.meta.url), 'utf8');
 
-function resolveBenchmarkBaseSha() {
-  const override = String(process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA || '').trim();
-  if (/^[a-f0-9]{40}$/.test(override) && !/^0+$/.test(override)) {
-    return override;
+function assertImmutableSha(candidate, label) {
+  const sha = String(candidate || '').trim();
+  if (!/^[a-f0-9]{40}$/.test(sha) || /^0+$/.test(sha)) {
+    throw new Error(`Missing immutable ${label} SHA: ${sha || '<missing>'}`);
   }
+  return sha;
+}
 
+function githubEvent() {
   const eventPath = process.env.GITHUB_EVENT_PATH;
-  const event = eventPath ? JSON.parse(readFileSync(eventPath, 'utf8')) : {};
-  const candidate = event?.pull_request?.base?.sha || event?.before || '';
-  if (!/^[a-f0-9]{40}$/.test(candidate) || /^0+$/.test(candidate)) {
-    throw new Error(`Missing immutable benchmark base SHA: ${candidate || '<missing>'}`);
-  }
-  return candidate;
+  return eventPath ? JSON.parse(readFileSync(eventPath, 'utf8')) : {};
+}
+
+function resolveBenchmarkBaseSha(event) {
+  const override = String(process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA || '').trim();
+  if (override) return assertImmutableSha(override, 'benchmark base');
+  return assertImmutableSha(
+    event?.pull_request?.base?.sha || event?.before || '',
+    'benchmark base',
+  );
+}
+
+function resolveBenchmarkCandidateSha(event) {
+  const override = String(process.env.SCOPEWEAVE_BENCHMARK_HEAD_SHA || '').trim();
+  if (override) return assertImmutableSha(override, 'benchmark contributor head');
+  return assertImmutableSha(
+    event?.pull_request?.head?.sha || event?.after || process.env.GITHUB_SHA || '',
+    'benchmark contributor head',
+  );
 }
 
 function readGitFile(commitSha, path) {
@@ -135,15 +150,18 @@ async function measureDateFormatting(browser, { appSource, label }) {
 test('fixed-width date formatting preserves exact semantics and beats the protected base', async ({ browser }) => {
   test.setTimeout(120_000);
 
-  const baseSha = resolveBenchmarkBaseSha();
+  const event = githubEvent();
+  const baseSha = resolveBenchmarkBaseSha(event);
+  const candidateSha = resolveBenchmarkCandidateSha(event);
   const baselineSource = readGitFile(baseSha, 'app.js');
+  const candidateSource = readGitFile(candidateSha, 'app.js');
   const baseline = await measureDateFormatting(browser, {
     appSource: baselineSource,
     label: 'protected-base',
   });
   const optimized = await measureDateFormatting(browser, {
-    appSource: CANDIDATE_APP_SOURCE,
-    label: 'candidate',
+    appSource: candidateSource,
+    label: 'exact-contributor-head',
   });
 
   expect(optimized.samples).toHaveLength(SAMPLE_COUNT);
@@ -160,7 +178,7 @@ test('fixed-width date formatting preserves exact semantics and beats the protec
 
   expect(
     improvementPercent,
-    `expected >=${TARGET_IMPROVEMENT_PERCENT}% median date-format improvement over ${baseSha}, got ${improvementPercent.toFixed(2)}%`,
+    `expected >=${TARGET_IMPROVEMENT_PERCENT}% median date-format improvement for exact head ${candidateSha} over protected base ${baseSha}, got ${improvementPercent.toFixed(2)}%`,
   ).toBeGreaterThanOrEqual(TARGET_IMPROVEMENT_PERCENT);
 
   console.log(`SCOPEWEAVE_DATE_FORMAT_BENCHMARK ${JSON.stringify({
@@ -168,6 +186,7 @@ test('fixed-width date formatting preserves exact semantics and beats the protec
     sampleCount: SAMPLE_COUNT,
     warmupCount: WARMUP_COUNT,
     protectedBaseSha: baseSha,
+    exactContributorHeadSha: candidateSha,
     targetImprovementPercent: TARGET_IMPROVEMENT_PERCENT,
     improvementPercent,
     baseline: {
