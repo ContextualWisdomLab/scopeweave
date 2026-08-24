@@ -108,6 +108,40 @@ assert.equal(
   `Equivalent-IPv6 trusted-proxy regression failed:\n${equivalentIpv6PeerProbe.stderr}`,
 );
 
+const observabilityProbe = spawnSync(
+  process.execPath,
+  [
+    '--input-type=module',
+    '--eval',
+    `import assert from 'node:assert/strict';
+     process.env.SCOPEWEAVE_DB = ':memory:';
+     process.env.SCOPEWEAVE_JWT_SECRET = '${validJwtSecret}';
+     process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '3';
+     process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS = '60000';
+     process.env.SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX = '20';
+     process.env.SCOPEWEAVE_TRUSTED_PROXY_IPS = '127.0.0.1';
+     const { app } = await import('./server/app.mjs');
+     const nodeEnv = { incoming: { socket: { remoteAddress: '127.0.0.1' } } };
+     const requestFrom = (client, path = '/api/health') => app.request(path, { headers: { 'x-forwarded-for': client } }, nodeEnv);
+     const before = await (await requestFrom('198.51.100.240', '/api/metrics')).json();
+     for (let i = 0; i < 3; i++) assert.equal((await requestFrom('203.0.113.240')).status, 200);
+     assert.equal((await requestFrom('203.0.113.240')).status, 429, 'fourth request is blocked by the envelope limiter');
+     const after = await (await requestFrom('198.51.100.241', '/api/metrics')).json();
+     assert.equal(
+       after.requests - before.requests,
+       5,
+       'operational request totals include the prior metrics read, three allowed requests, and the blocked 429',
+     );
+     assert.equal(after.s4xx - before.s4xx, 1, 'rate-limited 429 responses remain visible in 4xx metrics');`,
+  ],
+  { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env } },
+);
+assert.equal(
+  observabilityProbe.status,
+  0,
+  `Rate-limit observability regression failed:\n${observabilityProbe.stderr}`,
+);
+
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '3';
 process.env.SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX = '7';
