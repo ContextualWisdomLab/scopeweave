@@ -25,6 +25,22 @@ test.describe('Focus Restoration after Editor Close', () => {
     await expect(addBtn).toBeFocused();
   });
 
+  test('restores focus to empty-state add root task button when cancelling root creator', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate((storageKey) => localStorage.removeItem(storageKey), STORAGE_KEY);
+    await page.reload();
+
+    const emptyAddBtn = page.locator('#empty-state-add-root-task');
+    await expect(emptyAddBtn).toBeVisible();
+    await emptyAddBtn.focus();
+    await emptyAddBtn.click();
+    await expect(page.locator('form[data-editor-form="true"]')).toBeVisible();
+
+    await page.locator('button[data-action="cancel-editor"]').click();
+    await expect(page.locator('form[data-editor-form="true"]')).not.toBeVisible();
+    await expect(emptyAddBtn).toBeFocused();
+  });
+
   test('restores focus to add root task button after saving root creator', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('#add-root-task');
