@@ -32,6 +32,28 @@ function resolveBenchmarkBaseSha(event) {
   );
 }
 
+test('pull request benchmark refuses a stale protected-base event snapshot', () => {
+  const originalOverride = process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA;
+  delete process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA;
+  try {
+    const eventBaseSha = 'a'.repeat(40);
+    const liveBaseSha = 'b'.repeat(40);
+    const event = {
+      pull_request: {
+        base: { sha: eventBaseSha, ref: 'develop' },
+      },
+    };
+
+    expect(() => resolveBenchmarkBaseSha(event, () => liveBaseSha)).toThrow(/protected base moved/i);
+  } finally {
+    if (originalOverride === undefined) {
+      delete process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA;
+    } else {
+      process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA = originalOverride;
+    }
+  }
+});
+
 function resolveBenchmarkCandidateSha(event) {
   const override = String(process.env.SCOPEWEAVE_BENCHMARK_HEAD_SHA || '').trim();
   if (override) return assertImmutableSha(override, 'benchmark contributor head');
