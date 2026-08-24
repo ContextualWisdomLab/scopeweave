@@ -113,6 +113,7 @@ function stripeCheckoutForm(payload) {
     ['cancel_url', payload.cancel_url],
     ['client_reference_id', payload.client_reference_id],
     ['metadata[orgId]', payload.metadata.orgId],
+    ['subscription_data[metadata][orgId]', payload.subscription_data.metadata.orgId],
   ]);
 }
 
@@ -300,7 +301,10 @@ function markKnownProviderFailure(repository, attemptId, error) {
  * the attempt pending so a later call reuses the same key; known 4xx responses
  * close the attempt so a deliberate later checkout gets fresh provider authority.
  * The hosted destination must use Stripe's standard HTTPS authority; provider-
- * issued client fragments are preserved verbatim.
+ * issued client fragments are preserved verbatim. Subscription-mode Checkout
+ * copies the organization binding onto both the Checkout Session and the
+ * underlying Stripe Subscription so later authoritative reads can fail closed on
+ * cross-tenant or missing provider metadata.
  *
  * @param {object} options - Checkout inputs and optional deterministic test seams.
  * @param {string|number} options.orgId - Organization that owns the checkout.
@@ -342,13 +346,15 @@ export async function createCheckout({
       throw checkoutStateFailure();
     }
 
+    const organizationId = String(orgId);
     const payload = {
       mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${publicOrigin}/?billing=success`,
       cancel_url: `${publicOrigin}/?billing=cancel`,
-      client_reference_id: String(orgId),
-      metadata: { orgId: String(orgId) },
+      client_reference_id: organizationId,
+      metadata: { orgId: organizationId },
+      subscription_data: { metadata: { orgId: organizationId } },
     };
 
     let session;
