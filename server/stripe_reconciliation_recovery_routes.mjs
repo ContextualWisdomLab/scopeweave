@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 
@@ -21,6 +23,7 @@ const EVIDENCE_EXPORT_HEADERS = Object.freeze({
 const EVIDENCE_EXPORT_DOWNLOAD_HEADERS = Object.freeze({
   ...EVIDENCE_EXPORT_HEADERS,
   'Content-Disposition': 'attachment; filename="scopeweave-stripe-reconciliation-evidence.json"',
+  'Content-Type': 'application/json; charset=UTF-8',
 });
 const stripeReconciliationEvidenceExports =
   createSqliteStripeReconciliationEvidenceExportRepository(db);
@@ -81,8 +84,11 @@ function evidenceExportFailure(c, error) {
   );
 }
 
-function auditEvidenceExport(organizationId, actorUserId, report) {
+function auditEvidenceExport(organizationId, actorUserId, report, evidenceDocument) {
   try {
+    const evidenceDocumentSha256 = createHash('sha256')
+      .update(evidenceDocument, 'utf8')
+      .digest('hex');
     db.prepare(`
       INSERT INTO audit_log(org_id,user_id,action,target_type,target_id,meta)
       VALUES(?,?,?,?,?,?)
@@ -95,6 +101,7 @@ function auditEvidenceExport(organizationId, actorUserId, report) {
       JSON.stringify({
         schemaVersion: report.schemaVersion,
         eventCount: report.events.length,
+        evidenceDocumentSha256,
       }),
     );
   } catch {
@@ -137,10 +144,11 @@ function auditRecovery(organizationId, actorUserId, result) {
  * payload, or caller-selected Subscription identity. Owners/admins can export their
  * bounded reconciliation evidence, inspect their bounded backlog, and retry one exact
  * verified Event using a durable evidence reference. Successful evidence disclosure
- * is fail-closed on its durable access-audit write, without copying private recovery
- * text into the audit metadata. Recovery JSON is capped at 4 KiB by Hono's body-limit
- * middleware, which checks declared Content-Length and streamed bytes before the JSON
- * parser can buffer an unbounded privileged request.
+ * is fail-closed on its durable access-audit write, which binds the audit record to the
+ * exact exported JSON bytes by SHA-256 without copying private recovery text. Recovery
+ * JSON is capped at 4 KiB by Hono's body-limit middleware, which checks declared
+ * Content-Length and streamed bytes before the JSON parser can buffer an unbounded
+ * privileged request.
  */
 export const stripeReconciliationRecoveryRoutes = new Hono();
 
@@ -163,8 +171,9 @@ stripeReconciliationRecoveryRoutes.get(
         organizationId,
         limit,
       });
-      auditEvidenceExport(organizationId, actorUserId, report);
-      return c.json(report, 200, EVIDENCE_EXPORT_DOWNLOAD_HEADERS);
+      const evidenceDocument = JSON.stringify(report);
+      auditEvidenceExport(organizationId, actorUserId, report, evidenceDocument);
+      return c.body(evidenceDocument, 200, EVIDENCE_EXPORT_DOWNLOAD_HEADERS);
     } catch (error) {
       return evidenceExportFailure(c, error);
     }
