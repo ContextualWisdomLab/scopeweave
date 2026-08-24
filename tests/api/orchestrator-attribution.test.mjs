@@ -86,4 +86,37 @@ assert.equal(
   'cross-tenant requests are rejected before any contextual-orchestrator call',
 );
 
-console.log('✓ AI briefing attribution tenant-boundary tests passed');
+globalThis.fetch = async (url, init) => {
+  providerCalls.push({ url: String(url), init });
+  return new Response(JSON.stringify({
+    error: 'private upstream diagnostic: nim-route-abc secret-token',
+  }), {
+    status: 503,
+    headers: { 'content-type': 'application/json' },
+  });
+};
+
+response = await jsonRequest(`/api/projects/${projectId}/ai/brief`, {
+  method: 'POST',
+  headers: owner.auth,
+  body: jsonBody({}),
+});
+assert.equal(response.status, 502, 'provider failure is translated at the ScopeWeave boundary');
+assert.equal(response.headers.get('cache-control'), 'no-store', 'AI failure responses are not cacheable');
+const failure = await response.json();
+assert.deepEqual(failure, {
+  error: 'AI 분석을 지금 완료할 수 없습니다.',
+  code: 'ai_brief_unavailable',
+  action: '잠시 후 다시 시도하세요. 계속 실패하면 워크스페이스 관리자에게 문의하세요.',
+  retryable: true,
+});
+const serializedFailure = JSON.stringify(failure);
+for (const internalDetail of ['contextual-orchestrator', 'ORCHESTRATOR_', 'secret-token', 'nim-route-abc', 'HTTP 503']) {
+  assert.equal(
+    serializedFailure.includes(internalDetail),
+    false,
+    `customer AI failure envelope excludes internal detail: ${internalDetail}`,
+  );
+}
+
+console.log('✓ AI briefing attribution and customer error-boundary tests passed');
