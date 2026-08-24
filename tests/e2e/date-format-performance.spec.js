@@ -18,18 +18,70 @@ function assertImmutableSha(candidate, label) {
   return sha;
 }
 
+function assertBenchmarkBaseRef(candidate) {
+  const baseRef = String(candidate || '').trim();
+  if (!baseRef || baseRef.length > 255 || /[\u0000-\u001f\u007f]/u.test(baseRef)) {
+    throw new Error(`Missing or invalid benchmark base ref: ${baseRef || '<missing>'}`);
+  }
+  return baseRef;
+}
+
 function githubEvent() {
   const eventPath = process.env.GITHUB_EVENT_PATH;
   return eventPath ? JSON.parse(readFileSync(eventPath, 'utf8')) : {};
 }
 
-function resolveBenchmarkBaseSha(event) {
+function readOriginBranchTip(baseRef) {
+  const branch = assertBenchmarkBaseRef(baseRef);
+  const fullRef = `refs/heads/${branch}`;
+  let output;
+  try {
+    output = execFileSync('git', ['ls-remote', '--heads', 'origin', fullRef], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch {
+    throw new Error(`Unable to resolve live benchmark base ${fullRef}`);
+  }
+
+  const matches = output
+    .split(/\r?\n/u)
+    .filter(Boolean)
+    .map((line) => line.split(/\s+/u))
+    .filter(([, remoteRef]) => remoteRef === fullRef);
+  if (matches.length !== 1) {
+    throw new Error(`Expected exactly one live benchmark base for ${fullRef}, found ${matches.length}`);
+  }
+  return assertImmutableSha(matches[0][0], `live benchmark base ${fullRef}`);
+}
+
+function resolveBenchmarkBaseSha(event, readLiveBaseSha = readOriginBranchTip) {
   const override = String(process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA || '').trim();
-  if (override) return assertImmutableSha(override, 'benchmark base');
-  return assertImmutableSha(
-    event?.pull_request?.base?.sha || event?.before || '',
-    'benchmark base',
+  const pullRequestBase = event?.pull_request?.base;
+  if (!pullRequestBase) {
+    return assertImmutableSha(override || event?.before || '', 'benchmark base');
+  }
+
+  const eventBaseSha = assertImmutableSha(pullRequestBase.sha, 'benchmark base');
+  const baseRef = assertBenchmarkBaseRef(pullRequestBase.ref);
+  const liveBaseSha = assertImmutableSha(
+    readLiveBaseSha(baseRef),
+    `live benchmark base ${baseRef}`,
   );
+  if (liveBaseSha !== eventBaseSha) {
+    throw new Error(
+      `Protected base moved from ${eventBaseSha} to ${liveBaseSha}; regenerate benchmark against fresh ${baseRef}`,
+    );
+  }
+  if (override) {
+    const overrideSha = assertImmutableSha(override, 'benchmark base override');
+    if (overrideSha !== liveBaseSha) {
+      throw new Error(
+        `Benchmark base override ${overrideSha} does not match live protected base ${liveBaseSha}`,
+      );
+    }
+  }
+  return liveBaseSha;
 }
 
 test('pull request benchmark refuses a stale protected-base event snapshot', () => {
@@ -202,6 +254,9 @@ test('fixed-width date formatting preserves exact semantics and beats the protec
     improvementPercent,
     `expected >=${TARGET_IMPROVEMENT_PERCENT}% median date-format improvement for exact head ${candidateSha} over protected base ${baseSha}, got ${improvementPercent.toFixed(2)}%`,
   ).toBeGreaterThanOrEqual(TARGET_IMPROVEMENT_PERCENT);
+
+  const completionBaseSha = resolveBenchmarkBaseSha(event);
+  expect(completionBaseSha).toBe(baseSha);
 
   console.log(`SCOPEWEAVE_DATE_FORMAT_BENCHMARK ${JSON.stringify({
     iterationCount: ITERATION_COUNT,
