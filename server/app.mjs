@@ -83,11 +83,8 @@ function scheduleCredentialIsCurrent(auth) {
     const user = db.prepare('SELECT token_version FROM users WHERE id = ?').get(auth.userId);
     return Boolean(user && user.token_version === auth.tokenVersion);
   }
-  if (auth.kind === 'pat') {
-    const token = db.prepare('SELECT user_id FROM api_tokens WHERE token_hash = ?').get(auth.tokenHash);
-    return Boolean(token && token.user_id === auth.userId);
-  }
-  return false;
+  const token = db.prepare('SELECT user_id FROM api_tokens WHERE token_hash = ?').get(auth.tokenHash);
+  return Boolean(token && token.user_id === auth.userId);
 }
 
 /**
