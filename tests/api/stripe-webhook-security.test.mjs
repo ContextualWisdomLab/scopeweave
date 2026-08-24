@@ -52,13 +52,14 @@ async function currentPlan(token) {
   return (await response.json()).orgs[0].plan;
 }
 
-function checkoutCompletedBody(orgId, idPrefix = 'evt_checkout') {
+function checkoutCompletedBody(orgId, idPrefix = 'evt_checkout', paymentStatus = 'paid') {
   return JSON.stringify({
     id: `${idPrefix}_${orgId}`,
     type: 'checkout.session.completed',
     data: {
       object: {
         mode: 'subscription',
+        payment_status: paymentStatus,
         client_reference_id: String(orgId),
         metadata: { orgId: String(orgId) },
       },
@@ -82,7 +83,7 @@ test('unsigned Stripe provider-shaped JSON cannot upgrade an organization', asyn
   assert.equal(await currentPlan(token), 'free');
 });
 
-test('verified subscription checkout activates the matching organization idempotently', async () => {
+test('verified paid subscription checkout activates the matching organization idempotently', async () => {
   const { token, orgId } = await signupAndOrg();
   const body = checkoutCompletedBody(orgId);
   const send = () => app.request('https://scopeweave.example/api/stripe/webhook', {
@@ -101,7 +102,7 @@ test('verified subscription checkout activates the matching organization idempot
   assert.equal(
     await currentPlan(token),
     'pro',
-    'a verified checkout created for this organization must activate the purchased plan',
+    'a verified paid checkout created for this organization must activate the purchased plan',
   );
 
   response = await send();
@@ -116,6 +117,31 @@ test('verified subscription checkout activates the matching organization idempot
       AND target_id = ?
   `).get(orgId, `evt_checkout_${orgId}`);
   assert.equal(audit.count, 1, 'the same verified Stripe event is reconciled exactly once');
+});
+
+test('verified unpaid checkout is acknowledged without granting entitlement', async () => {
+  const { token, orgId } = await signupAndOrg();
+  const body = checkoutCompletedBody(orgId, 'evt_unpaid', 'unpaid');
+  const response = await app.request('https://scopeweave.example/api/stripe/webhook', {
+    method: 'POST',
+    headers: {
+      ...jsonHeaders,
+      'stripe-signature': signatureHeader(body),
+    },
+    body,
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { received: true });
+  assert.equal(await currentPlan(token), 'free');
+  const audit = db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM audit_log
+    WHERE action = 'billing.checkout_completed'
+      AND target_type = 'stripe_event'
+      AND target_id = ?
+  `).get(`evt_unpaid_${orgId}`);
+  assert.equal(audit.count, 0, 'an unpaid checkout cannot enter the entitlement ledger');
 });
 
 test('stale signatures and raw-body mutation fail closed without changing plan state', async () => {
