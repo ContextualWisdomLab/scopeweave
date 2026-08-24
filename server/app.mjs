@@ -4,21 +4,11 @@
 // attachment, Clearfolio, or project-planning behavior.
 import { Hono } from 'hono';
 import { app as coreApp } from './app_core.mjs';
-import { db } from './db.mjs';
-import { StripeWebhookError, verifyStripeWebhookRequest } from './stripe_webhook.mjs';
 import { validateWebhookRegistrationUrl } from './webhook_transport.mjs';
 
 const WEBHOOK_REGISTRATION_PATH = '/api/orgs/:id/webhooks';
 const WEBHOOK_REGISTRATION_BODY_MAX_BYTES = 16 * 1024;
 const webhookRegistrationEvidence = new WeakMap();
-const STRIPE_WEBHOOK_PATH = '/api/stripe/webhook';
-const STRIPE_CHECKOUT_AUDIT_ACTION = 'billing.checkout_completed';
-const STRIPE_EVENT_TARGET_TYPE = 'stripe_event';
-const STRIPE_ENTITLEMENT_EVENTS = new Set([
-  'checkout.session.completed',
-  'checkout.session.async_payment_succeeded',
-]);
-const POSITIVE_DECIMAL_ID = /^[1-9]\d*$/;
 
 // The public app below owns the core's global logger/rate-limit middleware. The
 // private replay app therefore contains only the route-specific registration
@@ -180,109 +170,12 @@ async function registrationPolicyResponse(c) {
 }
 
 /**
- * Resolve the ScopeWeave organization bound to a verified paid subscription checkout.
+ * Public ScopeWeave HTTP application with a fail-closed outbound-webhook facade.
  *
- * ScopeWeave creates Stripe Checkout sessions with both client_reference_id and
- * metadata.orgId set to the same server-selected organization identifier. Both
- * fields must therefore be present, canonical positive integers, and equal. The
- * checkout must also report subscription mode and a paid status before either
- * the immediate completion event or Stripe's delayed-payment success event can
- * become entitlement authority. Provider-shaped but inconsistent or unpaid
- * events are acknowledged without mutating tenant state.
- */
-function checkoutOrganizationId(event) {
-  if (!STRIPE_ENTITLEMENT_EVENTS.has(event?.type)) return null;
-  const checkout = event?.data?.object;
-  if (
-    !checkout
-    || typeof checkout !== 'object'
-    || checkout.mode !== 'subscription'
-    || checkout.payment_status !== 'paid'
-  ) return null;
-
-  const referenceId = checkout.client_reference_id;
-  const metadataId = checkout.metadata?.orgId;
-  if (
-    typeof referenceId !== 'string'
-    || typeof metadataId !== 'string'
-    || !POSITIVE_DECIMAL_ID.test(referenceId)
-    || !POSITIVE_DECIMAL_ID.test(metadataId)
-    || referenceId !== metadataId
-  ) return null;
-
-  const orgId = Number(referenceId);
-  return Number.isSafeInteger(orgId) ? orgId : null;
-}
-
-/**
- * Project one verified Stripe checkout into ScopeWeave entitlement state once.
- *
- * The existing append-only audit_log is also the durable provider-event ledger:
- * a BEGIN IMMEDIATE transaction serializes duplicate deliveries, checks the
- * globally unique Stripe event id before any plan write, updates only an existing
- * organization, and records the event id without secrets or provider payloads.
- * Replayed deliveries are acknowledged but cannot create a second entitlement
- * transition or audit record.
- */
-function reconcileStripeCheckout(event) {
-  const orgId = checkoutOrganizationId(event);
-  if (orgId === null) return;
-
-  db.exec('BEGIN IMMEDIATE');
-  try {
-    const alreadyProcessed = db.prepare(`
-      SELECT id
-      FROM audit_log
-      WHERE action = ? AND target_type = ? AND target_id = ?
-      LIMIT 1
-    `).get(STRIPE_CHECKOUT_AUDIT_ACTION, STRIPE_EVENT_TARGET_TYPE, event.id);
-
-    if (!alreadyProcessed) {
-      const org = db.prepare('SELECT id FROM orgs WHERE id = ?').get(orgId);
-      if (org) {
-        db.prepare("UPDATE orgs SET plan = 'pro' WHERE id = ?").run(orgId);
-        db.prepare(`
-          INSERT INTO audit_log(org_id,user_id,action,target_type,target_id,meta)
-          VALUES(?,NULL,?,?,?,?)
-        `).run(
-          orgId,
-          STRIPE_CHECKOUT_AUDIT_ACTION,
-          STRIPE_EVENT_TARGET_TYPE,
-          event.id,
-          JSON.stringify({ provider: 'stripe', eventType: event.type, plan: 'pro' }),
-        );
-      }
-    }
-    db.exec('COMMIT');
-  } catch (error) {
-    try { db.exec('ROLLBACK'); } catch { /* preserve the reconciliation failure */ }
-    throw error;
-  }
-}
-
-async function stripeWebhookResponse(c) {
-  try {
-    const event = await verifyStripeWebhookRequest(c.req.raw, {
-      secret: process.env.STRIPE_WEBHOOK_SECRET,
-    });
-    reconcileStripeCheckout(event);
-    return c.json({ received: true }, 200, { 'Cache-Control': 'no-store' });
-  } catch (error) {
-    if (error instanceof StripeWebhookError) {
-      return c.json({ error: error.code }, error.status, { 'Cache-Control': 'no-store' });
-    }
-    return c.json({ error: 'stripe_webhook_unavailable' }, 500, { 'Cache-Control': 'no-store' });
-  }
-}
-
-/**
- * Public ScopeWeave HTTP application with fail-closed webhook boundaries.
- *
- * The core route and middleware graph is preserved in registration order. Core
- * global middleware is mounted first so every public request, including the
- * registration facade and verified Stripe route, retains the same logging and
- * rate-limit envelope. The historical unsigned Stripe route is deliberately
- * omitted and replaced after those inherited global controls.
+ * The protected core route graph remains authoritative for every unrelated
+ * product surface. Only outbound webhook registration is intercepted here.
+ * Core global middleware is mounted first so logging and rate limiting still
+ * wrap the facade exactly once.
  */
 export const app = new Hono();
 
@@ -307,12 +200,6 @@ app.use(WEBHOOK_REGISTRATION_PATH, async (c, next) => {
   return response;
 });
 
-for (const route of coreApp.routes.filter(
-  (route) => (
-    !isGlobalCoreMiddleware(route)
-    && !(route.method === 'POST' && route.path === STRIPE_WEBHOOK_PATH)
-  ),
-)) {
+for (const route of coreApp.routes.filter((route) => !isGlobalCoreMiddleware(route))) {
   app.on(route.method, route.path, route.handler);
 }
-app.post(STRIPE_WEBHOOK_PATH, stripeWebhookResponse);
