@@ -198,11 +198,15 @@ async function stripeWebhookResponse(c) {
  */
 export const app = new Hono();
 
-// Global core middleware must wrap the registration facade as well as ordinary
-// routes. Keeping it here (and out of registrationCoreApp) makes final response
-// status, metrics, and limiter state line up with the public request exactly once.
-for (const route of coreApp.routes.filter(({ path }) => path === '*')) {
-  app.on(route.method, route.path, route.handler);
+// Hono normalizes root `*` registrations to `/*` in `routes`. Identify only the
+// method-ALL records produced by core `app.use('*', ...)`; the final GET `/*`
+// static fallback is a route, not middleware, and must keep its original tail
+// position. Re-registering these records before the facade makes the core logger
+// and optional rate limiter wrap registration POSTs instead of being replayed
+// after the short-circuiting facade.
+const isGlobalCoreMiddleware = ({ method, path }) => method === 'ALL' && path === '/*';
+for (const route of coreApp.routes.filter(isGlobalCoreMiddleware)) {
+  app.use(route.path, route.handler);
 }
 
 app.use(WEBHOOK_REGISTRATION_PATH, async (c, next) => {
@@ -216,9 +220,9 @@ app.use(WEBHOOK_REGISTRATION_PATH, async (c, next) => {
 });
 
 for (const route of coreApp.routes.filter(
-  ({ method, path }) => (
-    path !== '*'
-    && !(method === 'POST' && path === STRIPE_WEBHOOK_PATH)
+  (route) => (
+    !isGlobalCoreMiddleware(route)
+    && !(route.method === 'POST' && route.path === STRIPE_WEBHOOK_PATH)
   ),
 )) {
   app.on(route.method, route.path, route.handler);
