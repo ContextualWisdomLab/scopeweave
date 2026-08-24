@@ -5,6 +5,7 @@ process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 
 const { app } = await import('../../server/app.mjs');
 const { db } = await import('../../server/db.mjs');
+const { signToken } = await import('../../server/auth.mjs');
 
 const json = (value) => JSON.stringify(value);
 const request = (path, options = {}) => app.request(path, {
@@ -61,6 +62,25 @@ const skippedPayload = {
 
 response = await request(route, { method: 'POST', body: json(skippedPayload) });
 assert.equal(response.status, 401, 'reason mutation requires authentication');
+
+response = await request(route, {
+  method: 'POST',
+  headers: { authorization: 'Bearer swk_missing_schedule_reason_token' },
+  body: json(skippedPayload),
+});
+assert.equal(response.status, 401, 'unknown PATs fail before tenant lookup');
+
+const missingUserToken = signToken({
+  sub: Number.MAX_SAFE_INTEGER,
+  email: 'missing-schedule-user@example.com',
+  tv: 0,
+});
+response = await request(route, {
+  method: 'POST',
+  headers: { authorization: `Bearer ${missingUserToken}` },
+  body: json(skippedPayload),
+});
+assert.equal(response.status, 401, 'validly signed JWTs still require a live user');
 
 const outsiderToken = await signup('schedule-outsider@example.com', 'Outsider');
 response = await request(route, {
@@ -175,6 +195,48 @@ const notPerformed = await response.json();
 assert.equal(notPerformed.projectVersion, 4);
 assert.equal(notPerformed.type, 'not_performed');
 
+response = await request('/api/tokens', {
+  method: 'POST',
+  headers: ownerAuth,
+  body: json({ name: 'schedule-reason-route' }),
+});
+assert.equal(response.status, 200);
+const ownerPat = await response.json();
+response = await request(route, {
+  method: 'POST',
+  headers: { authorization: `Bearer ${ownerPat.token}` },
+  body: json({
+    workItemId: 'task-1',
+    type: 'skipped',
+    reasonCode: 'pat_authorized',
+    occurredAt,
+    version: 4,
+  }),
+});
+assert.equal(response.status, 201, 'live PATs use the same audited schedule-reason boundary');
+const patWrite = await response.json();
+assert.equal(patWrite.projectVersion, 5);
+assert.equal(patWrite.type, 'skipped');
+
+const staleToken = await signup('schedule-stale-session@example.com', 'Stale Session');
+response = await request('/api/auth/logout-all', {
+  method: 'POST',
+  headers: { authorization: `Bearer ${staleToken}` },
+});
+assert.equal(response.status, 200);
+response = await request(route, {
+  method: 'POST',
+  headers: { authorization: `Bearer ${staleToken}` },
+  body: json({
+    workItemId: 'task-1',
+    type: 'skipped',
+    reasonCode: 'stale_jwt',
+    occurredAt,
+    version: 5,
+  }),
+});
+assert.equal(response.status, 401, 'JWT token_version revocation is enforced at route entry');
+
 response = await request(route, {
   method: 'POST',
   headers: ownerAuth,
@@ -183,7 +245,7 @@ response = await request(route, {
     type: 'invented',
     reasonCode: 'bad',
     occurredAt,
-    version: 4,
+    version: 5,
   }),
 });
 assert.equal(response.status, 400, 'unsupported reason types fail closed');
@@ -198,7 +260,7 @@ const largeBody = json({
   type: 'skipped',
   reasonCode: 'x'.repeat(5000),
   occurredAt,
-  version: 4,
+  version: 5,
 });
 response = await request(route, {
   method: 'POST',
@@ -212,6 +274,6 @@ assert.deepEqual(await response.json(), {
   action: 'Send only the work item, reason, occurrence time, and current project version.',
 });
 
-assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schedule_reason_events').get().count, 2);
-assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schedule_reason_event_audit_records').get().count, 2);
+assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schedule_reason_events').get().count, 3);
+assert.equal(db.prepare('SELECT COUNT(*) AS count FROM schedule_reason_event_audit_records').get().count, 3);
 console.log('schedule reason API route regression passed');
