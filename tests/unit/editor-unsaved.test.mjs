@@ -484,6 +484,18 @@ assert.ok(focusEvents.slice(closeFocusStart).includes('row-focus:edit'), 'closeE
 assert.equal(state.previousFocus, null, 'closeEditor clears the stable focus descriptor after scheduling restoration');
 
 setActiveElement({
+  id: 'missing-edit-trigger',
+  dataset: { action: 'edit' },
+  closest(selector) {
+    assert.equal(selector, 'tr');
+    return { dataset: { taskId: 'missing-task' } };
+  },
+});
+state.previousFocus = null;
+openEditor({ mode: 'edit', targetId: 'missing-task' });
+assert.equal(state.previousFocus, null, 'missing edit targets do not leave a focus descriptor behind');
+
+setActiveElement({
   id: 'standalone-trigger',
   dataset: {},
   closest: () => null,
