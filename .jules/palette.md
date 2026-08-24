@@ -115,3 +115,6 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+## 2026-08-24 - Add keyboard accessibility to summary cards tooltips
+**Learning:** Pure informative elements using native `title` tooltips, like `.meta-value-card`, are inaccessible to keyboard and screen reader users unless explicitly made focusable. Adding `tabindex="0"` creates the focus point, while `role="note"` (or similar) gives context to screen readers, allowing the native tooltip to be announced. A dedicated focus ring in CSS is also essential for visual indication.
+**Action:** Always verify that informative UI blocks relying on `title` attributes for tooltips or supplementary info are reachable via the Tab key by verifying `tabindex` and an appropriate ARIA role.
