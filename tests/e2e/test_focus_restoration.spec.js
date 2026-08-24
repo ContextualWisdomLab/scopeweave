@@ -70,6 +70,33 @@ test.describe('Focus Restoration after Editor Close', () => {
     await expect(editBtn).toBeFocused();
   });
 
+  test('keeps editor focus restoration independent from a nested Gantt visit', async ({ page }) => {
+    await page.goto('/');
+
+    // Create a persisted task so the row Edit control is a stable restoration target.
+    await page.click('#add-root-task');
+    await page.waitForSelector('form[data-editor-form="true"]');
+    await page.fill('input[data-editor-field="phase"]', 'Nested modal focus');
+    await page.click('button[type="submit"]');
+
+    const firstRow = page.locator('tr.task-row').first();
+    const editBtn = firstRow.locator('button[data-action="edit"]');
+    await editBtn.focus();
+    await editBtn.click();
+    await expect(page.locator('form[data-editor-form="true"]')).toBeVisible();
+
+    // Visiting and closing the Gantt modal must not overwrite the inline editor's
+    // independent point-of-regard descriptor.
+    await page.click('#open-gantt');
+    await expect(page.locator('#gantt-modal')).toBeVisible();
+    await page.click('#close-gantt');
+    await expect(page.locator('#gantt-modal')).not.toBeVisible();
+
+    await page.locator('button[data-action="cancel-editor"]').click();
+    await expect(page.locator('form[data-editor-form="true"]')).not.toBeVisible();
+    await expect(editBtn).toBeFocused();
+  });
+
   test('restores focus when a persisted task id contains CSS selector syntax', async ({ page }) => {
     await page.goto('/');
 
