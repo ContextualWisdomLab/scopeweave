@@ -19,6 +19,7 @@ import {
 const REASON_ROUTE = '/api/projects/:id/schedule/reasons';
 const WRITE_ROLES = new Set(['owner', 'admin', 'member']);
 const REASON_ACTIONS = new Set(['schedule_outcome.skip', 'schedule_outcome.not_performed']);
+const CREDENTIAL_REVOKED = 'schedule reason event credential revoked';
 
 installScheduleReasonEventSchema(db);
 const projectVersionPort = createSqliteScheduleReasonProjectVersionAdapter(db);
@@ -35,22 +36,32 @@ const versionConflict = (c) => c.json({
   action: 'Refresh the project and retry against the current version.',
 }, 409);
 
-/** Authenticate the schedule write with the same JWT/PAT authority as core API routes. */
+/** Authenticate the schedule write and retain bounded evidence for commit-time revocation checks. */
 async function requireScheduleAuth(c, next) {
   const header = c.req.header('authorization') || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
   if (token.startsWith('swk_')) {
-    const row = db.prepare('SELECT * FROM api_tokens WHERE token_hash = ?').get(hashApiToken(token));
+    const tokenHash = hashApiToken(token);
+    const row = db.prepare('SELECT * FROM api_tokens WHERE token_hash = ?').get(tokenHash);
     if (!row) return c.json({ error: 'unauthorized' }, 401);
     db.prepare("UPDATE api_tokens SET last_used = datetime('now') WHERE id = ?").run(row.id);
-    c.set('scheduleUserId', row.user_id);
+    c.set('scheduleAuth', Object.freeze({
+      kind: 'pat',
+      userId: row.user_id,
+      tokenHash,
+    }));
     return next();
   }
   try {
     const payload = verifyToken(token);
+    const tokenVersion = payload.tv || 0;
     const user = db.prepare('SELECT token_version FROM users WHERE id = ?').get(payload.sub);
-    if (!user || (payload.tv || 0) !== user.token_version) return c.json({ error: 'unauthorized' }, 401);
-    c.set('scheduleUserId', payload.sub);
+    if (!user || tokenVersion !== user.token_version) return c.json({ error: 'unauthorized' }, 401);
+    c.set('scheduleAuth', Object.freeze({
+      kind: 'jwt',
+      userId: payload.sub,
+      tokenVersion,
+    }));
   } catch {
     return c.json({ error: 'unauthorized' }, 401);
   }
@@ -66,14 +77,31 @@ function scheduleProjectAccess(userId, projectId) {
   ).get(projectId, userId);
 }
 
+/** Confirm that the credential authenticated at route entry is still live. */
+function scheduleCredentialIsCurrent(auth) {
+  if (auth.kind === 'jwt') {
+    const user = db.prepare('SELECT token_version FROM users WHERE id = ?').get(auth.userId);
+    return Boolean(user && user.token_version === auth.tokenVersion);
+  }
+  if (auth.kind === 'pat') {
+    const token = db.prepare('SELECT user_id FROM api_tokens WHERE token_hash = ?').get(auth.tokenHash);
+    return Boolean(token && token.user_id === auth.userId);
+  }
+  return false;
+}
+
 /**
- * Create a reason-event repository that rechecks write membership inside the
- * repository savepoint immediately before the authoritative version transition.
+ * Create a reason-event repository that rechecks credential, write membership,
+ * and tenant authority inside the repository savepoint immediately before the
+ * authoritative project-version transition.
  */
-function createAuthorizedReasonRepository(userId) {
+function createAuthorizedReasonRepository(auth) {
   return createSqliteScheduleReasonEventRepository(db, {
     advanceResourceVersion: (binding) => {
-      const currentProject = scheduleProjectAccess(userId, binding.projectId);
+      if (!scheduleCredentialIsCurrent(auth)) {
+        throw new Error(CREDENTIAL_REVOKED);
+      }
+      const currentProject = scheduleProjectAccess(auth.userId, binding.projectId);
       if (
         !currentProject
         || String(currentProject.org_id) !== binding.organizationId
@@ -108,7 +136,8 @@ app.post(
     }, 413),
   }),
   async (c) => {
-    const userId = c.get('scheduleUserId');
+    const auth = c.get('scheduleAuth');
+    const userId = auth.userId;
     const project = scheduleProjectAccess(userId, c.req.param('id'));
     if (!project) return c.json({ error: 'not found' }, 404);
     if (!WRITE_ROLES.has(project.memberRole)) return c.json({ error: 'forbidden: viewer role is read-only' }, 403);
@@ -165,7 +194,7 @@ app.post(
         randomSource: { nextOpaqueId: () => `evt_${randomBytes(16).toString('hex')}` },
         authorizationPort,
         approvalPort: { verifyCancellationApproval: async () => ({ valid: false }) },
-        repositoryPort: createAuthorizedReasonRepository(userId),
+        repositoryPort: createAuthorizedReasonRepository(auth),
       });
       return c.json({
         eventId: result.event.eventId,
@@ -179,6 +208,9 @@ app.post(
       if (message.includes('resource version is stale')) return versionConflict(c);
       if (error instanceof TypeError || message === 'occurredAt cannot be after the trusted clock') {
         return invalidRequest(c);
+      }
+      if (message === CREDENTIAL_REVOKED) {
+        return c.json({ error: 'unauthorized' }, 401);
       }
       if (message === 'schedule reason event authorization denied') {
         return c.json({ error: 'forbidden' }, 403);
