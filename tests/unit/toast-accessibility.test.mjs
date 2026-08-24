@@ -35,11 +35,11 @@ test('sync status uses the same explicit advisory status semantics', () => {
 });
 
 test('cloud toast stylesheet is on every production serve path', () => {
-  const serverApp = readFileSync(new URL('../../server/app.mjs', import.meta.url), 'utf8');
+  const serverCore = readFileSync(new URL('../../server/app_core.mjs', import.meta.url), 'utf8');
   const pagesWorkflow = readFileSync(new URL('../../.github/workflows/pages.yml', import.meta.url), 'utf8');
   const staticDockerfile = readFileSync(new URL('../../Dockerfile', import.meta.url), 'utf8');
   const serverDockerfile = readFileSync(new URL('../../Dockerfile.server', import.meta.url), 'utf8');
-  assert.match(serverApp, /['"]\/toast-state\.css['"]/, 'SaaS allowlist serves the cloud toast stylesheet');
+  assert.match(serverCore, /['"]\/toast-state\.css['"]/, 'SaaS core allowlist serves the cloud toast stylesheet');
   assert.match(pagesWorkflow, /\btoast-state\.css\b/, 'GitHub Pages stages the cloud toast stylesheet');
   assert.match(staticDockerfile, /\btoast-state\.css\b/, 'static image copies the cloud toast stylesheet');
   assert.match(serverDockerfile, /\btoast-state\.css\b/, 'SaaS image copies the cloud toast stylesheet');
