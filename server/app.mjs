@@ -73,6 +73,8 @@ const trustedProxyIps = new Set(
 const rlBuckets = new Map();
 let overflowBucket;
 let nextBucketSweepAt = 0;
+let rateLimitedRequests = 0;
+const quietEnvelopeLogs = String(process.env.SCOPEWEAVE_DB || '').includes(':memory:');
 
 // app_routes.mjs predates the transport-peer trust boundary and still contains
 // its historical header-keyed limiter. Load it with that limiter disabled so
@@ -156,19 +158,70 @@ function rateLimitBucket(key, now) {
   return overflowBucket;
 }
 
+/**
+ * Add security-envelope 429s to the route application's operational snapshot.
+ *
+ * Allowed requests are still counted by app_routes.mjs. Blocked requests never
+ * enter that app, so the envelope keeps only the missing 429 delta and folds it
+ * into both JSON and Prometheus metric representations at read time. This avoids
+ * double-counting normal traffic while preserving the existing metrics schema.
+ */
+async function includeRateLimitedRequestsInMetrics(c) {
+  if (c.req.path !== '/api/metrics' || c.res.status !== 200 || rateLimitedRequests === 0) return;
+
+  const headers = new Headers(c.res.headers);
+  headers.delete('content-length');
+  if (c.req.query('format') === 'prometheus') {
+    const text = await c.res.text();
+    const adjusted = text.split('\n').map((line) => {
+      const match = /^(scopeweave_(?:requests|s4xx))\s+(-?\d+(?:\.\d+)?)$/.exec(line);
+      if (!match) return line;
+      return `${match[1]} ${Number(match[2]) + rateLimitedRequests}`;
+    }).join('\n');
+    c.res = new Response(adjusted, { status: 200, headers });
+    return;
+  }
+
+  const snapshot = await c.res.json();
+  if (typeof snapshot?.requests === 'number') snapshot.requests += rateLimitedRequests;
+  if (typeof snapshot?.s4xx === 'number') snapshot.s4xx += rateLimitedRequests;
+  c.res = new Response(JSON.stringify(snapshot), { status: 200, headers });
+}
+
+/**
+ * Record the otherwise short-circuited 429 without exposing client identity.
+ * Existing route logs never include bodies, credentials, or addresses; the
+ * envelope uses the same bounded request metadata for blocked traffic.
+ */
+function recordRateLimitedRequest(c, startedAt) {
+  rateLimitedRequests++;
+  if (!quietEnvelopeLogs) {
+    console.log(JSON.stringify({
+      ts: new Date().toISOString(),
+      method: c.req.method,
+      path: c.req.path,
+      status: 429,
+      ms: Date.now() - startedAt,
+    }));
+  }
+}
+
 export const app = new Hono();
 
 if (RL_MAX > 0) {
   app.use('*', async (c, next) => {
+    const startedAt = Date.now();
     const key = rateLimitClientIp(c);
     const now = Date.now();
     const bucket = rateLimitBucket(key, now);
     bucket.count++;
     if (bucket.count > RL_MAX) {
       const retry = Math.ceil((bucket.resetAt - now) / 1000);
+      recordRateLimitedRequest(c, startedAt);
       return c.json({ error: 'rate limit exceeded' }, 429, { 'Retry-After': String(retry) });
     }
     await next();
+    await includeRateLimitedRequestsInMetrics(c);
   });
 }
 
