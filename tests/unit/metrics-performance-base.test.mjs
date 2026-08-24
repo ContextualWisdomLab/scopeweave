@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { resolveBenchmarkBaseSha } from '../helpers/benchmark-base.mjs';
+import {
+  counterbalancedBenchmarkRounds,
+  resolveBenchmarkBaseSha,
+  summarizeCounterbalancedSamples,
+} from '../helpers/benchmark-base.mjs';
 
 const PR_BASE_SHA = '1111111111111111111111111111111111111111';
 const PUSH_BEFORE_SHA = '2222222222222222222222222222222222222222';
@@ -45,4 +49,37 @@ test('benchmark base rejects malformed and all-zero revisions', () => {
       /benchmark base SHA is invalid/i,
     );
   }
+});
+
+test('benchmark order measures each revision once in each execution position', () => {
+  assert.deepEqual(counterbalancedBenchmarkRounds(), [
+    ['protected-base', 'candidate'],
+    ['candidate', 'protected-base'],
+  ]);
+});
+
+test('counterbalanced timing neutralizes a systematic second-run advantage', () => {
+  const measurements = [
+    { label: 'protected-base', samples: Array(7).fill(10) },
+    { label: 'candidate', samples: Array(7).fill(8) },
+    { label: 'candidate', samples: Array(7).fill(10) },
+    { label: 'protected-base', samples: Array(7).fill(8) },
+  ];
+
+  const summary = summarizeCounterbalancedSamples(measurements);
+  assert.deepEqual(summary.baselineSamples, [
+    ...Array(7).fill(10),
+    ...Array(7).fill(8),
+  ]);
+  assert.deepEqual(summary.candidateSamples, [
+    ...Array(7).fill(8),
+    ...Array(7).fill(10),
+  ]);
+  assert.equal(summary.baselineMedianDurationMs, 9);
+  assert.equal(summary.candidateMedianDurationMs, 9);
+  assert.equal(
+    summary.improvementPercent,
+    0,
+    'execution-position speedup must not be misattributed to the candidate',
+  );
 });
