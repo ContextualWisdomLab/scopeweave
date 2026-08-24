@@ -40,6 +40,7 @@ test('invalid immediate activation stays focusable, refreshes errors, and persis
 
   await phaseInput.fill('P9002.유효 상태');
   await expect(saveButton).not.toHaveAttribute('aria-disabled', 'true');
+  await expect(saveButton).not.toHaveAttribute('aria-describedby', 'editor-errors');
 
   await phaseInput.fill('');
   await saveButton.evaluate((button) => {
