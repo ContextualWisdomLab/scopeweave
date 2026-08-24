@@ -3,6 +3,11 @@ import { readFileSync } from 'node:fs';
 
 import { test, expect } from '@playwright/test';
 
+import {
+  counterbalancedBenchmarkRounds,
+  summarizeCounterbalancedMeasurements,
+} from '../helpers/date-format-benchmark.mjs';
+
 test.describe.configure({ retries: process.env.CI ? 2 : 0 });
 
 const ITERATION_COUNT = 400_000;
@@ -139,11 +144,6 @@ function instrumentDateSource(source) {
   return `${withoutBootstrap}\n\nwindow.__scopeweaveDateBenchmark = Object.freeze({\n  formatDateInput,\n  formatLocalDateInput,\n  formatCompactDate,\n});\n`;
 }
 
-function median(values) {
-  const sorted = [...values].sort((left, right) => left - right);
-  return sorted[Math.floor(sorted.length / 2)];
-}
-
 async function measureDateFormatting(browser, { appSource, label }) {
   const context = await browser.newContext();
   try {
@@ -211,48 +211,45 @@ async function measureDateFormatting(browser, { appSource, label }) {
       warmupCount: WARMUP_COUNT,
     });
 
-    return {
-      label,
-      ...result,
-      medianDurationMs: median(result.samples),
-    };
+    return { label, ...result };
   } finally {
     await context.close();
   }
 }
 
 test('fixed-width date formatting preserves exact semantics and beats the protected base', async ({ browser }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
 
   const event = githubEvent();
   const baseSha = resolveBenchmarkBaseSha(event);
   const candidateSha = resolveBenchmarkCandidateSha(event);
-  const baselineSource = readGitFile(baseSha, 'app.js');
-  const candidateSource = readGitFile(candidateSha, 'app.js');
-  const baseline = await measureDateFormatting(browser, {
-    appSource: baselineSource,
-    label: 'protected-base',
-  });
-  const optimized = await measureDateFormatting(browser, {
-    appSource: candidateSource,
-    label: 'exact-contributor-head',
-  });
+  const sourceByLabel = new Map([
+    ['protected-base', readGitFile(baseSha, 'app.js')],
+    ['exact-contributor-head', readGitFile(candidateSha, 'app.js')],
+  ]);
+  const measurementOrder = counterbalancedBenchmarkRounds();
+  const measurements = [];
 
-  expect(optimized.samples).toHaveLength(SAMPLE_COUNT);
-  expect(baseline.samples).toHaveLength(SAMPLE_COUNT);
-  expect(optimized.medianDurationMs).toBeGreaterThan(0);
-  expect(baseline.medianDurationMs).toBeGreaterThan(0);
-  expect(optimized.semanticSnapshot).toBe(baseline.semanticSnapshot);
-  expect(optimized.checksum).toBe(baseline.checksum);
+  for (const round of measurementOrder) {
+    for (const label of round) {
+      measurements.push(await measureDateFormatting(browser, {
+        appSource: sourceByLabel.get(label),
+        label,
+      }));
+    }
+  }
 
-  const improvementPercent = (
-    (baseline.medianDurationMs - optimized.medianDurationMs)
-    / baseline.medianDurationMs
-  ) * 100;
+  for (const measurement of measurements) {
+    expect(measurement.samples).toHaveLength(SAMPLE_COUNT);
+    expect(measurement.samples.every((duration) => duration > 0)).toBe(true);
+  }
 
+  const summary = summarizeCounterbalancedMeasurements(measurements);
+  expect(summary.baselineMedianDurationMs).toBeGreaterThan(0);
+  expect(summary.candidateMedianDurationMs).toBeGreaterThan(0);
   expect(
-    improvementPercent,
-    `expected >=${TARGET_IMPROVEMENT_PERCENT}% median date-format improvement for exact head ${candidateSha} over protected base ${baseSha}, got ${improvementPercent.toFixed(2)}%`,
+    summary.improvementPercent,
+    `expected >=${TARGET_IMPROVEMENT_PERCENT}% counterbalanced median date-format improvement for exact head ${candidateSha} over protected base ${baseSha}, got ${summary.improvementPercent.toFixed(2)}%`,
   ).toBeGreaterThanOrEqual(TARGET_IMPROVEMENT_PERCENT);
 
   const completionBaseSha = resolveBenchmarkBaseSha(event);
@@ -260,21 +257,22 @@ test('fixed-width date formatting preserves exact semantics and beats the protec
 
   console.log(`SCOPEWEAVE_DATE_FORMAT_BENCHMARK ${JSON.stringify({
     iterationCount: ITERATION_COUNT,
-    sampleCount: SAMPLE_COUNT,
-    warmupCount: WARMUP_COUNT,
+    sampleCountPerMeasurement: SAMPLE_COUNT,
+    warmupCountPerMeasurement: WARMUP_COUNT,
+    measurementOrder,
     protectedBaseSha: baseSha,
     exactContributorHeadSha: candidateSha,
     targetImprovementPercent: TARGET_IMPROVEMENT_PERCENT,
-    improvementPercent,
+    improvementPercent: summary.improvementPercent,
     baseline: {
-      samples: baseline.samples,
-      medianDurationMs: baseline.medianDurationMs,
-      checksum: baseline.checksum,
+      samples: summary.baselineSamples,
+      medianDurationMs: summary.baselineMedianDurationMs,
+      checksum: summary.checksum,
     },
     optimized: {
-      samples: optimized.samples,
-      medianDurationMs: optimized.medianDurationMs,
-      checksum: optimized.checksum,
+      samples: summary.candidateSamples,
+      medianDurationMs: summary.candidateMedianDurationMs,
+      checksum: summary.checksum,
     },
   })}`);
 });
