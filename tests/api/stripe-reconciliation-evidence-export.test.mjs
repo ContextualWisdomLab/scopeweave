@@ -155,7 +155,11 @@ assert.equal(
   response.headers.get('content-disposition'),
   'attachment; filename="scopeweave-stripe-reconciliation-evidence.json"',
 );
-const ownerReport = await response.json();
+const ownerReportBody = await response.text();
+const ownerReport = JSON.parse(ownerReportBody);
+const ownerReportSha256 = createHash('sha256')
+  .update(ownerReportBody, 'utf8')
+  .digest('hex');
 assert.equal(ownerReport.schemaVersion, 'scopeweave.stripe-reconciliation-evidence/v1');
 assert.equal(ownerReport.organizationId, owner.organizationId);
 assert.deepEqual(ownerReport.events.map((event) => event.eventId), ['evt_export_owner']);
@@ -178,6 +182,7 @@ assert.equal(ownerAudit.target_id, String(owner.organizationId));
 assert.deepEqual(JSON.parse(ownerAudit.meta), {
   schemaVersion: 'scopeweave.stripe-reconciliation-evidence/v1',
   eventCount: 1,
+  evidenceDocumentSha256: ownerReportSha256,
 });
 assert.equal(
   JSON.stringify(ownerAudit).includes('INC-PRIVATE-EXPORT-OWNER'),
