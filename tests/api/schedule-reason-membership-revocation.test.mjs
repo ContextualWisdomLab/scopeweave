@@ -58,7 +58,7 @@ db.prepare('INSERT INTO memberships(org_id, user_id, role) VALUES(?,?,?)')
 
 const route = `/api/projects/${project.id}/schedule/reasons`;
 
-async function writeWhileBodyMutation(reasonCode, mutateAuthority) {
+async function writeWhileBodyMutation(authHeaders, reasonCode, mutateAuthority) {
   const payload = json({
     workItemId: 'task-1',
     type: 'skipped',
@@ -79,7 +79,7 @@ async function writeWhileBodyMutation(reasonCode, mutateAuthority) {
   const revocationRequest = new Request(`http://localhost${route}`, {
     method: 'POST',
     headers: {
-      ...memberAuth,
+      ...authHeaders,
       'content-type': 'application/json',
       'content-length': String(encodedPayload.byteLength),
     },
@@ -91,7 +91,7 @@ async function writeWhileBodyMutation(reasonCode, mutateAuthority) {
   return result;
 }
 
-response = await writeWhileBodyMutation('membership_removed', () => {
+response = await writeWhileBodyMutation(memberAuth, 'membership_removed', () => {
   const deletion = db.prepare('DELETE FROM memberships WHERE org_id = ? AND user_id = ?')
     .run(organizationId, memberId);
   assert.equal(Number(deletion.changes), 1, 'test revokes the writer membership exactly once');
@@ -104,7 +104,7 @@ assert.equal(
 
 db.prepare('INSERT INTO memberships(org_id, user_id, role) VALUES(?,?,?)')
   .run(organizationId, memberId, 'member');
-response = await writeWhileBodyMutation('membership_downgraded', () => {
+response = await writeWhileBodyMutation(memberAuth, 'membership_downgraded', () => {
   const downgrade = db.prepare('UPDATE memberships SET role = ? WHERE org_id = ? AND user_id = ?')
     .run('viewer', organizationId, memberId);
   assert.equal(Number(downgrade.changes), 1, 'test downgrades the writer membership exactly once');
@@ -117,7 +117,7 @@ assert.equal(
 
 db.prepare('UPDATE memberships SET role = ? WHERE org_id = ? AND user_id = ?')
   .run('member', organizationId, memberId);
-response = await writeWhileBodyMutation('project_tenant_changed', () => {
+response = await writeWhileBodyMutation(memberAuth, 'project_tenant_changed', () => {
   const transfer = db.prepare('UPDATE projects SET org_id = ? WHERE id = ?')
     .run(memberHomeOrganizationId, project.id);
   assert.equal(Number(transfer.changes), 1, 'test changes the project tenant exactly once');
@@ -126,6 +126,39 @@ assert.equal(
   response.status,
   403,
   'commit-time authority revalidation rejects a project tenant changed after routing begins',
+);
+
+db.prepare('UPDATE projects SET org_id = ? WHERE id = ?')
+  .run(organizationId, project.id);
+response = await request('/api/tokens', {
+  method: 'POST',
+  headers: memberAuth,
+  body: json({ name: 'reason-write-revocation' }),
+});
+assert.equal(response.status, 200);
+const memberPat = await response.json();
+const memberPatAuth = { authorization: `Bearer ${memberPat.token}` };
+
+response = await writeWhileBodyMutation(memberAuth, 'jwt_session_revoked', () => {
+  const revocation = db.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?')
+    .run(memberId);
+  assert.equal(Number(revocation.changes), 1, 'test revokes the JWT session exactly once');
+});
+assert.equal(
+  response.status,
+  401,
+  'commit-time authority revalidation rejects a JWT session revoked after routing begins',
+);
+
+response = await writeWhileBodyMutation(memberPatAuth, 'pat_revoked', () => {
+  const revocation = db.prepare('DELETE FROM api_tokens WHERE id = ? AND user_id = ?')
+    .run(memberPat.id, memberId);
+  assert.equal(Number(revocation.changes), 1, 'test revokes the PAT exactly once');
+});
+assert.equal(
+  response.status,
+  401,
+  'commit-time authority revalidation rejects a PAT revoked after routing begins',
 );
 
 assert.equal(
@@ -139,4 +172,4 @@ assert.equal(
   'authority changes cannot advance the authoritative project version',
 );
 
-console.log('schedule reason membership revocation regression passed');
+console.log('schedule reason membership and credential revocation regression passed');
