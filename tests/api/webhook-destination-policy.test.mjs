@@ -42,6 +42,10 @@ const request = (path, options = {}) => app.request(path, {
   },
 });
 const json = (value) => JSON.stringify(value);
+const registrationAccessLogs = (organizationId) => requestLogs.filter((record) => (
+  record.method === 'POST'
+  && record.path === `/api/orgs/${organizationId}/webhooks`
+));
 
 let response = await request('/api/auth/signup', {
   method: 'POST',
@@ -120,6 +124,7 @@ const oversizedAuthorizedBody = new ReadableStream({
     authorizedBodyCancelReason = String(reason);
   },
 });
+const accessLogCountBeforeOversized = registrationAccessLogs(organizationId).length;
 response = await request(`/api/orgs/${organizationId}/webhooks`, {
   method: 'POST',
   headers: authorization,
@@ -146,12 +151,13 @@ assert.equal(
   'webhook registration body too large',
   'oversized webhook cancellation records the bounded-body reason',
 );
-const oversizedAccessLog = requestLogs
-  .filter((record) => (
-    record.method === 'POST'
-    && record.path === `/api/orgs/${organizationId}/webhooks`
-  ))
-  .at(-1);
+const oversizedAccessLogs = registrationAccessLogs(organizationId);
+assert.equal(
+  oversizedAccessLogs.length,
+  accessLogCountBeforeOversized + 1,
+  'every public webhook registration must append exactly one structured access record',
+);
+const oversizedAccessLog = oversizedAccessLogs.at(-1);
 assert.equal(
   oversizedAccessLog?.status,
   413,
