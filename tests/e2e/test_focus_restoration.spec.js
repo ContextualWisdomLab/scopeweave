@@ -50,6 +50,31 @@ test.describe('Focus Restoration after Editor Close', () => {
     await expect(emptyAddBtn).toBeFocused();
   });
 
+  test('moves focus to the created task after saving from the empty-state creator', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate((storageKey) => {
+      localStorage.setItem(storageKey, JSON.stringify({
+        projectName: 'ScopeWeave Planner',
+        baseDate: '2026-08-24',
+        tasks: []
+      }));
+    }, STORAGE_KEY);
+    await page.reload();
+
+    const emptyAddBtn = page.locator('#empty-state-add-root-task');
+    await expect(emptyAddBtn).toBeVisible();
+    await emptyAddBtn.focus();
+    await emptyAddBtn.click();
+    await expect(page.locator('form[data-editor-form="true"]')).toBeVisible();
+
+    await page.fill('input[data-editor-field="phase"]', 'First saved phase');
+    await page.click('button[type="submit"]');
+
+    await expect(page.locator('form[data-editor-form="true"]')).not.toBeVisible();
+    const createdEditBtn = page.locator('tr.task-row').first().locator('button[data-action="edit"]');
+    await expect(createdEditBtn).toBeFocused();
+  });
+
   test('restores focus to add root task button after saving root creator', async ({ page }) => {
     await page.goto('/');
     await page.waitForSelector('#add-root-task');
