@@ -11,6 +11,7 @@ process.env.STRIPE_PRICE_ID = 'price_scopeweave_webhook';
 process.env.STRIPE_WEBHOOK_SECRET = 'whsec_scopeweave_api_webhook_secret';
 
 const { app } = await import('../../server/app.mjs?stripe-webhook-security-regression=1');
+const { db } = await import('../../server/db.mjs');
 
 const WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET;
 const jsonHeaders = { 'content-type': 'application/json' };
@@ -57,6 +58,7 @@ function checkoutCompletedBody(orgId, idPrefix = 'evt_checkout') {
     type: 'checkout.session.completed',
     data: {
       object: {
+        mode: 'subscription',
         client_reference_id: String(orgId),
         metadata: { orgId: String(orgId) },
       },
@@ -80,10 +82,10 @@ test('unsigned Stripe provider-shaped JSON cannot upgrade an organization', asyn
   assert.equal(await currentPlan(token), 'free');
 });
 
-test('authenticated Stripe delivery is acknowledged without granting entitlement', async () => {
+test('verified subscription checkout activates the matching organization idempotently', async () => {
   const { token, orgId } = await signupAndOrg();
   const body = checkoutCompletedBody(orgId);
-  const response = await app.request('https://scopeweave.example/api/stripe/webhook', {
+  const send = () => app.request('https://scopeweave.example/api/stripe/webhook', {
     method: 'POST',
     headers: {
       ...jsonHeaders,
@@ -92,14 +94,28 @@ test('authenticated Stripe delivery is acknowledged without granting entitlement
     body,
   });
 
+  let response = await send();
   assert.equal(response.status, 200);
   assert.deepEqual(await response.json(), { received: true });
   assert.equal(response.headers.get('cache-control'), 'no-store');
   assert.equal(
     await currentPlan(token),
-    'free',
-    'signature authentication alone cannot bypass durable provider-state reconciliation',
+    'pro',
+    'a verified checkout created for this organization must activate the purchased plan',
   );
+
+  response = await send();
+  assert.equal(response.status, 200, 'provider retries are acknowledged');
+  assert.equal(await currentPlan(token), 'pro');
+  const audit = db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM audit_log
+    WHERE org_id = ?
+      AND action = 'billing.checkout_completed'
+      AND target_type = 'stripe_event'
+      AND target_id = ?
+  `).get(orgId, `evt_checkout_${orgId}`);
+  assert.equal(audit.count, 1, 'the same verified Stripe event is reconciled exactly once');
 });
 
 test('stale signatures and raw-body mutation fail closed without changing plan state', async () => {
