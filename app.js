@@ -606,6 +606,7 @@ function createEmptyStateRow() {
 
   const addRootBtn = document.createElement('button');
   addRootBtn.type = 'button';
+  addRootBtn.id = 'empty-state-add-root-task';
   addRootBtn.className = 'primary-button';
   addRootBtn.textContent = '최상위 작업 추가';
   addRootBtn.addEventListener('click', () => {
