@@ -89,8 +89,8 @@ response = await app.fetch(revocationRequest);
 assert.equal(revokedDuringBodyRead, true, 'membership is revoked only when request body consumption begins');
 assert.equal(
   response.status,
-  404,
-  'a membership revoked after routing begins cannot retain stale tenant write authority',
+  403,
+  'commit-time authority revalidation rejects membership revoked after routing begins',
 );
 assert.equal(
   db.prepare('SELECT COUNT(*) AS count FROM schedule_reason_events').get().count,
