@@ -1001,8 +1001,13 @@ app.post('/api/projects/:id/ai/brief', requireAuth, async (c) => {
     });
     logAudit(p.org_id, uid, 'ai.brief', 'project', p.id, { tasks: tasks.length });
     return c.json({ analysis });
-  } catch (e) {
-    return c.json({ error: `AI 분석 실패: ${e.message}` }, 502);
+  } catch {
+    return c.json({
+      error: 'AI 분석을 지금 완료할 수 없습니다.',
+      code: 'ai_brief_unavailable',
+      action: '잠시 후 다시 시도하세요. 계속 실패하면 워크스페이스 관리자에게 문의하세요.',
+      retryable: true,
+    }, 502, { 'cache-control': 'no-store' });
   }
 });
 
