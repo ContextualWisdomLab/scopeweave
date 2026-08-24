@@ -176,18 +176,24 @@ async function registrationPolicyResponse(c) {
 }
 
 /**
- * Resolve the ScopeWeave organization bound to a verified subscription checkout.
+ * Resolve the ScopeWeave organization bound to a verified paid subscription checkout.
  *
  * ScopeWeave creates Stripe Checkout sessions with both client_reference_id and
  * metadata.orgId set to the same server-selected organization identifier. Both
- * fields must therefore be present, canonical positive integers, and equal before
- * a provider event can become entitlement authority. Provider-shaped but
- * inconsistent events are acknowledged without mutating tenant state.
+ * fields must therefore be present, canonical positive integers, and equal. The
+ * checkout must also report subscription mode and a paid status before a provider
+ * event can become entitlement authority. Provider-shaped but inconsistent or
+ * unpaid events are acknowledged without mutating tenant state.
  */
 function checkoutOrganizationId(event) {
   if (event?.type !== 'checkout.session.completed') return null;
   const checkout = event?.data?.object;
-  if (!checkout || typeof checkout !== 'object' || checkout.mode !== 'subscription') return null;
+  if (
+    !checkout
+    || typeof checkout !== 'object'
+    || checkout.mode !== 'subscription'
+    || checkout.payment_status !== 'paid'
+  ) return null;
 
   const referenceId = checkout.client_reference_id;
   const metadataId = checkout.metadata?.orgId;
