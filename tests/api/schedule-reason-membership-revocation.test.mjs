@@ -50,57 +50,93 @@ const memberToken = await signup('schedule-revocation-member@example.com', 'Revo
 const memberAuth = { authorization: `Bearer ${memberToken}` };
 response = await request('/api/me', { headers: memberAuth });
 assert.equal(response.status, 200);
-const memberId = (await response.json()).user.id;
+const memberMe = await response.json();
+const memberId = memberMe.user.id;
+const memberHomeOrganizationId = memberMe.orgs[0].id;
 db.prepare('INSERT INTO memberships(org_id, user_id, role) VALUES(?,?,?)')
   .run(organizationId, memberId, 'member');
 
 const route = `/api/projects/${project.id}/schedule/reasons`;
-const payload = json({
-  workItemId: 'task-1',
-  type: 'skipped',
-  reasonCode: 'revoked_while_reading',
-  occurredAt: '2026-08-24T02:00:00.000Z',
-  version: 2,
-});
-const encodedPayload = new TextEncoder().encode(payload);
-let revokedDuringBodyRead = false;
-const delayedBody = new ReadableStream({
-  pull(controller) {
-    const deletion = db.prepare('DELETE FROM memberships WHERE org_id = ? AND user_id = ?')
-      .run(organizationId, memberId);
-    assert.equal(Number(deletion.changes), 1, 'test revokes the writer membership exactly once');
-    revokedDuringBodyRead = true;
-    controller.enqueue(encodedPayload);
-    controller.close();
-  },
-});
 
-const revocationRequest = new Request(`http://localhost${route}`, {
-  method: 'POST',
-  headers: {
-    ...memberAuth,
-    'content-type': 'application/json',
-    'content-length': String(encodedPayload.byteLength),
-  },
-  body: delayedBody,
-  duplex: 'half',
+async function writeWhileBodyMutation(reasonCode, mutateAuthority) {
+  const payload = json({
+    workItemId: 'task-1',
+    type: 'skipped',
+    reasonCode,
+    occurredAt: '2026-08-24T02:00:00.000Z',
+    version: 2,
+  });
+  const encodedPayload = new TextEncoder().encode(payload);
+  let mutationApplied = false;
+  const delayedBody = new ReadableStream({
+    pull(controller) {
+      mutateAuthority();
+      mutationApplied = true;
+      controller.enqueue(encodedPayload);
+      controller.close();
+    },
+  });
+  const revocationRequest = new Request(`http://localhost${route}`, {
+    method: 'POST',
+    headers: {
+      ...memberAuth,
+      'content-type': 'application/json',
+      'content-length': String(encodedPayload.byteLength),
+    },
+    body: delayedBody,
+    duplex: 'half',
+  });
+  const result = await app.fetch(revocationRequest);
+  assert.equal(mutationApplied, true, 'authority changes only when request body consumption begins');
+  return result;
+}
+
+response = await writeWhileBodyMutation('membership_removed', () => {
+  const deletion = db.prepare('DELETE FROM memberships WHERE org_id = ? AND user_id = ?')
+    .run(organizationId, memberId);
+  assert.equal(Number(deletion.changes), 1, 'test revokes the writer membership exactly once');
 });
-response = await app.fetch(revocationRequest);
-assert.equal(revokedDuringBodyRead, true, 'membership is revoked only when request body consumption begins');
 assert.equal(
   response.status,
   403,
-  'commit-time authority revalidation rejects membership revoked after routing begins',
+  'commit-time authority revalidation rejects membership removed after routing begins',
 );
+
+db.prepare('INSERT INTO memberships(org_id, user_id, role) VALUES(?,?,?)')
+  .run(organizationId, memberId, 'member');
+response = await writeWhileBodyMutation('membership_downgraded', () => {
+  const downgrade = db.prepare('UPDATE memberships SET role = ? WHERE org_id = ? AND user_id = ?')
+    .run('viewer', organizationId, memberId);
+  assert.equal(Number(downgrade.changes), 1, 'test downgrades the writer membership exactly once');
+});
+assert.equal(
+  response.status,
+  403,
+  'commit-time authority revalidation rejects a writer role downgraded after routing begins',
+);
+
+db.prepare('UPDATE memberships SET role = ? WHERE org_id = ? AND user_id = ?')
+  .run('member', organizationId, memberId);
+response = await writeWhileBodyMutation('project_tenant_changed', () => {
+  const transfer = db.prepare('UPDATE projects SET org_id = ? WHERE id = ?')
+    .run(memberHomeOrganizationId, project.id);
+  assert.equal(Number(transfer.changes), 1, 'test changes the project tenant exactly once');
+});
+assert.equal(
+  response.status,
+  403,
+  'commit-time authority revalidation rejects a project tenant changed after routing begins',
+);
+
 assert.equal(
   db.prepare('SELECT COUNT(*) AS count FROM schedule_reason_events').get().count,
   0,
-  'revoked membership cannot persist a reason event',
+  'authority changes cannot persist a reason event',
 );
 assert.equal(
   db.prepare('SELECT version FROM projects WHERE id = ?').get(project.id).version,
   2,
-  'revoked membership cannot advance the authoritative project version',
+  'authority changes cannot advance the authoritative project version',
 );
 
 console.log('schedule reason membership revocation regression passed');
