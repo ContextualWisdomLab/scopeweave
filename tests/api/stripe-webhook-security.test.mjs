@@ -52,10 +52,15 @@ async function currentPlan(token) {
   return (await response.json()).orgs[0].plan;
 }
 
-function checkoutCompletedBody(orgId, idPrefix = 'evt_checkout', paymentStatus = 'paid') {
+function checkoutBody(
+  orgId,
+  idPrefix = 'evt_checkout',
+  paymentStatus = 'paid',
+  type = 'checkout.session.completed',
+) {
   return JSON.stringify({
     id: `${idPrefix}_${orgId}`,
-    type: 'checkout.session.completed',
+    type,
     data: {
       object: {
         mode: 'subscription',
@@ -74,7 +79,7 @@ test('unsigned Stripe provider-shaped JSON cannot upgrade an organization', asyn
   const response = await app.request('https://scopeweave.example/api/stripe/webhook', {
     method: 'POST',
     headers: jsonHeaders,
-    body: checkoutCompletedBody(orgId, 'evt_unsigned'),
+    body: checkoutBody(orgId, 'evt_unsigned'),
   });
 
   assert.equal(response.status, 400);
@@ -85,7 +90,7 @@ test('unsigned Stripe provider-shaped JSON cannot upgrade an organization', asyn
 
 test('verified paid subscription checkout activates the matching organization idempotently', async () => {
   const { token, orgId } = await signupAndOrg();
-  const body = checkoutCompletedBody(orgId);
+  const body = checkoutBody(orgId);
   const send = () => app.request('https://scopeweave.example/api/stripe/webhook', {
     method: 'POST',
     headers: {
@@ -121,7 +126,7 @@ test('verified paid subscription checkout activates the matching organization id
 
 test('verified unpaid checkout is acknowledged without granting entitlement', async () => {
   const { token, orgId } = await signupAndOrg();
-  const body = checkoutCompletedBody(orgId, 'evt_unpaid', 'unpaid');
+  const body = checkoutBody(orgId, 'evt_unpaid', 'unpaid');
   const response = await app.request('https://scopeweave.example/api/stripe/webhook', {
     method: 'POST',
     headers: {
@@ -144,9 +149,44 @@ test('verified unpaid checkout is acknowledged without granting entitlement', as
   assert.equal(audit.count, 0, 'an unpaid checkout cannot enter the entitlement ledger');
 });
 
+test('verified delayed-payment success activates the matching subscription organization', async () => {
+  const { token, orgId } = await signupAndOrg();
+  const body = checkoutBody(
+    orgId,
+    'evt_async_paid',
+    'paid',
+    'checkout.session.async_payment_succeeded',
+  );
+  const response = await app.request('https://scopeweave.example/api/stripe/webhook', {
+    method: 'POST',
+    headers: {
+      ...jsonHeaders,
+      'stripe-signature': signatureHeader(body),
+    },
+    body,
+  });
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { received: true });
+  assert.equal(
+    await currentPlan(token),
+    'pro',
+    'a verified delayed-payment success must activate the purchased subscription after funds become available',
+  );
+  const audit = db.prepare(`
+    SELECT COUNT(*) AS count
+    FROM audit_log
+    WHERE org_id = ?
+      AND action = 'billing.checkout_completed'
+      AND target_type = 'stripe_event'
+      AND target_id = ?
+  `).get(orgId, `evt_async_paid_${orgId}`);
+  assert.equal(audit.count, 1, 'the delayed-payment success enters the entitlement ledger exactly once');
+});
+
 test('stale signatures and raw-body mutation fail closed without changing plan state', async () => {
   const { token, orgId } = await signupAndOrg();
-  const body = checkoutCompletedBody(orgId, 'evt_replay');
+  const body = checkoutBody(orgId, 'evt_replay');
   const staleTimestamp = Math.floor(Date.now() / 1000) - 301;
 
   let response = await app.request('https://scopeweave.example/api/stripe/webhook', {
