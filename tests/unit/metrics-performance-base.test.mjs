@@ -4,12 +4,16 @@ import test from 'node:test';
 import {
   counterbalancedBenchmarkRounds,
   resolveBenchmarkBaseSha,
+  resolveBenchmarkCandidateSha,
   summarizeCounterbalancedSamples,
 } from '../helpers/benchmark-base.mjs';
 
 const PR_BASE_SHA = '1111111111111111111111111111111111111111';
 const PUSH_BEFORE_SHA = '2222222222222222222222222222222222222222';
 const OVERRIDE_SHA = '3333333333333333333333333333333333333333';
+const PR_HEAD_SHA = '4444444444444444444444444444444444444444';
+const PUSH_AFTER_SHA = '5555555555555555555555555555555555555555';
+const HEAD_OVERRIDE_SHA = '6666666666666666666666666666666666666666';
 
 test('benchmark base prefers an explicit immutable override', () => {
   assert.equal(resolveBenchmarkBaseSha({
@@ -47,6 +51,46 @@ test('benchmark base rejects malformed and all-zero revisions', () => {
     assert.throws(
       () => resolveBenchmarkBaseSha({ override: sha, event: {} }),
       /benchmark base SHA is invalid/i,
+    );
+  }
+});
+
+test('benchmark candidate prefers an explicit immutable override', () => {
+  assert.equal(resolveBenchmarkCandidateSha({
+    override: HEAD_OVERRIDE_SHA,
+    event: {
+      pull_request: { head: { sha: PR_HEAD_SHA } },
+      after: PUSH_AFTER_SHA,
+    },
+  }), HEAD_OVERRIDE_SHA);
+});
+
+test('benchmark candidate uses the pull-request contributor head for pull_request runs', () => {
+  assert.equal(resolveBenchmarkCandidateSha({
+    override: '',
+    event: { pull_request: { head: { sha: PR_HEAD_SHA } } },
+  }), PR_HEAD_SHA);
+});
+
+test('benchmark candidate uses the pushed commit for push runs', () => {
+  assert.equal(resolveBenchmarkCandidateSha({
+    override: '',
+    event: { after: PUSH_AFTER_SHA },
+  }), PUSH_AFTER_SHA);
+});
+
+test('benchmark candidate fails closed instead of trusting the workflow worktree', () => {
+  assert.throws(
+    () => resolveBenchmarkCandidateSha({ override: '', event: {} }),
+    /benchmark candidate SHA is unavailable/i,
+  );
+});
+
+test('benchmark candidate rejects malformed and all-zero revisions', () => {
+  for (const sha of ['not-a-sha', '0'.repeat(40)]) {
+    assert.throws(
+      () => resolveBenchmarkCandidateSha({ override: sha, event: {} }),
+      /benchmark candidate SHA is invalid/i,
     );
   }
 });
