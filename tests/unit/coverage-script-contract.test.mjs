@@ -40,6 +40,11 @@ assert.match(
   'the work-item hierarchy domain is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/schedule_outcome_domain\.mjs/,
+  'the schedule-outcome domain is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
@@ -48,6 +53,16 @@ assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/work-item-hierarchy\.test\.mjs/,
   'the work-item hierarchy behavior contract executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/schedule-outcome-domain\.test\.mjs/,
+  'the schedule-outcome behavior contract executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/schedule-outcome-domain-edge\.test\.mjs/,
+  'the schedule-outcome failure-boundary contract executes under c8',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],

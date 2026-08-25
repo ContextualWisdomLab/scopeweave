@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a deterministic, framework-neutral schedule-outcome derivation domain
+  that distinguishes observed facts from versioned early/on-time/late,
+  in-progress, blocked, skipped, cancelled, and not-performed interpretations;
+  missing baseline or accountable execution evidence remains explicit instead
+  of being silently classified as failure.
 - Added an order-independent four-level Phase → Activity → Task → Duty domain
   validator/projection that preserves legacy three-level IDs and never
   synthesizes customer work during projection.
