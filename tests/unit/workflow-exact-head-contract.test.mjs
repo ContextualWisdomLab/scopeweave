@@ -268,15 +268,20 @@ assert.match(
   /- name: Preserve exact-head OSV SARIF\r?\n\s+if: \$\{\{ !cancelled\(\) \}\}\r?\n\s+uses: actions\/upload-artifact@[\s\S]*?name: scopeweave-osv-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}[\s\S]*?path: results\.sarif[\s\S]*?if-no-files-found: error[\s\S]*?retention-days: 3/,
   'OSV must retain generated exact-head SARIF evidence even when the reporter fails on an introduced vulnerability, while still skipping cancelled runs',
 );
-assert.doesNotMatch(
-  osvWorkflow,
-  /github\/codeql-action\/upload-sarif@/,
-  'OSV must not publish a second SARIF stream into the CodeQL-only code-scanning surface',
+assert.equal(
+  osvWorkflow.split(`github/codeql-action/upload-sarif@${codeqlActionV4378Sha} # v4.37.8`).length - 1,
+  1,
+  'OSV must publish exact-head SARIF with the reviewed immutable CodeQL action revision',
 );
-assert.doesNotMatch(
+assert.equal(
+  osvWorkflow.split('security-events: write').length - 1,
+  1,
+  'OSV must grant code-scanning write authority only to its scan job',
+);
+assert.match(
   osvWorkflow,
-  /\bsecurity-events:\s*write\b/,
-  'OSV evidence retention must not require code-scanning write authority',
+  /- name: Publish exact-head OSV SARIF to code scanning[\s\S]*?sarif_file: results\.sarif[\s\S]*?checkout_path: \$\{\{ github\.workspace \}\}\/osv-scan-source[\s\S]*?ref: refs\/pull\/\$\{\{ github\.event\.pull_request\.number \}\}\/head[\s\S]*?sha: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/,
+  'OSV code-scanning publication must bind to the exact contributor checkout and pull-request head',
 );
 assert.equal(
   osvWorkflow.includes(supersededCodeqlActionV4362Sha),
