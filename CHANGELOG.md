@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added normalized SQLite persistence for authorized terminal schedule reason
+  events, verified cancellation approval evidence, immutable audit records, and
+  same-savepoint resource-version transition/rollback without duplicating the
+  authoritative work-item store.
 - Added a deterministic, framework-neutral schedule-outcome derivation domain
   that distinguishes observed facts from versioned early/on-time/late,
   in-progress, blocked, skipped, cancelled, and not-performed interpretations;
