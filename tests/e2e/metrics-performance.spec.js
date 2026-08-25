@@ -6,6 +6,7 @@ import { test, expect } from '@playwright/test';
 import {
   counterbalancedBenchmarkRounds,
   resolveBenchmarkBaseSha,
+  resolveBenchmarkCandidateSha,
   summarizeCounterbalancedSamples,
 } from '../helpers/benchmark-base.mjs';
 
@@ -16,7 +17,6 @@ const SAMPLE_COUNT = 7;
 const WARMUP_COUNT = 3;
 const TARGET_IMPROVEMENT_PERCENT = 15;
 const BASE_DATE = '2026-02-15';
-const CANDIDATE_APP_SOURCE = readFileSync(new URL('../../app.js', import.meta.url), 'utf8');
 
 const DATE_WINDOWS = Object.freeze([
   ['2026-01-01', '2026-01-02'],
@@ -25,19 +25,15 @@ const DATE_WINDOWS = Object.freeze([
   ['2026-02-15', '2026-02-15'],
 ]);
 
-function protectedBaseSha() {
+function githubEvent() {
   const eventPath = process.env.GITHUB_EVENT_PATH;
-  const event = eventPath ? JSON.parse(readFileSync(eventPath, 'utf8')) : {};
-  return resolveBenchmarkBaseSha({
-    override: process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA,
-    event,
-  });
+  return eventPath ? JSON.parse(readFileSync(eventPath, 'utf8')) : {};
 }
 
 function readGitFile(commitSha, path) {
   const normalizedCommitSha = String(commitSha || '');
   if (!/^[a-f0-9]{40}$/.test(normalizedCommitSha)) {
-    throw new Error(`Invalid benchmark base SHA: ${normalizedCommitSha || '<missing>'}`);
+    throw new Error(`Invalid benchmark commit SHA: ${normalizedCommitSha || '<missing>'}`);
   }
 
   const spec = `${normalizedCommitSha}:${path}`;
@@ -176,10 +172,18 @@ async function measureMetrics(browser, { appSource, label }) {
 test('10,000-task metric computation preserves exact semantics and beats the protected base', async ({ browser }) => {
   test.setTimeout(240_000);
 
-  const baseSha = protectedBaseSha();
+  const event = githubEvent();
+  const baseSha = resolveBenchmarkBaseSha({
+    override: process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA,
+    event,
+  });
+  const candidateSha = resolveBenchmarkCandidateSha({
+    override: process.env.SCOPEWEAVE_BENCHMARK_HEAD_SHA,
+    event,
+  });
   const sourceByLabel = new Map([
     ['protected-base', readGitFile(baseSha, 'app.js')],
-    ['candidate', CANDIDATE_APP_SOURCE],
+    ['candidate', readGitFile(candidateSha, 'app.js')],
   ]);
   const measurementOrder = counterbalancedBenchmarkRounds();
   const measurements = [];
@@ -209,7 +213,7 @@ test('10,000-task metric computation preserves exact semantics and beats the pro
   expect(summary.candidateMedianDurationMs).toBeGreaterThan(0);
   expect(
     summary.improvementPercent,
-    `expected >=${TARGET_IMPROVEMENT_PERCENT}% counterbalanced median computeTaskMetrics improvement over ${baseSha}, got ${summary.improvementPercent.toFixed(2)}%`,
+    `expected >=${TARGET_IMPROVEMENT_PERCENT}% counterbalanced median computeTaskMetrics improvement for exact head ${candidateSha} over ${baseSha}, got ${summary.improvementPercent.toFixed(2)}%`,
   ).toBeGreaterThanOrEqual(TARGET_IMPROVEMENT_PERCENT);
 
   const sharedSemanticEvidence = {
@@ -225,6 +229,7 @@ test('10,000-task metric computation preserves exact semantics and beats the pro
     warmupCountPerMeasurement: WARMUP_COUNT,
     measurementOrder,
     protectedBaseSha: baseSha,
+    exactContributorHeadSha: candidateSha,
     protectedBaselineAvailable: true,
     targetImprovementPercent: TARGET_IMPROVEMENT_PERCENT,
     optimizationDeltaPercent: summary.improvementPercent,
