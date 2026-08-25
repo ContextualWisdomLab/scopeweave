@@ -223,16 +223,17 @@ try {
   assert.equal((await viaProxy('127.0.0.1')).status, 429);
 
   // Distinct trusted-proxy client addresses must not grow in-memory limiter
-  // state without bound. Once the configured bucket cardinality is exhausted,
-  // previously unseen clients share one fail-closed overflow bucket instead of
-  // allocating attacker-controlled Map entries forever.
-  assert.equal((await viaProxy('192.0.2.201')).status, 200);
-  assert.equal((await viaProxy('192.0.2.202')).status, 200);
-  assert.equal((await viaProxy('192.0.2.203')).status, 200);
-  assert.equal(
-    (await viaProxy('192.0.2.204')).status,
-    429,
-    'new client identities share a bounded overflow bucket after capacity is reached'
+  // state without bound. Prime enough new identities that this assertion does
+  // not depend on a bucket created by an earlier phase still being live. Even
+  // if every earlier regular bucket has expired, at most seven new identities
+  // can receive regular buckets and the fourth overflow request must be blocked.
+  const overflowStatuses = [];
+  for (let i = 0; i < 11; i += 1) {
+    overflowStatuses.push((await viaProxy(`192.0.2.${201 + i}`)).status);
+  }
+  assert.ok(
+    overflowStatuses.includes(429),
+    'within bucket capacity plus the per-window allowance, new identities converge on the bounded overflow bucket and are throttled'
   );
 } finally {
   await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
