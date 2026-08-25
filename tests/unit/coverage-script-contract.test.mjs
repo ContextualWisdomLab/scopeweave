@@ -8,6 +8,7 @@ const publicApp = readFileSync(new URL('../../server/app.mjs', import.meta.url),
 const routeImportSeam = readFileSync(new URL('../../server/app_routes.mjs', import.meta.url), 'utf8');
 const applicationRoutes = readFileSync(new URL('../../server/application_routes.mjs', import.meta.url), 'utf8');
 const applicationRoutesCore = readFileSync(new URL('../../server/application_routes_core.mjs', import.meta.url), 'utf8');
+const rateLimitModule = readFileSync(new URL('../../server/rate_limit.mjs', import.meta.url), 'utf8');
 
 assert.match(
   serverWorkflow,
@@ -48,6 +49,26 @@ assert.match(
   publicApp,
   /await import\(['"]\.\/app_routes\.mjs['"]\)/,
   'the public app loads the guarded route graph only after establishing the authoritative limiter envelope',
+);
+assert.match(
+  publicApp,
+  /import\s*\{\s*createRateLimitMiddleware,\s*createRateLimitObservability,?\s*\}\s*from\s*['"]\.\/rate_limit\.mjs['"]/,
+  'the public and shared boundaries consume the same authoritative rate-limit implementation',
+);
+assert.doesNotMatch(
+  publicApp,
+  /function\s+(?:parseSafeIntegerSetting|canonicalIp|rateLimitBucket)\s*\(/,
+  'the public envelope does not fork validation, client identity, or bucket semantics from rate_limit.mjs',
+);
+assert.match(
+  publicApp,
+  /app\.use\(\s*['"]\*['"]\s*,\s*createRateLimitMiddleware\(rateLimitObservability\)\s*\)/,
+  'the public envelope installs the shared limiter before mounting the guarded route graph',
+);
+assert.match(
+  rateLimitModule,
+  /Math\.max\(1,\s*Math\.ceil\(\(bucket\.resetAt - now\) \/ 1000\)\)/,
+  'the single limiter source preserves a positive Retry-After boundary',
 );
 assert.match(
   publicApp,
