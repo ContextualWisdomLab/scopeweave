@@ -5,6 +5,7 @@ import {
   counterbalancedBenchmarkRounds,
   resolveBenchmarkBaseSha,
   resolveBenchmarkCandidateSha,
+  resolveVerifiedBenchmarkBaseSha,
   summarizeCounterbalancedSamples,
 } from '../helpers/benchmark-base.mjs';
 
@@ -14,6 +15,7 @@ const OVERRIDE_SHA = '3333333333333333333333333333333333333333';
 const PR_HEAD_SHA = '4444444444444444444444444444444444444444';
 const PUSH_AFTER_SHA = '5555555555555555555555555555555555555555';
 const HEAD_OVERRIDE_SHA = '6666666666666666666666666666666666666666';
+const MOVED_BASE_SHA = '7777777777777777777777777777777777777777';
 
 test('benchmark base prefers an explicit immutable override', () => {
   assert.equal(resolveBenchmarkBaseSha({
@@ -53,6 +55,55 @@ test('benchmark base rejects malformed and all-zero revisions', () => {
       /benchmark base SHA is invalid/i,
     );
   }
+});
+
+test('verified PR benchmark base accepts the unchanged live protected tip', () => {
+  assert.equal(resolveVerifiedBenchmarkBaseSha({
+    override: '',
+    event: {
+      pull_request: { base: { sha: PR_BASE_SHA, ref: 'develop' } },
+    },
+    readLiveBaseSha: (baseRef) => {
+      assert.equal(baseRef, 'develop');
+      return PR_BASE_SHA;
+    },
+  }), PR_BASE_SHA);
+});
+
+test('verified PR benchmark base refuses a stale event snapshot', () => {
+  assert.throws(
+    () => resolveVerifiedBenchmarkBaseSha({
+      override: '',
+      event: {
+        pull_request: { base: { sha: PR_BASE_SHA, ref: 'develop' } },
+      },
+      readLiveBaseSha: () => MOVED_BASE_SHA,
+    }),
+    /protected base moved/i,
+  );
+});
+
+test('verified PR benchmark base refuses an override that differs from the live tip', () => {
+  assert.throws(
+    () => resolveVerifiedBenchmarkBaseSha({
+      override: OVERRIDE_SHA,
+      event: {
+        pull_request: { base: { sha: PR_BASE_SHA, ref: 'develop' } },
+      },
+      readLiveBaseSha: () => PR_BASE_SHA,
+    }),
+    /override.*live protected base/i,
+  );
+});
+
+test('verified benchmark base preserves push comparison semantics', () => {
+  assert.equal(resolveVerifiedBenchmarkBaseSha({
+    override: '',
+    event: { before: PUSH_BEFORE_SHA, after: PUSH_AFTER_SHA },
+    readLiveBaseSha: () => {
+      throw new Error('push runs must not compare event.before with the post-push live branch tip');
+    },
+  }), PUSH_BEFORE_SHA);
 });
 
 test('benchmark candidate prefers an explicit immutable override', () => {
