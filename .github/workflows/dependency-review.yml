@@ -42,7 +42,9 @@ jobs:
           test -n "$BASE_REF"
 
           result="$(git ls-remote --exit-code origin "refs/heads/$BASE_REF")"
-          read -r live_base_sha live_base_ref extra <<<"$result"
+          mapfile -t live_base_matches <<<"$result"
+          test "${#live_base_matches[@]}" -eq 1
+          read -r live_base_sha live_base_ref extra <<<"${live_base_matches[0]}"
           test "$live_base_ref" = "refs/heads/$BASE_REF"
           test -z "${extra:-}"
           printf '%s\n' "$live_base_sha" | grep -Eq '^[0-9a-f]{40}$'
