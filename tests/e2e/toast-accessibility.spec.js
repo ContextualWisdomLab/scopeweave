@@ -46,3 +46,20 @@ test('disabled empty-state actions expose a persistent reason and next action', 
   await expect(help).toBeVisible();
   await expect(help).toContainText('작업을 추가하거나 CSV를 가져오세요');
 });
+
+test('task-dependent help disappears once the actions are available', async ({ page }) => {
+  await page.goto('/');
+
+  const exportButton = page.getByRole('button', { name: 'CSV 내보내기' });
+  const ganttButton = page.getByRole('button', { name: '간트차트보기' });
+  const help = page.locator('#task-dependent-actions-help');
+
+  await expect(page.locator('tbody tr[data-task-id]')).not.toHaveCount(0);
+  await expect(exportButton).toBeEnabled();
+  await expect(ganttButton).toBeEnabled();
+  await expect(exportButton).not.toHaveAttribute('aria-disabled', 'true');
+  await expect(ganttButton).not.toHaveAttribute('aria-disabled', 'true');
+  await expect(exportButton).not.toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
+  await expect(ganttButton).not.toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
+  await expect(help).toBeHidden();
+});
