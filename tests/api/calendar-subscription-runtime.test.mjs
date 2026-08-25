@@ -151,6 +151,18 @@ assert.doesNotMatch(feed, /calendar-task-5/, 'impossible calendar days are omitt
 assert.doesNotMatch(feed, /calendar-task-6/, 'events whose exclusive end cannot be represented are omitted');
 assert.doesNotMatch(feed, /\+01000001/, 'the feed never emits an extended-year value as an RFC 5545 DATE');
 assert.doesNotMatch(feed, /calendar-task-7/, 'events whose end precedes their start are omitted');
+const calendarEvents = feed
+  .split('BEGIN:VEVENT\r\n')
+  .slice(1)
+  .map((segment) => segment.split('END:VEVENT\r\n')[0]);
+assert.equal(calendarEvents.length, 3, 'only tasks with valid representable date ranges become VEVENTs');
+for (const calendarEvent of calendarEvents) {
+  const dtstampLines = calendarEvent
+    .split('\r\n')
+    .filter((line) => line.startsWith('DTSTAMP:'));
+  assert.equal(dtstampLines.length, 1, 'every RFC 5545 VEVENT carries exactly one DTSTAMP');
+  assert.match(dtstampLines[0], /^DTSTAMP:\d{8}T\d{6}Z$/, 'DTSTAMP is a UTC DATE-TIME in basic iCalendar form');
+}
 const physicalCalendarLines = feed.split('\r\n').filter(Boolean);
 assert.equal(
   physicalCalendarLines.every((line) => Buffer.byteLength(line, 'utf8') <= 75),
