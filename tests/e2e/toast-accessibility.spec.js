@@ -14,7 +14,7 @@ test('cloud status feedback is visibly rendered as a non-focus-taking live statu
 
   await expect.poll(
     () => toast.evaluate((element) => Number.parseFloat(getComputedStyle(element).opacity)),
-    { message: 'toast opacity should reach its fully visible transition state' },
+    { message: 'advisory status must reach its fully visible transition state' },
   ).toBeGreaterThanOrEqual(0.99);
 
   await expect.poll(
@@ -23,7 +23,7 @@ test('cloud status feedback is visibly rendered as a non-focus-taking live statu
   ).toBe(false);
 });
 
-test('disabled empty-state actions expose a persistent reason and next action', async ({ page }) => {
+test('disabled empty-state actions expose and announce a reason plus next action', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
       projectName: 'Empty Scope',
@@ -41,13 +41,16 @@ test('disabled empty-state actions expose a persistent reason and next action', 
   await expect(ganttButton).toBeDisabled();
   await expect(exportButton).toHaveAttribute('aria-disabled', 'true');
   await expect(ganttButton).toHaveAttribute('aria-disabled', 'true');
-  await expect(exportButton).not.toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
-  await expect(ganttButton).not.toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
+  await expect(exportButton).toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
+  await expect(ganttButton).toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
+  await expect(help).toHaveAttribute('role', 'status');
+  await expect(help).toHaveAttribute('aria-live', 'polite');
+  await expect(help).toHaveAttribute('aria-atomic', 'true');
   await expect(help).toBeVisible();
   await expect(help).toContainText('작업을 추가하거나 CSV를 가져오세요');
 });
 
-test('task-dependent help disappears once the actions are available', async ({ page }) => {
+test('task-dependent help disappears and detaches once the actions are available', async ({ page }) => {
   await page.goto('/');
 
   const exportButton = page.getByRole('button', { name: 'CSV 내보내기' });
