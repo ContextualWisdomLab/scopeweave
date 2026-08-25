@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const indexHtml = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
 const stylesCss = readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
+const appJs = readFileSync(new URL('../../app.js', import.meta.url), 'utf8');
 const toastStateCss = readFileSync(new URL('../../toast-state.css', import.meta.url), 'utf8');
 const cloudSyncJs = readFileSync(new URL('../../cloud-sync.js', import.meta.url), 'utf8');
 
@@ -23,6 +24,12 @@ function buttonElementMarkup(html, id) {
   const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const match = html.match(new RegExp(`<button\\s+[^>]*\\bid=["']${escapedId}["'][^>]*>`, 'i'));
   assert.ok(match, `production index.html contains #${id}`);
+  return match[0];
+}
+
+function taskHelpElementMarkup(html) {
+  const match = html.match(/<p\s+[^>]*\bid=["']task-dependent-actions-help["'][^>]*>/i);
+  assert.ok(match, 'production index.html contains task-dependent action help');
   return match[0];
 }
 
@@ -74,17 +81,21 @@ test('cloud toast state is visibly rendered by a shipped stylesheet', () => {
 test('task-dependent help is exposed only while the native actions are unavailable', () => {
   const exportButton = buttonElementMarkup(indexHtml, 'export-csv');
   const ganttButton = buttonElementMarkup(indexHtml, 'open-gantt');
+  const help = taskHelpElementMarkup(indexHtml);
 
   assert.doesNotMatch(
     exportButton,
     /\baria-describedby=["']task-dependent-actions-help["']/i,
-    'enabled export action must not carry an unavailable-state description',
+    'enabled export markup must not start with an unavailable-state description',
   );
   assert.doesNotMatch(
     ganttButton,
     /\baria-describedby=["']task-dependent-actions-help["']/i,
-    'enabled Gantt action must not carry an unavailable-state description',
+    'enabled Gantt markup must not start with an unavailable-state description',
   );
+  assert.match(help, /\brole=["']status["']/i, 'availability changes are exposed as status updates');
+  assert.match(help, /\baria-live=["']polite["']/i, 'availability changes are announced politely');
+  assert.match(help, /\baria-atomic=["']true["']/i, 'the complete reason and recovery action are announced');
   assert.match(
     stylesCss,
     /#task-dependent-actions-help\s*\{[^}]*\bdisplay\s*:\s*none\s*;[^}]*\}/s,
@@ -99,6 +110,26 @@ test('task-dependent help is exposed only while the native actions are unavailab
     indexHtml,
     /<style\b/i,
     'production markup does not add a one-off inline style block for this state',
+  );
+  assert.match(
+    appJs,
+    /exportCsvButton\.setAttribute\(["']aria-describedby["'],\s*["']task-dependent-actions-help["']\)/,
+    'disabled export state programmatically links to the reason',
+  );
+  assert.match(
+    appJs,
+    /openGanttButton\.setAttribute\(["']aria-describedby["'],\s*["']task-dependent-actions-help["']\)/,
+    'disabled Gantt state programmatically links to the reason',
+  );
+  assert.match(
+    appJs,
+    /exportCsvButton\.removeAttribute\(["']aria-describedby["']\)/,
+    'enabled export state removes the unavailable-state description',
+  );
+  assert.match(
+    appJs,
+    /openGanttButton\.removeAttribute\(["']aria-describedby["']\)/,
+    'enabled Gantt state removes the unavailable-state description',
   );
   assert.match(
     indexHtml,
