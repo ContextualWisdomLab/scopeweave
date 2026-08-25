@@ -21,6 +21,26 @@ assert.equal(
   0,
   'server CI does not execute the API suite separately when owned coverage already executes it',
 );
+assert.equal(
+  scripts.coverage,
+  'npm run test:coverage',
+  'the public coverage command delegates to the canonical coverage producer',
+);
+assert.match(
+  scripts['test:coverage'],
+  /\bc8\b.*--reporter=json(?![-\w]).*npm run test:coverage:cases/,
+  'test:coverage creates Istanbul JSON before executing coverage cases',
+);
+assert.match(
+  scripts['test:coverage'],
+  /--reporter=json-summary\b/,
+  'test:coverage also creates the Istanbul JSON summary',
+);
+assert.doesNotMatch(
+  scripts['test:coverage:cases'],
+  /npm run (?:coverage|test:coverage)(?:\s|$)/,
+  'coverage cases never recursively invoke a coverage wrapper',
+);
 const exactCheckoutRepository =
   "repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}";
 const exactCheckoutRef =
