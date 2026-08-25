@@ -131,6 +131,11 @@ function deliver(orgId, event, payload) {
   }
 }
 const quietLogs = String(process.env.SCOPEWEAVE_DB || '').includes(':memory:'); // silence during tests
+// Bearer secrets that are part of a route path must never be persisted in logs.
+// Keep the route shape for incident triage while replacing only secret segments.
+const redactRequestLogPath = (path) => String(path)
+  .replace(/^\/api\/invites\/[^/]+\/accept$/, '/api/invites/:token/accept')
+  .replace(/^\/api\/shared\/[^/]+$/, '/api/shared/:token');
 app.use('*', async (c, next) => {
   const t = Date.now();
   await next();
@@ -140,7 +145,7 @@ app.use('*', async (c, next) => {
     if (s >= 500) metrics.s5xx++; else if (s >= 400) metrics.s4xx++; else if (s >= 200) metrics.s2xx++;
     if (!quietLogs) {
       // structured; never logs bodies, tokens, or secrets
-      console.log(JSON.stringify({ ts: new Date().toISOString(), method: c.req.method, path: c.req.path, status: s, ms: Date.now() - t }));
+      console.log(JSON.stringify({ ts: new Date().toISOString(), method: c.req.method, path: redactRequestLogPath(c.req.path), status: s, ms: Date.now() - t }));
     }
   } catch { /* metrics/logging must never break a request */ }
 });
