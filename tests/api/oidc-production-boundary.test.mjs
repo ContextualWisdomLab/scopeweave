@@ -52,8 +52,9 @@ assert.equal(response.status, 404, 'internal core mock authorize stays disabled 
 assert.equal(response.headers.get('location'), null, 'internal core cannot mint a production callback code');
 assert.deepEqual(await response.json(), { error: 'mock disabled' });
 
-const forgedIdentityRegression = String.raw`
+const productionIdentityRegression = String.raw`
   import assert from 'node:assert/strict';
+  import { generateKeyPairSync, sign } from 'node:crypto';
 
   process.env.SCOPEWEAVE_DB = ':memory:';
   delete process.env.SCOPEWEAVE_DEV;
@@ -67,48 +68,147 @@ const forgedIdentityRegression = String.raw`
   process.env.OIDC_REDIRECT_URI = 'https://scopeweave.example/api/auth/oidc/callback';
 
   const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
-  const forgedIdToken = [
+  const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+  const publicJwk = {
+    ...publicKey.export({ format: 'jwk' }),
+    kid: 'issuer-signing-key',
+    use: 'sig',
+    alg: 'RS256',
+  };
+  let issuedIdToken = '';
+
+  const signIdToken = (claims, header = { alg: 'RS256', typ: 'JWT', kid: publicJwk.kid }) => {
+    const protectedHeader = encode(header);
+    const payload = encode(claims);
+    const signingInput = protectedHeader + '.' + payload;
+    const signature = sign('RSA-SHA256', Buffer.from(signingInput), privateKey).toString('base64url');
+    return signingInput + '.' + signature;
+  };
+
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    if (target === 'https://issuer.example/token') {
+      return new Response(JSON.stringify({ id_token: issuedIdToken }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    if (target === 'https://issuer.example/.well-known/openid-configuration') {
+      return new Response(JSON.stringify({
+        issuer: process.env.OIDC_ISSUER,
+        jwks_uri: 'https://issuer.example/jwks',
+      }), { status: 200, headers: { 'content-type': 'application/json' } });
+    }
+    if (target === 'https://issuer.example/jwks') {
+      return new Response(JSON.stringify({ keys: [publicJwk] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    }
+    throw new Error('unexpected OIDC fetch: ' + target);
+  };
+
+  const { app: configuredRoutes } = await import('./server/application_routes.mjs?oidc-production-token-regression=1');
+  const begin = async () => {
+    const start = await configuredRoutes.request('https://scopeweave.example/api/auth/oidc/start');
+    assert.equal(start.status, 302, 'configured OIDC starts the authorization-code flow');
+    const authorization = new URL(start.headers.get('location'));
+    assert.equal(authorization.origin, 'https://issuer.example');
+    assert.equal(authorization.pathname, '/authorize');
+    assert.equal(authorization.searchParams.get('client_id'), process.env.OIDC_CLIENT_ID);
+    assert.equal(authorization.searchParams.get('response_type'), 'code');
+    assert.equal(authorization.searchParams.get('code_challenge_method'), 'S256');
+    const state = authorization.searchParams.get('state');
+    const nonce = authorization.searchParams.get('nonce');
+    assert.ok(state, 'authorization request carries a server-generated state');
+    assert.ok(nonce, 'authorization request binds the returned ID token with a nonce');
+    return { state, nonce };
+  };
+
+  const callback = async (state, code) => configuredRoutes.request(
+    'https://scopeweave.example/api/auth/oidc/callback?state=' + encodeURIComponent(state) + '&code=' + encodeURIComponent(code),
+  );
+
+  const forged = await begin();
+  issuedIdToken = [
     encode({ alg: 'none', typ: 'JWT' }),
     encode({
       iss: process.env.OIDC_ISSUER,
       aud: process.env.OIDC_CLIENT_ID,
       exp: Math.floor(Date.now() / 1000) + 300,
+      nonce: forged.nonce,
+      sub: 'attacker-subject',
+      email_verified: true,
       email: 'attacker-chosen@example.com',
     }),
     '',
   ].join('.');
+  let result = await callback(forged.state, 'attacker-code');
+  assert.equal(result.status, 400, 'an unsigned identity token must never mint a ScopeWeave session');
+  assert.equal(result.headers.get('location'), null, 'rejected identity tokens never return an application session fragment');
 
-  globalThis.fetch = async (url) => {
-    assert.equal(String(url), 'https://issuer.example/token', 'callback exchanges the authorization code only with the configured issuer');
-    return new Response(JSON.stringify({ id_token: forgedIdToken }), {
-      status: 200,
-      headers: { 'content-type': 'application/json' },
-    });
-  };
-
-  const { app: configuredRoutes } = await import('./server/application_routes.mjs?oidc-forged-token-regression=1');
-  const start = await configuredRoutes.request('https://scopeweave.example/api/auth/oidc/start');
-  assert.equal(start.status, 302, 'configured OIDC starts the authorization-code flow');
-  const authorization = new URL(start.headers.get('location'));
-  const state = authorization.searchParams.get('state');
-  assert.ok(state, 'authorization request carries a server-generated state');
-
-  const callback = await configuredRoutes.request(
-    'https://scopeweave.example/api/auth/oidc/callback?state=' + encodeURIComponent(state) + '&code=attacker-code',
+  result = await configuredRoutes.request(
+    'https://scopeweave.example/api/auth/oidc/callback?state=unknown&code=attacker-code',
   );
-  assert.equal(callback.status, 400, 'an unsigned or otherwise unverified identity token must never mint a ScopeWeave session');
-  assert.equal(callback.headers.get('location'), null, 'rejected identity tokens never return an application session fragment');
+  assert.equal(result.status, 400, 'unknown authorization state fails closed before token exchange');
+
+  const valid = await begin();
+  const now = Math.floor(Date.now() / 1000);
+  issuedIdToken = signIdToken({
+    iss: process.env.OIDC_ISSUER,
+    aud: process.env.OIDC_CLIENT_ID,
+    exp: now + 300,
+    iat: now,
+    nonce: valid.nonce,
+    sub: 'verified-subject',
+    email_verified: true,
+    email: 'verified@example.com',
+  });
+  result = await callback(valid.state, 'valid-code');
+  assert.equal(result.status, 302, 'a valid issuer-signed ID token completes the production OIDC flow');
+  assert.match(result.headers.get('location') || '', /^\/#token=/, 'successful OIDC returns only the ScopeWeave session in a URL fragment');
+
+  const replay = await callback(valid.state, 'replayed-code');
+  assert.equal(replay.status, 400, 'OIDC state is single-use after a successful callback');
+
+  const wrongAudience = await begin();
+  issuedIdToken = signIdToken({
+    iss: process.env.OIDC_ISSUER,
+    aud: 'different-client',
+    exp: now + 300,
+    iat: now,
+    nonce: wrongAudience.nonce,
+    sub: 'verified-subject',
+    email_verified: true,
+    email: 'verified@example.com',
+  });
+  result = await callback(wrongAudience.state, 'wrong-audience-code');
+  assert.equal(result.status, 400, 'issuer-signed tokens for another audience are rejected');
+
+  const unverifiedEmail = await begin();
+  issuedIdToken = signIdToken({
+    iss: process.env.OIDC_ISSUER,
+    aud: process.env.OIDC_CLIENT_ID,
+    exp: now + 300,
+    iat: now,
+    nonce: unverifiedEmail.nonce,
+    sub: 'verified-subject',
+    email_verified: false,
+    email: 'victim@example.com',
+  });
+  result = await callback(unverifiedEmail.state, 'unverified-email-code');
+  assert.equal(result.status, 400, 'unverified email claims cannot link or create a ScopeWeave account');
 `;
 
-const forgedIdentityResult = spawnSync(
+const productionIdentityResult = spawnSync(
   process.execPath,
-  ['--input-type=module', '--eval', forgedIdentityRegression],
+  ['--input-type=module', '--eval', productionIdentityRegression],
   { cwd: process.cwd(), encoding: 'utf8' },
 );
 assert.equal(
-  forgedIdentityResult.status,
+  productionIdentityResult.status,
   0,
-  `configured production OIDC must authenticate the IdP before trusting identity claims\nstdout:\n${forgedIdentityResult.stdout}\nstderr:\n${forgedIdentityResult.stderr}`,
+  `configured production OIDC must authenticate the IdP before trusting identity claims\nstdout:\n${productionIdentityResult.stdout}\nstderr:\n${productionIdentityResult.stderr}`,
 );
 
 console.log('OIDC production fail-closed regression passed');
