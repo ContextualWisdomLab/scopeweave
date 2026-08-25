@@ -1,11 +1,19 @@
 // Security regression: pending invitation secrets must stay private and only
 // the account uniquely named by an invitation may redeem it.
 import assert from 'node:assert/strict';
+import { rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
-process.env.SCOPEWEAVE_DB = ':memory:';
+const dbPath = join(tmpdir(), `scopeweave-invite-security-${process.pid}-${Date.now()}.db`);
+process.env.SCOPEWEAVE_DB = dbPath;
 process.env.SCOPEWEAVE_DEV = '1';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 delete process.env.ORCHESTRATOR_URL;
+
+const observedLogs = [];
+const originalConsoleLog = console.log;
+console.log = (...args) => observedLogs.push(args.join(' '));
 
 const { app } = await import('../../server/app.mjs');
 
@@ -102,6 +110,22 @@ const pendingAdmin = roster.invites.find((invite) => invite.email === 'invitee@e
 assert.ok(pendingAdmin?.id, 'pending invite remains manageable by stable id');
 assert.equal('token' in pendingAdmin, false, 'roster never discloses invitation bearer tokens');
 
+// The request logger is a second secret boundary: an unauthenticated request
+// must not copy a still-live invite bearer token from the URL into access logs.
+// Non-sensitive paths should remain useful for operations and incident triage.
+observedLogs.length = 0;
+response = await req(`/api/invites/${adminInvite.token}/accept`, { method: 'POST' });
+assert.equal(response.status, 401, 'unauthenticated invite acceptance is rejected before consumption');
+const inviteLogLines = observedLogs.filter((line) => line.includes('/api/invites/'));
+assert.equal(inviteLogLines.length, 1, 'invite acceptance emits one structured request log');
+assert.doesNotMatch(inviteLogLines[0], new RegExp(adminInvite.token), 'access log must never contain the live invite token');
+assert.equal(JSON.parse(inviteLogLines[0]).path, '/api/invites/:token/accept', 'secret path segment is represented by its route name');
+
+observedLogs.length = 0;
+response = await req('/api/me');
+assert.equal(response.status, 401);
+assert.equal(JSON.parse(observedLogs.at(-1)).path, '/api/me', 'ordinary request paths stay intact');
+
 // Possession of a leaked/copied invite token is insufficient: the authenticated
 // identity must match the invited address, and rejection must not consume the
 // invitation or create membership.
@@ -135,4 +159,6 @@ response = await req('/api/invites/definitely-missing-token/accept', {
 assert.equal(response.status, 404, 'missing invite remains fail-closed');
 assert.deepEqual(await response.json(), { error: 'invalid or used invite' });
 
-console.log('invite identity security: ok');
+console.log = originalConsoleLog;
+await rm(dbPath, { force: true });
+originalConsoleLog('invite identity security: ok');
