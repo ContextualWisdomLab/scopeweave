@@ -4,3 +4,6 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+## 2026-08-25 - Benchmark fixed-width date formatting before accepting micro-optimizations
+**Learning:** Engine-internal explanations are not acceptance evidence. A fixed-width date formatter optimization must preserve every observable output while demonstrating a material median improvement against an immutable protected-base revision in the same browser/runtime.
+**Action:** Keep date-format micro-optimizations only when the protected Chromium A/B benchmark proves exact semantic parity across a leap-year date corpus and at least a 10% median improvement; otherwise prefer the clearer implementation.
