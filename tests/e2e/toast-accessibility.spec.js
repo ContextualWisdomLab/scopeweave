@@ -41,8 +41,8 @@ test('disabled empty-state actions expose a persistent reason and next action', 
   await expect(ganttButton).toBeDisabled();
   await expect(exportButton).toHaveAttribute('aria-disabled', 'true');
   await expect(ganttButton).toHaveAttribute('aria-disabled', 'true');
-  await expect(exportButton).toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
-  await expect(ganttButton).toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
+  await expect(exportButton).not.toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
+  await expect(ganttButton).not.toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
   await expect(help).toBeVisible();
   await expect(help).toContainText('작업을 추가하거나 CSV를 가져오세요');
 });
