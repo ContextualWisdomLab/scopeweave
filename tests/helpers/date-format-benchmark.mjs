@@ -17,6 +17,36 @@ export function counterbalancedBenchmarkRounds() {
   ]);
 }
 
+/**
+ * Return one semantic checksum only when every timed run produced the same value.
+ *
+ * The benchmark must not combine checksums with XOR because an even sample count
+ * would cancel identical values to zero and silently destroy the evidence. This
+ * helper instead keeps the first value and fails closed if any later timed run
+ * produces different formatting output.
+ *
+ * @param {number[]} values Unsigned integer checksums from individual timed runs.
+ * @returns {number} The stable checksum shared by every timed run.
+ */
+export function stableBenchmarkChecksum(values) {
+  if (!Array.isArray(values) || values.length === 0) {
+    throw new Error('benchmark checksum samples must be a non-empty array');
+  }
+  const reference = values[0];
+  if (!Number.isSafeInteger(reference) || reference < 0) {
+    throw new Error('benchmark checksum must be a non-negative safe integer');
+  }
+  for (const value of values) {
+    if (!Number.isSafeInteger(value) || value < 0) {
+      throw new Error('benchmark checksum must be a non-negative safe integer');
+    }
+    if (value !== reference) {
+      throw new Error('date-format checksum changed between samples');
+    }
+  }
+  return reference;
+}
+
 function median(values) {
   if (!Array.isArray(values) || values.length === 0) {
     throw new Error('benchmark samples must be a non-empty array');
