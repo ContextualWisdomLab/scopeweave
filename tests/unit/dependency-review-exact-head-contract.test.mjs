@@ -36,6 +36,26 @@ assert.match(
   /git ls-remote --exit-code origin "refs\/heads\/\$BASE_REF"/,
   'Dependency Review must independently resolve the live base branch tip',
 );
+assert.match(
+  workflow,
+  /mapfile -t live_base_matches <<<"\$result"/,
+  'Dependency Review must materialize every live-base ls-remote match before parsing one',
+);
+assert.match(
+  workflow,
+  /test "\$\{#live_base_matches\[@\]\}" -eq 1/,
+  'Dependency Review must fail closed unless live-base resolution yields exactly one ref',
+);
+assert.match(
+  workflow,
+  /read -r live_base_sha live_base_ref extra <<<"\$\{live_base_matches\[0\]\}"/,
+  'Dependency Review must parse the sole validated live-base result',
+);
+assert.doesNotMatch(
+  workflow,
+  /read -r live_base_sha live_base_ref extra <<<"\$result"/,
+  'Dependency Review must not inspect only the first line of an unchecked multi-line result',
+);
 
 const ancestryCompareEndpoint = '/repos/${REPOSITORY}/compare/${BASE_SHA}...${HEAD_SHA}';
 const dependencyGraphCompareEndpoint = '/repos/${REPOSITORY}/dependency-graph/compare/${BASE_SHA}...${HEAD_SHA}';
