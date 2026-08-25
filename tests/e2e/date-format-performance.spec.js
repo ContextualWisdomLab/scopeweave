@@ -121,6 +121,28 @@ function resolveBenchmarkCandidateSha(event) {
   );
 }
 
+test('documented cloud benchmark resolves local-clone revisions without a GitHub event', () => {
+  const originalBaseOverride = process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA;
+  const originalHeadOverride = process.env.SCOPEWEAVE_BENCHMARK_HEAD_SHA;
+  const originalGitHubSha = process.env.GITHUB_SHA;
+  delete process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA;
+  delete process.env.SCOPEWEAVE_BENCHMARK_HEAD_SHA;
+  delete process.env.GITHUB_SHA;
+  try {
+    const liveBaseSha = 'c'.repeat(40);
+    const localHeadSha = 'd'.repeat(40);
+    expect(resolveBenchmarkBaseSha({}, () => liveBaseSha)).toBe(liveBaseSha);
+    expect(resolveBenchmarkCandidateSha({}, () => localHeadSha)).toBe(localHeadSha);
+  } finally {
+    if (originalBaseOverride === undefined) delete process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA;
+    else process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA = originalBaseOverride;
+    if (originalHeadOverride === undefined) delete process.env.SCOPEWEAVE_BENCHMARK_HEAD_SHA;
+    else process.env.SCOPEWEAVE_BENCHMARK_HEAD_SHA = originalHeadOverride;
+    if (originalGitHubSha === undefined) delete process.env.GITHUB_SHA;
+    else process.env.GITHUB_SHA = originalGitHubSha;
+  }
+});
+
 function readGitFile(commitSha, path) {
   const spec = `${commitSha}:${path}`;
   try {
