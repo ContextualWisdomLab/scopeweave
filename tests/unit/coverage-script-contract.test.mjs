@@ -45,4 +45,29 @@ assert.doesNotMatch(
   'coverage cases never recursively invoke a coverage wrapper',
 );
 
+const codeqlWorkflow = readFileSync(
+  new URL('../../.github/workflows/codeql.yml', import.meta.url),
+  'utf8',
+);
+const codeqlActions = [
+  ...codeqlWorkflow.matchAll(
+    /uses:\s*github\/codeql-action\/(init|analyze)@([0-9a-f]{40})\s*#\s*v(\d+\.\d+\.\d+)/g,
+  ),
+].map(([, action, digest, version]) => ({ action, digest, version }));
+assert.deepEqual(
+  codeqlActions.map(({ action }) => action).sort(),
+  ['analyze', 'init'],
+  'CodeQL workflow must pin exactly the init and analyze actions covered by this contract',
+);
+assert.equal(
+  new Set(codeqlActions.map(({ version }) => version)).size,
+  1,
+  'CodeQL init and analyze must use the same released action version',
+);
+assert.equal(
+  new Set(codeqlActions.map(({ digest }) => digest)).size,
+  1,
+  'CodeQL init and analyze must use the same immutable action commit',
+);
+
 console.log('✓ coverage script contract tests passed');
