@@ -5,6 +5,7 @@ import { test, expect } from '@playwright/test';
 
 import {
   counterbalancedBenchmarkRounds,
+  stableBenchmarkChecksum,
   summarizeCounterbalancedMeasurements,
 } from '../helpers/date-format-benchmark.mjs';
 
@@ -191,10 +192,10 @@ async function measureDateFormatting(browser, { appSource, label }) {
       }
 
       const samples = [];
-      let checksum = 0;
+      const sampleChecksums = [];
       for (let sample = 0; sample < sampleCount; sample += 1) {
         const startedAt = performance.now();
-        checksum ^= run();
+        sampleChecksums.push(run());
         samples.push(performance.now() - startedAt);
       }
 
@@ -204,14 +205,19 @@ async function measureDateFormatting(browser, { appSource, label }) {
         benchmark.formatCompactDate(date),
       ]));
 
-      return { samples, checksum, semanticSnapshot };
+      return { samples, sampleChecksums, semanticSnapshot };
     }, {
       iterationCount: ITERATION_COUNT,
       sampleCount: SAMPLE_COUNT,
       warmupCount: WARMUP_COUNT,
     });
 
-    return { label, ...result };
+    return {
+      label,
+      samples: result.samples,
+      checksum: stableBenchmarkChecksum(result.sampleChecksums),
+      semanticSnapshot: result.semanticSnapshot,
+    };
   } finally {
     await context.close();
   }
