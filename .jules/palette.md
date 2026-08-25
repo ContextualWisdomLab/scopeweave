@@ -115,3 +115,7 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+
+## 2026-08-25 - [접근성] 빈 상태에서 네이티브 disabled 속성의 중요성
+**Learning:** `aria-disabled="true"`를 사용하여 스크린 리더에게 요소가 비활성화되었음을 알리는 것도 중요하지만, 마우스와 키보드 접근성 측면에서는 네이티브 `disabled` 속성이 없다면 키보드 탭(tab) 이동이 여전히 비활성화된 요소에 멈추고 클릭 이벤트가 발생하는 문제가 존재합니다. JavaScript에서 이벤트 처리를 막더라도 UX 적으로 시각적인 피드백(포커스, 커서 등)이 불완전합니다.
+**Action:** 비활성화 상태가 명확한 버튼 요소에는 `aria-disabled`와 함께 네이티브 `disabled` 속성도 동기화하여 키보드 포커스와 탭 순서(tab index)에서 제외시키고 마우스 상호작용 또한 자연스럽게 차단하도록 합니다.

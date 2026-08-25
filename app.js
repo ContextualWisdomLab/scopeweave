@@ -533,9 +533,13 @@ function renderAll() {
   if (!hasTasks) {
     elements.exportCsvButton.setAttribute('aria-disabled', 'true');
     elements.openGanttButton.setAttribute('aria-disabled', 'true');
+    elements.exportCsvButton.disabled = true;
+    elements.openGanttButton.disabled = true;
   } else {
     elements.exportCsvButton.removeAttribute('aria-disabled');
     elements.openGanttButton.removeAttribute('aria-disabled');
+    elements.exportCsvButton.disabled = false;
+    elements.openGanttButton.disabled = false;
   }
   elements.exportCsvButton.title = hasTasks ? '' : '내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.';
   elements.openGanttButton.title = hasTasks ? '' : '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.';
