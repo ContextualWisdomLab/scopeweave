@@ -1,7 +1,26 @@
 import { Hono } from 'hono';
-import { app as coreRoutes } from './application_routes_core.mjs';
 import { db } from './db.mjs';
 import { hashApiToken, verifyToken } from './auth.mjs';
+import {
+  createRateLimitMiddleware,
+  createRateLimitObservability,
+} from './rate_limit.mjs';
+
+const configuredRateLimitMax = process.env.SCOPEWEAVE_RATE_LIMIT_MAX;
+let coreRoutes;
+try {
+  // application_routes_core.mjs retains the historical header-keyed limiter
+  // only as an internal compatibility detail. Every supported entrypoint loads
+  // that implementation with the legacy limiter disabled, then applies the
+  // transport-peer-aware policy below before any route-specific guard or DB
+  // lookup. Restoring the operator value before request handling keeps the
+  // process environment truthful for diagnostics and child integrations.
+  process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '0';
+  ({ app: coreRoutes } = await import('./application_routes_core.mjs'));
+} finally {
+  if (configuredRateLimitMax === undefined) delete process.env.SCOPEWEAVE_RATE_LIMIT_MAX;
+  else process.env.SCOPEWEAVE_RATE_LIMIT_MAX = configuredRateLimitMax;
+}
 
 const GUARD_ACCOUNTING_METHOD = Symbol.for('scopeweave.guard_accounting.original_method');
 const MEMBERS_PATH = '/api/orgs/:id/members';
@@ -37,25 +56,18 @@ function authenticatedIdentityHint(c) {
 }
 
 async function guardRejectionThroughCoreAbuseControls(c, errorBody) {
-  // The security guards intentionally run before the legacy implementation
-  // graph so a rejected request cannot reach the unsafe historical handler.
-  // A non-mutating OPTIONS probe at the same path lets the existing core
-  // request logger, metrics and rate limiter account for that rejection. Only
-  // the current forwarded-address input is copied into probe headers so the
-  // present core limiter sees the same input; bodies and authorization are not.
-  // A process-local environment symbol retains the attempted method solely for
-  // structured logging while routing the probe as OPTIONS.
-  const headers = new Headers();
-  const forwardedFor = c.req.header('x-forwarded-for');
-  if (forwardedFor) headers.set('x-forwarded-for', forwardedFor);
+  // The shared rate limiter has already accepted this request before any guard
+  // runs. A non-mutating OPTIONS probe at the same path lets the internal core
+  // request logger and counters account for a guard rejection without reaching
+  // a mutating route. The core limiter is disabled for this supported boundary,
+  // so forwarded-address data and credentials do not need to enter the probe.
   const accountingEnvironment = Object.assign(Object.create(null), c.env || {});
   accountingEnvironment[GUARD_ACCOUNTING_METHOD] = c.req.method;
-  const probe = await coreRoutes.request(
+  await coreRoutes.request(
     c.req.url,
-    { method: 'OPTIONS', headers },
+    { method: 'OPTIONS' },
     accountingEnvironment,
   );
-  if (probe.status === 429) return probe;
   return c.json(errorBody, 404);
 }
 
@@ -109,15 +121,19 @@ async function failClosedWhenOidcIsUnconfigured(c, next) {
 }
 
 /**
- * Shared ScopeWeave application boundary.
+ * Shared ScopeWeave application and transport-security boundary.
  *
- * Every consumer, including the public server and tests that mount this route
- * graph directly, passes through the same invite and OIDC trust controls before
- * the protected implementation graph runs. Rejected guards are still accounted
- * by the core graph's existing abuse-control and observability middleware.
+ * Every supported consumer, including the public Node server and tests that
+ * mount this route graph directly, enters the same trusted-proxy-aware bounded
+ * rate limiter before authentication hints, invitation lookups, OIDC guards, or
+ * the internal implementation graph. Guard rejections are still accounted by
+ * the core request logger/counters, while limiter rejections use the matching
+ * bounded observability hooks without exposing client identity.
  */
 export const app = new Hono();
 
+const rateLimitObservability = createRateLimitObservability();
+app.use('*', createRateLimitMiddleware(rateLimitObservability));
 app.use(OIDC_ROUTE_PREFIX, failClosedWhenOidcIsUnconfigured);
 app.use(INVITE_ACCEPT_PATH, bindInviteToAuthenticatedIdentity);
 app.use(MEMBERS_PATH, redactPendingInviteTokens);
