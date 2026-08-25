@@ -299,7 +299,7 @@ async function measureDateFormatting(browser, { appSource, label }) {
   }
 }
 
-test('fixed-width date formatting preserves exact semantics and beats the protected base', async ({ browser }) => {
+test('@benchmark fixed-width date formatting preserves exact semantics and beats the protected base', async ({ browser }) => {
   test.setTimeout(240_000);
 
   const event = githubEvent();
