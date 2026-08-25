@@ -11,6 +11,14 @@ function canonicalCommitSha(value, label) {
   return sha;
 }
 
+function canonicalBranchRef(value) {
+  const branchRef = String(value || '').trim();
+  if (!branchRef || branchRef.length > 255 || /[\u0000-\u001f\u007f]/u.test(branchRef)) {
+    throw new Error(`Benchmark base ref is invalid: ${branchRef || '<missing>'}`);
+  }
+  return branchRef;
+}
+
 function eventObject(event) {
   return event && typeof event === 'object' && !Array.isArray(event)
     ? event
@@ -55,6 +63,51 @@ export function resolveBenchmarkBaseSha({ override, event } = {}) {
   if (pushBefore) return canonicalCommitSha(pushBefore, 'base');
 
   throw new Error('Benchmark base SHA is unavailable; provide an immutable comparison revision.');
+}
+
+/**
+ * Resolve a benchmark base and prove a pull request still targets that live tip.
+ *
+ * GitHub pull-request events are snapshots. A long-running or queued benchmark
+ * must not claim a protected-base comparison after that branch has advanced.
+ * For pull requests this helper independently resolves the live base branch and
+ * requires it to equal the event snapshot (and any explicit override). Push
+ * runs intentionally preserve `event.before` semantics because the live branch
+ * already points at `event.after` once the push workflow starts.
+ *
+ * @param {{override?: unknown, event?: unknown, readLiveBaseSha?: ((baseRef: string) => unknown)}} input benchmark authority input
+ * @returns {string} verified immutable comparison SHA
+ */
+export function resolveVerifiedBenchmarkBaseSha({ override, event, readLiveBaseSha } = {}) {
+  const sourceEvent = eventObject(event);
+  const pullRequestBase = sourceEvent.pull_request?.base;
+  if (!pullRequestBase) {
+    return resolveBenchmarkBaseSha({ override, event: sourceEvent });
+  }
+
+  const eventBaseSha = canonicalCommitSha(pullRequestBase.sha, 'base');
+  const baseRef = canonicalBranchRef(pullRequestBase.ref);
+  if (typeof readLiveBaseSha !== 'function') {
+    throw new Error('Benchmark live protected-base resolver is unavailable for a pull request.');
+  }
+
+  const liveBaseSha = canonicalCommitSha(readLiveBaseSha(baseRef), 'live base');
+  if (liveBaseSha !== eventBaseSha) {
+    throw new Error(
+      `Protected base moved from ${eventBaseSha} to ${liveBaseSha}; regenerate benchmark against fresh ${baseRef}.`,
+    );
+  }
+
+  const explicit = String(override || '').trim();
+  if (explicit) {
+    const overrideSha = canonicalCommitSha(explicit, 'base override');
+    if (overrideSha !== liveBaseSha) {
+      throw new Error(
+        `Benchmark base override ${overrideSha} does not match live protected base ${liveBaseSha}.`,
+      );
+    }
+  }
+  return liveBaseSha;
 }
 
 /**
