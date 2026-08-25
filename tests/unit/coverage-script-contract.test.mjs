@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 const packageJson = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
 const scripts = packageJson.scripts || {};
 const serverWorkflow = readFileSync(new URL('../../.github/workflows/server-tests.yml', import.meta.url), 'utf8');
+const dependencyWorkflow = readFileSync(new URL('../../.github/workflows/dependency-review.yml', import.meta.url), 'utf8');
 const publicApp = readFileSync(new URL('../../server/app.mjs', import.meta.url), 'utf8');
 const routeImportSeam = readFileSync(new URL('../../server/app_routes.mjs', import.meta.url), 'utf8');
 const applicationRoutes = readFileSync(new URL('../../server/application_routes.mjs', import.meta.url), 'utf8');
@@ -48,6 +49,56 @@ assert.equal(
   (serverWorkflow.match(/test "\$actual_head_sha" = "\$EXPECTED_HEAD_SHA"/g) || []).length,
   2,
   'both server CI jobs fail closed when checkout identity differs from the expected exact head',
+);
+assert.equal(
+  dependencyWorkflow.split(exactCheckoutRepository).length - 1,
+  1,
+  'dependency review binds checkout to the submitted repository on pull requests',
+);
+assert.equal(
+  dependencyWorkflow.split(exactCheckoutRef).length - 1,
+  1,
+  'dependency review binds checkout to the exact submitted head SHA on pull requests',
+);
+assert.equal(
+  (dependencyWorkflow.match(/- name: Verify exact checkout revision/g) || []).length,
+  1,
+  'dependency review attests the actual checkout revision before executing the gate',
+);
+assert.match(
+  dependencyWorkflow,
+  /BASE_REF: \$\{\{ github\.event\.pull_request\.base\.ref \}\}/,
+  'dependency review starts from the named base branch rather than stale event base SHA evidence',
+);
+assert.doesNotMatch(
+  dependencyWorkflow,
+  /BASE_SHA: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/,
+  'dependency review does not trust the historical event base SHA as the live comparison base',
+);
+assert.match(
+  dependencyWorkflow,
+  /branches\/\$\{base_ref_encoded\}/,
+  'dependency review independently resolves the current base branch tip through the GitHub API',
+);
+assert.match(
+  dependencyWorkflow,
+  /echo "base_sha=\$BASE_SHA" >>"\$GITHUB_OUTPUT"/,
+  'dependency review publishes the independently resolved live base SHA for the action comparison',
+);
+assert.match(
+  dependencyWorkflow,
+  /base-ref: \$\{\{ steps\.dependency_review_support\.outputs\.base_sha \}\}/,
+  'dependency-review-action receives the independently resolved live base SHA explicitly',
+);
+assert.match(
+  dependencyWorkflow,
+  /head-ref: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/,
+  'dependency-review-action receives the exact contributor head SHA explicitly',
+);
+assert.doesNotMatch(
+  dependencyWorkflow,
+  /Dependency review is unavailable[\s\S]{0,300}supported=false[\s\S]{0,100}exit 0/,
+  'dependency review never converts unavailable pull-request comparison evidence into a green skip',
 );
 assert.match(
   scripts['test:coverage'],
