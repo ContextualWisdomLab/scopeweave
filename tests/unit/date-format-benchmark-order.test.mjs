@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 
 import {
   counterbalancedBenchmarkRounds,
@@ -25,6 +26,27 @@ assert.throws(
   () => stableBenchmarkChecksum([42, 42, 43, 42]),
   /checksum changed between samples/i,
   'the benchmark must fail closed if one timed run produces different semantic evidence',
+);
+
+const packageJson = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8'));
+const benchmarkSpec = readFileSync(
+  new URL('../e2e/date-format-performance.spec.js', import.meta.url),
+  'utf8',
+);
+assert.match(
+  packageJson.scripts['test:e2e'],
+  /--grep-invert\s+["']?@benchmark["']?/u,
+  'the ordinary offline e2e command must exclude network-dependent benchmark tests',
+);
+assert.match(
+  benchmarkSpec,
+  /test\(['"]@benchmark\b/u,
+  'the network-dependent performance acceptance test must carry the benchmark marker excluded by ordinary e2e runs',
+);
+assert.match(
+  packageJson.scripts['test:e2e:cloud'],
+  /date-format-performance\.spec\.js/u,
+  'the protected cloud e2e path must continue to run the benchmark explicitly',
 );
 
 const syntheticSecondRunAdvantage = [
