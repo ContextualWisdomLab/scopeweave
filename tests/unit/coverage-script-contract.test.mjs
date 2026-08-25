@@ -15,6 +15,11 @@ assert.match(
   /npm run test:coverage/,
   'server CI invokes the exact coverage producer',
 );
+assert.equal(
+  (serverWorkflow.match(/run:\s*npm run test:api/g) || []).length,
+  0,
+  'server CI does not execute the API suite separately when owned coverage already executes it',
+);
 assert.match(
   scripts['test:coverage'],
   /--include=server\/app\.mjs/,
