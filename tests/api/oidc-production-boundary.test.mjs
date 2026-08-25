@@ -129,6 +129,23 @@ const productionIdentityRegression = String.raw`
     'https://scopeweave.example/api/auth/oidc/callback?state=' + encodeURIComponent(state) + '&code=' + encodeURIComponent(code),
   );
 
+  const realDateNow = Date.now;
+  let controlledNow = realDateNow();
+  Date.now = () => controlledNow;
+  const abandonedStates = [];
+  for (let index = 0; index < 1024; index += 1) {
+    abandonedStates.push(await begin());
+  }
+  let result = await configuredRoutes.request('https://scopeweave.example/api/auth/oidc/start');
+  assert.equal(result.status, 503, 'OIDC authorization state storage fails closed at its bounded capacity');
+  assert.equal(result.headers.get('cache-control'), 'no-store', 'OIDC saturation response is never cached');
+  assert.deepEqual(await result.json(), { error: 'sso temporarily unavailable' });
+  controlledNow += 5 * 60 * 1000 + 1;
+  const afterExpiry = await begin();
+  Date.now = realDateNow;
+  result = await callback(afterExpiry.state, 'discard-expired-capacity-probe');
+  assert.equal(result.status, 400, 'a capacity probe can be consumed without minting a session');
+
   const forged = await begin();
   issuedIdToken = [
     encode({ alg: 'none', typ: 'JWT' }),
@@ -143,7 +160,7 @@ const productionIdentityRegression = String.raw`
     }),
     '',
   ].join('.');
-  let result = await callback(forged.state, 'attacker-code');
+  result = await callback(forged.state, 'attacker-code');
   assert.equal(result.status, 400, 'an unsigned identity token must never mint a ScopeWeave session');
   assert.equal(result.headers.get('location'), null, 'rejected identity tokens never return an application session fragment');
 
