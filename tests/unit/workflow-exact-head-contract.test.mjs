@@ -188,10 +188,10 @@ const liveBaseRef = 'ref: ${{ github.event.pull_request.base.ref }}';
 const liveBaseRefEnv = 'BASE_REF: ${{ github.event.pull_request.base.ref }}';
 const osvExactHeadRef = 'ref: ${{ github.event.pull_request.head.sha }}';
 const expectedHeadShaEnv = 'EXPECTED_HEAD_SHA: ${{ github.event.pull_request.head.sha }}';
-const osvScannerV250Pin =
-  'google/osv-scanner-action/osv-scanner-action@06b2ab4348248b456ee06c9e953637f55e03504f # v2.5.0';
-const osvReporterV250Pin =
-  'google/osv-scanner-action/osv-reporter-action@06b2ab4348248b456ee06c9e953637f55e03504f # v2.5.0';
+const osvScannerV251Pin =
+  'google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1';
+const osvReporterV251Pin =
+  'google/osv-scanner-action/osv-reporter-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1';
 
 assert.match(
   osvWorkflow,
@@ -244,14 +244,14 @@ assert.doesNotMatch(
   'OSV must not delegate candidate selection to the reusable workflow that scans synthetic GITHUB_SHA merge commits',
 );
 assert.equal(
-  osvWorkflow.split(osvScannerV250Pin).length - 1,
+  osvWorkflow.split(osvScannerV251Pin).length - 1,
   2,
-  'OSV must scan both immutable revisions with the direct action pinned by upstream v2.5.0',
+  'OSV must scan both immutable revisions with the direct action pinned by upstream v2.5.1',
 );
 assert.equal(
-  osvWorkflow.split(osvReporterV250Pin).length - 1,
+  osvWorkflow.split(osvReporterV251Pin).length - 1,
   1,
-  'OSV must compare introduced vulnerabilities with the reporter pinned by upstream v2.5.0',
+  'OSV must compare introduced vulnerabilities with the reporter pinned by upstream v2.5.1',
 );
 assert.doesNotMatch(
   osvWorkflow,
