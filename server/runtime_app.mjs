@@ -182,6 +182,10 @@ function compactCalendarDay(value) {
   return String(value).replaceAll('-', '');
 }
 
+function currentCalendarTimestamp() {
+  return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+}
+
 function isCalendarDay(value) {
   const text = String(value);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
@@ -204,6 +208,7 @@ function renderCalendarFeed(project) {
     tasks = [];
   }
   if (!Array.isArray(tasks)) tasks = [];
+  const dtstamp = currentCalendarTimestamp();
   const lines = [
     'BEGIN:VCALENDAR',
     'VERSION:2.0',
@@ -224,6 +229,7 @@ function renderCalendarFeed(project) {
     lines.push(
       'BEGIN:VEVENT',
       `UID:scopeweave-${project.project_id}-${escapeCalendarText(task.id)}`,
+      `DTSTAMP:${dtstamp}`,
       `DTSTART;VALUE=DATE:${compactCalendarDay(startDay)}`,
       `DTEND;VALUE=DATE:${exclusiveEnd}`,
       `SUMMARY:${escapeCalendarText(task.name || task.task || task.id)}`,
