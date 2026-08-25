@@ -15,6 +15,7 @@ const ITERATION_COUNT = 400_000;
 const SAMPLE_COUNT = 7;
 const WARMUP_COUNT = 3;
 const TARGET_IMPROVEMENT_PERCENT = 10;
+const DEFAULT_BENCHMARK_BASE_REF = 'develop';
 
 function assertImmutableSha(candidate, label) {
   const sha = String(candidate || '').trim();
@@ -61,11 +62,34 @@ function readOriginBranchTip(baseRef) {
   return assertImmutableSha(matches[0][0], `live benchmark base ${fullRef}`);
 }
 
+function readCurrentHeadSha() {
+  let output;
+  try {
+    output = execFileSync('git', ['rev-parse', 'HEAD'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch {
+    throw new Error('Unable to resolve local benchmark contributor HEAD');
+  }
+  return assertImmutableSha(output, 'local benchmark contributor head');
+}
+
 function resolveBenchmarkBaseSha(event, readLiveBaseSha = readOriginBranchTip) {
   const override = String(process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA || '').trim();
   const pullRequestBase = event?.pull_request?.base;
   if (!pullRequestBase) {
-    return assertImmutableSha(override || event?.before || '', 'benchmark base');
+    const eventBaseSha = String(event?.before || '').trim();
+    if (override || eventBaseSha) {
+      return assertImmutableSha(override || eventBaseSha, 'benchmark base');
+    }
+    const localBaseRef = assertBenchmarkBaseRef(
+      process.env.SCOPEWEAVE_BENCHMARK_BASE_REF || DEFAULT_BENCHMARK_BASE_REF,
+    );
+    return assertImmutableSha(
+      readLiveBaseSha(localBaseRef),
+      `live benchmark base ${localBaseRef}`,
+    );
   }
 
   const eventBaseSha = assertImmutableSha(pullRequestBase.sha, 'benchmark base');
@@ -112,30 +136,38 @@ test('pull request benchmark refuses a stale protected-base event snapshot', () 
   }
 });
 
-function resolveBenchmarkCandidateSha(event) {
+function resolveBenchmarkCandidateSha(event, readLocalHeadSha = readCurrentHeadSha) {
   const override = String(process.env.SCOPEWEAVE_BENCHMARK_HEAD_SHA || '').trim();
   if (override) return assertImmutableSha(override, 'benchmark contributor head');
-  return assertImmutableSha(
-    event?.pull_request?.head?.sha || event?.after || process.env.GITHUB_SHA || '',
-    'benchmark contributor head',
-  );
+  const eventCandidateSha = event?.pull_request?.head?.sha || event?.after || process.env.GITHUB_SHA;
+  if (eventCandidateSha) {
+    return assertImmutableSha(eventCandidateSha, 'benchmark contributor head');
+  }
+  return assertImmutableSha(readLocalHeadSha(), 'local benchmark contributor head');
 }
 
 test('documented cloud benchmark resolves local-clone revisions without a GitHub event', () => {
   const originalBaseOverride = process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA;
+  const originalBaseRef = process.env.SCOPEWEAVE_BENCHMARK_BASE_REF;
   const originalHeadOverride = process.env.SCOPEWEAVE_BENCHMARK_HEAD_SHA;
   const originalGitHubSha = process.env.GITHUB_SHA;
   delete process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA;
+  delete process.env.SCOPEWEAVE_BENCHMARK_BASE_REF;
   delete process.env.SCOPEWEAVE_BENCHMARK_HEAD_SHA;
   delete process.env.GITHUB_SHA;
   try {
     const liveBaseSha = 'c'.repeat(40);
     const localHeadSha = 'd'.repeat(40);
-    expect(resolveBenchmarkBaseSha({}, () => liveBaseSha)).toBe(liveBaseSha);
+    expect(resolveBenchmarkBaseSha({}, (baseRef) => {
+      expect(baseRef).toBe(DEFAULT_BENCHMARK_BASE_REF);
+      return liveBaseSha;
+    })).toBe(liveBaseSha);
     expect(resolveBenchmarkCandidateSha({}, () => localHeadSha)).toBe(localHeadSha);
   } finally {
     if (originalBaseOverride === undefined) delete process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA;
     else process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA = originalBaseOverride;
+    if (originalBaseRef === undefined) delete process.env.SCOPEWEAVE_BENCHMARK_BASE_REF;
+    else process.env.SCOPEWEAVE_BENCHMARK_BASE_REF = originalBaseRef;
     if (originalHeadOverride === undefined) delete process.env.SCOPEWEAVE_BENCHMARK_HEAD_SHA;
     else process.env.SCOPEWEAVE_BENCHMARK_HEAD_SHA = originalHeadOverride;
     if (originalGitHubSha === undefined) delete process.env.GITHUB_SHA;
