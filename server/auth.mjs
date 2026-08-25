@@ -6,6 +6,44 @@ import { db } from './db.mjs';
 
 /** Maximum lifetime for a general ScopeWeave session token, in seconds. */
 const MAX_SESSION_TTL_SECONDS = 60 * 60 * 24 * 7;
+/** Maximum in-process pending OIDC authorization states per route graph. */
+const MAX_TRANSIENT_AUTH_STATES = 1024;
+
+/**
+ * Create a bounded, expiring store for one-time authentication state.
+ *
+ * Expired entries are swept before every reservation and lookup. Reservations
+ * fail closed once the live-state ceiling is reached instead of allowing an
+ * unauthenticated authorization-start flood to grow process memory without
+ * bound. `take` always consumes a matching state so callbacks remain single-use.
+ *
+ * @returns {{reserve:(key:string,value:{exp:number})=>boolean,take:(key:string)=>({exp:number}|null)}}
+ *   Bounded one-time state operations for OIDC authorization flows.
+ */
+export function createExpiringAuthStateStore() {
+  const entries = new Map();
+
+  const pruneExpired = (now) => {
+    for (const [key, pending] of entries) {
+      if (pending.exp < now) entries.delete(key);
+    }
+  };
+
+  return {
+    reserve(key, value) {
+      pruneExpired(Date.now());
+      if (entries.size >= MAX_TRANSIENT_AUTH_STATES) return false;
+      entries.set(key, value);
+      return true;
+    },
+    take(key) {
+      pruneExpired(Date.now());
+      const value = entries.get(key) ?? null;
+      entries.delete(key);
+      return value;
+    },
+  };
+}
 
 /**
  * Generate a one-time-visible ScopeWeave personal access token.
