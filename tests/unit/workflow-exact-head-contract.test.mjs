@@ -22,7 +22,7 @@ const coverageCasesScript = packageJson.scripts?.['test:coverage:cases'] ?? '';
 
 const exactHeadRef = 'ref: ${{ github.event.pull_request.head.sha || github.sha }}';
 const expectedShaEnv = 'EXPECTED_CHECKOUT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}';
-const codeqlActionV4377Sha = 'ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd';
+const codeqlActionV4378Sha = 'db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28';
 const supersededCodeqlActionV4362Sha = '8aad20d150bbac5944a9f9d289da16a4b0d87c1e';
 
 assert.equal(
@@ -159,14 +159,14 @@ assert.equal(
   'CodeQL exact-head checkout must not persist repository credentials',
 );
 assert.equal(
-  codeqlWorkflow.split(`github/codeql-action/init@${codeqlActionV4377Sha} # v4.37.7`).length - 1,
+  codeqlWorkflow.split(`github/codeql-action/init@${codeqlActionV4378Sha} # v4.37.8`).length - 1,
   1,
-  'CodeQL initialization must use the reviewed immutable v4.37.7 action revision',
+  'CodeQL initialization must use the reviewed immutable v4.37.8 action revision',
 );
 assert.equal(
-  codeqlWorkflow.split(`github/codeql-action/analyze@${codeqlActionV4377Sha} # v4.37.7`).length - 1,
+  codeqlWorkflow.split(`github/codeql-action/analyze@${codeqlActionV4378Sha} # v4.37.8`).length - 1,
   1,
-  'CodeQL analysis must use the reviewed immutable v4.37.7 action revision',
+  'CodeQL analysis must use the reviewed immutable v4.37.8 action revision',
 );
 assert.equal(
   codeqlWorkflow.includes(supersededCodeqlActionV4362Sha),
