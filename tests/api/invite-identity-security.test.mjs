@@ -1,5 +1,5 @@
 // Security regression: pending invitation secrets must stay private and only
-// the account named by an invitation may redeem it.
+// the account uniquely named by an invitation may redeem it.
 import assert from 'node:assert/strict';
 
 process.env.SCOPEWEAVE_DB = ':memory:';
@@ -29,10 +29,14 @@ const ownerToken = await signup('owner@example.com', 'Owner');
 const viewerToken = await signup('viewer@example.com', 'Viewer');
 const intendedToken = await signup('Invitee@Example.com', 'Invitee');
 const attackerToken = await signup('attacker@example.com', 'Attacker');
+const ambiguousPrimaryToken = await signup('CaseVictim@example.com', 'Case victim');
+const ambiguousCollisionToken = await signup('casevictim@example.com', 'Case collision');
 const ownerAuth = authFor(ownerToken);
 const viewerAuth = authFor(viewerToken);
 const intendedAuth = authFor(intendedToken);
 const attackerAuth = authFor(attackerToken);
+const ambiguousPrimaryAuth = authFor(ambiguousPrimaryToken);
+const ambiguousCollisionAuth = authFor(ambiguousCollisionToken);
 
 let response = await req('/api/me', { headers: ownerAuth });
 assert.equal(response.status, 200);
@@ -54,9 +58,31 @@ response = await req(`/api/invites/${viewerInvite.token}/accept`, {
 assert.equal(response.status, 200);
 assert.equal((await response.json()).role, 'viewer');
 
-// Create a higher-privilege pending invite for a different identity. Invite
-// creation canonicalizes the address, while the existing account intentionally
-// retains mixed case to cover historical identity data.
+// A case-insensitive address can exist in more than one historical account
+// because the legacy users.email uniqueness rule is case-sensitive. An invite
+// must fail closed for that ambiguous canonical identity rather than letting
+// either account win possession of the role.
+response = await req(`/api/orgs/${orgId}/invites`, {
+  method: 'POST',
+  headers: ownerAuth,
+  body: body({ email: 'CASEVICTIM@example.com', role: 'admin' }),
+});
+assert.equal(response.status, 200);
+const ambiguousInvite = await response.json();
+for (const candidateAuth of [ambiguousPrimaryAuth, ambiguousCollisionAuth]) {
+  response = await req(`/api/invites/${ambiguousInvite.token}/accept`, {
+    method: 'POST',
+    headers: candidateAuth,
+  });
+  assert.equal(response.status, 404, 'ambiguous canonical identity cannot redeem invite');
+  assert.deepEqual(await response.json(), { error: 'invalid or used invite' });
+  response = await req(`/api/orgs/${orgId}/members`, { headers: candidateAuth });
+  assert.equal(response.status, 404, 'ambiguous account gains no organization membership');
+}
+
+// Create a higher-privilege pending invite for a different, unique identity.
+// Invite creation canonicalizes the address, while the existing account
+// intentionally retains mixed case to cover historical identity data.
 response = await req(`/api/orgs/${orgId}/invites`, {
   method: 'POST',
   headers: ownerAuth,
