@@ -4,7 +4,6 @@
 // policy can be added without rewriting unrelated tenant, auth, billing, or
 // Clearfolio behavior. Every production server and in-process caller imports
 // this facade; app_core.mjs is an implementation module, not a public entrypoint.
-import { AsyncLocalStorage } from 'node:async_hooks';
 import { createPublicKey, randomBytes, verify as verifySignature } from 'node:crypto';
 import { app as coreApp } from './app_core.mjs';
 import { db } from './db.mjs';
@@ -22,8 +21,6 @@ import {
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
 const webhookFetchBoundaryKey = Symbol.for('scopeweave.webhook-fetch-boundary');
-const coreProbeContextKey = Symbol.for('scopeweave.core-probe-observability-context');
-const coreProbeConsoleBoundaryKey = Symbol.for('scopeweave.core-probe-console-boundary');
 const authorizationProbeObservabilityKey = Symbol('scopeweave.authorization-probe-observability');
 const WEBHOOK_REGISTRATION_PATH = /^\/api\/orgs\/[^/]+\/webhooks$/;
 const WEBHOOK_REGISTRATION_BODY_MAX_BYTES = 16 * 1024;
@@ -62,30 +59,6 @@ const suppressedCoreMetrics = {
 const quietFacadeLogs = String(process.env.SCOPEWEAVE_DB || '').includes(':memory:');
 let oidcDiscoveryCache = null;
 const oidcSigningKeyCache = new Map();
-
-if (!globalThis[coreProbeContextKey]) {
-  Object.defineProperty(globalThis, coreProbeContextKey, {
-    value: new AsyncLocalStorage(),
-    configurable: false,
-    enumerable: false,
-    writable: false,
-  });
-}
-const coreProbeContext = globalThis[coreProbeContextKey];
-
-if (!globalThis[coreProbeConsoleBoundaryKey]) {
-  const nativeConsoleLog = console.log.bind(console);
-  console.log = (...args) => {
-    if (coreProbeContext.getStore() === true) return;
-    nativeConsoleLog(...args);
-  };
-  Object.defineProperty(globalThis, coreProbeConsoleBoundaryKey, {
-    value: true,
-    configurable: false,
-    enumerable: false,
-    writable: false,
-  });
-}
 
 function matchingStoredEmails(email) {
   return db.prepare(
@@ -212,9 +185,7 @@ async function subtractSuppressedCoreMetricsResponse(request, response) {
 const nativeCoreFetch = coreApp.fetch.bind(coreApp);
 coreApp.fetch = async (request, ...rest) => {
   const internalAuthorizationProbe = request?.[authorizationProbeObservabilityKey] === true;
-  const response = internalAuthorizationProbe
-    ? await coreProbeContext.run(true, () => nativeCoreFetch(request, ...rest))
-    : await nativeCoreFetch(request, ...rest);
+  const response = await nativeCoreFetch(request, ...rest);
   if (internalAuthorizationProbe) recordSuppressedCoreResponse(response);
   return subtractSuppressedCoreMetricsResponse(request, response);
 };
@@ -652,8 +623,9 @@ function authorizationProbeRequest(request) {
  * empty URL, so an authorized manager deterministically reaches the legacy
  * pre-insert URL guard and receives 400. Every denial, rate limit, or internal
  * failure is propagated unchanged. The internal probe is omitted from customer
- * metrics and request logs; secureFetch records only the actual customer-visible
- * policy outcome after the authorization decision completes.
+ * metrics; its core request log remains visible rather than mutating process-wide
+ * console behavior. secureFetch records the actual customer-visible policy
+ * outcome after the authorization decision completes.
  */
 async function deniedRegistrationAuthorization(request, rest) {
   const response = await coreApp.fetch(authorizationProbeRequest(request), ...rest);
