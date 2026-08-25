@@ -18,6 +18,13 @@ function syncStatusElementMarkup(html) {
   return match[0];
 }
 
+function buttonElementMarkup(html, id) {
+  const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = html.match(new RegExp(`<button\\s+[^>]*\\bid=["']${escapedId}["'][^>]*>`, 'i'));
+  assert.ok(match, `production index.html contains #${id}`);
+  return match[0];
+}
+
 test('toast container exposes advisory status updates without taking focus', () => {
   const toast = toastElementMarkup(indexHtml);
   assert.match(toast, /\brole=["']status["']/i, 'toast uses the WAI-ARIA status role');
@@ -60,5 +67,36 @@ test('cloud toast state is visibly rendered by a shipped stylesheet', () => {
     toastStateCss,
     /\.toast\.visible\s*\{[^}]*\bopacity\s*:\s*1\s*;[^}]*\btransform\s*:\s*translateY\(0\)\s*;/s,
     'the shipped cloud toast state becomes visually observable',
+  );
+});
+
+test('task-dependent help is exposed only while the native actions are unavailable', () => {
+  const exportButton = buttonElementMarkup(indexHtml, 'export-csv');
+  const ganttButton = buttonElementMarkup(indexHtml, 'open-gantt');
+
+  assert.doesNotMatch(
+    exportButton,
+    /\baria-describedby=["']task-dependent-actions-help["']/i,
+    'enabled export action must not carry an unavailable-state description',
+  );
+  assert.doesNotMatch(
+    ganttButton,
+    /\baria-describedby=["']task-dependent-actions-help["']/i,
+    'enabled Gantt action must not carry an unavailable-state description',
+  );
+  assert.match(
+    indexHtml,
+    /#task-dependent-actions-help\s*\{[^}]*\bdisplay\s*:\s*none\s*;[^}]*\}/s,
+    'the unavailable-state explanation is hidden by default',
+  );
+  assert.match(
+    indexHtml,
+    /#open-gantt\[aria-disabled=["']true["']\]\s*\+\s*#task-dependent-actions-help\s*\{[^}]*\bdisplay\s*:\s*block\s*;[^}]*\}/s,
+    'the explanation becomes visible only when the task-dependent actions are disabled',
+  );
+  assert.match(
+    indexHtml,
+    /작업이 없으면 CSV 내보내기와 간트차트를 사용할 수 없습니다\. 최상위 작업을 추가하거나 CSV를 가져오세요\./,
+    'the explanation states both the unavailable condition and recovery actions',
   );
 });
