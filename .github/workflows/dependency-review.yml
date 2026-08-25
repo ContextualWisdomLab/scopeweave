@@ -55,7 +55,7 @@ jobs:
           base_response_file="$(mktemp)"
           trap 'rm -f "$response_file" "$base_response_file"' EXIT
 
-          base_ref_encoded="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["BASE_REF"], safe=""))')"
+          base_ref_encoded="$(python3 -c 'import os, urllib.parse; print(urllib.parse.quote(os.environ["BASE_REF"], safe="/"))')"
           base_status="$(
             curl -sS -o "$base_response_file" -w '%{http_code}' \
               -H "Accept: application/vnd.github+json" \
