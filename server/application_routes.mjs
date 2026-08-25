@@ -7,6 +7,7 @@ import {
 } from 'node:crypto';
 import { db, rowid } from './db.mjs';
 import {
+  createExpiringAuthStateStore,
   hashApiToken,
   hashPassword,
   signToken,
@@ -42,7 +43,7 @@ const OIDC_CLIENT_ID = String(process.env.OIDC_CLIENT_ID || '');
 const OIDC_CLIENT_SECRET = String(process.env.OIDC_CLIENT_SECRET || '');
 const OIDC_REDIRECT_URI = String(process.env.OIDC_REDIRECT_URI || '');
 const productionOidcConfigured = Boolean(OIDC_ISSUER && OIDC_CLIENT_ID && OIDC_CLIENT_SECRET);
-const productionOidcStates = new Map();
+const productionOidcStates = createExpiringAuthStateStore();
 
 function normalizeIdentityEmail(value) {
   return String(value ?? '').trim().toLowerCase();
@@ -244,7 +245,17 @@ async function productionOidcStart(c, next) {
   const verifier = randomBytes(32).toString('base64url');
   const nonce = randomBytes(24).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
-  productionOidcStates.set(state, { verifier, nonce, exp: Date.now() + 5 * 60 * 1000 });
+  const reserved = productionOidcStates.reserve(
+    state,
+    { verifier, nonce, exp: Date.now() + 5 * 60 * 1000 },
+  );
+  if (!reserved) {
+    return c.json(
+      { error: 'sso temporarily unavailable' },
+      503,
+      { 'Cache-Control': 'no-store', 'Retry-After': '60' },
+    );
+  }
 
   authorizationUrl.searchParams.set('client_id', OIDC_CLIENT_ID);
   authorizationUrl.searchParams.set('redirect_uri', productionOidcRedirectUri(c));
@@ -262,12 +273,10 @@ async function productionOidcCallback(c, next) {
 
   const state = c.req.query('state');
   const code = c.req.query('code');
-  const pending = productionOidcStates.get(state);
-  if (!pending || pending.exp < Date.now() || !code) {
-    productionOidcStates.delete(state);
+  const pending = productionOidcStates.take(state);
+  if (!pending || !code) {
     return c.json({ error: 'invalid or expired state' }, 400, { 'Cache-Control': 'no-store' });
   }
-  productionOidcStates.delete(state);
 
   try {
     const tokenResponse = await fetch(`${OIDC_ISSUER}/token`, {
