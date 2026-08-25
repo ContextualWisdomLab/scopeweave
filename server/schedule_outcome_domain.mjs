@@ -1,6 +1,7 @@
 const DAY_MS = 86_400_000;
 const TERMINAL_REASON_TYPES = new Set(['skipped', 'cancelled', 'not_performed']);
 const BLOCKER_KINDS = new Set(['dependency', 'decision', 'constraint']);
+const EXPLICIT_OFFSET_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/u;
 
 /**
  * Mutually exclusive schedule outcomes emitted by the ScopeWeave derivation domain.
@@ -266,6 +267,9 @@ function normalizeBlockers(value, asOfEpochDay) {
 function requireTimestamp(value, field, asOfEpochDay) {
   if (typeof value !== 'string' || value.trim().length === 0) {
     throw new TypeError(`${field} must be an ISO timestamp`);
+  }
+  if (!EXPLICIT_OFFSET_TIMESTAMP.test(value)) {
+    throw new TypeError(`${field} must include an explicit UTC offset`);
   }
   const timestamp = Date.parse(value);
   if (!Number.isFinite(timestamp)) {
