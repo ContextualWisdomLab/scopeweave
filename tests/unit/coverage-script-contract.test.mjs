@@ -22,6 +22,11 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage'],
+  /--include=server\/rate_limit\.mjs/,
+  'the shared authoritative rate-limit implementation remains owned-production coverage',
+);
+assert.match(
+  scripts['test:coverage'],
   /--include=server\/application_routes\.mjs/,
   'the shared security boundary remains owned-production coverage',
 );
