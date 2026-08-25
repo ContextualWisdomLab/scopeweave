@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const indexHtml = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+const stylesCss = readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
 const toastStateCss = readFileSync(new URL('../../toast-state.css', import.meta.url), 'utf8');
 const cloudSyncJs = readFileSync(new URL('../../cloud-sync.js', import.meta.url), 'utf8');
 
@@ -85,14 +86,19 @@ test('task-dependent help is exposed only while the native actions are unavailab
     'enabled Gantt action must not carry an unavailable-state description',
   );
   assert.match(
-    indexHtml,
+    stylesCss,
     /#task-dependent-actions-help\s*\{[^}]*\bdisplay\s*:\s*none\s*;[^}]*\}/s,
-    'the unavailable-state explanation is hidden by default',
+    'the unavailable-state explanation is hidden by default in the shipped stylesheet',
   );
   assert.match(
-    indexHtml,
+    stylesCss,
     /#open-gantt\[aria-disabled=["']true["']\]\s*\+\s*#task-dependent-actions-help\s*\{[^}]*\bdisplay\s*:\s*block\s*;[^}]*\}/s,
-    'the explanation becomes visible only when the task-dependent actions are disabled',
+    'the shipped stylesheet shows the explanation only when the task-dependent actions are disabled',
+  );
+  assert.doesNotMatch(
+    indexHtml,
+    /<style\b/i,
+    'production markup does not add a one-off inline style block for this state',
   );
   assert.match(
     indexHtml,
