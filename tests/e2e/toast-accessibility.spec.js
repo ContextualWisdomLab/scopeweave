@@ -22,3 +22,27 @@ test('cloud status feedback is visibly rendered as a non-focus-taking live statu
     { message: 'advisory status must not capture keyboard focus' },
   ).toBe(false);
 });
+
+test('disabled empty-state actions expose a persistent reason and next action', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
+      projectName: 'Empty Scope',
+      baseDate: '2026-04-20',
+      tasks: [],
+    }));
+  });
+  await page.goto('/');
+
+  const exportButton = page.getByRole('button', { name: 'CSV 내보내기' });
+  const ganttButton = page.getByRole('button', { name: '간트차트보기' });
+  const help = page.locator('#task-dependent-actions-help');
+
+  await expect(exportButton).toBeDisabled();
+  await expect(ganttButton).toBeDisabled();
+  await expect(exportButton).toHaveAttribute('aria-disabled', 'true');
+  await expect(ganttButton).toHaveAttribute('aria-disabled', 'true');
+  await expect(exportButton).toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
+  await expect(ganttButton).toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
+  await expect(help).toBeVisible();
+  await expect(help).toContainText('작업을 추가하거나 CSV를 가져오세요');
+});
