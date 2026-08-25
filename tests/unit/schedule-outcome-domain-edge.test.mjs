@@ -115,6 +115,42 @@ test('validates reason-event object shape, timestamps, and cancellation approval
   }, /reasonEvent.approvalId/);
 });
 
+test('requires explicit timezone offsets for auditable timestamps', () => {
+  expectReject({
+    reasonEvent: {
+      type: 'skipped',
+      reasonCode: 'duplicate_scope',
+      actorId: 'user-1',
+      occurredAt: '2026-03-10T23:30:00',
+    },
+  }, /explicit UTC offset/);
+
+  expectReject({ blockers: [{
+    kind: 'dependency',
+    referenceId: 'dep-1',
+    recordedAt: '2026-03-10T23:30:00',
+    resolvedAt: null,
+  }] }, /explicit UTC offset/);
+
+  expectReject({ blockers: [{
+    kind: 'dependency',
+    referenceId: 'dep-1',
+    recordedAt: '2026-03-09T23:30:00+09:00',
+    resolvedAt: '2026-03-10T00:30:00',
+  }] }, /explicit UTC offset/);
+
+  const explicitOffset = deriveScheduleOutcome(baseInput({
+    reasonEvent: {
+      type: 'skipped',
+      reasonCode: 'duplicate_scope',
+      actorId: 'user-1',
+      occurredAt: '2026-03-10T23:30:00+09:00',
+    },
+  }));
+  assert.equal(explicitOffset.outcome, 'skipped');
+  assert.equal(explicitOffset.explanation.reasonEvent.occurredAt, '2026-03-10T23:30:00+09:00');
+});
+
 test('accepts undefined optional evidence without retaining mutable blocker arrays', () => {
   const input = baseInput({ reasonEvent: undefined, blockers: [{
     kind: 'decision',
