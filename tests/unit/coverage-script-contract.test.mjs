@@ -77,6 +77,11 @@ assert.doesNotMatch(
 );
 assert.match(
   dependencyWorkflow,
+  /urllib\.parse\.quote\(os\.environ\["BASE_REF"\], safe="\/"\)/,
+  'dependency review preserves branch-name slashes while encoding other unsafe URL characters',
+);
+assert.match(
+  dependencyWorkflow,
   /branches\/\$\{base_ref_encoded\}/,
   'dependency review independently resolves the current base branch tip through the GitHub API',
 );
