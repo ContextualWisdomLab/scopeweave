@@ -268,25 +268,20 @@ assert.match(
   /- name: Preserve exact-head OSV SARIF\r?\n\s+if: \$\{\{ !cancelled\(\) \}\}\r?\n\s+uses: actions\/upload-artifact@[\s\S]*?name: scopeweave-osv-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}[\s\S]*?path: results\.sarif[\s\S]*?if-no-files-found: error[\s\S]*?retention-days: 3/,
   'OSV must retain generated exact-head SARIF evidence even when the reporter fails on an introduced vulnerability, while still skipping cancelled runs',
 );
-assert.equal(
-  osvWorkflow.split(`github/codeql-action/upload-sarif@${codeqlActionV4378Sha} # v4.37.8`).length - 1,
-  1,
-  'OSV must publish exact-head SARIF with the reviewed immutable CodeQL action revision',
-);
-assert.equal(
-  osvWorkflow.split('security-events: write').length - 1,
-  1,
-  'OSV must grant code-scanning write authority only to its scan job',
-);
-assert.match(
+assert.doesNotMatch(
   osvWorkflow,
-  /- name: Publish exact-head OSV SARIF to code scanning[\s\S]*?sarif_file: results\.sarif[\s\S]*?checkout_path: \$\{\{ github\.workspace \}\}\/osv-scan-source[\s\S]*?ref: refs\/pull\/\$\{\{ github\.event\.pull_request\.number \}\}\/head[\s\S]*?sha: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/,
-  'OSV code-scanning publication must bind to the exact contributor checkout and pull-request head',
+  /github\/codeql-action\/upload-sarif@/,
+  'OSV must not publish a second code-scanning analysis while organization code scanning is CodeQL-only',
 );
-assert.equal(
-  osvWorkflow.includes(supersededCodeqlActionV4362Sha),
-  false,
-  'OSV evidence retention must not regress to a superseded CodeQL action revision',
+assert.doesNotMatch(
+  osvWorkflow,
+  /^\s+security-events:\s+write\s*$/m,
+  'OSV must remain read-only with respect to code scanning and retain SARIF as workflow evidence instead',
+);
+assert.doesNotMatch(
+  osvWorkflow,
+  /- name: Publish exact-head OSV SARIF to code scanning/,
+  'OSV must not add a repository-local code-scanning publication path that competes with the CodeQL analysis identity',
 );
 assert.doesNotMatch(
   osvWorkflow,
