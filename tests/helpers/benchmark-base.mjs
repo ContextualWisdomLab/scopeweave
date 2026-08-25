@@ -3,12 +3,18 @@ const ZERO_COMMIT_SHA = '0'.repeat(40);
 const BASELINE_LABEL = 'protected-base';
 const CANDIDATE_LABEL = 'candidate';
 
-function canonicalCommitSha(value) {
+function canonicalCommitSha(value, label) {
   const sha = String(value || '').trim().toLowerCase();
   if (!COMMIT_SHA_PATTERN.test(sha) || sha === ZERO_COMMIT_SHA) {
-    throw new Error(`Benchmark base SHA is invalid: ${sha || '<missing>'}`);
+    throw new Error(`Benchmark ${label} SHA is invalid: ${sha || '<missing>'}`);
   }
   return sha;
+}
+
+function eventObject(event) {
+  return event && typeof event === 'object' && !Array.isArray(event)
+    ? event
+    : {};
 }
 
 function median(values) {
@@ -39,18 +45,41 @@ function median(values) {
  */
 export function resolveBenchmarkBaseSha({ override, event } = {}) {
   const explicit = String(override || '').trim();
-  if (explicit) return canonicalCommitSha(explicit);
+  if (explicit) return canonicalCommitSha(explicit, 'base');
 
-  const eventObject = event && typeof event === 'object' && !Array.isArray(event)
-    ? event
-    : {};
-  const pullRequestBase = eventObject.pull_request?.base?.sha;
-  if (pullRequestBase) return canonicalCommitSha(pullRequestBase);
+  const sourceEvent = eventObject(event);
+  const pullRequestBase = sourceEvent.pull_request?.base?.sha;
+  if (pullRequestBase) return canonicalCommitSha(pullRequestBase, 'base');
 
-  const pushBefore = eventObject.before;
-  if (pushBefore) return canonicalCommitSha(pushBefore);
+  const pushBefore = sourceEvent.before;
+  if (pushBefore) return canonicalCommitSha(pushBefore, 'base');
 
   throw new Error('Benchmark base SHA is unavailable; provide an immutable comparison revision.');
+}
+
+/**
+ * Resolve the immutable candidate revision whose performance is being claimed.
+ *
+ * Pull-request runs use the submitted contributor head rather than the workflow
+ * worktree, because GitHub may check out a synthetic merge commit. Protected
+ * pushes use the event's `after` revision. Operators can supply an explicit
+ * immutable override when replaying the benchmark deliberately.
+ *
+ * @param {{override?: unknown, event?: unknown}} input benchmark candidate input
+ * @returns {string} canonical 40-character candidate commit SHA
+ */
+export function resolveBenchmarkCandidateSha({ override, event } = {}) {
+  const explicit = String(override || '').trim();
+  if (explicit) return canonicalCommitSha(explicit, 'candidate');
+
+  const sourceEvent = eventObject(event);
+  const pullRequestHead = sourceEvent.pull_request?.head?.sha;
+  if (pullRequestHead) return canonicalCommitSha(pullRequestHead, 'candidate');
+
+  const pushAfter = sourceEvent.after;
+  if (pushAfter) return canonicalCommitSha(pushAfter, 'candidate');
+
+  throw new Error('Benchmark candidate SHA is unavailable; provide an immutable candidate revision.');
 }
 
 /**
