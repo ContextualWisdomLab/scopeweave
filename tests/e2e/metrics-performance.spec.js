@@ -3,7 +3,11 @@ import { readFileSync } from 'node:fs';
 
 import { test, expect } from '@playwright/test';
 
-import { resolveBenchmarkBaseSha } from '../helpers/benchmark-base.mjs';
+import {
+  counterbalancedBenchmarkRounds,
+  resolveBenchmarkBaseSha,
+  summarizeCounterbalancedSamples,
+} from '../helpers/benchmark-base.mjs';
 
 test.describe.configure({ retries: process.env.CI ? 2 : 0 });
 
@@ -89,11 +93,6 @@ function createTask(index) {
   };
 }
 
-function median(values) {
-  const sorted = [...values].sort((left, right) => left - right);
-  return sorted[Math.floor(sorted.length / 2)];
-}
-
 async function measureMetrics(browser, { appSource, label }) {
   const context = await browser.newContext();
   try {
@@ -168,50 +167,76 @@ async function measureMetrics(browser, { appSource, label }) {
       warmupCount: WARMUP_COUNT,
     });
 
-    return {
-      label,
-      ...result,
-      medianDurationMs: median(result.samples),
-    };
+    return { label, ...result };
   } finally {
     await context.close();
   }
 }
 
 test('10,000-task metric computation preserves exact semantics and beats the protected base', async ({ browser }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(240_000);
 
   const baseSha = protectedBaseSha();
-  const baselineSource = readGitFile(baseSha, 'app.js');
-  const baseline = await measureMetrics(browser, { appSource: baselineSource, label: 'protected-base' });
-  const optimized = await measureMetrics(browser, { appSource: CANDIDATE_APP_SOURCE, label: 'candidate' });
+  const sourceByLabel = new Map([
+    ['protected-base', readGitFile(baseSha, 'app.js')],
+    ['candidate', CANDIDATE_APP_SOURCE],
+  ]);
+  const measurementOrder = counterbalancedBenchmarkRounds();
+  const measurements = [];
 
-  expect(optimized.byTaskSize).toBe(TASK_COUNT);
-  expect(optimized.samples).toHaveLength(SAMPLE_COUNT);
-  expect(optimized.medianDurationMs).toBeGreaterThan(0);
+  for (const round of measurementOrder) {
+    for (const label of round) {
+      measurements.push(await measureMetrics(browser, {
+        appSource: sourceByLabel.get(label),
+        label,
+      }));
+    }
+  }
 
-  expect(baseline.byTaskSize).toBe(TASK_COUNT);
-  expect(optimized.digest).toBe(baseline.digest);
-  expect(optimized.totalDays).toBe(baseline.totalDays);
-  expect(optimized.totalWeightedPlannedRatio).toBe(baseline.totalWeightedPlannedRatio);
-  expect(optimized.totalWeightedActualRatio).toBe(baseline.totalWeightedActualRatio);
+  const semanticReference = measurements[0];
+  for (const measurement of measurements) {
+    expect(measurement.byTaskSize).toBe(TASK_COUNT);
+    expect(measurement.samples).toHaveLength(SAMPLE_COUNT);
+    expect(measurement.samples.every((duration) => duration > 0)).toBe(true);
+    expect(measurement.digest).toBe(semanticReference.digest);
+    expect(measurement.totalDays).toBe(semanticReference.totalDays);
+    expect(measurement.totalWeightedPlannedRatio).toBe(semanticReference.totalWeightedPlannedRatio);
+    expect(measurement.totalWeightedActualRatio).toBe(semanticReference.totalWeightedActualRatio);
+  }
 
-  const optimizationDeltaPercent = ((baseline.medianDurationMs - optimized.medianDurationMs)
-    / baseline.medianDurationMs) * 100;
+  const summary = summarizeCounterbalancedSamples(measurements);
+  expect(summary.baselineMedianDurationMs).toBeGreaterThan(0);
+  expect(summary.candidateMedianDurationMs).toBeGreaterThan(0);
   expect(
-    optimizationDeltaPercent,
-    `expected >=${TARGET_IMPROVEMENT_PERCENT}% median computeTaskMetrics improvement over ${baseSha}, got ${optimizationDeltaPercent.toFixed(2)}%`,
+    summary.improvementPercent,
+    `expected >=${TARGET_IMPROVEMENT_PERCENT}% counterbalanced median computeTaskMetrics improvement over ${baseSha}, got ${summary.improvementPercent.toFixed(2)}%`,
   ).toBeGreaterThanOrEqual(TARGET_IMPROVEMENT_PERCENT);
 
+  const sharedSemanticEvidence = {
+    digest: semanticReference.digest,
+    totalDays: semanticReference.totalDays,
+    byTaskSize: semanticReference.byTaskSize,
+    totalWeightedPlannedRatio: semanticReference.totalWeightedPlannedRatio,
+    totalWeightedActualRatio: semanticReference.totalWeightedActualRatio,
+  };
   console.log(`SCOPEWEAVE_METRICS_BENCHMARK ${JSON.stringify({
     taskCount: TASK_COUNT,
-    sampleCount: SAMPLE_COUNT,
-    warmupCount: WARMUP_COUNT,
+    sampleCountPerMeasurement: SAMPLE_COUNT,
+    warmupCountPerMeasurement: WARMUP_COUNT,
+    measurementOrder,
     protectedBaseSha: baseSha,
     protectedBaselineAvailable: true,
     targetImprovementPercent: TARGET_IMPROVEMENT_PERCENT,
-    optimizationDeltaPercent,
-    baseline,
-    optimized,
+    optimizationDeltaPercent: summary.improvementPercent,
+    baseline: {
+      samples: summary.baselineSamples,
+      medianDurationMs: summary.baselineMedianDurationMs,
+      ...sharedSemanticEvidence,
+    },
+    optimized: {
+      samples: summary.candidateSamples,
+      medianDurationMs: summary.candidateMedianDurationMs,
+      ...sharedSemanticEvidence,
+    },
   })}`);
 });
