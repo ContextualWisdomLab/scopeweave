@@ -9,7 +9,7 @@ const requiredWorkflow = readFileSync(
 
 const exactHeadRef = 'ref: ${{ github.event.pull_request.head.sha || github.sha }}';
 const expectedShaEnv = 'EXPECTED_CHECKOUT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}';
-const currentCodeqlSha = 'ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd';
+const currentCodeqlSha = 'db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28';
 const supersededCodeqlSha = '8aad20d150bbac5944a9f9d289da16a4b0d87c1e';
 const protectedAnalyzeName = 'name: Analyze (${{ matrix.language }})';
 
@@ -44,14 +44,14 @@ assert.equal(
   'required CodeQL checkout must retain least-privilege credential handling',
 );
 assert.equal(
-  requiredWorkflow.split(`github/codeql-action/init@${currentCodeqlSha} # v4.37.7`).length - 1,
+  requiredWorkflow.split(`github/codeql-action/init@${currentCodeqlSha} # v4.37.8`).length - 1,
   1,
-  'required CodeQL initialization must use the reviewed immutable v4.37.7 action revision',
+  'required CodeQL initialization must use the reviewed immutable v4.37.8 action revision',
 );
 assert.equal(
-  requiredWorkflow.split(`github/codeql-action/analyze@${currentCodeqlSha} # v4.37.7`).length - 1,
+  requiredWorkflow.split(`github/codeql-action/analyze@${currentCodeqlSha} # v4.37.8`).length - 1,
   1,
-  'required CodeQL analysis must use the reviewed immutable v4.37.7 action revision',
+  'required CodeQL analysis must use the reviewed immutable v4.37.8 action revision',
 );
 assert.equal(
   requiredWorkflow.includes(supersededCodeqlSha),
