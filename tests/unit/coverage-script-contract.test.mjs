@@ -20,6 +20,35 @@ assert.equal(
   0,
   'server CI does not execute the API suite separately when owned coverage already executes it',
 );
+const exactCheckoutRepository =
+  "repository: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name || github.repository }}";
+const exactCheckoutRef =
+  "ref: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || github.sha }}";
+assert.equal(
+  serverWorkflow.split(exactCheckoutRepository).length - 1,
+  2,
+  'both server CI jobs bind checkout to the submitted repository on pull requests',
+);
+assert.equal(
+  serverWorkflow.split(exactCheckoutRef).length - 1,
+  2,
+  'both server CI jobs bind checkout to the exact submitted head SHA on pull requests',
+);
+assert.equal(
+  (serverWorkflow.match(/- name: Verify exact checkout revision/g) || []).length,
+  2,
+  'both server CI jobs attest the actual checkout revision before executing repository code',
+);
+assert.equal(
+  (serverWorkflow.match(/actual_head_sha="\$\(git rev-parse HEAD\)"/g) || []).length,
+  2,
+  'both server CI jobs measure the actual checked-out revision',
+);
+assert.equal(
+  (serverWorkflow.match(/test "\$actual_head_sha" = "\$EXPECTED_HEAD_SHA"/g) || []).length,
+  2,
+  'both server CI jobs fail closed when checkout identity differs from the expected exact head',
+);
 assert.match(
   scripts['test:coverage'],
   /--include=server\/app\.mjs/,
