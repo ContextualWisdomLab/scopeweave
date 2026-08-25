@@ -5,8 +5,8 @@ import { test, expect } from '@playwright/test';
 
 import {
   counterbalancedBenchmarkRounds,
-  resolveBenchmarkBaseSha,
   resolveBenchmarkCandidateSha,
+  resolveVerifiedBenchmarkBaseSha,
   summarizeCounterbalancedSamples,
 } from '../helpers/benchmark-base.mjs';
 
@@ -28,6 +28,33 @@ const DATE_WINDOWS = Object.freeze([
 function githubEvent() {
   const eventPath = process.env.GITHUB_EVENT_PATH;
   return eventPath ? JSON.parse(readFileSync(eventPath, 'utf8')) : {};
+}
+
+function readOriginBranchTip(baseRef) {
+  const branch = String(baseRef || '').trim();
+  if (!branch || branch.length > 255 || /[\u0000-\u001f\u007f]/u.test(branch)) {
+    throw new Error(`Invalid benchmark base ref: ${branch || '<missing>'}`);
+  }
+  const fullRef = `refs/heads/${branch}`;
+  let output;
+  try {
+    output = execFileSync('git', ['ls-remote', '--heads', 'origin', fullRef], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+  } catch {
+    throw new Error(`Unable to resolve live benchmark base ${fullRef}`);
+  }
+
+  const matches = output
+    .split(/\r?\n/u)
+    .filter(Boolean)
+    .map((line) => line.split(/\s+/u))
+    .filter(([, remoteRef]) => remoteRef === fullRef);
+  if (matches.length !== 1) {
+    throw new Error(`Expected exactly one live benchmark base for ${fullRef}, found ${matches.length}`);
+  }
+  return matches[0][0];
 }
 
 function readGitFile(commitSha, path) {
@@ -173,10 +200,12 @@ test('10,000-task metric computation preserves exact semantics and beats the pro
   test.setTimeout(240_000);
 
   const event = githubEvent();
-  const baseSha = resolveBenchmarkBaseSha({
+  const resolveCurrentBaseSha = () => resolveVerifiedBenchmarkBaseSha({
     override: process.env.SCOPEWEAVE_BENCHMARK_BASE_SHA,
     event,
+    readLiveBaseSha: readOriginBranchTip,
   });
+  const baseSha = resolveCurrentBaseSha();
   const candidateSha = resolveBenchmarkCandidateSha({
     override: process.env.SCOPEWEAVE_BENCHMARK_HEAD_SHA,
     event,
@@ -215,6 +244,9 @@ test('10,000-task metric computation preserves exact semantics and beats the pro
     summary.improvementPercent,
     `expected >=${TARGET_IMPROVEMENT_PERCENT}% counterbalanced median computeTaskMetrics improvement for exact head ${candidateSha} over ${baseSha}, got ${summary.improvementPercent.toFixed(2)}%`,
   ).toBeGreaterThanOrEqual(TARGET_IMPROVEMENT_PERCENT);
+
+  const completionBaseSha = resolveCurrentBaseSha();
+  expect(completionBaseSha).toBe(baseSha);
 
   const sharedSemanticEvidence = {
     digest: semanticReference.digest,
