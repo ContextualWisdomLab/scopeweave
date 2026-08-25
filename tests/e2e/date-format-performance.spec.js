@@ -80,8 +80,11 @@ function resolveBenchmarkBaseSha(event, readLiveBaseSha = readOriginBranchTip) {
   const pullRequestBase = event?.pull_request?.base;
   if (!pullRequestBase) {
     const eventBaseSha = String(event?.before || '').trim();
-    if (override || eventBaseSha) {
-      return assertImmutableSha(override || eventBaseSha, 'benchmark base');
+    if (override) {
+      return assertImmutableSha(override, 'benchmark base');
+    }
+    if (eventBaseSha && !/^0{40}$/u.test(eventBaseSha)) {
+      return assertImmutableSha(eventBaseSha, 'benchmark base');
     }
     const localBaseRef = assertBenchmarkBaseRef(
       process.env.SCOPEWEAVE_BENCHMARK_BASE_REF || DEFAULT_BENCHMARK_BASE_REF,
