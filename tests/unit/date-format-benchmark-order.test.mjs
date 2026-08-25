@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 
 import {
   counterbalancedBenchmarkRounds,
+  stableBenchmarkChecksum,
   summarizeCounterbalancedMeasurements,
 } from '../helpers/date-format-benchmark.mjs';
 
@@ -13,6 +14,17 @@ assert.deepEqual(
     ['exact-contributor-head', 'protected-base'],
   ],
   'the benchmark must measure each revision once in each execution position',
+);
+
+assert.equal(
+  stableBenchmarkChecksum([42, 42, 42, 42]),
+  42,
+  'an even number of stable samples must preserve the semantic checksum instead of cancelling to zero',
+);
+assert.throws(
+  () => stableBenchmarkChecksum([42, 42, 43, 42]),
+  /checksum changed between samples/i,
+  'the benchmark must fail closed if one timed run produces different semantic evidence',
 );
 
 const syntheticSecondRunAdvantage = [
