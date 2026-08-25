@@ -492,8 +492,11 @@ app.post('/api/invites/:token/accept', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const inv = db.prepare('SELECT * FROM invites WHERE token = ?').get(c.req.param('token'));
   if (!inv || inv.accepted_at) return c.json({ error: 'invalid or used invite' }, 404);
-  const user = db.prepare('SELECT email FROM users WHERE id = ?').get(uid);
-  if (user.email.trim().toLowerCase() !== inv.email.trim().toLowerCase()) {
+  const canonicalInviteEmail = inv.email.trim().toLowerCase();
+  const identityMatches = db.prepare(
+    'SELECT id FROM users WHERE lower(trim(email)) = ? ORDER BY id LIMIT 2'
+  ).all(canonicalInviteEmail);
+  if (identityMatches.length !== 1 || identityMatches[0].id !== uid) {
     return c.json({ error: 'invalid or used invite' }, 404);
   }
   const existing = orgRole(uid, inv.org_id);
