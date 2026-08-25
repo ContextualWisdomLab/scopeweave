@@ -27,15 +27,27 @@ assert.doesNotMatch(
 
 const osvEvidenceArtifactPin =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1';
-assert.doesNotMatch(
+const codeqlUploadSarifV4378Pin =
+  'github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8';
+assert.equal(
+  osvWorkflow.split(codeqlUploadSarifV4378Pin).length - 1,
+  1,
+  'OSV must publish exact-head SARIF through the reviewed immutable CodeQL upload action revision',
+);
+assert.equal(
+  osvWorkflow.split('security-events: write').length - 1,
+  1,
+  'the OSV scan job must have exactly one code-scanning write grant for SARIF publication',
+);
+assert.match(
   osvWorkflow,
-  /github\/codeql-action\/upload-sarif@/,
-  'OSV must not become a second publisher into the CodeQL-only code-scanning surface',
+  /- name: Publish exact-head OSV SARIF to code scanning\r?\n\s+if: \$\{\{ !cancelled\(\) \}\}\r?\n\s+uses: github\/codeql-action\/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4\.37\.8\r?\n\s+with:\r?\n\s+sarif_file: results\.sarif\r?\n\s+checkout_path: \$\{\{ github\.workspace \}\}\/osv-scan-source\r?\n\s+ref: refs\/pull\/\$\{\{ github\.event\.pull_request\.number \}\}\/head\r?\n\s+sha: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/,
+  'OSV code-scanning evidence must bind the uploaded SARIF to the exact contributor checkout and pull-request head ref',
 );
 assert.doesNotMatch(
   osvWorkflow,
-  /\bsecurity-events:\s*write\b/,
-  'OSV evidence retention must not require code-scanning write authority',
+  /^\s+category:\s/m,
+  'OSV must preserve the existing workflow/job analysis identity instead of creating an unmatched category',
 );
 assert.equal(
   osvWorkflow.split(osvEvidenceArtifactPin).length - 1,
@@ -163,4 +175,4 @@ for (const [index, guardSource] of completionGuards.entries()) {
   }
 }
 
-console.log('✓ OSV introduced-vulnerability, checkout-isolation, evidence-ownership, and structured scan-completion gates fail closed');
+console.log('✓ OSV introduced-vulnerability, exact-head code-scanning, checkout-isolation, evidence-ownership, and structured scan-completion gates fail closed');
