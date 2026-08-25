@@ -33,9 +33,7 @@ jobs:
         run: npm ci
       - name: Unit tests (EVM · CPM · baseline · workload)
         run: npm run test:unit
-      - name: API tests (auth · tenancy · RBAC · billing · webhooks · rate limit)
-        run: npm run test:api
-      - name: Owned production coverage evidence
+      - name: Owned production coverage evidence (unit · API under c8)
         run: npm run test:coverage
       - name: app.js stays eval-safe (no top-level import/export)
         run: node -e "new Function(require('fs').readFileSync('app.js','utf8')); console.log('eval-safe OK')"
