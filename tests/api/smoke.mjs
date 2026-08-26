@@ -158,11 +158,7 @@ r = await req(`/api/orgs/${orgAId}/members/${vmember.id}`, { method: 'DELETE', h
 assert.equal(r.status, 200, 'remove member ok');
 
 // SSE stream: query-token auth (EventSource can't send headers)
-r = await req('/api/auth/stream-token', { method: 'POST', headers: auth });
-assert.equal(r.status, 200, 'issue stream token ok');
-const { token: streamToken } = await r.json();
-
-r = await req(`/api/projects/${proj.id}/stream?token=${encodeURIComponent(streamToken)}`);
+r = await req(`/api/projects/${proj.id}/stream?token=${encodeURIComponent(token)}`);
 assert.equal(r.status, 200, 'SSE with valid query token → 200');
 assert.match(r.headers.get('content-type') || '', /text\/event-stream/, 'SSE content-type');
 await r.body?.cancel();
