@@ -559,16 +559,6 @@ select[data-inline-progress]:focus {
   margin-top: auto;
 }
 
-#task-dependent-actions-help {
-  display: none;
-  flex-basis: 100%;
-  margin: 0;
-}
-
-#open-gantt[aria-disabled="true"] + #task-dependent-actions-help {
-  display: block;
-}
-
 .toast {
   position: fixed;
   right: 32px;
