@@ -1814,10 +1814,10 @@ const createNormalizedExternalRecord = (task, defaults = {}) => ({
   actualStartDate: task.actualStartDate || '',
   actualEndDate: task.actualEndDate || '',
   predecessors: task.predecessors || defaults.predecessors || '',
-  budget: task.budget ?? defaults.budget ?? '',
-  actualCost: task.actualCost ?? defaults.actualCost ?? '',
+  budget: task.budget === 0 ? 0 : (task.budget || (defaults.budget === 0 ? 0 : (defaults.budget || ''))),
+  actualCost: task.actualCost === 0 ? 0 : (task.actualCost || (defaults.actualCost === 0 ? 0 : (defaults.actualCost || ''))),
   sprint: task.sprint || defaults.sprint || '',
-  storyPoints: task.storyPoints ?? defaults.storyPoints ?? ''
+  storyPoints: task.storyPoints === 0 ? 0 : (task.storyPoints || (defaults.storyPoints === 0 ? 0 : (defaults.storyPoints || '')))
 });
 
 function getPhaseKey(task, index) {
@@ -1963,10 +1963,10 @@ function exportCsv() {
       task.parentId || '',
       task.depth,
       task.predecessors || '',
-      task.budget ?? '',
-      task.actualCost ?? '',
+      task.budget === 0 ? 0 : (task.budget || ''),
+      task.actualCost === 0 ? 0 : (task.actualCost || ''),
       task.sprint || '',
-      task.storyPoints ?? ''
+      task.storyPoints === 0 ? 0 : (task.storyPoints || '')
     ];
   });
 
