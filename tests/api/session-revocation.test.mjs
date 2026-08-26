@@ -185,8 +185,15 @@ test('logout-all and strict JWT validation cover every session transport', async
   await expectBearerStatus(tokenB, 200, 'bearer accepts token B before revocation');
   await expectCalendarStatus(projectId, tokenA, 200, 'calendar accepts token A before revocation');
   await expectCalendarStatus(projectId, tokenB, 200, 'calendar accepts token B before revocation');
-  await expectStreamStatus(projectId, tokenA, 200, 'SSE accepts token A before revocation');
-  await expectStreamStatus(projectId, tokenB, 200, 'SSE accepts token B before revocation');
+
+  // Stream token issuance
+  let resStreamA = await req('/api/auth/stream-token', { method: 'POST', headers: authA });
+  const streamTokenA = (await resStreamA.json()).token;
+  let resStreamB = await req('/api/auth/stream-token', { method: 'POST', headers: { authorization: `Bearer ${tokenB}` } });
+  const streamTokenB = (await resStreamB.json()).token;
+
+  await expectStreamStatus(projectId, streamTokenA, 200, 'SSE accepts stream token A before revocation');
+  await expectStreamStatus(projectId, streamTokenB, 200, 'SSE accepts stream token B before revocation');
   await expectAttachmentViewStatus(projectId, tokenA, 404, 'attachment view authenticates token A before lookup');
   await expectAttachmentViewStatus(projectId, tokenB, 404, 'attachment view authenticates token B before lookup');
 
@@ -200,9 +207,14 @@ test('logout-all and strict JWT validation cover every session transport', async
   for (const [label, staleToken] of [['A', tokenA], ['B', tokenB]]) {
     await expectRejectedEverywhere(projectId, staleToken, `stale token ${label}`);
   }
+  await expectStreamStatus(projectId, streamTokenA, 401, 'SSE rejects stream token A after revocation');
+  await expectStreamStatus(projectId, streamTokenB, 401, 'SSE rejects stream token B after revocation');
 
   await expectBearerStatus(freshToken, 200, 'bearer accepts replacement token');
   await expectCalendarStatus(projectId, freshToken, 200, 'calendar accepts replacement token');
-  await expectStreamStatus(projectId, freshToken, 200, 'SSE accepts replacement token');
+
+  let resStreamFresh = await req('/api/auth/stream-token', { method: 'POST', headers: { authorization: `Bearer ${freshToken}` } });
+  const freshStreamToken = (await resStreamFresh.json()).token;
+  await expectStreamStatus(projectId, freshStreamToken, 200, 'SSE accepts replacement stream token');
   await expectAttachmentViewStatus(projectId, freshToken, 404, 'attachment view accepts replacement token before lookup');
 });
