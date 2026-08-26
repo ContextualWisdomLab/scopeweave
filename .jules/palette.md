@@ -78,9 +78,9 @@
 **Learning:** Consistently adding `title` attributes with keyboard shortcut hints to primary actions (e.g., `(Enter)`) and cancel actions (e.g., `(Esc)`) improves discoverability, but `title` alone is not reliably exposed to keyboard and screen-reader users.
 **Action:** Include keyboard shortcut hints in `title` attributes and pair them with `aria-keyshortcuts` for primary and cancel buttons when implementing or updating forms and dialogs.
 
-## 2026-06-27 - Replace native disabled with aria-disabled for action buttons
-**Learning:** Native `disabled` attributes swallow all DOM events, including clicks, and prevent focus. This breaks keyboard accessibility because users tabbing through the page skip the element entirely, and it prevents click handlers from showing helpful toast messages explaining why an action is unavailable.
-**Action:** Use `aria-disabled="true"` instead of `disabled` for interactive buttons when the UI should preserve focusability or show inline feedback. Control visual presentation with `[aria-disabled="true"]` in CSS and guard the click handler by checking `getAttribute('aria-disabled') === 'true'` before preventing the action and showing feedback.
+## 2026-06-27 - 조건에 따른 aria-disabled와 native disabled의 활용
+**Learning:** `aria-disabled="true"`는 UI에서 초점을 유지하거나 인라인 피드백(토스트 등)을 제공할 필요가 있을 때 유용하지만, 마우스 및 키보드 사용자가 해당 요소를 아예 조작할 수 없도록 인터랙션 순서에서 제외시키고 시각적인 독립 상태 설명이 이미 제공되는 상황에서는 네이티브 `disabled` 속성을 사용하는 것이 더 적합합니다. 두 접근성을 혼용하지 않고 상황에 맞게 적용해야 합니다.
+**Action:** 불가능한 액션이 피드백을 위해 포커스를 유지해야 할 때는 `aria-disabled`를 사용하고, 인터랙션 순서에서 아예 빠져야 하며 별도의 독립적인 상태 설명이 있는 요소에는 네이티브 `disabled`를 사용합니다.
 
 ## 2026-06-28 - Keyboard Shortcut Hints
 **Learning:** Keyboard shortcut hints are more useful when they are discoverable to both mouse and assistive-technology users; `title` alone is hover-driven and unreliable for screen readers.
@@ -115,7 +115,3 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
-
-## 2026-08-25 - [접근성] 빈 상태에서 네이티브 disabled 속성의 중요성
-**Learning:** `aria-disabled="true"`를 사용하여 스크린 리더에게 요소가 비활성화되었음을 알리는 것도 중요하지만, 마우스와 키보드 접근성 측면에서는 네이티브 `disabled` 속성이 없다면 키보드 탭(tab) 이동이 여전히 비활성화된 요소에 멈추고 클릭 이벤트가 발생하는 문제가 존재합니다. JavaScript에서 이벤트 처리를 막더라도 UX 적으로 시각적인 피드백(포커스, 커서 등)이 불완전합니다.
-**Action:** 비활성화 상태가 명확한 버튼 요소에는 `aria-disabled`와 함께 네이티브 `disabled` 속성도 동기화하여 키보드 포커스와 탭 순서(tab index)에서 제외시키고 마우스 상호작용 또한 자연스럽게 차단하도록 합니다.

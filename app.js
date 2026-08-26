@@ -303,24 +303,10 @@ function bindHeaderEvents(persistAndRenderMetadata) {
   elements.baseDateInput.addEventListener('blur', persistAndRenderMetadata.flush);
 
   elements.addRootButton.addEventListener('click', () => openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() }));
-  elements.exportCsvButton.addEventListener('click', (e) => {
-    if (elements.exportCsvButton.getAttribute('aria-disabled') === 'true') {
-      e.preventDefault();
-      showToast('내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.');
-      return;
-    }
-    exportCsv();
-  });
+  elements.exportCsvButton.addEventListener('click', () => exportCsv());
   elements.importCsvButton.addEventListener('click', () => elements.csvFileInput.click());
   elements.csvFileInput.addEventListener('change', handleCsvImport);
-  elements.openGanttButton.addEventListener('click', (e) => {
-    if (elements.openGanttButton.getAttribute('aria-disabled') === 'true') {
-      e.preventDefault();
-      showToast('간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.');
-      return;
-    }
-    openGanttModal();
-  });
+  elements.openGanttButton.addEventListener('click', () => openGanttModal());
   elements.closeGanttButton.addEventListener('click', closeGanttModal);
   elements.ganttModal.addEventListener('click', (event) => {
     if (event.target.dataset.closeModal === 'true') {
@@ -1314,7 +1300,7 @@ function sanitizeDraft(draft) {
   const sanitized = {};
   EDITABLE_FIELDS.forEach((field) => {
     // 🛡️ Sentinel: Enforce string coercion before trim() to prevent DoS via type confusion
-    sanitized[field] = String(draft?.[field] || '').trim().slice(0, 1000);
+    sanitized[field] = String(draft?.[field] ?? '').trim().slice(0, 1000);
   });
   // 🛡️ Sentinel: Strictly validate against allowed options to prevent injection
   if (!sanitized.actualProgressStatus || !ACTUAL_PROGRESS_OPTIONS.includes(sanitized.actualProgressStatus)) {
@@ -1817,10 +1803,10 @@ const createNormalizedExternalRecord = (task, defaults = {}) => ({
   actualStartDate: task.actualStartDate || '',
   actualEndDate: task.actualEndDate || '',
   predecessors: task.predecessors || defaults.predecessors || '',
-  budget: task.budget || defaults.budget || '',
-  actualCost: task.actualCost || defaults.actualCost || '',
+  budget: task.budget ?? defaults.budget ?? '',
+  actualCost: task.actualCost ?? defaults.actualCost ?? '',
   sprint: task.sprint || defaults.sprint || '',
-  storyPoints: task.storyPoints || defaults.storyPoints || ''
+  storyPoints: task.storyPoints ?? defaults.storyPoints ?? ''
 });
 
 function getPhaseKey(task, index) {
@@ -1966,10 +1952,10 @@ function exportCsv() {
       task.parentId || '',
       task.depth,
       task.predecessors || '',
-      task.budget || '',
-      task.actualCost || '',
+      task.budget ?? '',
+      task.actualCost ?? '',
       task.sprint || '',
-      task.storyPoints || ''
+      task.storyPoints ?? ''
     ];
   });
 
