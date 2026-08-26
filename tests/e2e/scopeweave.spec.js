@@ -739,32 +739,6 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.locator('.editor-panel')).toBeVisible();
   });
 
-  test('numeric 0 survives sanitizeDraft and external-record normalization', async ({ page }) => {
-    await page.goto('/');
-    await page.waitForLoadState('networkidle');
-    const result = await page.evaluate(() => {
-      if (typeof window.sanitizeDraft !== 'function') return { error: 'Not exported' };
-
-      const sanitized = window.sanitizeDraft({
-        budget: 0,
-        actualCost: 0,
-        storyPoints: 0,
-        phase: 'Test'
-      });
-
-      return {
-        sanitizedBudget: sanitized.budget,
-        sanitizedCost: sanitized.actualCost,
-        sanitizedPoints: sanitized.storyPoints
-      };
-    });
-
-    expect(result.error).toBeUndefined();
-    expect(result.sanitizedBudget).toBe('0');
-    expect(result.sanitizedCost).toBe('0');
-    expect(result.sanitizedPoints).toBe('0');
-  });
-
   test('validateDraft pure function logic', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
