@@ -8,7 +8,10 @@ assert.equal(routeTokenPathSegment('../admin?force=true'), '');
 assert.equal(routeTokenPathSegment('https://example.test/api'), '');
 assert.equal(routeTokenPathSegment('short'), '');
 
-assert.equal(clearfolioCapabilityNotice(null), '');
+assert.equal(
+  clearfolioCapabilityNotice(null),
+  '문서 변환 상태를 확인하지 못했습니다. 연결 또는 로그인 상태를 확인한 뒤 다시 시도하십시오. 업로드 시 서버가 최종 사용 가능 여부를 확인합니다.',
+);
 assert.equal(clearfolioCapabilityNotice({ ready: true, action: null }), '');
 assert.equal(
   clearfolioCapabilityNotice({
