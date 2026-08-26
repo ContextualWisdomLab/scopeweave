@@ -870,7 +870,7 @@ function renderEditorField(label, field, value, type = 'text', required = false,
   if (type === 'text') {
     input.maxLength = 1000;
   }
-  input.value = value || '';
+  input.value = value ?? '';
   if (required) {
     input.required = true;
     input.setAttribute('aria-required', 'true');
@@ -1310,7 +1310,7 @@ function sanitizeDraft(draft) {
   const sanitized = {};
   EDITABLE_FIELDS.forEach((field) => {
     // 🛡️ Sentinel: Enforce string coercion before trim() to prevent DoS via type confusion
-    sanitized[field] = String(draft?.[field] || '').trim().slice(0, 1000);
+    sanitized[field] = String(draft?.[field] ?? '').trim().slice(0, 1000);
   });
   // 🛡️ Sentinel: Strictly validate against allowed options to prevent injection
   if (!sanitized.actualProgressStatus || !ACTUAL_PROGRESS_OPTIONS.includes(sanitized.actualProgressStatus)) {
@@ -1813,10 +1813,10 @@ const createNormalizedExternalRecord = (task, defaults = {}) => ({
   actualStartDate: task.actualStartDate || '',
   actualEndDate: task.actualEndDate || '',
   predecessors: task.predecessors || defaults.predecessors || '',
-  budget: task.budget || defaults.budget || '',
-  actualCost: task.actualCost || defaults.actualCost || '',
+  budget: task.budget ?? defaults.budget ?? '',
+  actualCost: task.actualCost ?? defaults.actualCost ?? '',
   sprint: task.sprint || defaults.sprint || '',
-  storyPoints: task.storyPoints || defaults.storyPoints || ''
+  storyPoints: task.storyPoints ?? defaults.storyPoints ?? ''
 });
 
 function getPhaseKey(task, index) {
@@ -1962,10 +1962,10 @@ function exportCsv() {
       task.parentId || '',
       task.depth,
       task.predecessors || '',
-      task.budget || '',
-      task.actualCost || '',
+      task.budget ?? '',
+      task.actualCost ?? '',
       task.sprint || '',
-      task.storyPoints || ''
+      task.storyPoints ?? ''
     ];
   });
 
