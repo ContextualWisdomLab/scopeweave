@@ -36,6 +36,7 @@ test('disabled empty-state actions expose and announce a reason plus next action
   const exportButton = page.getByRole('button', { name: 'CSV 내보내기' });
   const ganttButton = page.getByRole('button', { name: '간트차트보기' });
   const help = page.locator('#task-dependent-actions-help');
+  const status = page.locator('#task-dependent-actions-status');
 
   await expect(exportButton).toBeDisabled();
   await expect(ganttButton).toBeDisabled();
@@ -43,11 +44,14 @@ test('disabled empty-state actions expose and announce a reason plus next action
   await expect(ganttButton).toHaveAttribute('aria-disabled', 'true');
   await expect(exportButton).toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
   await expect(ganttButton).toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
-  await expect(help).toHaveAttribute('role', 'status');
-  await expect(help).toHaveAttribute('aria-live', 'polite');
-  await expect(help).toHaveAttribute('aria-atomic', 'true');
+  await expect(help).not.toHaveAttribute('role', 'status');
   await expect(help).toBeVisible();
   await expect(help).toContainText('작업을 추가하거나 CSV를 가져오세요');
+  await expect(status).toHaveAttribute('role', 'status');
+  await expect(status).toHaveAttribute('aria-live', 'polite');
+  await expect(status).toHaveAttribute('aria-atomic', 'true');
+  await expect(status).toHaveClass(/\bsr-only\b/);
+  await expect(status).toHaveText('작업이 없어 CSV 내보내기와 간트차트를 사용할 수 없습니다. 최상위 작업을 추가하거나 CSV를 가져오세요.');
 });
 
 test('task-dependent help disappears and detaches once the actions are available', async ({ page }) => {
@@ -56,6 +60,7 @@ test('task-dependent help disappears and detaches once the actions are available
   const exportButton = page.getByRole('button', { name: 'CSV 내보내기' });
   const ganttButton = page.getByRole('button', { name: '간트차트보기' });
   const help = page.locator('#task-dependent-actions-help');
+  const status = page.locator('#task-dependent-actions-status');
 
   await expect(page.locator('tbody tr[data-task-id]')).not.toHaveCount(0);
   await expect(exportButton).toBeEnabled();
@@ -65,6 +70,7 @@ test('task-dependent help disappears and detaches once the actions are available
   await expect(exportButton).not.toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
   await expect(ganttButton).not.toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
   await expect(help).toBeHidden();
+  await expect(status).toHaveText('');
 });
 
 test('the last task becoming unavailable is announced through an always-present live region', async ({ page }) => {
@@ -100,5 +106,5 @@ test('the last task becoming unavailable is announced through an always-present 
   await expect(page.getByRole('button', { name: '간트차트보기' })).toBeDisabled();
   await expect(status).toHaveText('작업이 없어 CSV 내보내기와 간트차트를 사용할 수 없습니다. 최상위 작업을 추가하거나 CSV를 가져오세요.');
   await expect(page.locator('#task-dependent-actions-help')).toBeVisible();
-  await expect(page.getByRole('button', { name: '최상위 작업 추가' })).toBeFocused();
+  await expect(page.locator('#add-root-task')).toBeFocused();
 });

@@ -1,5 +1,6 @@
 const STORAGE_KEY = 'scopeweave:planner-state:v1';
 const DEFAULT_PROJECT_NAME = 'ScopeWeave Planner';
+const TASK_DEPENDENT_ACTIONS_UNAVAILABLE_MESSAGE = '작업이 없어 CSV 내보내기와 간트차트를 사용할 수 없습니다. 최상위 작업을 추가하거나 CSV를 가져오세요.';
 const MAX_PROJECT_NAME_LENGTH = 120;
 const MAX_BASE_DATE_LENGTH = 10;
 const OWNER_COLORS = [
@@ -224,6 +225,7 @@ const elements = {
   closeGanttButton: document.getElementById('close-gantt'),
   connectJsonSyncButton: document.getElementById('connect-json-sync'),
   syncStatus: document.getElementById('sync-status'),
+  taskDependentActionsStatus: document.getElementById('task-dependent-actions-status'),
   toast: document.getElementById('toast')
 };
 
@@ -303,24 +305,10 @@ function bindHeaderEvents(persistAndRenderMetadata) {
   elements.baseDateInput.addEventListener('blur', persistAndRenderMetadata.flush);
 
   elements.addRootButton.addEventListener('click', () => openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() }));
-  elements.exportCsvButton.addEventListener('click', (e) => {
-    if (elements.exportCsvButton.getAttribute('aria-disabled') === 'true') {
-      e.preventDefault();
-      showToast('내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.');
-      return;
-    }
-    exportCsv();
-  });
+  elements.exportCsvButton.addEventListener('click', exportCsv);
   elements.importCsvButton.addEventListener('click', () => elements.csvFileInput.click());
   elements.csvFileInput.addEventListener('change', handleCsvImport);
-  elements.openGanttButton.addEventListener('click', (e) => {
-    if (elements.openGanttButton.getAttribute('aria-disabled') === 'true') {
-      e.preventDefault();
-      showToast('간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.');
-      return;
-    }
-    openGanttModal();
-  });
+  elements.openGanttButton.addEventListener('click', openGanttModal);
   elements.closeGanttButton.addEventListener('click', closeGanttModal);
   elements.ganttModal.addEventListener('click', (event) => {
     if (event.target.dataset.closeModal === 'true') {
@@ -529,6 +517,10 @@ function renderAll() {
   const rows = [];
 
   const hasTasks = state.tasks.length > 0;
+  const taskDependentActionsStatus = hasTasks ? '' : TASK_DEPENDENT_ACTIONS_UNAVAILABLE_MESSAGE;
+  if (elements.taskDependentActionsStatus.textContent !== taskDependentActionsStatus) {
+    elements.taskDependentActionsStatus.textContent = taskDependentActionsStatus;
+  }
   if (!hasTasks) {
     elements.exportCsvButton.setAttribute('aria-disabled', 'true');
     elements.openGanttButton.setAttribute('aria-disabled', 'true');
@@ -544,8 +536,6 @@ function renderAll() {
     elements.exportCsvButton.disabled = false;
     elements.openGanttButton.disabled = false;
   }
-  elements.exportCsvButton.title = hasTasks ? '' : '내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.';
-  elements.openGanttButton.title = hasTasks ? '' : '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.';
 
   cachedHasChildrenSet.clear();
   state.tasks.forEach(task => {
