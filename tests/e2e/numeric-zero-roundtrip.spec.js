@@ -72,6 +72,11 @@ const readDownloadText = async (download) => {
   return content;
 };
 
+const parseFirstCsvDataRow = (csvText) => {
+  const [, dataRow] = csvText.trimEnd().split(/\r?\n/);
+  return dataRow.split(',').map((cell) => cell.slice(1, -1).replace(/""/g, '"'));
+};
+
 for (const { field, testId } of [
   { field: 'budget', testId: 'editor-budget' },
   { field: 'actualCost', testId: 'editor-actual-cost' },
@@ -138,9 +143,27 @@ test('exports numeric zero values instead of empty CSV cells', async ({ page }) 
 
   const downloadPromise = page.waitForEvent('download');
   await page.locator('#export-csv').click();
-  const csvText = await readDownloadText(await downloadPromise);
-  const [, dataRow] = csvText.trimEnd().split(/\r?\n/);
-  const cells = dataRow.split(',').map((cell) => cell.slice(1, -1).replace(/""/g, '"'));
+  const cells = parseFirstCsvDataRow(await readDownloadText(await downloadPromise));
 
   expect(cells.slice(-4)).toEqual(['0', '0', '', '0']);
+});
+
+test('does not serialize boolean false from persisted numeric fields into CSV', async ({ page }) => {
+  await seedPersistedTask(page, { budget: false, actualCost: false, storyPoints: false });
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.locator('#export-csv').click();
+  const cells = parseFirstCsvDataRow(await readDownloadText(await downloadPromise));
+
+  expect(cells.slice(-4)).toEqual(['', '', '', '']);
+});
+
+test('does not preserve boolean false from external numeric fields', async ({ page }) => {
+  await seedExternalTask(page, { budget: false, actualCost: false, storyPoints: false });
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.locator('#export-csv').click();
+  const cells = parseFirstCsvDataRow(await readDownloadText(await downloadPromise));
+
+  expect(cells.slice(-4)).toEqual(['', '', '', '']);
 });
