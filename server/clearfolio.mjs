@@ -299,16 +299,43 @@ function validateJobId(jobId) {
 }
 
 /**
- * Compose an optional caller cancellation signal with the hard provider budget.
+ * Compose caller cancellation with a hard provider budget that can be disposed.
+ *
+ * The returned scope stays active until the provider response body has been
+ * fully validated or cancelled. Callers must dispose it in `finally` so fast
+ * requests do not retain a timeout or caller-signal listener for the full budget.
  *
  * @param {AbortSignal|undefined} callerSignal - Optional upstream cancellation signal.
- * @returns {AbortSignal} Signal that aborts on caller cancellation or total timeout.
+ * @returns {{signal:AbortSignal,dispose:()=>void}} Scoped provider cancellation contract.
  */
 function providerSignal(callerSignal) {
-  const timeoutSignal = AbortSignal.timeout(CLEARFOLIO_REQUEST_TIMEOUT_MS);
-  if (callerSignal === undefined) return timeoutSignal;
-  if (!(callerSignal instanceof AbortSignal)) throw new TypeError('signal must be an AbortSignal');
-  return AbortSignal.any([callerSignal, timeoutSignal]);
+  if (callerSignal !== undefined && !(callerSignal instanceof AbortSignal)) {
+    throw new TypeError('signal must be an AbortSignal');
+  }
+
+  const controller = new AbortController();
+  const timeoutError = new DOMException('Clearfolio provider request timed out', 'TimeoutError');
+  const timeoutId = setTimeout(
+    controller.abort.bind(controller, timeoutError),
+    CLEARFOLIO_REQUEST_TIMEOUT_MS,
+  );
+  timeoutId.unref();
+
+  const abortFromCaller = controller.abort.bind(controller);
+  if (callerSignal !== undefined) {
+    if (callerSignal.aborted) controller.abort(callerSignal.reason);
+    else callerSignal.addEventListener('abort', abortFromCaller, { once: true });
+  }
+
+  return {
+    signal: controller.signal,
+    dispose() {
+      clearTimeout(timeoutId);
+      if (callerSignal !== undefined) {
+        callerSignal.removeEventListener('abort', abortFromCaller);
+      }
+    },
+  };
 }
 
 /**
@@ -450,32 +477,37 @@ export async function submitJob(orgId, userId, document) {
     new Blob([validatedDocument.bytes], { type: validatedDocument.mime || 'application/octet-stream' }),
     validatedDocument.name,
   );
-  let res;
+  const request = providerSignal();
   try {
-    res = await fetch(`${configuration.baseUrl}/api/v1/convert/jobs`, {
-      method: 'POST',
-      headers: tenantHeaders(orgId, userId, configuration.secret),
-      body: form,
-      redirect: 'error',
-      signal: providerSignal(),
-    });
-  } catch {
-    throw new Error('clearfolio submit unavailable');
+    let res;
+    try {
+      res = await fetch(`${configuration.baseUrl}/api/v1/convert/jobs`, {
+        method: 'POST',
+        headers: tenantHeaders(orgId, userId, configuration.secret),
+        body: form,
+        redirect: 'error',
+        signal: request.signal,
+      });
+    } catch {
+      throw new Error('clearfolio submit unavailable');
+    }
+    if (!res.ok) return rejectProviderResponse(res, `clearfolio submit failed (${res.status})`);
+    const data = await readBoundedJson(res, 'clearfolio submit response invalid');
+    if (!isJsonRecord(data)) throw new Error('clearfolio submit response invalid');
+    const status = data.status === undefined ? 'PENDING' : data.status;
+    if (typeof data.jobId !== 'string' || !isClearfolioJobStatus(status)) {
+      throw new Error('clearfolio submit response invalid');
+    }
+    let jobId;
+    try {
+      jobId = validateJobId(data.jobId);
+    } catch {
+      throw new Error('clearfolio submit response invalid');
+    }
+    return { jobId, status };
+  } finally {
+    request.dispose();
   }
-  if (!res.ok) return rejectProviderResponse(res, `clearfolio submit failed (${res.status})`);
-  const data = await readBoundedJson(res, 'clearfolio submit response invalid');
-  if (!isJsonRecord(data)) throw new Error('clearfolio submit response invalid');
-  const status = data.status === undefined ? 'PENDING' : data.status;
-  if (typeof data.jobId !== 'string' || !isClearfolioJobStatus(status)) {
-    throw new Error('clearfolio submit response invalid');
-  }
-  let jobId;
-  try {
-    jobId = validateJobId(data.jobId);
-  } catch {
-    throw new Error('clearfolio submit response invalid');
-  }
-  return { jobId, status };
 }
 
 /**
@@ -497,22 +529,32 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
   const canonicalJobId = validateJobId(jobId);
   const configuration = clearfolioConfiguration();
   if (configuration.mock) return mockDocs.has(canonicalJobId) ? 'SUCCEEDED' : 'FAILED';
-  let res;
+  let request;
   try {
-    res = await fetch(`${configuration.baseUrl}/api/v1/convert/jobs/${encodeURIComponent(canonicalJobId)}`, {
-      headers: tenantHeaders(orgId, userId, configuration.secret),
-      signal: providerSignal(signal),
-      redirect: 'error',
-    });
+    request = providerSignal(signal);
   } catch {
     throw new Error('clearfolio status unavailable');
   }
-  if (!res.ok) return rejectProviderResponse(res, `clearfolio status failed (${res.status})`);
-  const data = await readBoundedJson(res, 'clearfolio status response invalid');
-  if (!isJsonRecord(data) || !isClearfolioJobStatus(data.status)) {
-    throw new Error('clearfolio status response invalid');
+  try {
+    let res;
+    try {
+      res = await fetch(`${configuration.baseUrl}/api/v1/convert/jobs/${encodeURIComponent(canonicalJobId)}`, {
+        headers: tenantHeaders(orgId, userId, configuration.secret),
+        signal: request.signal,
+        redirect: 'error',
+      });
+    } catch {
+      throw new Error('clearfolio status unavailable');
+    }
+    if (!res.ok) return rejectProviderResponse(res, `clearfolio status failed (${res.status})`);
+    const data = await readBoundedJson(res, 'clearfolio status response invalid');
+    if (!isJsonRecord(data) || !isClearfolioJobStatus(data.status)) {
+      throw new Error('clearfolio status response invalid');
+    }
+    return data.status;
+  } finally {
+    request.dispose();
   }
-  return data.status;
 }
 
 /**
@@ -533,48 +575,53 @@ export async function artifactUrl(orgId, userId, jobId) {
   const configuration = clearfolioConfiguration();
   if (configuration.mock) return `/api/mock-clearfolio/${encodeURIComponent(canonicalJobId)}`;
   const trustedArtifactOrigins = clearfolioArtifactOrigins(configuration.baseUrl);
-  let res;
+  const request = providerSignal();
   try {
-    res = await fetch(`${configuration.baseUrl}/api/v1/viewer/${encodeURIComponent(canonicalJobId)}/artifact-links`, {
-      method: 'POST',
-      headers: tenantHeaders(orgId, userId, configuration.secret),
-      redirect: 'error',
-      signal: providerSignal(),
-    });
-  } catch {
-    throw new Error('clearfolio artifact-link unavailable');
-  }
-  if (!res.ok) return rejectProviderResponse(res, `clearfolio artifact-link failed (${res.status})`);
-  const data = await readBoundedJson(res, 'clearfolio artifact-link response invalid');
-  if (!isJsonRecord(data)) throw new Error('clearfolio artifact-link response invalid');
-  const link = data.artifactUrl || data.url || data.signedUrl;
-  if (typeof link !== 'string' || link.length === 0) {
-    throw new Error('clearfolio artifact-link response invalid');
-  }
+    let res;
+    try {
+      res = await fetch(`${configuration.baseUrl}/api/v1/viewer/${encodeURIComponent(canonicalJobId)}/artifact-links`, {
+        method: 'POST',
+        headers: tenantHeaders(orgId, userId, configuration.secret),
+        redirect: 'error',
+        signal: request.signal,
+      });
+    } catch {
+      throw new Error('clearfolio artifact-link unavailable');
+    }
+    if (!res.ok) return rejectProviderResponse(res, `clearfolio artifact-link failed (${res.status})`);
+    const data = await readBoundedJson(res, 'clearfolio artifact-link response invalid');
+    if (!isJsonRecord(data)) throw new Error('clearfolio artifact-link response invalid');
+    const link = data.artifactUrl || data.url || data.signedUrl;
+    if (typeof link !== 'string' || link.length === 0) {
+      throw new Error('clearfolio artifact-link response invalid');
+    }
 
-  let url;
-  let clearfolioUrl;
-  try {
-    clearfolioUrl = new URL(configuration.baseUrl);
-    url = new URL(link, clearfolioUrl);
-  } catch {
-    throw new Error('clearfolio artifact-link response invalid');
-  }
-  const allowsHttp = clearfolioUrl.protocol === 'http:' && url.protocol === 'http:';
-  if (url.protocol !== 'https:' && !allowsHttp) {
-    throw new Error('clearfolio artifact-link response invalid');
-  }
-  if (
-    Boolean(url.username + url.password)
-    || Boolean(url.hash)
-    || !trustedArtifactOrigins.has(url.origin)
-  ) {
-    throw new Error('clearfolio artifact-link response invalid');
-  }
+    let url;
+    let clearfolioUrl;
+    try {
+      clearfolioUrl = new URL(configuration.baseUrl);
+      url = new URL(link, clearfolioUrl);
+    } catch {
+      throw new Error('clearfolio artifact-link response invalid');
+    }
+    const allowsHttp = clearfolioUrl.protocol === 'http:' && url.protocol === 'http:';
+    if (url.protocol !== 'https:' && !allowsHttp) {
+      throw new Error('clearfolio artifact-link response invalid');
+    }
+    if (
+      Boolean(url.username + url.password)
+      || Boolean(url.hash)
+      || !trustedArtifactOrigins.has(url.origin)
+    ) {
+      throw new Error('clearfolio artifact-link response invalid');
+    }
 
-  const token = url.searchParams.get('artifactToken');
-  if (token && url.origin === clearfolioUrl.origin) {
-    return `${configuration.baseUrl}/viewer/${encodeURIComponent(canonicalJobId)}?artifactToken=${encodeURIComponent(token)}`;
+    const token = url.searchParams.get('artifactToken');
+    if (token && url.origin === clearfolioUrl.origin) {
+      return `${configuration.baseUrl}/viewer/${encodeURIComponent(canonicalJobId)}?artifactToken=${encodeURIComponent(token)}`;
+    }
+    return url.href;
+  } finally {
+    request.dispose();
   }
-  return url.href;
 }
