@@ -43,7 +43,6 @@ async function requireAuth(c, next) {
   }
   try {
     const payload = verifyToken(token);
-    if (payload.stream) return c.json({ error: 'unauthorized' }, 401);
     // Session revocation: a bumped token_version invalidates all older JWTs.
     const u = db.prepare('SELECT token_version FROM users WHERE id = ?').get(payload.sub);
     if (!u || (payload.tv || 0) !== u.token_version) return c.json({ error: 'unauthorized' }, 401);
@@ -421,7 +420,6 @@ app.get('/api/projects/:id/stream', (c) => {
   const token = header.startsWith('Bearer ') ? header.slice(7) : (c.req.query('token') || '');
   let user;
   try { user = verifyToken(token); } catch { return c.json({ error: 'unauthorized' }, 401); }
-  if (!user.stream) return c.json({ error: 'stream token required' }, 401);
   const id = c.req.param('id');
   if (!projectAccess(user.sub, id)) return c.json({ error: 'not found' }, 404);
   const key = String(id);
@@ -1341,12 +1339,6 @@ app.delete('/api/projects/:id', requireAuth, (c) => {
 
 // Log out everywhere: bump token_version → every existing JWT dies. Returns a
 // fresh token so THIS device stays signed in. PATs are unaffected.
-app.post('/api/auth/stream-token', requireAuth, (c) => {
-  const user = c.get('user');
-  const token = signToken({ sub: user.sub, tv: user.tv, stream: true }, 900);
-  return c.json({ token });
-});
-
 app.post('/api/auth/logout-all', requireAuth, (c) => {
   const uid = c.get('user').sub;
   db.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = ?').run(uid);
