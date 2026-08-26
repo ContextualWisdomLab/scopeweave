@@ -93,6 +93,22 @@ for (const { field, testId } of [
   });
 }
 
+test('keeps unrelated falsy fields empty while preserving numeric zero', async ({ page }) => {
+  await seedPersistedTask(page, { owner: false, budget: 0 });
+  await openEditor(page);
+
+  await expect(page.getByTestId('editor-owner')).toHaveValue('');
+  await expect(page.getByTestId('editor-budget')).toHaveValue('0');
+
+  await saveAndReopen(page);
+  await expect(page.getByTestId('editor-owner')).toHaveValue('');
+  await expect(page.getByTestId('editor-budget')).toHaveValue('0');
+
+  const persisted = await page.evaluate((storageKey) => JSON.parse(localStorage.getItem(storageKey)).tasks[0], STORAGE_KEY);
+  expect(persisted.owner).toBe('');
+  expect(String(persisted.budget)).toBe('0');
+});
+
 test('preserves budget, actual cost, and story points when all are numeric zero', async ({ page }) => {
   await seedPersistedTask(page, { budget: 0, actualCost: 0, storyPoints: 0 });
   await openEditor(page);
