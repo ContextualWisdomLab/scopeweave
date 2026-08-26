@@ -56,6 +56,7 @@ const EDITABLE_FIELDS = [
   'sprint',
   'storyPoints'
 ];
+const ZERO_VALID_FIELDS = new Set(['budget', 'actualCost', 'storyPoints']);
 
 const CSV_HEADERS = [
   '단계',
@@ -870,7 +871,7 @@ function renderEditorField(label, field, value, type = 'text', required = false,
   if (type === 'text') {
     input.maxLength = 1000;
   }
-  input.value = value === 0 ? '0' : (value || '');
+  input.value = value === 0 && ZERO_VALID_FIELDS.has(field) ? '0' : (value || '');
   if (required) {
     input.required = true;
     input.setAttribute('aria-required', 'true');
@@ -1311,7 +1312,8 @@ function sanitizeDraft(draft) {
   EDITABLE_FIELDS.forEach((field) => {
     // 🛡️ Sentinel: Enforce string coercion before trim() to prevent DoS via type confusion
     const val = draft?.[field];
-    sanitized[field] = String(val === 0 ? '0' : (val || '')).trim().slice(0, 1000);
+    const normalizedValue = val === 0 && ZERO_VALID_FIELDS.has(field) ? '0' : (val || '');
+    sanitized[field] = String(normalizedValue).trim().slice(0, 1000);
   });
   // 🛡️ Sentinel: Strictly validate against allowed options to prevent injection
   if (!sanitized.actualProgressStatus || !ACTUAL_PROGRESS_OPTIONS.includes(sanitized.actualProgressStatus)) {
@@ -1497,7 +1499,6 @@ function getDateRangeWarning(startDate, endDate, message) {
 }
 
 const cachedHiddenParentIds = new Set();
-
 function getVisibleTasks() {
   const visible = [];
   cachedHiddenParentIds.clear();
@@ -2247,7 +2248,6 @@ function trapGanttModalFocus(event) {
     event.preventDefault();
     return;
   }
-
   const firstElement = focusableElements[0];
   const lastElement = focusableElements[focusableElements.length - 1];
   const activeElement = document.activeElement;
