@@ -78,9 +78,9 @@
 **Learning:** Consistently adding `title` attributes with keyboard shortcut hints to primary actions (e.g., `(Enter)`) and cancel actions (e.g., `(Esc)`) improves discoverability, but `title` alone is not reliably exposed to keyboard and screen-reader users.
 **Action:** Include keyboard shortcut hints in `title` attributes and pair them with `aria-keyshortcuts` for primary and cancel buttons when implementing or updating forms and dialogs.
 
-## 2026-06-27 - 조건에 따른 aria-disabled와 native disabled의 활용
-**Learning:** `aria-disabled="true"`는 UI에서 초점을 유지하거나 인라인 피드백(토스트 등)을 제공할 필요가 있을 때 유용하지만, 마우스 및 키보드 사용자가 해당 요소를 아예 조작할 수 없도록 인터랙션 순서에서 제외시키고 시각적인 독립 상태 설명이 이미 제공되는 상황에서는 네이티브 `disabled` 속성을 사용하는 것이 더 적합합니다. 두 접근성을 혼용하지 않고 상황에 맞게 적용해야 합니다.
-**Action:** 불가능한 액션이 피드백을 위해 포커스를 유지해야 할 때는 `aria-disabled`를 사용하고, 인터랙션 순서에서 아예 빠져야 하며 별도의 독립적인 상태 설명이 있는 요소에는 네이티브 `disabled`를 사용합니다.
+## 2026-06-27 - Choose native disabled vs aria-disabled based on explanation delivery
+**Learning:** Native `disabled` removes a button from focus and suppresses normal pointer/click interaction; `aria-disabled="true"` preserves interaction semantics so guarded handlers can explain why an action is unavailable. Neither pattern is universally preferable: the choice depends on whether the blocked reason and recovery action remain independently perceivable.
+**Action:** Use native `disabled` together with `aria-disabled="true"` when the action must leave the tab order and the reason/recovery step is exposed through persistent nearby content. Use `aria-disabled="true"` without native `disabled` when the control itself must remain focusable/clickable to provide guarded feedback. In both cases, never rely on `title` alone for the explanation.
 
 ## 2026-06-28 - Keyboard Shortcut Hints
 **Learning:** Keyboard shortcut hints are more useful when they are discoverable to both mouse and assistive-technology users; `title` alone is hover-driven and unreliable for screen readers.
@@ -115,3 +115,7 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+
+## 2026-08-25 - [접근성] 네이티브 disabled에는 독립적인 설명 경로가 필요함
+**Learning:** `aria-disabled="true"`와 네이티브 `disabled`를 함께 사용하면 비활성화 상태를 명확하게 전달하고 버튼을 탭 순서와 일반 클릭 경로에서 제외할 수 있습니다. 그러나 네이티브 `disabled`는 버튼 자체의 `title`/클릭 피드백을 신뢰할 수 없게 만들므로, 사용자가 비활성화 이유와 복구 방법을 다른 경로로 확인할 수 있어야 합니다.
+**Action:** 네이티브 `disabled`를 사용하는 경우 `aria-disabled`도 동기화하고, 버튼과 `aria-describedby`로 연결된 지속적으로 보이는 설명에 비활성화 이유와 다음 행동을 제공합니다. 버튼 자체의 `title` 또는 차단된 클릭 토스트만을 설명 경로로 사용하지 않습니다.
