@@ -177,6 +177,59 @@ function clearfolioArtifactOrigins(baseUrl) {
 }
 
 /**
+ * Return a non-secret operator action for one Clearfolio configuration failure.
+ *
+ * @param {string} code - Stable `ClearfolioConfigurationError` code.
+ * @returns {string} A concrete remediation instruction containing no secret values.
+ */
+function clearfolioConfigurationAction(code) {
+  if (code === 'clearfolio_not_configured') {
+    return 'Set CLEARFOLIO_URL and CLEARFOLIO_HMAC_SECRET, or use SCOPEWEAVE_DEV=1 only for local development.';
+  }
+  if (code === 'clearfolio_hmac_secret_invalid') {
+    return `Set CLEARFOLIO_HMAC_SECRET to at least ${MIN_HMAC_SECRET_LENGTH} non-whitespace characters.`;
+  }
+  if (code === 'clearfolio_artifact_origins_invalid') {
+    return 'Set CLEARFOLIO_ARTIFACT_ORIGINS to comma-separated HTTPS origins without credentials, path, query, or fragment, or unset it.';
+  }
+  return 'Set CLEARFOLIO_URL to a root HTTPS origin without credentials, path, query, or fragment.';
+}
+
+/**
+ * Describe whether the optional Clearfolio capability is locally ready to serve.
+ *
+ * This is configuration readiness only: it intentionally performs no DNS, HTTP,
+ * authentication, or provider-health request, so ScopeWeave liveness cannot be
+ * coupled to an optional downstream dependency. The development mock is reported
+ * explicitly and never masquerades as production-provider readiness.
+ *
+ * @returns {{ready:boolean,mode:'provider'|'development_mock'|'unavailable',reason:string|null,action:string|null}} Safe capability state.
+ */
+export function clearfolioCapabilityStatus() {
+  if (clearfolioMock) {
+    return {
+      ready: true,
+      mode: 'development_mock',
+      reason: null,
+      action: 'Configure a Clearfolio provider before using this deployment for production document conversion.',
+    };
+  }
+  try {
+    const configuration = clearfolioConfiguration();
+    clearfolioArtifactOrigins(configuration.baseUrl);
+    return { ready: true, mode: 'provider', reason: null, action: null };
+  } catch (error) {
+    if (!(error instanceof ClearfolioConfigurationError)) throw error;
+    return {
+      ready: false,
+      mode: 'unavailable',
+      reason: error.code,
+      action: clearfolioConfigurationAction(error.code),
+    };
+  }
+}
+
+/**
  * Sign tenant claims using the Clearfolio HMAC interoperability contract.
  *
  * The payload is the newline-delimited tenant ID, subject ID, permissions, and

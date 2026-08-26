@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a non-secret Clearfolio capability-readiness record at server startup so
+  operators can distinguish configured provider, explicit development mock, and
+  unavailable/invalid configuration without coupling optional document-viewer
+  readiness to whole-process `/api/health` liveness.
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS
   estimation coverage, dependency risk, and procurement package section checks.
 - Preserved PM-analysis research papers, NASA WBS handbook, BCP 14, and JSON

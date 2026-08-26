@@ -57,6 +57,28 @@ ScopeWeave planning capabilities remain available. For local integration work,
 permits HTTP only for `localhost`, `127.0.0.1`, or `::1`; remote HTTP endpoints
 are rejected.
 
+At process startup ScopeWeave emits one structured, non-secret readiness record:
+
+```json
+{"event":"capability.readiness","capability":"clearfolio","ready":false,"mode":"unavailable","reason":"clearfolio_not_configured","action":"Set CLEARFOLIO_URL and CLEARFOLIO_HMAC_SECRET, or use SCOPEWEAVE_DEV=1 only for local development."}
+```
+
+Use `ready`, `mode`, `reason`, and `action` to decide the next operator step. The
+record validates local provider and artifact-origin configuration only; it does
+**not** make a DNS or HTTP call and therefore does not claim that Clearfolio is
+reachable. `mode=development_mock` is deliberately distinct from
+`mode=provider`. Invalid provider transport, weak HMAC configuration, and an
+invalid artifact-origin allowlist report `ready=false` with a stable reason and
+a safe remediation instruction.
+
+`GET /api/health` remains liveness-only and returns `{"ok":true}` even when the
+optional Clearfolio capability is unavailable. This separation prevents an
+optional document-viewer dependency from causing the planner process to be
+restarted or removed from service. Kubernetes documents liveness as the signal
+for restarting unhealthy containers and readiness as the signal for whether a
+container should receive traffic; ScopeWeave keeps the whole application live
+while reporting the optional capability independently.
+
 Provider URLs are treated as service origins, not arbitrary request prefixes.
 Keep credentials in the dedicated HMAC secret setting rather than URL userinfo,
 and do not configure a path, query string, or fragment. The adapter constructs
@@ -184,4 +206,6 @@ stays focused on the container + compose path.)
 ## Health
 
 `GET /api/health` → `{"ok":true}`. Wired as the container `HEALTHCHECK` and the
-compose healthcheck.
+compose healthcheck. Optional dependency readiness is reported separately in the
+startup `capability.readiness` record so Clearfolio configuration never makes
+whole-process liveness fail.
