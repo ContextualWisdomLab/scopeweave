@@ -54,6 +54,35 @@ test('provider requests disable redirects and carry a bounded total-request sign
   assert.equal(CLEARFOLIO_REQUEST_TIMEOUT_MS > 0 && CLEARFOLIO_REQUEST_TIMEOUT_MS <= 30_000, true);
 });
 
+test('completed provider requests dispose their timeout timers immediately', async () => {
+  useResponse({ status: 'RUNNING' });
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const timer = { unref() {} };
+  let scheduled = 0;
+  let cleared = 0;
+
+  globalThis.setTimeout = (callback, delay) => {
+    assert.equal(typeof callback, 'function');
+    assert.equal(delay, CLEARFOLIO_REQUEST_TIMEOUT_MS);
+    scheduled += 1;
+    return timer;
+  };
+  globalThis.clearTimeout = (value) => {
+    assert.equal(value, timer);
+    cleared += 1;
+  };
+
+  try {
+    assert.equal(await jobStatus(1, 2, 'job-1'), 'RUNNING');
+    assert.equal(scheduled, 1, 'one bounded provider timer is created');
+    assert.equal(cleared, 1, 'the completed request clears its provider timer');
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
+});
+
 test('status response requires JSON media type before parsing', async () => {
   useResponse({ status: 'RUNNING' }, { contentType: 'text/plain' });
   await assert.rejects(
