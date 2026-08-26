@@ -45,7 +45,7 @@ test('cloud toast stylesheet is on every production serve path', async () => {
   const serverDockerfile = readFileSync(new URL('../../Dockerfile.server', import.meta.url), 'utf8');
   assert.match(
     serverFacade,
-    /import\s+\{\s*app\s+as\s+coreApp\s*\}\s+from\s+['"]\.\/app_core\.mjs['"]/,
+    /import\s+\{[^}]*\bapp\s+as\s+coreApp\b[^}]*\}\s+from\s+['"]\.\/app_core\.mjs['"]/,
     'SaaS security facade delegates to the route graph that owns static assets',
   );
   const { app } = await import('../../server/app.mjs');
