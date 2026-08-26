@@ -50,6 +50,7 @@ const seedExternalTask = async (page, overrides) => {
     });
   });
   await page.goto('./');
+  await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(1);
 };
 
 const openEditor = async (page) => {
@@ -100,6 +101,22 @@ for (const { field, testId } of [
 
 test('keeps unrelated falsy fields empty while preserving numeric zero', async ({ page }) => {
   await seedPersistedTask(page, { owner: false, budget: 0 });
+  await openEditor(page);
+
+  await expect(page.getByTestId('editor-owner')).toHaveValue('');
+  await expect(page.getByTestId('editor-budget')).toHaveValue('0');
+
+  await saveAndReopen(page);
+  await expect(page.getByTestId('editor-owner')).toHaveValue('');
+  await expect(page.getByTestId('editor-budget')).toHaveValue('0');
+
+  const persisted = await page.evaluate((storageKey) => JSON.parse(localStorage.getItem(storageKey)).tasks[0], STORAGE_KEY);
+  expect(persisted.owner).toBe('');
+  expect(String(persisted.budget)).toBe('0');
+});
+
+test('keeps numeric zero empty for unrelated text fields', async ({ page }) => {
+  await seedPersistedTask(page, { owner: 0, budget: 0 });
   await openEditor(page);
 
   await expect(page.getByTestId('editor-owner')).toHaveValue('');
