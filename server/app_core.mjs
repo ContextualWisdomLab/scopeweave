@@ -1345,3 +1345,26 @@ app.get('*', async (c) => {
     return c.notFound();
   }
 });
+
+let secureOutboundFetch = async () => {
+  throw new Error('secure outbound transport is not configured');
+};
+
+/**
+ * Configure the module-local transport used by security-sensitive outbound requests.
+ *
+ * The core API intentionally never falls back to the process-wide `globalThis.fetch`.
+ * The public app facade must provide the SSRF-hardened webhook and OIDC transport
+ * before serving requests. Direct core imports therefore fail closed instead of
+ * bypassing destination validation.
+ */
+export function configureSecureOutboundFetch(nextFetch) {
+  if (typeof nextFetch !== 'function') {
+    throw new TypeError('secure outbound transport must be a function');
+  }
+  secureOutboundFetch = nextFetch;
+}
+
+// This lexical binding is resolved by the webhook and OIDC call sites above.
+// Keeping it module-local preserves caller-owned process fetch implementations.
+const fetch = (input, init) => secureOutboundFetch(input, init);

@@ -155,21 +155,52 @@ test('public auth rejects an oversized streaming body before unbounded buffering
   );
 });
 
-test('signed webhook Request inputs stay behind the SSRF destination policy', async () => {
-  const signedRequest = new Request('https://127.0.0.1/internal', {
+test('actual webhook deliveries stay behind the SSRF destination policy without replacing global fetch', async () => {
+  const { token, org } = await createOwner('webhook-delivery-boundary@scopeweave.test');
+  const created = await request('/api/projects', {
     method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-scopeweave-event': 'project.update',
-      'x-scopeweave-signature': `sha256=${'a'.repeat(64)}`,
-    },
-    body: body({ event: 'project.update' }),
+    headers: { authorization: `Bearer ${token}` },
+    body: body({ name: 'Webhook Boundary', orgId: org.id }),
   });
+  assert.equal(created.status, 200, 'project creation succeeds');
+  const project = await created.json();
 
-  await assert.rejects(
-    globalThis.fetch(signedRequest),
-    (error) => error?.name === 'WebhookDestinationError',
-    'Request-object webhook sends must use the same fail-closed transport as URL+init sends',
+  const inserted = db.prepare(
+    'INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)',
+  ).run(org.id, 'https://127.0.0.1/internal', 'whsec_review_regression', 'project.update');
+  const webhookId = Number(inserted.lastInsertRowid);
+  const forwardedBefore = forwardedFetches.length;
+
+  const updated = await request(`/api/projects/${project.id}`, {
+    method: 'PUT',
+    headers: { authorization: `Bearer ${token}` },
+    body: body({ name: 'Webhook Boundary', version: 1, tasks: [] }),
+  });
+  assert.equal(updated.status, 200, 'customer save succeeds while webhook delivery is isolated');
+
+  const deliveryQuery = db.prepare(
+    'SELECT status_code AS statusCode, ok, attempt FROM webhook_deliveries WHERE webhook_id = ? ORDER BY attempt',
+  );
+  let deliveries = [];
+  const deadline = Date.now() + 1200;
+  while (Date.now() < deadline) {
+    deliveries = deliveryQuery.all(webhookId);
+    if (deliveries.length >= 2) break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  assert.deepEqual(
+    deliveries,
+    [
+      { statusCode: null, ok: 0, attempt: 1 },
+      { statusCode: null, ok: 0, attempt: 2 },
+    ],
+    'private webhook destinations fail closed on both bounded attempts',
+  );
+  assert.equal(
+    forwardedFetches.length,
+    forwardedBefore,
+    'webhook delivery never reaches the caller-owned process fetch implementation',
   );
 });
 

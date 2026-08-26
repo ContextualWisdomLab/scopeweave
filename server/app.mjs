@@ -5,7 +5,7 @@
 // Clearfolio behavior. Every production server and in-process caller imports
 // this facade; app_core.mjs is an implementation module, not a public entrypoint.
 import { createPublicKey, randomBytes, verify as verifySignature } from 'node:crypto';
-import { app as coreApp } from './app_core.mjs';
+import { app as coreApp, configureSecureOutboundFetch } from './app_core.mjs';
 import { db } from './db.mjs';
 import {
   finalizeOidcIdentity,
@@ -20,7 +20,6 @@ import {
 } from './webhook_transport.mjs';
 
 const nativeFetch = globalThis.fetch.bind(globalThis);
-const webhookFetchBoundaryKey = Symbol.for('scopeweave.webhook-fetch-boundary');
 const authorizationProbeObservabilityKey = Symbol('scopeweave.authorization-probe-observability');
 const WEBHOOK_REGISTRATION_PATH = /^\/api\/orgs\/[^/]+\/webhooks$/;
 const WEBHOOK_REGISTRATION_BODY_MAX_BYTES = 16 * 1024;
@@ -409,30 +408,19 @@ async function boundedOidcFetch(request) {
   return response;
 }
 
-// Install exactly once per process. The server's signed webhook POSTs are
-// routed through the SSRF-safe transport, and the configured OIDC token exchange
-// gets a bounded provider budget plus signature/issuer/audience/nonce validation.
-// Clearfolio, billing, and unrelated fetch users retain native fetch semantics.
-// Constructing an effective Request first makes Request-object inputs and init
-// overrides follow the same security decision as URL+init calls.
-if (!globalThis[webhookFetchBoundaryKey]) {
-  globalThis.fetch = async (input, init = undefined) => {
-    const effectiveRequest = new Request(input, init);
-    if (isSignedWebhookRequest(effectiveRequest)) {
-      return protectedWebhookFetch(effectiveRequest);
-    }
-    if (isOidcTokenRequest(effectiveRequest)) {
-      return boundedOidcFetch(effectiveRequest);
-    }
-    return nativeFetch(effectiveRequest);
-  };
-  Object.defineProperty(globalThis, webhookFetchBoundaryKey, {
-    value: true,
-    configurable: false,
-    enumerable: false,
-    writable: false,
-  });
-}
+// app_core delegates its only security-sensitive outbound call sites here.
+// Unknown core egress fails closed; unrelated process-wide fetch users retain
+// the caller-owned implementation and are never classified by ScopeWeave.
+configureSecureOutboundFetch(async (input, init) => {
+  const effectiveRequest = new Request(input, init);
+  if (isSignedWebhookRequest(effectiveRequest)) {
+    return protectedWebhookFetch(effectiveRequest);
+  }
+  if (isOidcTokenRequest(effectiveRequest)) {
+    return boundedOidcFetch(effectiveRequest);
+  }
+  throw new Error('unclassified core outbound request');
+});
 
 function isDevelopmentLoopbackHttp(value) {
   if (process.env.SCOPEWEAVE_DEV !== '1') return false;
