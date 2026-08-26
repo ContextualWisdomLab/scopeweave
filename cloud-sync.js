@@ -26,6 +26,28 @@ export function routeTokenPathSegment(value) {
   return ROUTE_TOKEN_RE.test(token) ? token : '';
 }
 
+/**
+ * Build a constant-time task-label lookup for modal list rendering.
+ *
+ * The first task with an ID wins so this index preserves the previous
+ * `Array.find` behavior when malformed or legacy data contains duplicate IDs.
+ * Display labels intentionally keep the historical `name -> task -> id`
+ * fallback instead of changing what buyers see while applying a performance
+ * optimization.
+ *
+ * @param {Array<object>} tasks Tasks from the active project.
+ * @returns {Map<unknown, unknown>} Task ID to the label shown beside records.
+ */
+export function buildTaskNameIndex(tasks) {
+  const index = new Map();
+  for (const task of tasks || []) {
+    if (!index.has(task.id)) {
+      index.set(task.id, task.name || task.task || task.id);
+    }
+  }
+  return index;
+}
+
 function safeApiPath(path) {
   if (typeof path !== 'string' || !path.startsWith('/api/')) throw new Error('invalid api path');
   const origin = typeof location !== 'undefined' ? location.origin : 'http://localhost';
@@ -1228,12 +1250,16 @@ async function openAttachmentsModal() {
   list.className = 'team-list';
   panel.appendChild(list);
 
+  let taskNameCache = null;
   const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
-    return t ? (t.name || t.task || id) : id;
+    if (!taskNameCache) {
+      taskNameCache = buildTaskNameIndex(host?.getState?.()?.tasks || []);
+    }
+    return taskNameCache.get(id) ?? id;
   };
 
   async function refresh() {
+    taskNameCache = null; // reset after data refresh so newly loaded task labels are visible
     list.textContent = '';
     const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
     const data = await api(`/api/projects/${pid}/attachments${q}`);
@@ -1365,12 +1391,16 @@ async function openCommentsModal() {
   form.append(input, send);
   panel.appendChild(form);
 
+  let taskNameCache = null;
   const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
-    return t ? (t.name || t.task || id) : id;
+    if (!taskNameCache) {
+      taskNameCache = buildTaskNameIndex(host?.getState?.()?.tasks || []);
+    }
+    return taskNameCache.get(id) ?? id;
   };
 
   async function refresh() {
+    taskNameCache = null; // reset after data refresh so newly loaded task labels are visible
     list.textContent = '';
     const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
     const data = await api(`/api/projects/${pid}/comments${q}`);
