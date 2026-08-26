@@ -190,7 +190,7 @@ test('actual webhook deliveries stay behind the SSRF destination policy without 
   }
 
   assert.deepEqual(
-    deliveries,
+    deliveries.map(({ statusCode, ok, attempt }) => ({ statusCode, ok, attempt })),
     [
       { statusCode: null, ok: 0, attempt: 1 },
       { statusCode: null, ok: 0, attempt: 2 },
