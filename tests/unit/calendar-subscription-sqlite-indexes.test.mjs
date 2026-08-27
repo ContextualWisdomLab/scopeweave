@@ -18,9 +18,9 @@ test('calendar subscription schema keeps exactly one secret-hash index', () => {
   assert.equal(
     secretHashIndexes.length,
     1,
-    'UNIQUE(secret_hash) already supplies the only B-tree needed for credential lookup',
+    'credential lookup must maintain exactly one secret_hash B-tree',
   );
-  assert.equal(Number(secretHashIndexes[0].unique), 1);
-  assert.equal(secretHashIndexes[0].origin, 'u');
+  assert.equal(Number(secretHashIndexes[0].unique), 1, 'credential hashes must remain unique');
+  assert.equal(secretHashIndexes[0].name, 'calendar_subscription_secret_hash_index');
   db.close();
 });

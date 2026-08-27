@@ -80,7 +80,7 @@ function assertLiveMembershipVersion(statement, projectId, subjectId, expectedVe
 /**
  * Freeze the ICS-only purpose when a parent domain record omits it.
  *
- * The current stacked parent (#514) still emits audience without purpose.
+ * The current stacked parent (#539) still emits audience without purpose.
  * Persistence must not fail closed on that omission, and it must not accept a
  * broader purpose such as a session credential. An explicit non-calendar value
  * is passed through so the conditional UPDATE/INSERT CHECK can reject it.
@@ -114,7 +114,7 @@ export function installCalendarSubscriptionSchema(database) {
   db.exec(`
     CREATE TABLE IF NOT EXISTS calendar_subscriptions (
       subscription_id TEXT PRIMARY KEY,
-      secret_hash TEXT NOT NULL UNIQUE CHECK(length(secret_hash) = 64),
+      secret_hash TEXT NOT NULL CHECK(length(secret_hash) = 64),
       subject_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
       name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 120),
@@ -130,7 +130,7 @@ export function installCalendarSubscriptionSchema(database) {
       CHECK(rotated_at_ms IS NULL OR rotated_at_ms >= created_at_ms),
       CHECK(revoked_at_ms IS NULL OR revoked_at_ms >= created_at_ms)
     );
-    CREATE INDEX IF NOT EXISTS calendar_subscription_secret_hash_index
+    CREATE UNIQUE INDEX IF NOT EXISTS calendar_subscription_secret_hash_index
       ON calendar_subscriptions(secret_hash);
     CREATE INDEX IF NOT EXISTS calendar_subscription_subject_project_index
       ON calendar_subscriptions(subject_id, project_id, revoked_at_ms, expires_at_ms);
@@ -474,62 +474,6 @@ export function createSqliteCalendarSubscriptionRepository(database) {
           revocation_applied: true,
         };
       });
-    },
-  });
-}
-
-/**
- * Create project-management authorization for calendar subscription lifecycle.
- *
- * The same nondisclosing absence error is used for an unknown project and for a
- * project outside the subject's organization. HTTP adapters can therefore map
- * the domain's management failure without revealing tenant existence.
- *
- * @param {object} database Node SQLite-compatible database handle.
- * @returns {{assertCanManage: Function}} Authorization port.
- */
-export function createSqliteCalendarSubscriptionAuthorizationPort(database) {
-  const db = requireDatabase(database);
-  const projectAccess = db.prepare(`
-    SELECT p.id
-      FROM projects p
-      JOIN memberships m ON m.org_id = p.org_id
-     WHERE p.id = ? AND m.user_id = ?
-  `);
-
-  return Object.freeze({
-    /** Verify that the subject currently belongs to the project's organization. */
-    async assertCanManage({ subjectId, projectId }) {
-      if (!projectAccess.get(projectId, subjectId)) {
-        throw new Error('calendar_subscription_resource_unavailable');
-      }
-    },
-  });
-}
-
-/**
- * Create the live membership-version port used before calendar credential use.
- *
- * The opaque version combines membership-row identity with the user's session
- * token version. Removing/re-adding membership changes the first component;
- * logout-all or password/session invalidation changes the second. Repository
- * transitions compare this live value in their own savepoint before committing.
- *
- * @param {object} database Node SQLite-compatible database handle.
- * @returns {{assertActive: Function}} Membership revocation/version port.
- */
-export function createSqliteCalendarSubscriptionMembershipPort(database) {
-  const db = requireDatabase(database);
-  const activeMembership = membershipVersionStatement(db);
-
-  return Object.freeze({
-    /** Return the current opaque membership/session version for one project. */
-    async assertActive({ subjectId, projectId }) {
-      const row = activeMembership.get(projectId, subjectId);
-      if (!row?.membership_version) {
-        throw new Error('calendar_subscription_membership_inactive');
-      }
-      return String(row.membership_version);
     },
   });
 }
