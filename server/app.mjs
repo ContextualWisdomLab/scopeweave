@@ -1143,9 +1143,9 @@ app.get('/api/projects/:id/attachments/:aid/view', (c) => {
   if (!p) return c.json({ error: 'not found' }, 404);
   const a = db.prepare('SELECT job_id, status FROM attachments WHERE id = ? AND project_id = ?').get(c.req.param('aid'), p.id);
   if (!a) return c.json({ error: 'not found' }, 404);
-  if (a.status !== 'SUCCEEDED') return c.json({ error: `문서가 아직 준비되지 않았습니다 (${a.status})` }, 409);
   const unavailable = clearfolioUnavailableResponse(c);
   if (unavailable) return unavailable;
+  if (a.status !== 'SUCCEEDED') return c.json({ error: `문서가 아직 준비되지 않았습니다 (${a.status})` }, 409);
   return artifactUrl(p.org_id, uid, a.job_id)
     .then((url) => c.redirect(url))
     .catch((e) => c.json({ error: `열람 링크 발급 실패: ${e.message}` }, 502));
