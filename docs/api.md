@@ -85,15 +85,17 @@ credentials never reach the browser. HWP/HWPX are rejected (Clearfolio policy).
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `POST` | `/api/projects/:id/attachments` | multipart `file` (+`taskId?`, ≤10MB) → conversion job (write roles) |
+| `GET` | `/api/capabilities` | Authenticated optional-capability readiness (`clearfolio.ready/mode/reason/action`). Configuration-only; no provider I/O. |
+| `POST` | `/api/projects/:id/attachments` | multipart `file` (+`taskId?`, ≤10MB) → conversion job (write roles). Unconfigured/invalid Clearfolio returns `503` with the same capability record. |
 | `GET` | `/api/projects/:id/attachments?taskId=` | List (+ refreshes pending statuses) |
-| `GET` | `/api/projects/:id/attachments/:aid/view` | 302 → signed artifact URL (`?token=` for new-tab opens) |
+| `GET` | `/api/projects/:id/attachments/:aid/view` | 302 → signed artifact URL (`?token=` for new-tab opens). Locally unready Clearfolio returns `503`. |
 | `DELETE` | `/api/projects/:id/attachments/:aid` | Uploader or manage |
 
 Env: `CLEARFOLIO_URL` plus `CLEARFOLIO_HMAC_SECRET` for production conversion.
-Optional `CLEARFOLIO_ARTIFACT_ORIGINS` adds reviewed HTTPS CDN/object-store
-origins; unset trusts only the Clearfolio origin. An unset URL is not a
-successful converter: the in-memory mock exists only with `SCOPEWEAVE_DEV=1`.
+Optional `CLEARFOLIO_ARTIFACT_ORIGINS` adds reviewed exact HTTPS CDN/object-store
+origins; unset trusts only the Clearfolio origin. An unset URL in production
+makes the capability unavailable (`ready=false`) rather than simulating success;
+`SCOPEWEAVE_DEV=1` without a URL enables the in-memory adapter for local work only.
 
 ## Comments (코멘트)
 
@@ -182,7 +184,8 @@ const ok = req.headers['x-scopeweave-signature'] ===
 | `GET` | `/api/orgs/:id/audit` | Audit log (manage; `?format=csv` for a compliance CSV) |
 | `GET` | `/api/orgs/:id/export` | Full workspace export JSON (owner) |
 | `GET` | `/api/metrics` | Ops counters (JSON; add `?format=prometheus` for scrape-ready text) |
-| `GET` | `/api/health` | Liveness |
+| `GET` | `/api/capabilities` | Authenticated optional-capability readiness (Clearfolio configuration only) |
+| `GET` | `/api/health` | Liveness (`{"ok":true}` even when Clearfolio is unavailable) |
 
 ## Example
 

@@ -49,3 +49,8 @@
   unless `CLEARFOLIO_ARTIFACT_ORIGINS` lists additional exact HTTPS origins.
   Cross-origin `artifactToken` values stay on the returned origin and are
   never transplanted into the Clearfolio viewer.
+- Optional Clearfolio conversion is a replaceable MSA capability. Process
+  liveness stays on `GET /api/health`. Configuration readiness is emitted at
+  startup, queried from authenticated `GET /api/capabilities`, and used to
+  fail attachment upload/view closed with HTTP 503. The in-memory adapter
+  exists only behind `SCOPEWEAVE_DEV=1`.

@@ -944,6 +944,15 @@ select[data-inline-progress]:focus {
   min-height: 18px;
   margin: 0;
 }
+.capability-notice {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-muted);
+  color: var(--text);
+  font-size: 0.9375rem;
+}
 .cloud-name-field.hidden {
   display: none;
 }

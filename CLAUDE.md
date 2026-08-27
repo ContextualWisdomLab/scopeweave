@@ -78,7 +78,7 @@ deploy guide is `docs/deploy.md`.
 - `server.mjs` — `@hono/node-server` entry (PORT, default 8787), serves the API and
   the static client via a strict allowlist.
 - `app.mjs` — Hono routes (auth/SSO, projects, teams, billing, webhooks, baselines,
-  revisions, comments, search…); `auth.mjs` — scrypt + pinned-HS256 JWT + PAT hashing;
+  revisions, comments, search, authenticated capability readiness…); `auth.mjs` — scrypt + pinned-HS256 JWT + PAT hashing;
   `billing.mjs` — plans/caps, Stripe via dynamic import; `db.mjs` — `node:sqlite`.
 - Only two runtime dependencies (`hono`, `@hono/node-server`); everything else is
   Node built-ins. Do not add runtime dependencies (repository contract in

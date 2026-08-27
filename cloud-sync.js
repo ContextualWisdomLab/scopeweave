@@ -26,6 +26,24 @@ export function routeTokenPathSegment(value) {
   return ROUTE_TOKEN_RE.test(token) ? token : '';
 }
 
+/**
+ * Return the next action a planner should take when Clearfolio is locally unavailable.
+ *
+ * The server remains the authority: this helper only formats an already-safe
+ * capability record so the attachments dialog can tell the user what to do
+ * before they pick a file. Empty string means conversion may proceed.
+ *
+ * @param {{ready?:boolean,action?:string|null}|null|undefined} capability - Authenticated Clearfolio capability record.
+ * @returns {string} Concrete next action, or an empty string when upload may continue.
+ */
+export function clearfolioCapabilityNotice(capability) {
+  if (!capability || capability.ready) return '';
+  const action = typeof capability.action === 'string' ? capability.action.trim() : '';
+  return action
+    ? `문서 변환을 사용할 수 없습니다. ${action}`
+    : '문서 변환을 사용할 수 없습니다. 운영자에게 Clearfolio 설정을 요청하십시오.';
+}
+
 function safeApiPath(path) {
   if (typeof path !== 'string' || !path.startsWith('/api/')) throw new Error('invalid api path');
   const origin = typeof location !== 'undefined' ? location.origin : 'http://localhost';
@@ -1196,6 +1214,21 @@ async function openAttachmentsModal() {
   head.append(h2, close);
   panel.appendChild(head);
 
+  let capability = null;
+  try {
+    capability = (await api('/api/capabilities'))?.capabilities?.clearfolio || null;
+  } catch {
+    capability = null;
+  }
+  const noticeText = clearfolioCapabilityNotice(capability);
+  if (noticeText) {
+    const notice = document.createElement('p');
+    notice.className = 'capability-notice';
+    notice.setAttribute('role', 'status');
+    notice.textContent = noticeText;
+    panel.appendChild(notice);
+  }
+
   // 작업 선택 + 파일 업로드
   const sel = document.createElement('select');
   sel.className = 'cloud-select';
@@ -1220,7 +1253,11 @@ async function openAttachmentsModal() {
   const up = document.createElement('button');
   up.type = 'submit';
   up.className = 'primary-button';
-  up.textContent = '업로드';
+  up.textContent = noticeText ? '변환 설정 필요' : '업로드';
+  if (noticeText) {
+    fi.disabled = true;
+    up.disabled = true;
+  }
   form.append(fi, up);
   panel.appendChild(form);
 

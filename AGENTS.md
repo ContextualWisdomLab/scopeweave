@@ -11,6 +11,10 @@
 - Preserve the single global `tasks` array as the source of truth.
 - Use a single `renderAll()` integration path for user-visible rerenders.
 - Prefer browser-native APIs only.
+- Keep `GET /api/health` as process liveness. Report optional Clearfolio
+  readiness separately (`capability.readiness` logs, `GET /api/capabilities`,
+  and attachment 503). Do not turn an unconfigured document viewer into a
+  planner outage.
 
 ## Verification
 

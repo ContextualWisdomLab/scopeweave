@@ -4,7 +4,7 @@
 
 Clearfolio is an optional ScopeWeave MSA capability. Its local configuration state must be visible to an operator without turning the whole planner process unhealthy and without making a provider network request merely to answer a health question.
 
-ScopeWeave therefore keeps `GET /api/health` as whole-process liveness and publishes one non-secret structured `capability.readiness` record for Clearfolio at server startup. The readiness record is produced by the same configuration validator used by production Clearfolio operations and returns only four bounded fields: `ready`, `mode`, `reason`, and `action`.
+ScopeWeave therefore keeps `GET /api/health` as whole-process liveness and publishes the same non-secret Clearfolio capability record in three operator/user surfaces: one structured `capability.readiness` log at server startup, authenticated `GET /api/capabilities`, and a 503 attachment response that repeats `ready`, `mode`, `reason`, and `action`. The record is produced by the same configuration validator used by production Clearfolio operations.
 
 This is a bounded follow-up slice of issue #489. It does not claim remote Clearfolio reachability, latency, authentication success, artifact availability, or end-to-end readiness. Those require operational evidence from real provider calls and the attachment status path; the startup record proves configuration readiness only.
 
@@ -45,7 +45,7 @@ Examples include:
 
 Kubernetes distinguishes liveness from readiness: a failed liveness probe can trigger container restart, while readiness controls whether a workload should receive service traffic. Clearfolio is not required for planning, authentication, project CRUD, or the static client, so treating its configuration as whole-process liveness would turn an optional dependency failure into an unnecessary planner outage.
 
-The existing `/api/health` response remains `{"ok":true}` while the Clearfolio capability is unavailable. Operators inspect the startup readiness record for the optional integration and continue to use attachment failure/status evidence for remote operational diagnosis.
+The existing `/api/health` response remains `{"ok":true}` while the Clearfolio capability is unavailable. Operators inspect the startup readiness record or `GET /api/capabilities` for the optional integration. Planners see the same next action in the attachments dialog before they pick a file, and attachment upload/view fail closed with HTTP 503 instead of attempting provider traffic. Remote operational diagnosis still uses attachment failure/status evidence after a valid provider is configured.
 
 RFC 9110 defines a successful GET response as a representation of the target resource state. ScopeWeave keeps the `/api/health` resource narrowly defined as process liveness rather than silently changing its semantics to aggregate every optional dependency.
 
@@ -68,7 +68,10 @@ Unknown non-configuration exceptions are rethrown instead of being silently misc
 - explicit development mock with a production-configuration action;
 - valid production provider configuration;
 - insecure production HTTP configuration;
-- malformed artifact-origin policy detected before provider transport.
+- malformed artifact-origin policy detected before provider transport;
+- weak HMAC configuration with a secret-free next action;
+- anonymous `GET /api/capabilities` rejected while authenticated callers receive the same local record;
+- unconfigured production attachment upload returning HTTP 503 before any provider call.
 
 The regression executes in both `test:unit` and `test:coverage:cases`; `server/clearfolio.mjs` remains in the canonical owned-production c8 target set.
 
