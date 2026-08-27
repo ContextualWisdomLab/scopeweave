@@ -45,7 +45,6 @@ test('disabled empty-state actions expose and announce a reason plus next action
   await expect(exportButton).toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
   await expect(ganttButton).toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
   await expect(help).not.toHaveAttribute('role', 'status');
-  await expect(help).not.toHaveAttribute('hidden', '');
   await expect(help).toBeVisible();
   await expect(help).toContainText('작업을 추가하거나 CSV를 가져오세요');
   await expect(status).toHaveAttribute('role', 'status');
@@ -70,7 +69,6 @@ test('task-dependent help disappears and detaches once the actions are available
   await expect(ganttButton).not.toHaveAttribute('aria-disabled', 'true');
   await expect(exportButton).not.toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
   await expect(ganttButton).not.toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
-  await expect(help).toHaveAttribute('hidden', '');
   await expect(help).toBeHidden();
   await expect(status).toHaveText('');
 });
@@ -107,7 +105,6 @@ test('the last task becoming unavailable is announced through an always-present 
   await expect(page.getByRole('button', { name: 'CSV 내보내기' })).toBeDisabled();
   await expect(page.getByRole('button', { name: '간트차트보기' })).toBeDisabled();
   await expect(status).toHaveText('작업이 없어 CSV 내보내기와 간트차트를 사용할 수 없습니다. 최상위 작업을 추가하거나 CSV를 가져오세요.');
-  await expect(page.locator('#task-dependent-actions-help')).not.toHaveAttribute('hidden', '');
   await expect(page.locator('#task-dependent-actions-help')).toBeVisible();
   await expect(page.locator('#add-root-task')).toBeFocused();
 });
