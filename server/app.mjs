@@ -106,7 +106,28 @@ function createAuthorizedReasonRepository(auth) {
       ) {
         throw new Error('schedule reason event authorization denied');
       }
-      return projectVersionPort.advanceResourceVersion(binding);
+      const transition = projectVersionPort.advanceResourceVersion(binding);
+      if (transition?.advanced !== true) return transition;
+
+      // A project version is a customer-visible history identity. Preserve a
+      // fetchable snapshot for the same committed version even when only the
+      // normalized reason-event relations changed, and do it inside the reason
+      // repository savepoint so version, snapshot, reason, and audit are atomic.
+      const committedVersion = currentProject.version + 1;
+      db.prepare(`
+        INSERT INTO project_revisions(project_id,version,name,base_date,tasks_json,saved_by)
+        VALUES(?,?,?,?,?,?)
+      `).run(
+        currentProject.id,
+        committedVersion,
+        currentProject.name,
+        currentProject.base_date,
+        currentProject.tasks_json,
+        auth.userId,
+      );
+      db.prepare('DELETE FROM project_revisions WHERE project_id = ? AND version <= ?')
+        .run(currentProject.id, committedVersion - 20);
+      return transition;
     },
     nextAuditRecordId: () => `audit_${randomBytes(16).toString('hex')}`,
   });
