@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added a deterministic release-artifact integrity manifest and verifier that
+  binds built files to one exact source revision with SHA-256 digests, rejects
+  symlink/name/path confusion, emits stable non-secret operator failures, and
+  remains explicitly separate from signed provenance/attestation claims.
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS
   estimation coverage, dependency risk, and procurement package section checks.
 - Preserved PM-analysis research papers, NASA WBS handbook, BCP 14, and JSON
@@ -48,7 +52,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   missing or invalid subject/expiry, or a missing, Boolean, fractional,
   negative, unsafe, or otherwise invalid token-version claim before user lookup.
 - Added cross-device regression coverage proving that `logout-all` rejects stale
-  tokens on bearer, calendar, SSE, and attachment-view transports while the
+  tokens on bearer, calendar, SSE, and attachment-view URL transports while the
   replacement token continues through the same authentication boundary.
 
 ### Changed
