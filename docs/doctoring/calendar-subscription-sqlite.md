@@ -8,14 +8,14 @@
 
 The protected calendar feed still depends on a broad session credential transported in a URL. Parent PR #539 defines a separately revocable, project-bound reusable credential lifecycle and binds use to the membership epoch captured when the secret was issued, but intentionally contains no production persistence. PR #541 supplies the durable SQLite adapter needed to make that lifecycle survivable across process restarts while enforcing tenant/session revocation in the same atomic state transition that records a successful credential use.
 
-The bounded buyer-visible value is operationally durable calendar access without storing a plaintext reusable subscription secret, while preserving immediate revocation/rotation semantics, cross-tenant nondisclosure, and immutable lifecycle evidence. Route migration and customer-facing management UI remain later issue #413 slices and must not be represented as shipped by this PR.
+The bounded buyer-visible value is operationally durable calendar access without storing a plaintext reusable subscription secret, while preserving immediate revocation/rotation semantics, cross-tenant nondisclosure, and lifecycle evidence that remains bounded under high-frequency feed polling. Route migration and customer-facing management UI remain later issue #413 slices and must not be represented as shipped by this PR.
 
 ## Current exact implementation boundary
 
 `server/calendar_subscription_sqlite.mjs` owns four stable adapter surfaces:
 
 - `installCalendarSubscriptionSchema(database)` installs normalized persistence relations and indexes at database bootstrap;
-- `createSqliteCalendarSubscriptionRepository(database)` implements the parent-domain repository port;
+- `createSqliteCalendarSubscriptionRepository(database, options)` implements the parent-domain repository port and accepts an optional bounded `usageEventLimit`;
 - `createSqliteCalendarSubscriptionAuthorizationPort(database)` verifies current project-organization membership for management actions without disclosing cross-tenant resource existence;
 - `createSqliteCalendarSubscriptionMembershipPort(database)` returns an opaque live `membership_id:token_version` version used by the domain and repository to reject stale credentials.
 
@@ -70,7 +70,7 @@ erDiagram
     }
 ```
 
-`calendar_subscriptions` is the current authorization relation. It contains one current hash and current lifecycle state only. `subscription_rotations` and `subscription_usage_events` contain independent repeating event facts, preventing repeating groups or history arrays in the authorization row. The audit outbox is an immutable security-event ledger/delivery relation rather than a copy of current authorization state: `subject_id` and `project_id` are event attributes captured at occurrence time so retained evidence does not depend on a subsequently deleted authorization row. Its lack of a foreign key to `calendar_subscriptions` is deliberate for security-event retention and retryability after resource deletion.
+`calendar_subscriptions` is the current authorization relation. It contains one current hash and current lifecycle state only. `subscription_rotations` contains repeating lifecycle facts, while `subscription_usage_events` retains only the configured most-recent usage window; `last_used_at_ms` remains the authoritative current-use timestamp after history pruning. The audit outbox is a secret-free lifecycle-event ledger/delivery relation rather than a per-poll usage log: create, rotate, and first revoke remain durably queued, while transient `used` rows are pruned before the usage savepoint commits. `subject_id` and `project_id` are event attributes captured at occurrence time so retained lifecycle evidence does not depend on a subsequently deleted authorization row. Its lack of a foreign key to `calendar_subscriptions` is deliberate for security-event retention and retryability after resource deletion.
 
 All owned table/index names contain multiple lexical words and use snake_case. The focused schema test executes `PRAGMA foreign_key_check` and locks exact owned-object names to prevent silent naming/normalization drift.
 
@@ -80,7 +80,7 @@ All owned table/index names contain multiple lexical words and use snake_case. T
 2. Only the current hash remains in `calendar_subscriptions`; historical rotation, usage, and audit relations contain no secret or hash fields. Rotation therefore cannot create a credential-hash archive.
 3. Calendar audience is fixed to `scopeweave:calendar` and purpose is frozen to `calendar_read`. Current #539 sends the purpose explicitly. If a predecessor/older caller omits it, the adapter supplies only `calendar_read`; an explicit non-calendar purpose is preserved for the database CHECK/authorization boundary to reject.
 4. Create rechecks the domain-captured membership version inside the SQLite savepoint before inserting state.
-5. Use performs a conditional update that simultaneously verifies current hash, project, purpose, audience, non-revocation, pre-expiry time, stored issuance membership epoch, and independently resolved live membership/session version before it records `last_used_at_ms` and usage evidence.
+5. Use performs a conditional update that simultaneously verifies current hash, project, purpose, audience, non-revocation, pre-expiry time, stored issuance membership epoch, and independently resolved live membership/session version before it records `last_used_at_ms` and bounded usage evidence.
 6. Removing and re-adding an organization membership changes the membership-row identity. Session-wide invalidation changes `users.token_version`. Either change makes an already issued credential unusable until an authenticated operator explicitly rotates it.
 7. Rotation rechecks current management authorization and live membership, replaces the sole current hash, and snapshots the fresh membership version in one savepoint. The previous secret is immediately invalid and no prior hash is retained.
 8. Revocation is operator-idempotent: repeated authenticated revoke requests return the already-revoked state without duplicating the durable revocation event; `revocation_applied` is true only for the first transition.
@@ -92,9 +92,9 @@ This credential is ScopeWeave-specific and must **not** be represented as an OAu
 
 Repository transitions use named SQLite `SAVEPOINT` / `ROLLBACK TO` / `RELEASE` boundaries rather than unconditional `BEGIN`/`COMMIT`. SQLite documents that savepoints may be nested within an existing transaction and that `ROLLBACK TO` rewinds state without cancelling the outer transaction. This lets the adapter compose safely with a future wider request/outbox transaction instead of failing because nested `BEGIN` transactions are unsupported.
 
-For create, successful use, rotate, and first revoke, lifecycle state and `calendar_subscription_audit_outbox` evidence are written inside the same savepoint. A test-installed trigger forces an outbox write failure during use and verifies that `last_used_at_ms` and `subscription_usage_events` both roll back. This is executable failure-mode evidence for the “state and durable evidence together” contract rather than an assertion-only transaction test.
+Create, rotate, and first revoke write durable lifecycle state plus `calendar_subscription_audit_outbox` evidence inside the same savepoint. Successful use updates `last_used_at_ms`, appends then prunes bounded `subscription_usage_events`, performs the existing transactional outbox write check, and prunes read-only `used` outbox rows before commit so calendar polling cannot create an unbounded delivery backlog. A test-installed trigger forces the transient outbox write to fail during use and verifies that `last_used_at_ms` and `subscription_usage_events` both roll back. This preserves executable failure-mode evidence for the “state and evidence together” transaction contract while keeping durable outbox backlog lifecycle-only.
 
-Outbox delivery itself is intentionally outside this slice. A later worker may mark `delivered_at_ms`; deterministic authorization never depends on model judgement or outbox-delivery availability.
+Outbox delivery itself is intentionally outside this slice. A later worker may mark lifecycle rows `delivered_at_ms`; deterministic authorization never depends on model judgement or outbox-delivery availability.
 
 ## TDD and acceptance evidence
 
@@ -115,11 +115,12 @@ Focused acceptance coverage includes:
 - first-transition-only revocation evidence and idempotent repeated revoke;
 - cross-tenant management nondisclosure;
 - file-backed reopen/process-survival behavior;
-- transactional rollback when durable audit evidence cannot be written;
+- transactional rollback when the usage transition cannot write its outbox evidence;
+- bounded recent-use retention under repeated polling with no durable `used` outbox backlog;
 - schema naming, normalized history relations, and foreign-key integrity;
 - race coverage for membership/rotation/use transitions.
 
-The canonical unit and c8 commands include `server/calendar_subscription_sqlite.mjs` plus the persistence, race, and issuance-epoch suites. Exact 100% statement/branch/function/line evidence remains mandatory before this PR can be considered integration-ready; an ordinary unit-test GREEN run does not substitute for that measurement.
+The canonical unit and c8 commands include `server/calendar_subscription_sqlite.mjs` plus the persistence, expiry, retention, race, and issuance-epoch suites. Exact 100% statement/branch/function/line evidence remains mandatory before this PR can be considered integration-ready; an ordinary unit-test GREEN run does not substitute for that measurement.
 
 ## Traceability
 
@@ -131,11 +132,12 @@ The canonical unit and c8 commands include `server/calendar_subscription_sqlite.
 | Membership removal/re-add does not revive old credential | membership-row replacement regression | opaque `membership_id:token_version` | Active PR #541 |
 | Wrong or broader purpose cannot authorize | explicit wrong-purpose regressions + SQL CHECK | `purpose = calendar_read` | Active PR #541 |
 | Cross-tenant project existence is not disclosed | other-tenant list/rotate regression | authorization port + parent domain mapping | Active PR #541 |
-| State and audit evidence cannot diverge on write failure | forced-outbox-failure rollback regression | savepoint transaction | Active PR #541 |
+| State and usage evidence roll back together on write failure | forced-outbox-failure rollback regression | usage savepoint transaction | Active PR #541 |
+| Frequent polling does not create unbounded durable evidence | bounded-retention regression | `usageEventLimit` + usage/outbox pruning | Active PR #541 |
 | Durable credential survives process restart | file-backed SQLite reopen regression | SQLite repository | Active PR #541 |
 | History contains no credential material | schema introspection assertions | rotation/usage/audit relations | Active PR #541 |
 | DB object naming and referential integrity | exact object list + `foreign_key_check` | schema installer | Active PR #541 |
-| Exact-head CI evidence | current contributor SHA and exact current base required | repository/organization workflows | Regenerating after retarget; predecessor evidence non-passing |
+| Exact-head CI evidence | current contributor SHA and exact current base required | repository/organization workflows | Regenerating after current-head mutation; predecessor evidence non-passing |
 | Independent current-head approval | qualifying independent reviewer after latest push | protected branch/ruleset governance | Required before integration |
 | Calendar route no longer consumes broad session JWT | future API migration | `server/app.mjs` | Planned / out of this slice |
 | Customer can create/copy/rotate/revoke subscription in UI | future implementation matching issue #413 interaction contract | browser client | Planned / out of this slice |
