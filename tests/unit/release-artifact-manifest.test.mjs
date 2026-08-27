@@ -88,6 +88,25 @@ await withTempDir(async (dir) => {
     manifest_sha256: first.manifest_digest.sha256,
   });
 
+  const reorderedArtifactFields = {
+    ...first,
+    artifacts: first.artifacts.map((entry) => ({
+      digest: { sha256: entry.digest.sha256 },
+      byte_length: entry.byte_length,
+      name: entry.name,
+    })),
+  };
+  const reorderedVerified = await verifyReleaseArtifactManifest({
+    manifest: reorderedArtifactFields,
+    sourceRevision: SOURCE_REVISION,
+    artifacts: artifactInputs,
+  });
+  assert.deepEqual(
+    reorderedVerified,
+    verified,
+    'canonical manifest digest must not depend on JSON object key insertion order',
+  );
+
   await writeFile(browserPath, Buffer.from('tampered-browser-artifact\n'));
   await expectManifestError(
     verifyReleaseArtifactManifest({
