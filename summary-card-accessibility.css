@@ -1,0 +1,32 @@
+.meta-value-card {
+  position: relative;
+}
+
+.meta-card-description {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  width: max-content;
+  max-width: min(320px, calc(100vw - 48px));
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: #0f172a;
+  color: #ffffff;
+  box-shadow: var(--shadow-md);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.4;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+  pointer-events: none;
+}
+
+.meta-value-card:hover .meta-card-description,
+.meta-value-card:focus .meta-card-description {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
