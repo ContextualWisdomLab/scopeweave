@@ -1,6 +1,6 @@
 import { constants as fsConstants } from 'node:fs';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { lstat, open, readFile } from 'node:fs/promises';
+import { lstat, open } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
@@ -115,6 +115,7 @@ async function openRegularFile(path, options = {}) {
     symlinkCode = 'artifact_symlink_not_allowed',
     invalidCode = 'artifact_not_regular_file',
     unreadableCode = 'artifact_unreadable',
+    changedCode = 'artifact_changed_during_read',
   } = options;
 
   const before = await statWithoutPathDisclosure(path, unreadableCode);
@@ -133,7 +134,7 @@ async function openRegularFile(path, options = {}) {
   try {
     const opened = await handle.stat({ bigint: true });
     if (!opened.isFile()) fail(invalidCode);
-    if (!stableStatMatches(before, opened)) fail('artifact_changed_during_read');
+    if (!stableStatMatches(before, opened)) fail(changedCode);
     return { handle, opened };
   } catch (error) {
     await handle.close().catch(() => {});
@@ -346,24 +347,50 @@ function parseCliArguments(argv, cwd) {
   return { command, sourceRevision, manifestPath, artifacts };
 }
 
-async function readManifest(path) {
-  const stat = await statWithoutPathDisclosure(path, 'manifest_file_invalid');
-  if (stat.isSymbolicLink() || !stat.isFile() || stat.size > BigInt(MAX_MANIFEST_BYTES)) {
-    fail('manifest_file_invalid');
-  }
-
-  let text;
-  try {
-    text = await readFile(path, { encoding: 'utf8' });
-  } catch {
-    fail('manifest_file_invalid');
-  }
-  if (Buffer.byteLength(text, 'utf8') > MAX_MANIFEST_BYTES) fail('manifest_file_invalid');
+async function readManifest(path, options = {}) {
+  const { afterOpen } = options;
+  const { handle, opened } = await openRegularFile(path, {
+    symlinkCode: 'manifest_file_invalid',
+    invalidCode: 'manifest_file_invalid',
+    unreadableCode: 'manifest_file_invalid',
+    changedCode: 'manifest_file_invalid',
+  });
 
   try {
-    return JSON.parse(text);
-  } catch {
-    fail('manifest_json_invalid');
+    if (opened.size > BigInt(MAX_MANIFEST_BYTES)) fail('manifest_file_invalid');
+
+    if (afterOpen !== undefined) {
+      if (typeof afterOpen !== 'function') fail('manifest_file_invalid');
+      try {
+        await afterOpen();
+      } catch {
+        fail('manifest_file_invalid');
+      }
+    }
+
+    const pathAfterOpen = await statWithoutPathDisclosure(path, 'manifest_file_invalid');
+    if (!stableStatMatches(opened, pathAfterOpen)) fail('manifest_file_invalid');
+
+    let text;
+    try {
+      text = await handle.readFile({ encoding: 'utf8' });
+    } catch {
+      fail('manifest_file_invalid');
+    }
+
+    const afterRead = await handle.stat({ bigint: true });
+    if (!stableStatMatches(opened, afterRead)) fail('manifest_file_invalid');
+    const pathAfterRead = await statWithoutPathDisclosure(path, 'manifest_file_invalid');
+    if (!stableStatMatches(afterRead, pathAfterRead)) fail('manifest_file_invalid');
+    if (Buffer.byteLength(text, 'utf8') > MAX_MANIFEST_BYTES) fail('manifest_file_invalid');
+
+    try {
+      return JSON.parse(text);
+    } catch {
+      fail('manifest_json_invalid');
+    }
+  } finally {
+    await handle.close().catch(() => {});
   }
 }
 
@@ -381,8 +408,9 @@ function errorAction(code) {
 /**
  * Run the release-manifest operator CLI without leaking local build paths in machine-readable errors.
  * `generate` prints a manifest; `verify` prints a verification receipt. The caller owns redirection/storage.
+ * `afterManifestOpen` is an optional deterministic test seam invoked after the manifest file is opened.
  *
- * @param {{argv?: string[], cwd?: string, stdout?: {write: Function}, stderr?: {write: Function}}} options Runtime adapters.
+ * @param {{argv?: string[], cwd?: string, stdout?: {write: Function}, stderr?: {write: Function}, afterManifestOpen?: Function}} options Runtime adapters.
  * @returns {Promise<number>} Process-style exit code: 0 success, 2 deterministic validation failure.
  */
 export async function runReleaseArtifactManifestCli(options = {}) {
@@ -391,6 +419,7 @@ export async function runReleaseArtifactManifestCli(options = {}) {
     cwd = process.cwd(),
     stdout = process.stdout,
     stderr = process.stderr,
+    afterManifestOpen,
   } = options;
 
   try {
@@ -404,7 +433,7 @@ export async function runReleaseArtifactManifestCli(options = {}) {
       return 0;
     }
 
-    const manifest = await readManifest(parsed.manifestPath);
+    const manifest = await readManifest(parsed.manifestPath, { afterOpen: afterManifestOpen });
     const verification = await verifyReleaseArtifactManifest({
       manifest,
       sourceRevision: parsed.sourceRevision,
