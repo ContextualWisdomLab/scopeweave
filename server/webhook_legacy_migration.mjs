@@ -22,6 +22,19 @@ function blockedReasonFor(url) {
   }
 }
 
+function activeWebhookDestinations(database) {
+  return database.prepare(
+    `SELECT id, org_id AS orgId, url
+       FROM webhooks
+      WHERE active = 1
+      ORDER BY id`,
+  ).all();
+}
+
+function hasPolicyIncompatibleDestination(candidates) {
+  return candidates.some((candidate) => !isCurrentDestinationAllowed(candidate.url));
+}
+
 /**
  * Disable active legacy webhook destinations rejected by current registration policy.
  *
@@ -33,6 +46,11 @@ function blockedReasonFor(url) {
  * one tenant-visible audit event with a concrete replacement action. It never reads
  * or copies webhook signing secrets.
  *
+ * The initial scan is deliberately read-only. A database whose active webhook rows
+ * already satisfy policy therefore does not reserve SQLite's single writer during
+ * ordinary startup. If mutation is needed, the migration then acquires an immediate
+ * transaction and re-reads the candidate set while holding that writer reservation,
+ * so concurrent changes cannot make the preflight result authoritative by accident.
  * DNS-backed hostnames remain subject to per-attempt address authorization and
  * socket pinning at delivery time; startup intentionally performs no network I/O.
  *
@@ -40,14 +58,12 @@ function blockedReasonFor(url) {
  * @returns {number} Number of webhook rows newly disabled during this run.
  */
 export function migrateLegacyWebhookDestinations(database) {
+  const preflightCandidates = activeWebhookDestinations(database);
+  if (!hasPolicyIncompatibleDestination(preflightCandidates)) return 0;
+
   database.exec('BEGIN IMMEDIATE');
   try {
-    const candidates = database.prepare(
-      `SELECT id, org_id AS orgId, url
-         FROM webhooks
-        WHERE active = 1
-        ORDER BY id`,
-    ).all();
+    const candidates = activeWebhookDestinations(database);
     const disable = database.prepare(
       `UPDATE webhooks
           SET active = 0,
