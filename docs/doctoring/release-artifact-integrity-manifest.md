@@ -16,7 +16,7 @@ ScopeWeave release candidates need a deterministic receipt that answers a narrow
 - the byte length and SHA-256 digest of each regular artifact file; and
 - a SHA-256 self-digest over the canonical unsigned manifest payload.
 
-The verifier fails closed when the source revision, artifact set, artifact bytes, lengths, manifest schema, or manifest self-digest differ. Artifact logical names are bounded relative identifiers, duplicate names are rejected, and symlink inputs are rejected so a manifest cannot silently describe a redirected filesystem target. The manifest records logical names only and never records local build-runner paths.
+The verifier fails closed when the source revision, artifact set, artifact bytes, lengths, manifest schema, or manifest self-digest differ. Artifact logical names are bounded relative identifiers, duplicate names are rejected, and symlink inputs are rejected so a manifest cannot silently describe a redirected filesystem target. Manifest and artifact verification bind reads to opened file handles and compare their file identity/metadata with the pathname before accepting the result, including a second pathname identity check after artifact hashing. The manifest records logical names only and never records local build-runner paths.
 
 ## What this control proves—and what it does not
 
@@ -59,27 +59,31 @@ npm run ops:release-manifest -- verify \
   --artifact server/scopeweave-server.tar=dist/scopeweave-server.tar
 ```
 
-Success prints a small machine-readable receipt containing `ok`, `source_revision`, `artifact_count`, and `manifest_sha256`. Deterministic failures return exit code `2` with a stable `error` and an operator-oriented `action`; local filesystem paths and raw filesystem exception text are not emitted.
+Success prints a small machine-readable receipt containing `ok`, `source_revision`, `artifact_count`, and `manifest_sha256`. Deterministic failures return exit code `2` with a stable `error` and an operator-oriented `action`; local filesystem paths and raw filesystem exception text are not emitted. An `artifact_changed_during_read` result directs the operator to rebuild the release artifacts rather than retrying against a potentially replaced pathname.
 
 ## Threat and failure notes
 
 - **Artifact replacement after build:** digest verification fails.
+- **Artifact pathname replacement during verification:** the verifier hashes the opened handle, compares its identity with the live pathname after open and again after hashing, and fails closed with `artifact_changed_during_read` if the pathname no longer resolves to that same file.
+- **Manifest pathname replacement during verification:** manifest JSON is read from the opened handle, and pathname identity is checked after open and after read; replacement fails closed as `manifest_file_invalid`.
 - **Source/artifact mix-up:** exact source-revision comparison fails.
 - **Manifest field tampering:** the manifest self-digest fails unless the attacker can also replace the entire unsigned manifest; signed provenance remains the authority for authenticity.
-- **Symlink substitution:** direct symlink inputs are rejected, and the hashing boundary compares file identity/metadata before and after the read to detect mutation during hashing.
+- **Symlink substitution:** direct symlink inputs are rejected with `O_NOFOLLOW` where the platform exposes it, in addition to file-type and identity checks.
 - **Missing/extra artifacts:** verification requires an identical named artifact set.
 - **Runner-path disclosure:** only logical artifact names are serialized; error envelopes use stable codes rather than raw filesystem messages.
 - **Maliciously large manifest input:** verify-mode manifest JSON is bounded to 1 MiB before parsing.
 
 ## Verification evidence required for PR #616
 
-The repository regression must preserve a real RED→GREEN history:
+The repository regression history now includes multiple real RED→GREEN stages rather than relying on assertion-only success:
 
-- RED: the registered unit job fails while the production manifest module is absent;
-- GREEN: the same registered unit job passes on the implementation head;
-- realistic tests cover deterministic ordering, tampering, source mismatch, symlink rejection, duplicate/traversal-style names, CLI generate/verify, path non-disclosure, and malformed manifest JSON;
-- the production module remains registered in owned `c8` coverage execution and all public exports retain beginner-readable JSDoc; and
-- exact-current-head repository, security, dependency/supply-chain, browser, review, and live-governance evidence is re-fetched before integration.
+- the initial contract was introduced RED before the production module existed and then implemented;
+- predecessor RED `ec720063c5bf540671e3969289295e87e8ba0a19` demonstrated that manifest self-digest verification depended on nested artifact-object key insertion order; its production fix canonicalized the digest payload;
+- predecessor RED `d3018a44d55a8ce6fadda67a6b53315ab289904a` registered the artifact-path replacement regression in normal unit/coverage execution and failed Server Tests run `33072327214`, `unit-and-api` job `98517475339`, because the artifact-open seam was not invoked (`0 !== 1`);
+- production repair `ea9472e90bdb9de1365f69e385aeb98bdedb0178` wires the artifact-open seam through verification, checks live pathname identity around the opened handle, and maps a detected replacement to `rebuild_release_artifacts`; and
+- hosted Server Tests run `33073885033`, `unit-and-api` job `98522928574`, is GREEN and explicitly records `release artifact pathname replacement regression passed`; cloud E2E, Fuzz, Dependency Review, OSV, Security Scan, and SAST are also run-level GREEN on the same pull-request event.
+
+That hosted GREEN is **behavioral evidence, not exact-head merge authority**: Server Tests checked out synthetic merge `623d5765181ae52d133313f4bf942141932aad9d`, not immutable contributor head `ea9472e90bdb9de1365f69e385aeb98bdedb0178`. PR #523 owns the ScopeWeave exact-head Server Tests/100%-owned-coverage control and `ContextualWisdomLab/.github#1222` owns the reusable central SAST/Security exact-head defect. PR #616 must remain Draft until those controls protect and regenerate authoritative evidence on one unchanged exact contributor head, all public exports retain beginner-readable JSDoc, valid current-head review findings are zero, and the live independent-approval requirement is satisfied.
 
 ## References (APA 7th)
 
