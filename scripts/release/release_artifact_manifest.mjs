@@ -143,7 +143,8 @@ async function openRegularFile(path, options = {}) {
   }
 }
 
-async function hashArtifactFile(path) {
+async function hashArtifactFile(path, options = {}) {
+  const { afterOpen } = options;
   const { handle, opened } = await openRegularFile(path);
   const maxSafe = BigInt(Number.MAX_SAFE_INTEGER);
   if (opened.size > maxSafe) {
@@ -153,12 +154,26 @@ async function hashArtifactFile(path) {
 
   const digest = createHash('sha256');
   try {
+    if (afterOpen !== undefined) {
+      if (typeof afterOpen !== 'function') fail('artifact_changed_during_read');
+      try {
+        await afterOpen();
+      } catch {
+        fail('artifact_changed_during_read');
+      }
+    }
+
+    const pathAfterOpen = await statWithoutPathDisclosure(path, 'artifact_changed_during_read');
+    if (!stableStatMatches(opened, pathAfterOpen)) fail('artifact_changed_during_read');
+
     const stream = handle.createReadStream({ autoClose: false });
     for await (const chunk of stream) {
       digest.update(chunk);
     }
     const after = await handle.stat({ bigint: true });
     if (!stableStatMatches(opened, after)) fail('artifact_changed_during_read');
+    const pathAfterRead = await statWithoutPathDisclosure(path, 'artifact_changed_during_read');
+    if (!stableStatMatches(after, pathAfterRead)) fail('artifact_changed_during_read');
     return {
       byte_length: Number(after.size),
       digest: { sha256: digest.digest('hex') },
@@ -270,11 +285,12 @@ export async function buildReleaseArtifactManifest({ sourceRevision, artifacts }
 /**
  * Verify a manifest, its exact source revision, and the current bytes of every declared artifact.
  * Verification fails closed when the manifest set and supplied artifact set are not identical.
+ * `afterArtifactOpen` is an optional deterministic test seam invoked after each artifact is opened.
  *
- * @param {{manifest: object, sourceRevision: string, artifacts: Array<{name: string, path: string}>}} input Verification inputs.
+ * @param {{manifest: object, sourceRevision: string, artifacts: Array<{name: string, path: string}>, afterArtifactOpen?: Function}} input Verification inputs.
  * @returns {Promise<{ok: true, source_revision: string, artifact_count: number, manifest_sha256: string}>} Stable verification receipt.
  */
-export async function verifyReleaseArtifactManifest({ manifest, sourceRevision, artifacts }) {
+export async function verifyReleaseArtifactManifest({ manifest, sourceRevision, artifacts, afterArtifactOpen }) {
   const revision = validateSourceRevision(sourceRevision);
   const checkedManifest = validateManifestShape(manifest);
   if (checkedManifest.source_revision !== revision) fail('source_revision_mismatch');
@@ -287,7 +303,7 @@ export async function verifyReleaseArtifactManifest({ manifest, sourceRevision, 
     const input = inputs[index];
     const expected = checkedManifest.artifacts[index];
     if (input.name !== expected.name) fail('artifact_set_mismatch');
-    const actual = await hashArtifactFile(input.path);
+    const actual = await hashArtifactFile(input.path, { afterOpen: afterArtifactOpen });
     if (actual.digest.sha256 !== expected.digest.sha256) fail('artifact_digest_mismatch');
     if (actual.byte_length !== expected.byte_length) fail('artifact_size_mismatch');
   }
@@ -398,7 +414,12 @@ function errorAction(code) {
   if (code === 'manifest_json_invalid' || code === 'manifest_schema_invalid' || code === 'manifest_digest_mismatch') {
     return 'regenerate_release_manifest';
   }
-  if (code === 'artifact_digest_mismatch' || code === 'artifact_size_mismatch' || code === 'source_revision_mismatch') {
+  if (
+    code === 'artifact_changed_during_read'
+    || code === 'artifact_digest_mismatch'
+    || code === 'artifact_size_mismatch'
+    || code === 'source_revision_mismatch'
+  ) {
     return 'rebuild_release_artifacts';
   }
   if (code === 'unexpected_release_manifest_error') return 'inspect_release_manifest_tool';
@@ -408,9 +429,9 @@ function errorAction(code) {
 /**
  * Run the release-manifest operator CLI without leaking local build paths in machine-readable errors.
  * `generate` prints a manifest; `verify` prints a verification receipt. The caller owns redirection/storage.
- * `afterManifestOpen` is an optional deterministic test seam invoked after the manifest file is opened.
+ * `afterManifestOpen` and `afterArtifactOpen` are optional deterministic test seams invoked after opening the corresponding file.
  *
- * @param {{argv?: string[], cwd?: string, stdout?: {write: Function}, stderr?: {write: Function}, afterManifestOpen?: Function}} options Runtime adapters.
+ * @param {{argv?: string[], cwd?: string, stdout?: {write: Function}, stderr?: {write: Function}, afterManifestOpen?: Function, afterArtifactOpen?: Function}} options Runtime adapters.
  * @returns {Promise<number>} Process-style exit code: 0 success, 2 deterministic validation failure.
  */
 export async function runReleaseArtifactManifestCli(options = {}) {
@@ -420,6 +441,7 @@ export async function runReleaseArtifactManifestCli(options = {}) {
     stdout = process.stdout,
     stderr = process.stderr,
     afterManifestOpen,
+    afterArtifactOpen,
   } = options;
 
   try {
@@ -438,6 +460,7 @@ export async function runReleaseArtifactManifestCli(options = {}) {
       manifest,
       sourceRevision: parsed.sourceRevision,
       artifacts: parsed.artifacts,
+      afterArtifactOpen,
     });
     stdout.write(`${JSON.stringify(verification)}\n`);
     return 0;
