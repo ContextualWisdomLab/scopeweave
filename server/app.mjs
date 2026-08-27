@@ -89,6 +89,35 @@ const metrics = {
   attachmentStatusRefreshDeferred: 0,
 };
 
+function isSafeUrl(urlString) {
+  try {
+    const u = new URL(urlString);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    const h = u.hostname.toLowerCase();
+
+    // Explicitly block local/private domains and IPs
+    if (h === 'localhost' || h === '0.0.0.0' || h === '[::1]' || h === '[::]') return false;
+
+    // Block IPv4 loopback and private networks
+    if (h.startsWith('127.') ||
+        h.startsWith('169.254.') ||
+        h.startsWith('10.') ||
+        h.match(/^172\.(1[6-9]|2[0-9]|3[0-1])\./) ||
+        h.startsWith('192.168.')) {
+      return false;
+    }
+
+    // Block IPv6 mapped formats
+    if (h.includes('7f00:1') || h.includes('::ffff:127.')) {
+      return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Outbound webhooks: POST signed JSON to each active hook subscribed to `event`.
 // Fire-and-forget with a timeout, one retry on failure, and a recorded outcome
 // per attempt — never blocks or fails the triggering request.
@@ -748,6 +777,7 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
   if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  if (!isSafeUrl(url)) return c.json({ error: 'unsafe webhook url' }, 400);
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
