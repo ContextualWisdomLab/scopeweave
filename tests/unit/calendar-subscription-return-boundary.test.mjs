@@ -25,7 +25,7 @@ const baseRecord = {
   revoked_at_ms: null,
 };
 
-function service(repositoryOverrides) {
+function service(repositoryOverrides, auditSink = { record: async () => {} }) {
   return createCalendarSubscriptionService({
     repository: {
       insertSubscription: async () => {},
@@ -38,7 +38,7 @@ function service(repositoryOverrides) {
     },
     clock: { nowMs: () => NOW },
     randomSource: { randomBytes: (size) => new Uint8Array(size).fill(9) },
-    auditSink: { record: async () => {} },
+    auditSink,
     projectAuthorization: { assertCanManage: async () => {} },
     membershipRevocation: { assertActive: async () => 'membership-v1' },
   });
@@ -112,6 +112,36 @@ for (const returned of [
     'calendar_subscription_not_found',
     404,
   );
+}
+
+const revokedRecord = {
+  ...baseRecord,
+  revoked_at_ms: NOW,
+  revocation_applied: true,
+};
+
+for (const returned of [
+  'not-a-record',
+  [],
+  { ...revokedRecord, subscription_id: 'csub_other' },
+  { ...revokedRecord, subject_id: 'user-2' },
+  { ...revokedRecord, project_id: 'project-2' },
+  { ...revokedRecord, purpose: 'session' },
+  { ...revokedRecord, audience: 'scopeweave:other' },
+  { ...baseRecord, revocation_applied: true },
+  { ...revokedRecord, revocation_applied: 'yes' },
+]) {
+  const audits = [];
+  const candidate = service(
+    { revokeSubscriptionAtomically: async () => returned },
+    { record: async (event) => { audits.push(event); } },
+  );
+  await expectDomainError(
+    candidate.revoke({ subjectId: 'user-1', projectId: 'project-1', subscriptionId: 'csub_123' }),
+    'calendar_subscription_not_found',
+    404,
+  );
+  assert.deepEqual(audits, [], 'untrusted revoke rows must not produce audit evidence');
 }
 
 console.log('calendar subscription atomic return boundary tests passed');
