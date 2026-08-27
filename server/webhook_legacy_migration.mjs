@@ -15,6 +15,21 @@ function isCurrentDestinationAllowed(url, allowDevelopmentLoopback) {
   }
 }
 
+function activeWebhookDestinations(database) {
+  return database.prepare(
+    `SELECT id, org_id AS orgId, url
+       FROM webhooks
+      WHERE active = 1
+      ORDER BY id`,
+  ).all();
+}
+
+function hasPolicyIncompatibleDestination(candidates, allowDevelopmentLoopback) {
+  return candidates.some(
+    (candidate) => !isCurrentDestinationAllowed(candidate.url, allowDevelopmentLoopback),
+  );
+}
+
 /**
  * Disable active legacy webhook destinations rejected by current registration policy.
  *
@@ -28,6 +43,11 @@ function isCurrentDestinationAllowed(url, allowDevelopmentLoopback) {
  * preserves only destinations that the same current development registration
  * policy still permits, including loopback HTTP.
  *
+ * A read-only preflight avoids reserving the SQLite writer when every active row
+ * already satisfies current policy. If a write is required, the migration acquires
+ * `BEGIN IMMEDIATE` and re-reads the active rows inside that transaction before any
+ * mutation, preserving the existing atomic fail-closed migration boundary.
+ *
  * DNS-backed hostnames remain subject to per-attempt address authorization at
  * delivery time; this startup migration deliberately does not perform network I/O.
  *
@@ -39,14 +59,14 @@ export function migrateLegacyWebhookDestinations(
   database,
   { allowDevelopmentLoopback = false } = {},
 ) {
+  const preflightCandidates = activeWebhookDestinations(database);
+  if (!hasPolicyIncompatibleDestination(preflightCandidates, allowDevelopmentLoopback)) {
+    return 0;
+  }
+
   database.exec('BEGIN IMMEDIATE');
   try {
-    const candidates = database.prepare(
-      `SELECT id, org_id AS orgId, url
-         FROM webhooks
-        WHERE active = 1
-        ORDER BY id`,
-    ).all();
+    const candidates = activeWebhookDestinations(database);
     const disable = database.prepare(
       'UPDATE webhooks SET active = 0 WHERE id = ? AND org_id = ? AND active = 1',
     );
