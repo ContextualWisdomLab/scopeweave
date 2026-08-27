@@ -1408,3 +1408,18 @@ app.get('*', async (c) => {
     return c.notFound();
   }
 });
+
+/**
+ * Publish one committed project-version change to realtime collaborators and
+ * configured project.update webhooks. Call this only after durable state has
+ * committed so observers can never receive a version that later rolls back.
+ */
+export function publishProjectUpdate({ organizationId, projectId, version, taskCount, actorId }) {
+  deliver(organizationId, 'project.update', {
+    projectId: Number(projectId),
+    version,
+    tasks: taskCount,
+    by: actorId,
+  });
+  broadcast(projectId, { type: 'update', version, by: actorId });
+}
