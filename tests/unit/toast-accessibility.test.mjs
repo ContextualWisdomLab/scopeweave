@@ -2,6 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
+process.env.SCOPEWEAVE_DB = ':memory:';
+process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
+
 const indexHtml = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
 const toastStateCss = readFileSync(new URL('../../toast-state.css', import.meta.url), 'utf8');
 const cloudSyncJs = readFileSync(new URL('../../cloud-sync.js', import.meta.url), 'utf8');
@@ -34,12 +37,31 @@ test('sync status uses the same explicit advisory status semantics', () => {
   assert.doesNotMatch(syncStatus, /\btabindex\s*=/i, 'sync feedback does not become a synthetic keyboard stop');
 });
 
-test('cloud toast stylesheet is on every production serve path', () => {
-  const serverApp = readFileSync(new URL('../../server/app.mjs', import.meta.url), 'utf8');
+test('cloud toast stylesheet is on every production serve path', async () => {
+  const serverFacade = readFileSync(new URL('../../server/app.mjs', import.meta.url), 'utf8');
+  const serverCore = readFileSync(new URL('../../server/app_core.mjs', import.meta.url), 'utf8');
   const pagesWorkflow = readFileSync(new URL('../../.github/workflows/pages.yml', import.meta.url), 'utf8');
   const staticDockerfile = readFileSync(new URL('../../Dockerfile', import.meta.url), 'utf8');
   const serverDockerfile = readFileSync(new URL('../../Dockerfile.server', import.meta.url), 'utf8');
-  assert.match(serverApp, /['"]\/toast-state\.css['"]/, 'SaaS allowlist serves the cloud toast stylesheet');
+  assert.match(
+    serverFacade,
+    /import\s+\{[^}]*\bapp\s+as\s+coreApp\b[^}]*\}\s+from\s+['"]\.\/app_core\.mjs['"]/,
+    'SaaS security facade delegates to the route graph that owns static assets',
+  );
+  const { app } = await import('../../server/app.mjs');
+  const stylesheetResponse = await app.request('/toast-state.css');
+  assert.equal(stylesheetResponse.status, 200, 'SaaS security facade serves the toast stylesheet');
+  assert.match(
+    stylesheetResponse.headers.get('content-type') || '',
+    /^text\/css\b/i,
+    'SaaS security facade preserves the stylesheet media type',
+  );
+  assert.equal(
+    await stylesheetResponse.text(),
+    toastStateCss,
+    'SaaS security facade preserves the exact core static-asset response',
+  );
+  assert.match(serverCore, /['"]\/toast-state\.css['"]/, 'SaaS allowlist serves the cloud toast stylesheet');
   assert.match(pagesWorkflow, /\btoast-state\.css\b/, 'GitHub Pages stages the cloud toast stylesheet');
   assert.match(staticDockerfile, /\btoast-state\.css\b/, 'static image copies the cloud toast stylesheet');
   assert.match(serverDockerfile, /\btoast-state\.css\b/, 'SaaS image copies the cloud toast stylesheet');

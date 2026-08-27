@@ -4,10 +4,13 @@
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { migrateLegacyWebhookDestinations } from './webhook_legacy_migration.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.SCOPEWEAVE_DB || join(__dirname, '..', 'data.db');
 export const db = new DatabaseSync(dbPath);
+// Wait briefly for an existing SQLite writer instead of failing startup on a transient lock.
+db.exec("PRAGMA busy_timeout = 5000");
 db.exec("PRAGMA journal_mode = WAL");
 db.exec("PRAGMA foreign_keys = ON");
 
@@ -64,6 +67,7 @@ CREATE TABLE IF NOT EXISTS webhooks (
   secret TEXT NOT NULL,
   events TEXT NOT NULL DEFAULT '*',
   active INTEGER NOT NULL DEFAULT 1,
+  blocked_reason TEXT,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_webhooks_org ON webhooks(org_id);
@@ -172,10 +176,19 @@ CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(org_id);
 CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);
 `);
 
-// Migration for pre-existing DBs: add token_version if missing (idempotent).
+// Migrations for pre-existing DBs. These ALTERs are intentionally idempotent.
 try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
 try { db.exec('ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
 try { db.exec("ALTER TABLE projects ADD COLUMN methodology TEXT NOT NULL DEFAULT 'waterfall'"); } catch { /* already there */ }
+try { db.exec('ALTER TABLE webhooks ADD COLUMN blocked_reason TEXT'); } catch { /* already there */ }
+
+// Reconcile active historical webhook rows against the current deterministic
+// registration policy. The helper performs a read-only preflight, so a compliant
+// database does not reserve SQLite's single writer during ordinary startup. If a
+// row must be disabled, it re-reads under one immediate transaction, records the
+// tenant-visible reason/next action, and leaves DNS-backed delivery checks to the
+// per-attempt transport boundary.
+migrateLegacyWebhookDestinations(db);
 
 // node:sqlite returns lastInsertRowid as number|bigint; normalize to Number.
 export const rowid = (r) => Number(r.lastInsertRowid);

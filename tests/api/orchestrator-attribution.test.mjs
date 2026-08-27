@@ -8,8 +8,13 @@ process.env.ORCHESTRATOR_TOKEN = 'secret-token';
 process.env.ORCHESTRATOR_MODEL = 'nvidia/nemotron-3-super-120b-a12b';
 
 const providerCalls = [];
-globalThis.fetch = async (url, init) => {
-  providerCalls.push({ url: String(url), init });
+globalThis.fetch = async (input, init) => {
+  const request = new Request(input, init);
+  providerCalls.push({
+    url: request.url,
+    method: request.method,
+    body: request.body ? await request.clone().text() : '',
+  });
   return new Response(JSON.stringify({
     choices: [{ message: { content: 'Grounded production response' } }],
   }), {
@@ -62,7 +67,8 @@ response = await jsonRequest(`/api/projects/${projectId}/ai/brief`, {
 assert.equal(response.status, 200, 'authorized owner receives AI briefing');
 assert.equal(providerCalls.length, 1, 'authorized briefing performs one provider call');
 assert.equal(providerCalls[0].url, 'https://orchestrator.example/v1/chat/completions');
-const providerBody = JSON.parse(providerCalls[0].init.body);
+assert.equal(providerCalls[0].method, 'POST', 'orchestrator transport preserves POST semantics');
+const providerBody = JSON.parse(providerCalls[0].body);
 assert.deepEqual(
   providerBody.attribution,
   { service: 'scopeweave', account: String(owner.orgId) },
