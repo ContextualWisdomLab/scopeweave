@@ -87,6 +87,64 @@ function capabilityProbe(overrides = {}, options = {}) {
   return JSON.parse(child.stdout);
 }
 
+/**
+ * Exercise an already-persisted pending attachment while Clearfolio is unready.
+ *
+ * The child creates the attachment directly in the same in-memory database used
+ * by the app so the view route is tested without ever submitting provider work.
+ * Provider fetch is replaced with a throwing function to prove the readiness
+ * short-circuit happens before artifact transport.
+ *
+ * @returns {{status:number,body:Record<string,unknown>}} View response.
+ */
+function pendingAttachmentViewProbe() {
+  const env = { ...process.env };
+  delete env.SCOPEWEAVE_DEV;
+  delete env.CLEARFOLIO_URL;
+  delete env.CLEARFOLIO_HMAC_SECRET;
+  delete env.CLEARFOLIO_ARTIFACT_ORIGINS;
+  Object.assign(env, {
+    SCOPEWEAVE_DB: ':memory:',
+    SCOPEWEAVE_JWT_SECRET: JWT_SECRET,
+  });
+
+  const script = `
+    globalThis.fetch = async () => { throw new Error('unready view must not call a provider'); };
+    const { app } = await import('./server/app.mjs?pending-view=' + Date.now());
+    const { db } = await import('./server/db.mjs');
+    const email = 'pending-view-' + Date.now() + '@scopeweave.test';
+    const signup = await app.request('/api/auth/signup', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ email, password: 'password123', name: 'Pending View' }),
+    });
+    const token = (await signup.json()).token;
+    const projectResponse = await app.request('/api/projects', {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+      body: JSON.stringify({ name: 'Pending View Project' }),
+    });
+    const projectId = (await projectResponse.json()).id;
+    const userId = db.prepare('SELECT id FROM users WHERE email = ?').get(email).id;
+    const inserted = db.prepare(
+      "INSERT INTO attachments(project_id,name,mime,size,job_id,status,created_by) VALUES(?,?,?,?,?,?,?)",
+    ).run(projectId, 'pending.txt', 'text/plain', 7, 'pending-job', 'PENDING', userId);
+    const attachmentId = Number(inserted.lastInsertRowid);
+    const response = await app.request(
+      '/api/projects/' + projectId + '/attachments/' + attachmentId + '/view',
+      { headers: { authorization: 'Bearer ' + token } },
+    );
+    process.stdout.write(JSON.stringify({ status: response.status, body: await response.json() }));
+  `;
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: process.cwd(),
+    env,
+    encoding: 'utf8',
+  });
+  assert.equal(child.status, 0, child.stderr || child.stdout);
+  return JSON.parse(child.stdout);
+}
+
 function expectLiveHealth(probe) {
   assert.deepEqual(probe.health, { status: 200, body: { ok: true } });
 }
@@ -193,6 +251,19 @@ test('unconfigured production rejects attachment upload before provider traffic'
   expectLiveHealth(probe);
   assert.equal(probe.upload.status, 503);
   assert.deepEqual(probe.upload.body, {
+    error: 'Set CLEARFOLIO_URL and CLEARFOLIO_HMAC_SECRET, or use SCOPEWEAVE_DEV=1 only for local development.',
+    capability: 'clearfolio',
+    ready: false,
+    mode: 'unavailable',
+    reason: 'clearfolio_not_configured',
+    action: 'Set CLEARFOLIO_URL and CLEARFOLIO_HMAC_SECRET, or use SCOPEWEAVE_DEV=1 only for local development.',
+  });
+});
+
+test('unconfigured production rejects pending attachment view with capability remediation', () => {
+  const view = pendingAttachmentViewProbe();
+  assert.equal(view.status, 503);
+  assert.deepEqual(view.body, {
     error: 'Set CLEARFOLIO_URL and CLEARFOLIO_HMAC_SECRET, or use SCOPEWEAVE_DEV=1 only for local development.',
     capability: 'clearfolio',
     ready: false,
