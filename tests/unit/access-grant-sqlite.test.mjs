@@ -199,8 +199,6 @@ test('attachment deletion cascades outstanding grants and schema objects follow 
     [
       'access_grant_audit_delivery_index',
       'access_grant_audit_outbox',
-      'access_grant_subject_resource_index',
-      'access_grant_token_hash_index',
       'access_grants',
     ],
   );
