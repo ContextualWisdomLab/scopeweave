@@ -1,9 +1,12 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { migrateLegacyWebhookDestinations } from '../../server/webhook_legacy_migration.mjs';
 
-function createDatabase() {
-  const database = new DatabaseSync(':memory:');
+function createDatabase(path = ':memory:') {
+  const database = new DatabaseSync(path);
   database.exec(`
     CREATE TABLE webhooks (
       id INTEGER PRIMARY KEY,
@@ -138,5 +141,27 @@ assert.doesNotThrow(
   'rollback releases the write transaction for subsequent startup work',
 );
 rollback.close();
+
+const contentionDirectory = mkdtempSync(join(tmpdir(), 'scopeweave-webhook-migration-'));
+const contentionPath = join(contentionDirectory, 'scopeweave.sqlite');
+const contended = createDatabase(contentionPath);
+const writer = new DatabaseSync(contentionPath);
+try {
+  contended.exec(`
+    PRAGMA busy_timeout = 0;
+    INSERT INTO webhooks(id,org_id,url,active)
+    VALUES(30,10,'https://public.example.test/hook',1);
+  `);
+  writer.exec('PRAGMA busy_timeout = 0; BEGIN IMMEDIATE;');
+  assert.doesNotThrow(
+    () => assert.equal(migrateLegacyWebhookDestinations(contended), 0),
+    'a compliant no-op startup migration must not require the database write reservation',
+  );
+} finally {
+  writer.exec('ROLLBACK');
+  writer.close();
+  contended.close();
+  rmSync(contentionDirectory, { recursive: true, force: true });
+}
 
 console.log('legacy webhook migration unit tests passed');
