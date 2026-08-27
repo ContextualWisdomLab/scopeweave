@@ -40,6 +40,11 @@ assert.match(
   'the short-lived access-grant domain is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/calendar_subscription_domain\.mjs/,
+  'the durable calendar-subscription domain is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/access-grant-domain\.test\.mjs/,
   'the access-grant behavior contract executes under c8',
@@ -48,6 +53,21 @@ assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/access-grant-domain-edge\.test\.mjs/,
   'the access-grant edge cases execute under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/calendar-subscription-domain\.test\.mjs/,
+  'the calendar-subscription lifecycle contract executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/calendar-subscription-domain-edge\.test\.mjs/,
+  'the calendar-subscription failure boundaries execute under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/calendar-subscription-return-boundary\.test\.mjs/,
+  'the calendar-subscription atomic-return trust-boundary regression executes under c8',
 );
 assert.match(
   scripts['test:coverage:cases'],
