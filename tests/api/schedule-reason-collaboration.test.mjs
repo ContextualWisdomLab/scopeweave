@@ -88,6 +88,16 @@ assert.equal(response.status, 201);
 const reason = await response.json();
 assert.equal(reason.projectVersion, 3);
 
+response = await request(`/api/projects/${project.id}/revisions/3`, { headers: ownerAuth });
+assert.equal(
+  response.status,
+  200,
+  'a committed schedule reason version must remain fetchable in the project revision history',
+);
+const revision = await response.json();
+assert.equal(revision.version, 3);
+assert.deepEqual(revision.tasks, tasks);
+
 const update = await Promise.race([
   streamReader.read(),
   new Promise((_, reject) => setTimeout(
