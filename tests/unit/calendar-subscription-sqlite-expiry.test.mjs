@@ -95,8 +95,12 @@ test('expired calendar subscription cannot be revived by rotation', async () => 
   `).get(created.subscriptionId);
   assert.deepEqual(after, before, 'failed rotation must not revive or mutate expired durable state');
   assert.equal(db.prepare('SELECT COUNT(*) AS count FROM subscription_rotations').get().count, 0);
+  const auditEvents = db
+    .prepare('SELECT event_type FROM calendar_subscription_audit_outbox ORDER BY audit_event_id')
+    .all()
+    .map(({ event_type }) => ({ event_type }));
   assert.deepEqual(
-    db.prepare('SELECT event_type FROM calendar_subscription_audit_outbox ORDER BY audit_event_id').all(),
+    auditEvents,
     [{ event_type: 'created' }],
     'failed rotation must not append durable rotation evidence',
   );
