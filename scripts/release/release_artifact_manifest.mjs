@@ -174,7 +174,11 @@ function payloadForDigest(manifest) {
   return {
     schema_version: manifest.schema_version,
     source_revision: manifest.source_revision,
-    artifacts: manifest.artifacts,
+    artifacts: manifest.artifacts.map((entry) => ({
+      name: entry.name,
+      byte_length: entry.byte_length,
+      digest: { sha256: entry.digest.sha256 },
+    })),
   };
 }
 
@@ -258,7 +262,7 @@ export async function buildReleaseArtifactManifest({ sourceRevision, artifacts }
   };
   return {
     ...payload,
-    manifest_digest: { sha256: digestPayload(payload) },
+    manifest_digest: { sha256: digestPayload(payloadForDigest(payload)) },
   };
 }
 
