@@ -166,6 +166,26 @@ function validateListedSubscription(record, { subjectId, projectId }) {
   return record;
 }
 
+function validateRevokedSubscription(record, {
+  subjectId, projectId, subscriptionId, nowMs,
+}) {
+  if (
+    !record
+    || typeof record !== 'object'
+    || Array.isArray(record)
+    || record.subscription_id !== subscriptionId
+    || record.subject_id !== subjectId
+    || record.project_id !== projectId
+    || (record.purpose ?? CALENDAR_SUBSCRIPTION_PURPOSE) !== CALENDAR_SUBSCRIPTION_PURPOSE
+    || record.audience !== CALENDAR_SUBSCRIPTION_AUDIENCE
+    || (record.revocation_applied !== true && record.revocation_applied !== false)
+    || statusOf(record, nowMs) !== 'revoked'
+  ) {
+    throw notFoundSubscription();
+  }
+  return record;
+}
+
 async function recordAuditBestEffort(auditSink, event) {
   try {
     await auditSink.record(event);
@@ -437,12 +457,19 @@ export function createCalendarSubscriptionService({
     const normalizedSubscriptionId = normalizeSubscriptionId(subscriptionId);
     await assertManage(projectAuthorization, subjectId, projectId);
     const nowMs = readNow(clock);
-    const revoked = await repository.revokeSubscriptionAtomically(normalizedSubscriptionId, {
-      subject_id: subjectId,
-      project_id: projectId,
-      now_ms: nowMs,
-    });
-    if (!revoked) throw notFoundSubscription();
+    const revoked = validateRevokedSubscription(
+      await repository.revokeSubscriptionAtomically(normalizedSubscriptionId, {
+        subject_id: subjectId,
+        project_id: projectId,
+        now_ms: nowMs,
+      }),
+      {
+        subjectId,
+        projectId,
+        subscriptionId: normalizedSubscriptionId,
+        nowMs,
+      },
+    );
     if (revoked.revocation_applied === true) {
       await recordAuditBestEffort(auditSink, {
         event: 'calendar_subscription.revoked',
