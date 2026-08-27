@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdtemp, rename, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -220,6 +220,39 @@ await withTempDir(async (dir) => {
   assert.equal(verification.source_revision, SOURCE_REVISION);
   assert.equal(verification.artifact_count, 1);
 
+  let replacementHookCalls = 0;
+  const replacedManifestOut = captureStream();
+  const replacedManifestErr = captureStream();
+  const replacedManifestCode = await runReleaseArtifactManifestCli({
+    argv: [
+      'verify',
+      '--source-revision',
+      SOURCE_REVISION,
+      '--manifest',
+      manifestPath,
+      '--artifact',
+      `server/scopeweave-server.tar=${artifactPath}`,
+    ],
+    cwd: dir,
+    stdout: replacedManifestOut,
+    stderr: replacedManifestErr,
+    afterManifestOpen: async () => {
+      replacementHookCalls += 1;
+      await rename(manifestPath, `${manifestPath}.opened`);
+      await writeFile(manifestPath, '{"replacement":true}\n');
+    },
+  });
+  assert.equal(replacementHookCalls, 1, 'manifest replacement regression must run after the verified file is opened');
+  assert.equal(replacedManifestCode, 2);
+  assert.equal(replacedManifestOut.value(), '');
+  assert.deepEqual(JSON.parse(replacedManifestErr.value()), {
+    ok: false,
+    error: 'manifest_file_invalid',
+    action: 'fix_release_manifest_input',
+  });
+  assert.ok(!replacedManifestErr.value().includes(dir), 'manifest replacement errors must not disclose build-runner paths');
+
+  await writeFile(manifestPath, `${JSON.stringify(generated)}\n`);
   const malformedOut = captureStream();
   const malformedErr = captureStream();
   const malformedCode = await runReleaseArtifactManifestCli({
