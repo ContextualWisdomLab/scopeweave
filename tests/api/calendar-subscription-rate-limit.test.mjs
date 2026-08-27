@@ -73,4 +73,19 @@ response = await req(`/api/projects/${project.id}/calendar-subscriptions`, {
 });
 assert.equal(response.status, 200, 'a separate client is not locked out by another calendar client');
 
+// Preserve the existing PAT contract while removing the internal /api/me hop.
+response = await req('/api/tokens', {
+  ip: '192.0.2.11',
+  method: 'POST',
+  headers: auth,
+  body: json({ name: 'calendar-runtime-test' }),
+});
+assert.equal(response.status, 200, 'fixture PAT is issued through the core API');
+const { token: personalAccessToken } = await response.json();
+response = await req(`/api/projects/${project.id}/calendar-subscriptions`, {
+  ip: '198.51.100.22',
+  headers: { authorization: `Bearer ${personalAccessToken}` },
+});
+assert.equal(response.status, 200, 'calendar management preserves PAT authentication');
+
 console.log('calendar subscription rate-limit tests passed');
