@@ -267,6 +267,7 @@ export function createSqliteCalendarSubscriptionRepository(database) {
        AND purpose = ?
        AND revoked_at_ms IS NULL
        AND ? >= created_at_ms
+       AND ? < expires_at_ms
        AND ? > ?
        AND EXISTS (
          SELECT 1
@@ -415,6 +416,7 @@ export function createSqliteCalendarSubscriptionRepository(database) {
           binding.subject_id,
           binding.project_id,
           resolveCalendarPurpose(binding.purpose),
+          binding.now_ms,
           binding.now_ms,
           binding.expires_at_ms,
           binding.now_ms,
