@@ -3,7 +3,7 @@
 // are composed here so they can reuse stable domain/persistence adapters.
 import { randomBytes } from 'node:crypto';
 import { bodyLimit } from 'hono/body-limit';
-import { app } from './app_core.mjs';
+import { app, publishProjectUpdate } from './app_core.mjs';
 import { db } from './db.mjs';
 import { hashApiToken, verifyToken } from './auth.mjs';
 import { recordScheduleReasonEvent } from './schedule_reason_event_domain.mjs';
@@ -193,12 +193,20 @@ app.post(
         approvalPort: { verifyCancellationApproval: async () => ({ valid: false }) },
         repositoryPort: createAuthorizedReasonRepository(auth),
       });
+      const committedVersion = project.version + 1;
+      publishProjectUpdate({
+        organizationId: project.org_id,
+        projectId: project.id,
+        version: committedVersion,
+        taskCount: JSON.parse(project.tasks_json).length,
+        actorId: userId,
+      });
       return c.json({
         eventId: result.event.eventId,
         auditRecordId: result.receipt.auditRecordId,
         type: result.event.type,
         workItemId: result.event.workItemId,
-        projectVersion: project.version + 1,
+        projectVersion: committedVersion,
       }, 201, { 'Cache-Control': 'no-store' });
     } catch (error) {
       const message = error instanceof Error ? error.message : '';
