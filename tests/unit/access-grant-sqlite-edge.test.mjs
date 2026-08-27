@@ -97,6 +97,22 @@ test('adapter factories reject missing database capabilities and schema install 
   db.close();
 });
 
+test('access-grant schema avoids redundant write-only indexes', () => {
+  const db = fixture();
+  const indexes = db.prepare("PRAGMA index_list('access_grants')").all();
+  assert.deepEqual(
+    indexes.filter((index) => index.origin === 'c').map((index) => index.name).sort(),
+    [],
+    'access_grants should rely on constraint-owned indexes instead of duplicate or unused explicit indexes',
+  );
+  assert.equal(
+    indexes.some((index) => index.origin === 'u' && index.unique === 1),
+    true,
+    'token_hash UNIQUE must continue to provide SQLite-enforced lookup uniqueness',
+  );
+  db.close();
+});
+
 test('repository returns null for unknown hashes and rejects a mismatched binding without consuming', async () => {
   const db = fixture();
   const repository = createSqliteAccessGrantRepository(db);
