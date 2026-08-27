@@ -40,6 +40,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   revocation evidence, a secret-free audit outbox, restart-survival tests, and
   c8 registration. Protected route and customer UI migration remain later #413
   slices.
+- **Active stacked calendar-runtime child; not yet protected-`develop` truth:**
+  added production composition for calendar subscriptions with authenticated
+  create/list/rotate/revoke management endpoints, one-time `subscription=` feed
+  URLs, project/purpose/audience binding, private no-store/no-referrer ICS
+  responses, mixed-credential rejection, token-version/session-epoch invalidation,
+  durable membership-removal revocation evidence, and exact API/coverage
+  regression registration. The staged legacy `token=` calendar path now passes
+  only through the authoritative database-backed authentication boundary;
+  customer management UI and final legacy query-token retirement remain later
+  issue #413 slices.
 
 ### Security
 
