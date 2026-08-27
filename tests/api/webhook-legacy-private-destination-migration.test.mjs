@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { migrateLegacyWebhookDestinations } from '../../server/webhook_legacy_migration.mjs';
 
 const directory = mkdtempSync(join(tmpdir(), 'scopeweave-webhook-private-migration-'));
 const databasePath = join(directory, 'legacy-private.sqlite');
@@ -117,6 +118,47 @@ try {
 } finally {
   delete process.env.SCOPEWEAVE_DB;
   rmSync(directory, { recursive: true, force: true });
+}
+
+const contentionDirectory = mkdtempSync(
+  join(tmpdir(), 'scopeweave-webhook-private-migration-contention-'),
+);
+const contentionPath = join(contentionDirectory, 'scopeweave.sqlite');
+const contended = new DatabaseSync(contentionPath);
+contended.exec(`
+  PRAGMA busy_timeout = 0;
+  CREATE TABLE webhooks (
+    id INTEGER PRIMARY KEY,
+    org_id INTEGER NOT NULL,
+    url TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
+    blocked_reason TEXT
+  );
+  CREATE TABLE audit_log (
+    id INTEGER PRIMARY KEY,
+    org_id INTEGER NOT NULL,
+    user_id INTEGER,
+    action TEXT NOT NULL,
+    target_type TEXT,
+    target_id TEXT,
+    meta TEXT
+  );
+  INSERT INTO webhooks(id,org_id,url,active,blocked_reason)
+  VALUES(50,11,'https://hooks.example.test/callback',1,NULL);
+`);
+const writer = new DatabaseSync(contentionPath);
+
+try {
+  writer.exec('PRAGMA busy_timeout = 0; BEGIN IMMEDIATE;');
+  assert.doesNotThrow(
+    () => assert.equal(migrateLegacyWebhookDestinations(contended), 0),
+    'a compliant no-op startup migration must not reserve the SQLite writer',
+  );
+} finally {
+  writer.exec('ROLLBACK');
+  writer.close();
+  contended.close();
+  rmSync(contentionDirectory, { recursive: true, force: true });
 }
 
 console.log('legacy private HTTPS webhook migration regression passed');
