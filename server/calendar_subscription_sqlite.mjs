@@ -4,6 +4,7 @@ const ROTATE_SAVEPOINT = 'calendar_subscription_rotate_state';
 const REVOKE_SAVEPOINT = 'calendar_subscription_revoke_state';
 const CALENDAR_AUDIENCE = 'scopeweave:calendar';
 const CALENDAR_PURPOSE = 'calendar_read';
+const DEFAULT_USAGE_EVENT_LIMIT = 256;
 
 function requireDatabase(database) {
   if (!database || typeof database.exec !== 'function' || typeof database.prepare !== 'function') {
@@ -98,10 +99,12 @@ function resolveCalendarPurpose(value) {
  *
  * The authorization relation stores only the currently active SHA-256 secret
  * hash plus the fixed `calendar_read` purpose and the membership/session epoch
- * captured when the credential was issued or rotated. Rotation and usage
- * relations contain lifecycle facts only and never retain plaintext credentials
- * or historical hashes. The audit outbox intentionally has no foreign key to
- * the live subscription so security-event evidence survives resource deletion.
+ * captured when the credential was issued or rotated. Rotation and bounded
+ * usage relations contain lifecycle facts only and never retain plaintext
+ * credentials or historical hashes. The audit outbox intentionally has no
+ * foreign key to the live subscription so lifecycle security-event evidence
+ * survives resource deletion; high-frequency read usage is retained in the
+ * bounded usage relation instead of accumulating durable outbox rows.
  *
  * Call this during database bootstrap with foreign-key enforcement enabled.
  * Request handlers must never perform schema installation.
@@ -179,16 +182,27 @@ export function installCalendarSubscriptionSchema(database) {
  * at the same persistence boundary. Rotation is the only path that can bind the
  * credential to a newly authorized membership epoch.
  *
+ * High-frequency successful reads keep `last_used_at_ms` plus only the most
+ * recent configured usage-event window. A transient `used` outbox insert remains
+ * inside the same savepoint as the usage transition so an outbox write failure
+ * still rolls back authorization evidence, but those read-only outbox rows are
+ * pruned before commit; durable outbox backlog is reserved for lifecycle events.
+ *
  * Management list and revoke queries independently require live project
  * membership, so authorization loss between domain preflight and persistence
  * cannot disclose metadata or mutate state. Rotation replaces the sole current
  * hash; no historical credential hash is copied into history relations.
  *
  * @param {object} database Node SQLite-compatible database handle.
+ * @param {{usageEventLimit?: number}} [options] Bounded per-subscription recent-use retention.
  * @returns {{insertSubscription: Function, listSubscriptions: Function, findSubscriptionByHash: Function, recordUsageAtomically: Function, rotateSubscriptionAtomically: Function, revokeSubscriptionAtomically: Function}} Repository adapter.
  */
-export function createSqliteCalendarSubscriptionRepository(database) {
+export function createSqliteCalendarSubscriptionRepository(database, options = {}) {
   const db = requireDatabase(database);
+  const usageEventLimit = Math.max(
+    1,
+    Math.min(10_000, Math.trunc(Number(options.usageEventLimit) || DEFAULT_USAGE_EVENT_LIMIT)),
+  );
   const liveMembershipVersion = membershipVersionStatement(db);
   const insertSubscription = db.prepare(`
     INSERT INTO calendar_subscriptions(
@@ -302,10 +316,25 @@ export function createSqliteCalendarSubscriptionRepository(database) {
     INSERT INTO subscription_usage_events(subscription_id, used_at_ms)
     VALUES(?,?)
   `);
+  const pruneUsage = db.prepare(`
+    DELETE FROM subscription_usage_events
+     WHERE subscription_id = ?
+       AND usage_event_id NOT IN (
+         SELECT usage_event_id
+           FROM subscription_usage_events
+          WHERE subscription_id = ?
+          ORDER BY usage_event_id DESC
+          LIMIT ?
+       )
+  `);
   const insertAudit = db.prepare(`
     INSERT INTO calendar_subscription_audit_outbox(
       subscription_id, event_type, subject_id, project_id, occurred_at_ms, delivered_at_ms
     ) VALUES(?,?,?,?,?,NULL)
+  `);
+  const pruneUsageAudit = db.prepare(`
+    DELETE FROM calendar_subscription_audit_outbox
+     WHERE subscription_id = ? AND event_type = 'used'
   `);
 
   return Object.freeze({
@@ -381,6 +410,7 @@ export function createSqliteCalendarSubscriptionRepository(database) {
         if (Number(result.changes) !== 1) return null;
         const current = findByHash.get(secretHash);
         insertUsage.run(current.subscription_id, binding.now_ms);
+        pruneUsage.run(current.subscription_id, current.subscription_id, usageEventLimit);
         insertAudit.run(
           current.subscription_id,
           'used',
@@ -388,6 +418,7 @@ export function createSqliteCalendarSubscriptionRepository(database) {
           current.project_id,
           binding.now_ms,
         );
+        pruneUsageAudit.run(current.subscription_id);
         return normalizeSubscriptionRow(current);
       });
     },
