@@ -4,7 +4,7 @@
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { WebhookDestinationError, validateWebhookRegistrationUrl } from './webhook_transport.mjs';
+import { migrateLegacyWebhookDestinations } from './webhook_legacy_migration.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.SCOPEWEAVE_DB || join(__dirname, '..', 'data.db');
@@ -182,92 +182,13 @@ try { db.exec('ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT
 try { db.exec("ALTER TABLE projects ADD COLUMN methodology TEXT NOT NULL DEFAULT 'waterfall'"); } catch { /* already there */ }
 try { db.exec('ALTER TABLE webhooks ADD COLUMN blocked_reason TEXT'); } catch { /* already there */ }
 
-// Historical versions accepted http:// webhook destinations. Once outbound
-// delivery requires public HTTPS, fail those rows closed exactly once instead
-// of retrying a destination that policy will always reject. The audit record is
-// durable buyer-facing evidence and contains no webhook secret.
-try {
-  db.exec('BEGIN IMMEDIATE');
-  db.exec(`
-    INSERT INTO audit_log(org_id, user_id, action, target_type, target_id, meta)
-    SELECT
-      w.org_id,
-      NULL,
-      'webhook.security_block',
-      'webhook',
-      CAST(w.id AS TEXT),
-      '{"reason":"insecure_scheme","nextAction":"register_public_https_replacement"}'
-    FROM webhooks w
-    WHERE lower(w.url) LIKE 'http://%'
-      AND NOT EXISTS (
-        SELECT 1
-        FROM audit_log a
-        WHERE a.org_id = w.org_id
-          AND a.action = 'webhook.security_block'
-          AND a.target_type = 'webhook'
-          AND a.target_id = CAST(w.id AS TEXT)
-      );
-
-    UPDATE webhooks
-    SET active = 0,
-        blocked_reason = 'insecure_scheme'
-    WHERE lower(url) LIKE 'http://%';
-  `);
-  db.exec('COMMIT');
-} catch (error) {
-  try { db.exec('ROLLBACK'); } catch { /* transaction did not begin */ }
-  throw error;
-}
-
-// Some historical HTTPS rows can also violate the current registration policy,
-// such as loopback/private IP literals or localhost-style names. Apply only the
-// deterministic, DNS-free portion of the live policy here: startup must not
-// permanently disable a public hostname because of a transient resolver state.
-try {
-  db.exec('BEGIN IMMEDIATE');
-  const legacyCandidates = db.prepare(`
-    SELECT id, org_id AS orgId, url
-    FROM webhooks
-    WHERE active != 0
-  `).all();
-  const insertSecurityBlock = db.prepare(`
-    INSERT INTO audit_log(org_id, user_id, action, target_type, target_id, meta)
-    SELECT ?, NULL, 'webhook.security_block', 'webhook', ?, ?
-    WHERE NOT EXISTS (
-      SELECT 1
-      FROM audit_log
-      WHERE org_id = ?
-        AND action = 'webhook.security_block'
-        AND target_type = 'webhook'
-        AND target_id = ?
-    )
-  `);
-  const disableWebhook = db.prepare(`
-    UPDATE webhooks
-    SET active = 0,
-        blocked_reason = 'destination_policy'
-    WHERE id = ? AND active != 0
-  `);
-
-  for (const row of legacyCandidates) {
-    try {
-      validateWebhookRegistrationUrl(row.url);
-    } catch (error) {
-      if (!(error instanceof WebhookDestinationError)) throw error;
-      const targetId = String(row.id);
-      const meta = JSON.stringify({
-        reason: 'destination_policy',
-        nextAction: 'register_public_https_replacement',
-      });
-      insertSecurityBlock.run(row.orgId, targetId, meta, row.orgId, targetId);
-      disableWebhook.run(row.id);
-    }
-  }
-  db.exec('COMMIT');
-} catch (error) {
-  try { db.exec('ROLLBACK'); } catch { /* transaction did not begin */ }
-  throw error;
-}
+// Reconcile active historical webhook rows against the current deterministic
+// registration policy. The helper performs a read-only preflight, so a compliant
+// database does not reserve SQLite's single writer during ordinary startup. If a
+// row must be disabled, it re-reads under one immediate transaction, records the
+// tenant-visible reason/next action, and leaves DNS-backed delivery checks to the
+// per-attempt transport boundary.
+migrateLegacyWebhookDestinations(db);
 
 // node:sqlite returns lastInsertRowid as number|bigint; normalize to Number.
 export const rowid = (r) => Number(r.lastInsertRowid);
