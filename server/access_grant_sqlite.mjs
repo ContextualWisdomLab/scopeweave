@@ -77,10 +77,6 @@ export function installAccessGrantSchema(database) {
       CHECK(used_at_ms IS NULL OR used_at_ms >= issued_at_ms),
       CHECK(revoked_at_ms IS NULL OR revoked_at_ms >= issued_at_ms)
     );
-    CREATE INDEX IF NOT EXISTS access_grant_token_hash_index
-      ON access_grants(token_hash);
-    CREATE INDEX IF NOT EXISTS access_grant_subject_resource_index
-      ON access_grants(subject_id, project_id, purpose, attachment_id);
 
     CREATE TABLE IF NOT EXISTS access_grant_audit_outbox (
       event_id INTEGER PRIMARY KEY,
