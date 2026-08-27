@@ -477,3 +477,59 @@ export function createSqliteCalendarSubscriptionRepository(database) {
     },
   });
 }
+
+/**
+ * Create project-management authorization for calendar subscription lifecycle.
+ *
+ * The same nondisclosing absence error is used for an unknown project and for a
+ * project outside the subject's organization. HTTP adapters can therefore map
+ * the domain's management failure without revealing tenant existence.
+ *
+ * @param {object} database Node SQLite-compatible database handle.
+ * @returns {{assertCanManage: Function}} Authorization port.
+ */
+export function createSqliteCalendarSubscriptionAuthorizationPort(database) {
+  const db = requireDatabase(database);
+  const projectAccess = db.prepare(`
+    SELECT p.id
+      FROM projects p
+      JOIN memberships m ON m.org_id = p.org_id
+     WHERE p.id = ? AND m.user_id = ?
+  `);
+
+  return Object.freeze({
+    /** Verify that the subject currently belongs to the project's organization. */
+    async assertCanManage({ subjectId, projectId }) {
+      if (!projectAccess.get(projectId, subjectId)) {
+        throw new Error('calendar_subscription_resource_unavailable');
+      }
+    },
+  });
+}
+
+/**
+ * Create the live membership-version port used before calendar credential use.
+ *
+ * The opaque version combines membership-row identity with the user's session
+ * token version. Removing/re-adding membership changes the first component;
+ * logout-all or password/session invalidation changes the second. Repository
+ * transitions compare this live value in their own savepoint before committing.
+ *
+ * @param {object} database Node SQLite-compatible database handle.
+ * @returns {{assertActive: Function}} Membership revocation/version port.
+ */
+export function createSqliteCalendarSubscriptionMembershipPort(database) {
+  const db = requireDatabase(database);
+  const activeMembership = membershipVersionStatement(db);
+
+  return Object.freeze({
+    /** Return the current opaque membership/session version for one project. */
+    async assertActive({ subjectId, projectId }) {
+      const row = activeMembership.get(projectId, subjectId);
+      if (!row?.membership_version) {
+        throw new Error('calendar_subscription_membership_inactive');
+      }
+      return String(row.membership_version);
+    },
+  });
+}
