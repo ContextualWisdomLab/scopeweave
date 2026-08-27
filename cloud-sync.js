@@ -1228,11 +1228,6 @@ async function openAttachmentsModal() {
   list.className = 'team-list';
   panel.appendChild(list);
 
-  const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
-    return t ? (t.name || t.task || id) : id;
-  };
-
   async function refresh() {
     list.textContent = '';
     const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
@@ -1243,6 +1238,11 @@ async function openAttachmentsModal() {
       list.appendChild(li);
       return;
     }
+
+    // ⚡ Bolt: Cache task IDs to names for O(1) lookups instead of O(N) array scans inside the loop
+    const taskMap = new Map((host?.getState?.()?.tasks || []).map(t => [t.id, t.name || t.task || t.id]));
+    const taskName = (id) => taskMap.get(id) || id;
+
     for (const a of data.attachments) {
       const li = document.createElement('li');
       const who = document.createElement('span');
@@ -1365,11 +1365,6 @@ async function openCommentsModal() {
   form.append(input, send);
   panel.appendChild(form);
 
-  const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
-    return t ? (t.name || t.task || id) : id;
-  };
-
   async function refresh() {
     list.textContent = '';
     const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
@@ -1380,6 +1375,11 @@ async function openCommentsModal() {
       list.appendChild(li);
       return;
     }
+
+    // ⚡ Bolt: Cache task IDs to names for O(1) lookups instead of O(N) array scans inside the loop
+    const taskMap = new Map((host?.getState?.()?.tasks || []).map(t => [t.id, t.name || t.task || t.id]));
+    const taskName = (id) => taskMap.get(id) || id;
+
     for (const cm of data.comments) {
       const li = document.createElement('li');
       const who = document.createElement('span');
