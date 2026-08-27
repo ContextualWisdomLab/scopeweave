@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { bodyLimit } from 'hono/body-limit';
 import { randomBytes } from 'node:crypto';
 import { app as coreApp } from './app.mjs';
+import { hashApiToken, verifyToken } from './auth.mjs';
 import { db } from './db.mjs';
 import {
   CalendarSubscriptionError,
@@ -16,10 +17,13 @@ const MANAGER_ROLES = new Set(['owner', 'admin']);
 const CALENDAR_QUERY_PARAMETER = 'subscription';
 const CALENDAR_CONTENT_LINE_MAX_OCTETS = 75;
 const CALENDAR_MANAGEMENT_BODY_MAX_BYTES = 4 * 1024;
+const RUNTIME_RATE_LIMIT_MAX = Number(process.env.SCOPEWEAVE_RATE_LIMIT_MAX) || 0;
+const RUNTIME_RATE_LIMIT_WINDOW_MS = Number(process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS) || 60000;
 const PRIVATE_NO_STORE_HEADERS = Object.freeze({
   'Cache-Control': 'private, no-store',
   'Referrer-Policy': 'no-referrer',
 });
+const runtimeRateLimitBuckets = new Map();
 
 installCalendarSubscriptionSchema(db);
 db.exec(`
@@ -118,12 +122,63 @@ const calendarManagementBodyLimit = bodyLimit({
   ),
 });
 
+/**
+ * Apply the same configured per-client abuse ceiling to runtime-owned calendar
+ * routes without sending an internal HTTP request through the core limiter.
+ */
+async function calendarRateLimit(c, next) {
+  if (RUNTIME_RATE_LIMIT_MAX <= 0) {
+    await next();
+    return;
+  }
+
+  const key = (c.req.header('x-forwarded-for') || '').split(',')[0].trim() || 'local';
+  const now = Date.now();
+  let bucket = runtimeRateLimitBuckets.get(key);
+  if (!bucket || bucket.resetAt <= now) {
+    bucket = { count: 0, resetAt: now + RUNTIME_RATE_LIMIT_WINDOW_MS };
+    runtimeRateLimitBuckets.set(key, bucket);
+  }
+  bucket.count += 1;
+  if (bucket.count > RUNTIME_RATE_LIMIT_MAX) {
+    const retryAfterSeconds = Math.ceil((bucket.resetAt - now) / 1000);
+    return c.json(
+      { error: 'rate limit exceeded' },
+      429,
+      { 'Retry-After': String(retryAfterSeconds) },
+    );
+  }
+  await next();
+}
+
+/**
+ * Resolve the same bearer-session and PAT identities accepted by the core API
+ * without an internal `/api/me` sub-request that would consume another limiter bucket.
+ */
+function authenticatedPrincipalFromAuthorization(authorization) {
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : '';
+  if (token.startsWith('swk_')) {
+    const row = db.prepare('SELECT * FROM api_tokens WHERE token_hash = ?').get(hashApiToken(token));
+    if (!row) return null;
+    db.prepare("UPDATE api_tokens SET last_used = datetime('now') WHERE id = ?").run(row.id);
+    return { sub: row.user_id, viaPat: true };
+  }
+
+  try {
+    const payload = verifyToken(token);
+    const user = db.prepare('SELECT token_version FROM users WHERE id = ?').get(payload.sub);
+    if (!user || (payload.tv || 0) !== user.token_version) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 async function authenticatedUserFromAuthorization(authorization) {
   if (!authorization) return null;
-  const response = await coreApp.request('/api/me', { headers: { authorization } });
-  if (!response.ok) return null;
-  const payload = await response.json();
-  return payload?.user?.id == null ? null : payload.user;
+  const principal = authenticatedPrincipalFromAuthorization(authorization);
+  if (!principal) return null;
+  return db.prepare('SELECT id,email,name FROM users WHERE id = ?').get(principal.sub) || null;
 }
 
 async function authenticatedUser(c) {
@@ -258,6 +313,7 @@ export const app = new Hono();
 
 app.post(
   '/api/projects/:id/calendar-subscriptions',
+  calendarRateLimit,
   calendarManagementBodyLimit,
   (c) => calendarOperation(c, async (subjectId) => {
     const projectId = c.req.param('id');
@@ -275,15 +331,20 @@ app.post(
   }, 201),
 );
 
-app.get('/api/projects/:id/calendar-subscriptions', (c) => calendarOperation(c, async (subjectId) => ({
-  subscriptions: await calendarSubscriptionService.list({
-    subjectId,
-    projectId: c.req.param('id'),
-  }),
-})));
+app.get(
+  '/api/projects/:id/calendar-subscriptions',
+  calendarRateLimit,
+  (c) => calendarOperation(c, async (subjectId) => ({
+    subscriptions: await calendarSubscriptionService.list({
+      subjectId,
+      projectId: c.req.param('id'),
+    }),
+  })),
+);
 
 app.post(
   '/api/projects/:id/calendar-subscriptions/:subscriptionId/rotate',
+  calendarRateLimit,
   calendarManagementBodyLimit,
   (c) => calendarOperation(c, async (subjectId) => {
     const body = await c.req.json().catch(() => ({}));
@@ -300,15 +361,19 @@ app.post(
   }),
 );
 
-app.delete('/api/projects/:id/calendar-subscriptions/:subscriptionId', (c) => calendarOperation(c, (subjectId) => (
-  calendarSubscriptionService.revoke({
-    subjectId,
-    projectId: c.req.param('id'),
-    subscriptionId: c.req.param('subscriptionId'),
-  })
-)));
+app.delete(
+  '/api/projects/:id/calendar-subscriptions/:subscriptionId',
+  calendarRateLimit,
+  (c) => calendarOperation(c, (subjectId) => (
+    calendarSubscriptionService.revoke({
+      subjectId,
+      projectId: c.req.param('id'),
+      subscriptionId: c.req.param('subscriptionId'),
+    })
+  )),
+);
 
-app.get('/api/projects/:id/calendar.ics', async (c) => {
+app.get('/api/projects/:id/calendar.ics', calendarRateLimit, async (c) => {
   const secret = c.req.query(CALENDAR_QUERY_PARAMETER) || '';
   const queryToken = c.req.query('token') || '';
   const authorization = c.req.header('authorization') || '';
