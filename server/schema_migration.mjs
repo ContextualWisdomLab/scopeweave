@@ -183,6 +183,16 @@ function readApplicationTableNames(database) {
   return objectNames;
 }
 
+function migrationLedgerExists(database) {
+  const statement = database.prepare(
+    "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'schema_migrations' LIMIT 1",
+  );
+  for (const row of statement.iterate()) {
+    if (String(row.name) === 'schema_migrations') return true;
+  }
+  return false;
+}
+
 function validateMigrationLedgerSchema(database) {
   const observedColumns = new Map();
   for (const row of database.prepare('PRAGMA table_info(schema_migrations)').iterate()) {
@@ -321,13 +331,15 @@ export function ensureSchemaMigrationState(database) {
     throw new TypeError('database must provide exec and prepare');
   }
 
-  database.exec(`
-    CREATE TABLE IF NOT EXISTS schema_migrations (
-      migration_key TEXT PRIMARY KEY NOT NULL,
-      state_code TEXT NOT NULL,
-      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
-    )
-  `);
+  if (!migrationLedgerExists(database)) {
+    database.exec(`
+      CREATE TABLE IF NOT EXISTS schema_migrations (
+        migration_key TEXT PRIMARY KEY NOT NULL,
+        state_code TEXT NOT NULL,
+        applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+      )
+    `);
+  }
   validateMigrationLedgerSchema(database);
 
   const state = classifySchemaMigrationState(readApplicationTableNames(database));
