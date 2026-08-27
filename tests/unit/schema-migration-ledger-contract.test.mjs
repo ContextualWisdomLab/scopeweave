@@ -58,3 +58,37 @@ test('migration ledger fails closed when its application timestamp default has d
 
   database.close();
 });
+
+test('established migration ledger startup does not execute redundant ledger DDL', () => {
+  const database = new DatabaseSync(':memory:');
+  createLegacyGeneration(database);
+  database.exec(`
+    CREATE TABLE schema_migrations (
+      migration_key TEXT PRIMARY KEY NOT NULL,
+      state_code TEXT NOT NULL,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO schema_migrations(migration_key, state_code)
+    VALUES ('legacy_schema_v1', 'legacy_ready');
+  `);
+
+  const databaseAdapter = {
+    exec(sql) {
+      if (/CREATE TABLE IF NOT EXISTS schema_migrations/.test(sql)) {
+        throw new Error('established startup must not execute redundant migration-ledger DDL');
+      }
+      return database.exec(sql);
+    },
+    prepare(sql) {
+      return database.prepare(sql);
+    },
+  };
+
+  assert.equal(
+    ensureSchemaMigrationState(databaseAdapter),
+    'legacy_ready',
+    'an already-valid migration ledger must be verified without depending on no-op CREATE locking semantics',
+  );
+
+  database.close();
+});
