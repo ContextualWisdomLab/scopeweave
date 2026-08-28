@@ -8,8 +8,10 @@
 - Recorded the exact #624 squash merge into the #621 feature branch and the subsequent
   #621 exact head `4c8d09d17024202a1f5236ef62b31a8b5d9480c1`, including the CSV search
   reset, sample-onboarding persistence fixes, and debounced search rerender.
-- Recorded #610 OpenCode/Strix gate failures as non-authorizing external evidence,
-  including the missing current-head verdict and provider HTTP 500 report absence.
+- Recorded #610's exact-head review and gate evidence as non-authorizing: the prior
+  cloud E2E failure exposed `??` preserving falsy text metadata in JSON sync, which
+  was fixed in `3bb2bd95905d590fe3d1d0d9a8fc6c6ec133c04a`; its replacement Checks
+  were pending at doctoring time, with approval still absent.
 - Added exact-head evidence for #515, stacked draft #623, and draft security PR #552;
   preserved their review/approval and provider-gate limits instead of treating green
   local or partial hosted results as merge authority.
