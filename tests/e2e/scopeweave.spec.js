@@ -1257,6 +1257,7 @@ test.describe('ScopeWeave Planner', () => {
   });
 
   test('renders empty cells as independent DOM clones', async ({ page }) => {
+    await expect(page.locator('.empty-cell').first()).toBeVisible();
     const result = await page.evaluate(() => {
       const emptyCells = Array.from(document.querySelectorAll('.empty-cell'));
       const [first, second] = emptyCells;
