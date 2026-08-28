@@ -2,6 +2,7 @@ const STORAGE_KEY = 'scopeweave:planner-state:v1';
 const DEFAULT_PROJECT_NAME = 'ScopeWeave Planner';
 const MAX_PROJECT_NAME_LENGTH = 120;
 const MAX_BASE_DATE_LENGTH = 10;
+const TASK_DEPENDENT_ACTIONS_UNAVAILABLE_MESSAGE = '작업이 없어 CSV 내보내기와 간트차트를 사용할 수 없습니다. 최상위 작업을 추가하거나 CSV를 가져오세요.';
 const OWNER_COLORS = [
   '#3f51b5', '#8e24aa', '#d81b60', '#ef6c00', '#6d4c41',
   '#00897b', '#1e88e5', '#3949ab', '#7cb342', '#f4511e',
@@ -22,8 +23,6 @@ const ACTUAL_PROGRESS_OPTIONS = [
   'PM확인(100%)'
 ];
 let actualProgressSelectTemplate = null;
-
-const TASK_DEPENDENT_ACTIONS_UNAVAILABLE_MESSAGE = '작업이 없어 CSV 내보내기와 간트차트를 사용할 수 없습니다. 최상위 작업을 추가하거나 CSV를 가져오세요.';
 
 const ACTUAL_PROGRESS_MAP = Object.assign(Object.create(null), {
   '미착수(0%)': 0,
@@ -227,7 +226,6 @@ const elements = {
   connectJsonSyncButton: document.getElementById('connect-json-sync'),
   syncStatus: document.getElementById('sync-status'),
   toast: document.getElementById('toast'),
-  taskDependentActionsHelp: document.getElementById('task-dependent-actions-help'),
   taskDependentActionsStatus: document.getElementById('task-dependent-actions-status')
 };
 
@@ -307,10 +305,10 @@ function bindHeaderEvents(persistAndRenderMetadata) {
   elements.baseDateInput.addEventListener('blur', persistAndRenderMetadata.flush);
 
   elements.addRootButton.addEventListener('click', () => openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() }));
-  elements.exportCsvButton.addEventListener('click', () => exportCsv());
+  elements.exportCsvButton.addEventListener('click', exportCsv);
   elements.importCsvButton.addEventListener('click', () => elements.csvFileInput.click());
   elements.csvFileInput.addEventListener('change', handleCsvImport);
-  elements.openGanttButton.addEventListener('click', () => openGanttModal());
+  elements.openGanttButton.addEventListener('click', openGanttModal);
   elements.closeGanttButton.addEventListener('click', closeGanttModal);
   elements.ganttModal.addEventListener('click', (event) => {
     if (event.target.dataset.closeModal === 'true') {
@@ -519,12 +517,12 @@ function renderAll() {
   const visibleTasks = getVisibleTasks();
   const rows = [];
 
-  const hasTasks = state.tasks.length > 0;
-  elements.taskDependentActionsHelp.hidden = hasTasks;
+      const hasTasks = state.tasks.length > 0;
   const taskDependentActionsStatus = hasTasks ? '' : TASK_DEPENDENT_ACTIONS_UNAVAILABLE_MESSAGE;
   if (elements.taskDependentActionsStatus.textContent !== taskDependentActionsStatus) {
     elements.taskDependentActionsStatus.textContent = taskDependentActionsStatus;
   }
+
   if (!hasTasks) {
     elements.exportCsvButton.setAttribute('aria-disabled', 'true');
     elements.openGanttButton.setAttribute('aria-disabled', 'true');

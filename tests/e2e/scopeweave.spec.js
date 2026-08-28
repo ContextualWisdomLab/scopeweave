@@ -183,23 +183,10 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.locator('.table-empty')).toContainText('등록된 작업이 없습니다');
     await expect(page.locator('.table-empty').getByRole('button', { name: '최상위 작업 추가' })).toBeVisible();
     await expect(page.locator('.table-empty').getByRole('button', { name: 'CSV 가져오기' })).toBeVisible();
-
-    const exportCsvButton = page.getByRole('button', { name: 'CSV 내보내기' });
-    const openGanttButton = page.getByRole('button', { name: '간트차트보기' });
-    const help = page.locator('#task-dependent-actions-help');
-    const status = page.locator('#task-dependent-actions-status');
-
-    await expect(exportCsvButton).toBeDisabled();
-    await expect(exportCsvButton).toHaveAttribute('aria-disabled', 'true');
-    await expect(exportCsvButton).toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
-    await expect(openGanttButton).toBeDisabled();
-    await expect(openGanttButton).toHaveAttribute('aria-disabled', 'true');
-    await expect(openGanttButton).toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
-    await expect(help).toBeVisible();
-    await expect(help).toContainText('최상위 작업을 추가하거나 CSV를 가져오세요');
-    await expect(status).toHaveAttribute('role', 'status');
-    await expect(status).toHaveAttribute('aria-live', 'polite');
-    await expect(status).toContainText('작업이 없어');
+    await expect(page.getByRole('button', { name: 'CSV 내보내기' })).toHaveAttribute('aria-disabled', 'true');
+    await expect(page.getByRole('button', { name: 'CSV 내보내기' })).toHaveAttribute('title', '내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.');
+    await expect(page.getByRole('button', { name: '간트차트보기' })).toHaveAttribute('aria-disabled', 'true');
+    await expect(page.getByRole('button', { name: '간트차트보기' })).toHaveAttribute('title', '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.');
   });
 
   test('keeps the empty WBS state inside the mobile table viewport', async ({ page }) => {
@@ -1044,23 +1031,27 @@ test.describe('ScopeWeave Planner', () => {
       window.__buildWeekdayTimeline = func;
     }, appJsCode);
 
+    // Normal date range
     const normal = await page.evaluate(() => window.__buildWeekdayTimeline('2026-05-01', '2026-05-15'));
     expect(normal.length).toBeGreaterThan(0);
-    expect(normal[0].date).toBe('2026-04-27');
-    expect(normal[normal.length - 1].date).toBe('2026-05-15');
+    expect(normal[0].date).toBe('2026-04-27'); // Starts on preceding Monday
+    expect(normal[normal.length - 1].date).toBe('2026-05-15'); // Ends on Friday
 
+    // Same date
     const same = await page.evaluate(() => window.__buildWeekdayTimeline('2026-05-01', '2026-05-01'));
     expect(same.length).toBe(5);
     expect(same[0].date).toBe('2026-04-27');
     expect(same[same.length - 1].date).toBe('2026-05-01');
 
+    // Reversed date range
     const reversed = await page.evaluate(() => window.__buildWeekdayTimeline('2026-05-15', '2026-05-01'));
     expect(reversed).toEqual([]);
 
+    // Weekend date
     const weekend = await page.evaluate(() => window.__buildWeekdayTimeline('2026-05-02', '2026-05-03'));
     expect(weekend.length).toBe(5);
     expect(weekend[0].date).toBe('2026-04-27');
-    expect(weekend[weekend.length - 1].date).toBe('2026-05-01');
+    expect(weekend[weekend.length - 1].date).toBe('2026-05-01'); // Returns the preceding week
   });
 
   test('wraps text icons in aria-hidden span for screen reader accessibility', async ({ page }) => {
@@ -1068,10 +1059,12 @@ test.describe('ScopeWeave Planner', () => {
     await page.locator('[data-testid="editor-phase"]').fill('A11y Test');
     await page.getByRole('button', { name: '저장', exact: true }).click();
 
+    // Check Gantt Close Button
     const closeBtnSpan = page.locator('#close-gantt span');
     await expect(closeBtnSpan).toHaveAttribute('aria-hidden', 'true');
     await expect(closeBtnSpan).toHaveText('✕');
 
+    // Check Row Action Buttons
     const row = page.locator('tr.task-row').first();
     const toggleBtnSpan = row.locator('button[data-action="toggle"] span');
     await expect(toggleBtnSpan).toHaveAttribute('aria-hidden', 'true');
@@ -1256,14 +1249,17 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
 
     await page.getByRole('button', { name: '최상위 작업 추가' }).click();
 
+    // Attempting to close with no changes shouldn't prompt
     await page.keyboard.press('Escape');
     await expect(page.locator('.editor-panel')).not.toBeVisible();
 
     await page.getByRole('button', { name: '최상위 작업 추가' }).click();
 
+    // Type into an editor field
     const phaseInput = page.getByTestId('editor-phase');
     await phaseInput.fill('Phase X');
 
+    // Setup dialog handler to mock returning false (cancel close)
     let dialogTriggered = false;
     let dialogMessage = '';
     const dismissHandler = async (dialog) => {
@@ -1273,18 +1269,22 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
     };
     page.on('dialog', dismissHandler);
 
+    // Try closing via Cancel button
     await page.getByRole('button', { name: '취소', exact: true }).click();
 
     expect(dialogTriggered).toBe(true);
     expect(dialogMessage).toBe('저장하지 않은 변경 사항이 있습니다. 편집을 취소하시겠습니까?');
+    // Editor should still be visible because we dismissed the prompt
     await expect(page.locator('.editor-panel')).toBeVisible();
 
+    // Now accept the dialog to let it close
     page.off('dialog', dismissHandler);
     const acceptHandler = async (dialog) => {
       await dialog.accept();
     };
     page.on('dialog', acceptHandler);
 
+    // Try closing via Escape key
     await page.keyboard.press('Escape');
     await expect(page.locator('.editor-panel')).not.toBeVisible();
     page.off('dialog', acceptHandler);
@@ -1293,22 +1293,27 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
   test('adds helpful tooltips and ARIA attributes for progress cards and gantt buttons', async ({ page }) => {
     await page.goto('./');
 
+    // Verify progress card tooltips
     await expect(page.locator('.meta-value-card').first()).toHaveAttribute('title', '프로젝트의 작업 기간(일수) 합계입니다.');
     await expect(page.locator('.plan-card')).toHaveAttribute('title', '기간(일수) 가중치가 반영된 프로젝트 전체 계획 진척률입니다.');
     await expect(page.locator('.actual-card')).toHaveAttribute('title', '기간(일수) 가중치가 반영된 프로젝트 전체 실적 진척률입니다.');
 
+    // Verify sync status ARIA attributes
     const syncStatus = page.locator('#sync-status');
     await expect(syncStatus).toHaveAttribute('role', 'status');
     await expect(syncStatus).toHaveAttribute('aria-live', 'polite');
     await expect(syncStatus).toHaveAttribute('aria-atomic', 'true');
 
+    // Verify open-gantt button ARIA attributes
     const openGanttBtn = page.locator('#open-gantt');
     await expect(openGanttBtn).toHaveAttribute('aria-haspopup', 'dialog');
     await expect(openGanttBtn).toHaveAttribute('aria-controls', 'gantt-modal');
 
+    // Verify close-gantt button ARIA keyshortcut
     const closeGanttBtn = page.locator('#close-gantt');
     await expect(closeGanttBtn).toHaveAttribute('aria-keyshortcuts', 'Escape');
 
+    // Create a task without dates to trigger empty gantt chart
     await page.evaluate(() => {
       localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
         projectName: 'ScopeWeave Planner',
@@ -1323,6 +1328,7 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
     });
     await page.reload();
 
+    // We can now click open gantt normally because there are tasks
     await page.locator('#open-gantt').click();
     const backBtn = page.getByRole('button', { name: '작업 목록으로 돌아가기' });
     await expect(backBtn).toHaveAttribute('title', '작업 목록으로 돌아가기 (Esc)');

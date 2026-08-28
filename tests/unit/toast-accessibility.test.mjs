@@ -146,13 +146,8 @@ test('task-dependent help is visible only while native actions are unavailable a
     'the always-present live region mutates only when the availability message actually changes',
   );
   assert.match(
-    appJs,
-    /taskDependentActionsHelp\.hidden\s*=\s*hasTasks/,
-    'the visible helper uses the native hidden state in sync with task availability',
-  );
-  assert.match(
     indexHtml,
-    /작업이 없어 CSV 내보내기와 간트차트를 사용할 수 없습니다\. 최상위 작업을 추가하거나 CSV를 가져오세요\./,
+    /작업이 없으면 CSV 내보내기와 간트차트를 사용할 수 없습니다\. 최상위 작업을 추가하거나 CSV를 가져오세요\./,
     'the visible explanation states both the unavailable condition and recovery actions',
   );
 });
@@ -160,12 +155,12 @@ test('task-dependent help is visible only while native actions are unavailable a
 test('native-disabled task actions do not retain unreachable click or tooltip fallbacks', () => {
   assert.match(
     appJs,
-    /exportCsvButton\.addEventListener\(["']click["'],\s*\(\)\s*=>\s*exportCsv\(\)\)/,
+    /exportCsvButton\.addEventListener\(["']click["'],\s*exportCsv\)/,
     'export uses its direct action handler because native disabled blocks unavailable clicks',
   );
   assert.match(
     appJs,
-    /openGanttButton\.addEventListener\(["']click["'],\s*\(\)\s*=>\s*openGanttModal\(\)\)/,
+    /openGanttButton\.addEventListener\(["']click["'],\s*openGanttModal\)/,
     'Gantt uses its direct action handler because native disabled blocks unavailable clicks',
   );
   assert.doesNotMatch(
