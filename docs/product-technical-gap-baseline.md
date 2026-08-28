@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `4c8d09d`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `03cdf855`가 #621 `3aaf9b7` 위에 제출됨, `develop` 병합 대기 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 OpenCode current-head check 실패 및 Strix pending; #625는 문서 push 후 replacement Checks queued (이전 OpenCode 실패는 current-head verdict 부재); #629의 최초 cloud-E2E 경쟁 조건은 `03cdf855`에서 보완되어 replacement Checks 통과; 모든 대상에 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 OpenCode current-head check 실패 및 Strix provider HTTP 500/no-report fail-closed; #625는 문서 push 후 replacement Checks queued (이전 OpenCode 실패는 current-head verdict 부재); #629의 최초 cloud-E2E 경쟁 조건은 `03cdf855`에서 보완되어 replacement Checks 통과; 모든 대상에 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -98,8 +98,10 @@ HEAD가 바뀌면 다시 확인해야 한다.
   `3aaf9b72e4b794c78b13b106692d4845243cc87a`. CSV 성공 import 시 stale 검색어를
   초기화하고, 첫 방문 seed 탐색 중 progress/order 변경이 sample을 영속화하지 않으며,
   빠른 검색 입력의 전체 재렌더를 디바운스한다. 현재 부모 기준 local 전체 E2E
-  95개와 unit/API가 통과했다. exact HEAD hosted Checks는 테스트·보안·coverage가
-  통과했지만 OpenCode는 실패, Strix와 Devin은 pending이며 qualifying approval도 없다.
+  95개와 unit/API가 통과했다. exact HEAD hosted 테스트·보안·coverage는 통과했지만
+  OpenCode는 current-head verdict 부재로 실패했고 Strix는 provider HTTP 500과
+  vulnerability report 부재로 fail-closed 되었다. Devin은 통과했지만 qualifying
+  approval은 없다.
 - #629: stacked base `feat/wbs-search-context@3aaf9b72` 대상
   `03cdf855fdf135ac2cd535e8fc76421c7cb32bf8`. 모바일에서 cloud 로그인 영역이
   줄바꿈되고 select가 24px 이상 유지되도록 보완했으며, named controls·landmark·
