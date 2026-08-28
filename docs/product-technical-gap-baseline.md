@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `4c8d09d`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | 미해결 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #610/#601 Strix 실패; #610 OpenCode current verdict 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621/#625 OpenCode current verdict 부재; #621/#552 Strix provider 실패; qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -104,6 +104,15 @@ HEAD가 바뀌면 다시 확인해야 한다.
 - #601: `98f4354733c68c9f361e516f86ba2d95e97af20e`. 날짜 formatter benchmark는
   protected base 대비 46.79% 개선과 checksum `118184592`를 기록했으나 Strix
   provider/backend 실패와 승인 부재로 병합하지 않았다.
+- #515: `develop@2c328875` 대상 `36c11dd0bf907569184d7d73172b675d21bd0ff1`.
+  Phase → Activity → Task → Duty 도메인 검증과 투영은 로컬·hosted 전체 적용
+  테스트를 통과했지만 `REVIEW_REQUIRED`라 병합하지 않았다.
+- #623: stacked base `refactor/schema-migration-ledger-433@9f2e6818` 대상
+  `81072df8f4dd2e2df269710eb7cc852312ff7543`, draft 상태. canonical SQLite
+  rename의 31개 schema/migration 테스트는 통과했지만 독립 병합 근거가 없다.
+- #552: `develop@2c328875` 대상 `92487d1f9e5215cd4b7302275c23393596799ba3`,
+  draft 상태. 일반 hosted 게이트는 통과하고 Strix는 취약점 0건을 출력한 뒤
+  provider 장애와 authoritative report 부재로 fail-closed 되었다.
 - #624: `69eff955bc16295a6d82b72174b25d8ec94345c1`은 base
   `feat/wbs-search-context`에 normal squash merge되어 단일 squash commit
   `5f8a3d7759aef628f4bcf06f3780c53737ca2a53`가 되었다.

@@ -10,5 +10,8 @@
   reset, sample-onboarding persistence fixes, and debounced search rerender.
 - Recorded #610 OpenCode/Strix gate failures as non-authorizing external evidence,
   including the missing current-head verdict and provider HTTP 500 report absence.
+- Added exact-head evidence for #515, stacked draft #623, and draft security PR #552;
+  preserved their review/approval and provider-gate limits instead of treating green
+  local or partial hosted results as merge authority.
 - Research mapping remains anchored to ISO 21502, ISO 21511, ISO 21508, WCAG 2.2,
   NIST SSDF 1.1, and the preserved PM-analysis sources listed in the baseline.
