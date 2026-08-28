@@ -73,6 +73,20 @@ function canonicalExistingFile(path, missingCode, regularCode) {
   return canonical;
 }
 
+function sourceFileIdentity(path) {
+  const info = statSync(path);
+  return { device: info.dev, inode: info.ino };
+}
+
+function assertSourcePathIdentity(path, expectedIdentity) {
+  const currentIdentity = sourceFileIdentity(path);
+  if (
+    currentIdentity.device === expectedIdentity.device
+    && currentIdentity.inode === expectedIdentity.inode
+  ) return;
+  throw fail('source_changed_during_backup');
+}
+
 function canonicalDestination(path) {
   const parent = dirname(path);
   let parentReal;
@@ -236,9 +250,12 @@ function createSecureTemporaryPath(parent) {
  * The destination parent is resolved once to a canonical directory and every
  * later existence check and publish uses that canonical path. A caller-visible
  * parent symlink therefore cannot redirect the verified artifact after
- * validation while SQLite is snapshotting. Publication is a single no-overwrite
- * hard-link operation; if another process wins that destination name, its file
- * is never treated as cleanup owned by this attempt.
+ * validation while SQLite is snapshotting. The source path is likewise pinned
+ * to its initial filesystem device/inode identity and rechecked after snapshot
+ * work and immediately before publication so path replacement fails closed.
+ * Publication is a single no-overwrite hard-link operation; if another process
+ * wins that destination name, its file is never treated as cleanup owned by
+ * this attempt.
  *
  * @param {{sourcePath:string,destinationPath:string,snapshot?:Function}} options
  * Operator inputs plus an injectable snapshot seam for deterministic tests.
@@ -250,9 +267,11 @@ export function createVerifiedSqliteBackup({ sourcePath, destinationPath, snapsh
   if (typeof snapshot !== 'function') throw fail('snapshot_invalid');
 
   let sourceReal;
+  let sourceIdentity;
   let destinationReal;
   try {
     sourceReal = canonicalExistingFile(sourcePath, 'source_not_found', 'source_not_regular_file');
+    sourceIdentity = sourceFileIdentity(sourceReal);
     destinationReal = canonicalDestination(destinationPath);
   } catch (error) {
     if (error instanceof SqliteBackupError) throw error;
@@ -277,12 +296,14 @@ export function createVerifiedSqliteBackup({ sourcePath, destinationPath, snapsh
     const sourceMetadata = inspectOpenSqliteDatabase(database, 'source_database');
 
     snapshot({ database, destinationPath: temporaryPath });
+    assertSourcePathIdentity(sourceReal, sourceIdentity);
     const bytes = statSync(temporaryPath).size;
     assertBackupFileSize(bytes);
     chmodSync(temporaryPath, 0o600);
 
     const backupMetadata = verifySqliteDatabase(temporaryPath);
     assertBackupMetadataMatches(sourceMetadata, backupMetadata);
+    assertSourcePathIdentity(sourceReal, sourceIdentity);
 
     try {
       linkSync(temporaryPath, destinationReal);
