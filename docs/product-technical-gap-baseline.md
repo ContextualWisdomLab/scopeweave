@@ -120,6 +120,14 @@ HEAD가 바뀌면 다시 확인해야 한다.
 - #625: `develop@2c328875` 대상. 직전 docs-only 기준선 제출본
   `15b2cd5674b8f8c7b10c1c0425b6040e1991e2a4`에서 주요 hosted Checks가 재실행
   중이며, qualifying approval은 없다.
+- #616: `develop@2c328875` 대상
+  `b427cd455f41e7c09ae20fbbf400d42c4f61d4bf`. deterministic release-artifact
+  manifest의 regular-file/no-symlink, bounded manifest read, SHA-256 및
+  pathname replacement 경계를 current CodeGraph와 대조했고 full release
+  unit suite가 통과했다. hosted required Checks는 통과했지만 Strix run
+  `33074284775`는 `openrouter/free` invalid-URL 502 뒤 OpenAI fallback 429/no
+  credits로 provider failure가 발생해 authoritative clean evidence가 없고,
+  qualifying approval도 없어 병합하지 않았다.
 - #509: `develop@2c328875` 대상
   `ea9027743ebafd1ca5774a5a14227585cf796052`. summary metric explanation을
   keyboard stop 없이 지속 노출하고 gradient 대비를 보강한 접근성 제출본이다.
