@@ -107,4 +107,4 @@ jobs:
         timeout-minutes: 10
         run: npx playwright install chromium
       - name: Cloud UI e2e
-        run: npm run test:e2e:cloud
+        run: npm run test:e2e
