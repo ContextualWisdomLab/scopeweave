@@ -226,6 +226,7 @@ const elements = {
   connectJsonSyncButton: document.getElementById('connect-json-sync'),
   syncStatus: document.getElementById('sync-status'),
   toast: document.getElementById('toast'),
+  taskDependentActionsHelp: document.getElementById('task-dependent-actions-help'),
   taskDependentActionsStatus: document.getElementById('task-dependent-actions-status')
 };
 
@@ -518,6 +519,7 @@ function renderAll() {
   const rows = [];
 
   const hasTasks = state.tasks.length > 0;
+  elements.taskDependentActionsHelp.hidden = hasTasks;
   const taskDependentActionsStatus = hasTasks ? '' : TASK_DEPENDENT_ACTIONS_UNAVAILABLE_MESSAGE;
   if (elements.taskDependentActionsStatus.textContent !== taskDependentActionsStatus) {
     elements.taskDependentActionsStatus.textContent = taskDependentActionsStatus;
