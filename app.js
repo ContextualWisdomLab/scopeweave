@@ -596,7 +596,7 @@ function renderAll() {
 
   const visibleTasks = getVisibleTasks();
   const rows = [];
-  elements.seedOnboarding.hidden = !state.showSeedOnboarding;
+  elements.seedOnboarding.hidden = !state.showSeedOnboarding || filterActive;
   elements.clearTaskFilterButton.hidden = !filterActive;
   elements.taskFilterStatus.textContent = filterActive
     ? `${visibleTasks.length}개 작업 표시 중 (전체 ${state.tasks.length}개)`

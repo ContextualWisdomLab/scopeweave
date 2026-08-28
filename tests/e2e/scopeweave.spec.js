@@ -131,25 +131,25 @@ test.describe('ScopeWeave Planner', () => {
     const search = page.getByRole('searchbox', { name: 'WBS 작업 검색' });
 
     await expect(rows).toHaveCount(4);
-    await rows.first().locator('button[data-action="toggle"]').click();
-    await expect(rows).toHaveCount(1);
+    await expect(page.locator('#seed-onboarding')).toBeVisible();
     await search.fill('단계작업계획');
 
     await expect(rows).toHaveCount(3);
+    await expect(page.locator('#seed-onboarding')).toBeHidden();
     await expect(rows).toContainText(['P0000.준비단계', '프로젝트준비', '단계작업계획']);
     await expect(rows.filter({ hasText: '사업수행계획' })).toHaveCount(0);
     const contextToggle = rows.first().locator('button[data-action="toggle"]');
     await expect(contextToggle).toBeDisabled();
     await expect(contextToggle).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('#task-filter-status')).toHaveText('3개 작업 표시 중 (전체 4개)');
+    await search.fill('');
+    await expect(page.locator('#seed-onboarding')).toBeVisible();
 
     await search.fill('없는작업');
     await expect(rows).toHaveCount(0);
     await expect(page.locator('.table-empty')).toContainText('검색 결과가 없습니다');
 
     await page.getByRole('button', { name: '검색 지우기' }).click();
-    await expect(rows).toHaveCount(1);
-    await rows.first().locator('button[data-action="toggle"]').click();
     await expect(rows).toHaveCount(4);
   });
 
