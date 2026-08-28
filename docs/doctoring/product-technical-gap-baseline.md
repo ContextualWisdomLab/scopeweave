@@ -15,3 +15,6 @@
   local or partial hosted results as merge authority.
 - Research mapping remains anchored to ISO 21502, ISO 21511, ISO 21508, WCAG 2.2,
   NIST SSDF 1.1, and the preserved PM-analysis sources listed in the baseline.
+- Reconciled newly observed PRs: retained #588 as the single outbound-webhook
+  SSRF lane, recorded #628's accessibility result and pre-existing modulepreload
+  E2E gap, and closed duplicate #626/#627 lanes.
