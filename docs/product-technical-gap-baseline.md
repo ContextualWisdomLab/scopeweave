@@ -186,9 +186,11 @@ HEAD가 바뀌면 다시 확인해야 한다.
   Devin은 결함을 보고하지 않았지만 qualifying approval이 없어 병합하지 않았다.
 - #578: `e9575ee404ae9c725d009833639f12a0d890df9e` (base
   `develop@2c328875`). 첨부·코멘트 모달의 task label lookup을 한 번의 Map
-  구성으로 바꾸고 2,000-task/40-comment 브라우저 회귀를 통과했다. 현재
-  hosted Strix는 provider/backend unavailable로 authoritative report를
-  만들지 못했고 qualifying approval도 없어 병합하지 않았다.
+  구성으로 바꾸고 duplicate/legacy label unit과 2,000-task/40-comment
+  브라우저 회귀(large-array scan 0회)를 통과했다. current-head hosted
+  required Checks는 통과했지만, Strix run `33004555408`은 `orchestrator/free`
+  provider 미설정으로 실패했고 artifact에도 vulnerability report가 없어
+  fail-closed 되었으며 qualifying approval도 없어 병합하지 않았다.
 - #623: stacked base `refactor/schema-migration-ledger-433@9f2e6818` 대상
   `81072df8f4dd2e2df269710eb7cc852312ff7543`, draft 상태. canonical SQLite
   rename의 31개 schema/migration 테스트는 통과했지만 독립 병합 근거가 없다.
