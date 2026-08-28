@@ -16,6 +16,24 @@ test.describe('WBS search interaction safety', () => {
     await expect(rows.nth(2)).toHaveAttribute('draggable', 'false');
   });
 
+  test('coalesces rapid search input before rerendering analytics', async ({ page }) => {
+    await page.evaluate(() => {
+      const analytics = window.ScopeWeaveAnalytics;
+      const render = analytics.render;
+      window.__scopeweaveRenderCount = 0;
+      analytics.render = (...args) => {
+        window.__scopeweaveRenderCount += 1;
+        return render(...args);
+      };
+    });
+
+    const search = page.getByRole('searchbox', { name: 'WBS 작업 검색' });
+    await search.pressSequentially('단계작업계획', { delay: 0 });
+
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(3);
+    expect(await page.evaluate(() => window.__scopeweaveRenderCount)).toBe(1);
+  });
+
   test('blocks hierarchy changes while filtered rows hide context', async ({ page }) => {
     const search = page.getByRole('searchbox', { name: 'WBS 작업 검색' });
     await search.fill('단계작업계획');

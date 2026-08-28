@@ -282,6 +282,7 @@ function bindEvents() {
     persistState();
     renderAll();
   }, 150);
+  const renderTaskFilter = debounce(renderAll, 150);
   const renderDraftValidation = debounce(renderEditorValidation, 150);
   const updateEditorDraftFromEvent = (event) => {
     const field = event.target.dataset.editorField;
@@ -292,13 +293,13 @@ function bindEvents() {
     return true;
   };
 
-  bindHeaderEvents(persistAndRenderMetadata);
+  bindHeaderEvents(persistAndRenderMetadata, renderTaskFilter);
   bindModalEvents();
   bindGlobalEvents();
   bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent);
 }
 
-function bindHeaderEvents(persistAndRenderMetadata) {
+function bindHeaderEvents(persistAndRenderMetadata, renderTaskFilter) {
   elements.projectNameInput.addEventListener('input', (event) => {
     const sanitized = String(event.target.value).slice(0, MAX_PROJECT_NAME_LENGTH);
     if (event.target.value !== sanitized) {
@@ -372,7 +373,7 @@ function bindHeaderEvents(persistAndRenderMetadata) {
       return;
     }
     state.taskQuery = String(event.target.value).slice(0, 120);
-    renderAll();
+    renderTaskFilter();
   });
   elements.clearTaskFilterButton.addEventListener('click', () => {
     state.taskQuery = '';
