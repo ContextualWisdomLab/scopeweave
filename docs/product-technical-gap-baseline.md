@@ -316,6 +316,15 @@ HEAD가 바뀌면 다시 확인해야 한다.
   CodeGraph·resolved 리뷰와 대조했고 domain/edge/coverage contract가
   통과했다. hosted OpenCode·Strix·security·unit/API·cloud E2E Checks는
   통과했지만 `REVIEW_REQUIRED`이고 qualifying approval이 없어 병합하지 않았다.
+- #502: 오래된 stacked base `cursor/bc-d8443854-d031-4b84-b085-56f439fcbf05-df45`
+  `d8c58a8ee160e553e0ab1cacbc2c3b09e503ac89` 대상 `9e465a2cdebc6769717914160f24ecb2b339e163`.
+  Clearfolio capability readiness가 설정만 평가하고 provider transport 없이
+  liveness와 분리되는 경계를 current CodeGraph와 대조했다. readiness focused
+  5개, 전체 unit, fuzz 14개, config 3개, docstring, c8 coverage가 통과했고
+  `server/clearfolio.mjs`는 lines 98.89%, functions 100%, branches 93.68%
+  였다(global coverage 47.21%). exact-head repository Checks는 성공했지만
+  PR은 Draft이며 `CONFLICTING/DIRTY`, reviewDecision null, qualifying approval
+  0개라 병합하지 않았다.
 - #503: `develop@2c328875` 대상
   `abc9639ffd7a6bd835a0f8206854185722d60965`. README·ARCHITECTURE·CLAUDE·
   AGENTS 사이의 canonical runtime authority, live PR ancestry와 protected
