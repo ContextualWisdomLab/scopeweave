@@ -185,6 +185,7 @@ const state = {
   dragElement: null,
   dropTargetElement: null,
   toastTimer: null,
+  ganttPreviousFocus: null,
   previousFocus: null
 };
 
@@ -605,6 +606,7 @@ function createEmptyStateRow() {
 
   const addRootBtn = document.createElement('button');
   addRootBtn.type = 'button';
+  addRootBtn.id = 'empty-state-add-root-task';
   addRootBtn.className = 'primary-button';
   addRootBtn.textContent = '최상위 작업 추가';
   addRootBtn.addEventListener('click', () => {
@@ -627,7 +629,6 @@ function createEmptyStateRow() {
   return row;
 }
 
-// Cache an unattached td shell so hot render loops clone instead of allocate.
 let tableCellTemplate = null;
 function createTableCell(className, content) {
   if (!tableCellTemplate) {
@@ -643,9 +644,6 @@ function createTableCell(className, content) {
   return cell;
 }
 
-// ⚡ Bolt: Cache unattached DOM elements as templates to eliminate repetitive
-// document.createElement() JS-to-C++ allocation overhead during O(N) table rendering loops.
-// Using cloneNode() is measurably faster when creating thousands of rows.
 let taskRowTemplate = null;
 let actionCellTemplate = null;
 let actionStackTemplate = null;
@@ -745,7 +743,6 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
   return row;
 }
 
-// ⚡ Bolt: Cache static DOM structures to avoid JS-to-C++ instantiation overhead in hot rendering paths.
 let dragHandleTemplate = null;
 function getDragHandleTemplate() {
   if (!dragHandleTemplate) {
@@ -829,7 +826,6 @@ function renderEditorRow(anchorId) {
   cancelButton.textContent = '취소';
   cancelButton.title = '취소 (Esc)';
   cancelButton.setAttribute('aria-keyshortcuts', 'Escape');
-  // ⚡ Bolt: Attach listener once during creation to prevent O(N) accumulation in renderEditorValidation
   cancelButton.addEventListener('click', () => closeEditor());
   const errors = document.createElement('div');
   errors.id = 'editor-errors';
@@ -935,10 +931,6 @@ function createTextCellContent(value, warning = '') {
   return wrapper;
 }
 
-// ⚡ Bolt: Cache empty cell DOM structure as a template and use cloneNode(true).
-// Repeatedly constructing DOM trees node-by-node in hot render paths causes significant
-// JS-to-C++ bridge overhead and GC pressure. Cloning an existing node structure is
-// substantially faster (often 2-3x in large grids).
 let emptyCellTemplate = null;
 
 function createEmptyCell() {
@@ -1085,6 +1077,50 @@ function renderEditorValidation() {
   });
 }
 
+const FOCUS_RESTORE_ACTIONS = Object.freeze(['toggle', 'edit', 'add-child', 'delete']);
+
+function findTaskRowByPersistedId(taskId) {
+  const expectedId = String(taskId);
+  const rows = document.querySelectorAll('tr[data-task-id]');
+  for (const row of rows) {
+    if (row.dataset.taskId === expectedId) {
+      return row;
+    }
+  }
+  return null;
+}
+
+function findAllowedRowActionButton(taskId, action) {
+  const allowedAction = FOCUS_RESTORE_ACTIONS.find((value) => value === action);
+  if (!allowedAction) {
+    return null;
+  }
+
+  const row = findTaskRowByPersistedId(taskId);
+  if (!row) {
+    return null;
+  }
+
+  const buttons = row.querySelectorAll('button[data-action]');
+  for (const button of buttons) {
+    if (button.dataset.action === allowedAction) {
+      return button;
+    }
+  }
+  return null;
+}
+
+function findInlineProgressControl(taskId) {
+  const expectedId = String(taskId);
+  const controls = document.querySelectorAll('[data-inline-progress]');
+  for (const control of controls) {
+    if (control.dataset.inlineProgress === expectedId) {
+      return control;
+    }
+  }
+  return null;
+}
+
 function handleInlineProgressChange(event) {
   const taskId = event.target.dataset.inlineProgress;
   const task = findTask(taskId);
@@ -1098,9 +1134,8 @@ function handleInlineProgressChange(event) {
   persistState();
   renderAll();
 
-  // 🎨 Palette: Restore focus to the dropdown after full DOM re-render
   requestAnimationFrame(() => {
-    const dropdown = document.querySelector(`[data-inline-progress="${taskId}"]`);
+    const dropdown = findInlineProgressControl(taskId);
     if (dropdown) {
       dropdown.focus();
     }
@@ -1118,9 +1153,8 @@ function handleRowAction(action, taskId) {
     persistState();
     renderAll();
 
-    // 🎨 Palette: Restore focus to the toggle button after full DOM re-render
     requestAnimationFrame(() => {
-      const toggleBtn = document.querySelector(`tr[data-task-id="${taskId}"] button[data-action="toggle"]`);
+      const toggleBtn = findAllowedRowActionButton(taskId, 'toggle');
       if (toggleBtn) {
         toggleBtn.focus();
       }
@@ -1153,13 +1187,12 @@ function handleRowAction(action, taskId) {
       renderAll();
       showToast('작업을 삭제했습니다.');
 
-      // 🎨 Palette: Restore focus after deletion to keep keyboard flow
       requestAnimationFrame(() => {
         const visibleTasksAfter = getVisibleTasks();
         if (visibleTasksAfter.length > 0) {
           const nextTargetIndex = Math.min(currentIndex, visibleTasksAfter.length - 1);
           const nextTargetId = visibleTasksAfter[nextTargetIndex].id;
-          const nextTargetBtn = document.querySelector(`tr[data-task-id="${nextTargetId}"] button[data-action="delete"]`);
+          const nextTargetBtn = findAllowedRowActionButton(nextTargetId, 'delete');
           if (nextTargetBtn) {
             nextTargetBtn.focus();
           }
@@ -1176,12 +1209,26 @@ function handleRowAction(action, taskId) {
 }
 
 function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertAfterId = null, draft = null }) {
-  state.previousFocus = document.activeElement;
+  let editTask = null;
   if (mode === 'edit') {
-    const task = findTask(targetId);
-    if (!task) {
+    editTask = findTask(targetId);
+    if (!editTask) {
       return;
     }
+  }
+
+  const activeEl = document.activeElement;
+  state.previousFocus = null;
+  if (activeEl) {
+    const tr = activeEl.closest('tr');
+    state.previousFocus = {
+      id: activeEl.id,
+      action: activeEl.dataset.action,
+      taskId: tr ? tr.dataset.taskId : null
+    };
+  }
+  if (mode === 'edit') {
+    const task = editTask;
     state.editor = {
       mode,
       targetId,
@@ -1207,7 +1254,6 @@ function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertA
   }
   renderAll();
 
-  // Focus the first input/select in the editor to keep keyboard users in flow
   requestAnimationFrame(() => {
     const firstInput = document.querySelector('.editor-row input:not([type="hidden"]), .editor-row select');
     if (firstInput) {
@@ -1227,7 +1273,20 @@ function closeEditor(force = false) {
   renderAll();
 
   if (state.previousFocus) {
-    state.previousFocus.focus();
+    const { id, action, taskId } = state.previousFocus;
+    requestAnimationFrame(() => {
+      let targetEl = null;
+      if (taskId && action) {
+        targetEl = findAllowedRowActionButton(taskId, action);
+      }
+      if (!targetEl && id) {
+        targetEl = document.getElementById(id);
+      }
+
+      if (targetEl) {
+        targetEl.focus();
+      }
+    });
     state.previousFocus = null;
   }
 }
@@ -1253,16 +1312,24 @@ function saveEditor() {
   }
 
   if (state.editor.mode === 'create') {
-      const newTask = {
-        ...createEmptyTaskDraft(),
-        ...sanitizeDraft(state.editor.draft),
-        id: createId(),
-        parentId: state.editor.parentId,
-        depth: state.editor.depth,
-        expanded: true,
-        isSynthetic: false
-      };
+    const shouldFocusCreatedTask = state.previousFocus?.id === 'empty-state-add-root-task';
+    const newTask = {
+      ...createEmptyTaskDraft(),
+      ...sanitizeDraft(state.editor.draft),
+      id: createId(),
+      parentId: state.editor.parentId,
+      depth: state.editor.depth,
+      expanded: true,
+      isSynthetic: false
+    };
     insertTaskAfter(newTask, state.editor.insertAfterId);
+    if (shouldFocusCreatedTask) {
+      state.previousFocus = {
+        id: '',
+        action: 'edit',
+        taskId: newTask.id
+      };
+    }
   }
 
   closeEditor(true);
@@ -1309,10 +1376,8 @@ function createChildDraft(task) {
 function sanitizeDraft(draft) {
   const sanitized = {};
   EDITABLE_FIELDS.forEach((field) => {
-    // 🛡️ Sentinel: Enforce string coercion before trim() to prevent DoS via type confusion
     sanitized[field] = String(draft?.[field] || '').trim().slice(0, 1000);
   });
-  // 🛡️ Sentinel: Strictly validate against allowed options to prevent injection
   if (!sanitized.actualProgressStatus || !ACTUAL_PROGRESS_OPTIONS.includes(sanitized.actualProgressStatus)) {
     sanitized.actualProgressStatus = '미착수(0%)';
   }
@@ -1370,7 +1435,6 @@ function validateDateRange(startLabel, startValue, endLabel, endValue, errors) {
 }
 
 function computeTaskMetrics() {
-  // ⚡ Bolt: Cache durationDays during total calculation to avoid recalculating for every task
   const durationCache = new Map();
   const totalDays = state.tasks.reduce((sum, task) => {
     const duration = calculateDurationDays(task.plannedStartDate, task.plannedEndDate);
@@ -1467,7 +1531,6 @@ function calculatePlannedProgressRatio(baseDate, startDate, endDate, durationDay
   if (compareDateStrings(baseDate, endDate) >= 0) {
     return 1;
   }
-  // Bolt: Reuse passed durationDays if available to avoid redundant Date parsing and calculations.
   const total = durationDays !== undefined ? durationDays : calculateDurationDays(startDate, endDate);
   if (total <= 0) {
     return 1;
@@ -1501,7 +1564,6 @@ function getVisibleTasks() {
   const visible = [];
   cachedHiddenParentIds.clear();
 
-  // ⚡ Bolt Optimization: Single-pass O(N) visible task filtering to avoid redundant O(N * Depth) tree traversals
   state.tasks.forEach((task) => {
     if (cachedHiddenParentIds.has(task.parentId)) {
       cachedHiddenParentIds.add(task.id);
@@ -1534,7 +1596,6 @@ function insertTaskAfter(task, afterId) {
 }
 
 function deleteTaskAndDescendants(taskId) {
-  // ⚡ Bolt: Replace O(N * Depth) cascading loop with O(N) map-based BFS to prevent UI freeze during deletion
   const childrenMap = new Map();
   state.tasks.forEach(task => {
     if (task.parentId) {
@@ -1587,7 +1648,6 @@ function canReorderWithinLevel(draggedTask, targetTask) {
 }
 
 function getLastRootTaskId() {
-  // Walk backward to avoid allocating an intermediate roots array.
   let lastRoot = null;
   for (let i = state.tasks.length - 1; i >= 0; i -= 1) {
     if (!state.tasks[i].parentId) {
@@ -1738,10 +1798,6 @@ function normalizeImportedTasks(sourceTasks) {
   if (!Array.isArray(sourceTasks)) {
     return [];
   }
-  // Defensive: a hand-edited or tampered wbs.json / localStorage payload can
-  // contain non-object entries (null, numbers, arrays). Drop them so a junk
-  // seed row degrades gracefully instead of throwing an uncaught TypeError
-  // during bootstrap() (which does not wrap this call in try/catch).
   const records = sourceTasks.filter(isTaskRecord);
   records.forEach((task, index) => validateImportedTask(task, index));
   const hasExplicitDepth = records.some((task) => task.__depth || task.__id || task.__parentId);
@@ -1760,9 +1816,6 @@ function normalizeImportedTasks(sourceTasks) {
 }
 
 function clampImportedDepth(task) {
-  // The CSV path enforces __depth in {1,2,3} (validateCsvDepth). Apply the same
-  // contract to the JSON seed path so a tampered wbs.json can't inject an
-  // out-of-range depth (e.g. "4") that the 3-level renderer never expects.
   const parsedDepth = Number(task.__depth);
   if (Number.isInteger(parsedDepth) && parsedDepth >= 1 && parsedDepth <= 3) {
     return parsedDepth;
@@ -2027,8 +2080,6 @@ function validateImportedTasks(tasks) {
       throw new Error(`존재하지 않는 부모 ID를 참조합니다: ${task.parentId}`);
     }
   }
-  // Detect cycles
-  // ⚡ Bolt: Use O(1) Map lookup instead of O(N) tasks.find to prevent O(N^2) bottleneck during cycle detection
   const taskById = new Map(tasks.map(t => [t.id, t]));
   for (const task of tasks) {
     let current = task.parentId;
@@ -2211,18 +2262,17 @@ function exportJsonArray() {
 }
 
 function openGanttModal() {
-  state.previousFocus = document.activeElement;
+  state.ganttPreviousFocus = document.activeElement;
   elements.ganttModal.classList.remove('hidden');
   renderGantt();
-  // Focus the modal to handle Escape key properly
   elements.ganttModal.focus();
 }
 
 function closeGanttModal() {
   elements.ganttModal.classList.add('hidden');
-  if (state.previousFocus) {
-    state.previousFocus.focus();
-    state.previousFocus = null;
+  if (state.ganttPreviousFocus) {
+    state.ganttPreviousFocus.focus();
+    state.ganttPreviousFocus = null;
   }
 }
 
@@ -2310,7 +2360,6 @@ function renderGantt() {
     return;
   }
 
-  // ⚡ Bolt: Use direct string comparison for minDate/maxDate calculation since plannedTasks already filter for valid dates.
   const minDate = plannedTasks.reduce((min, task) => (task.plannedStartDate < min ? task.plannedStartDate : min), plannedTasks[0].plannedStartDate);
   const maxDate = plannedTasks.reduce((max, task) => (task.plannedEndDate > max ? task.plannedEndDate : max), plannedTasks[0].plannedEndDate);
   const weekdays = buildWeekdayTimeline(minDate, maxDate);
@@ -2434,7 +2483,6 @@ function buildWeekdayTimeline(minDate, maxDate) {
   const days = [];
   let cursor = getMonday(minDate);
   const endBoundary = getFriday(maxDate);
-  // ⚡ Bolt: Use direct string comparison for cursor loop since both are generated valid dates.
   while (cursor <= endBoundary) {
     if (!isWeekend(cursor)) {
       days.push({
@@ -2448,7 +2496,6 @@ function buildWeekdayTimeline(minDate, maxDate) {
 }
 
 function groupTimelineByWeek(days) {
-  // ⚡ Bolt: Use an O(1) Map instead of O(N) Array.find to avoid O(N^2) bottleneck when grouping timeline days
   const groups = [];
   const groupMap = new Map();
   days.forEach((day) => {
@@ -2570,7 +2617,6 @@ function downloadFile(content, fileName, mimeType) {
   const link = document.createElement('a');
   link.href = url;
   link.download = fileName;
-  // Keep generated download links isolated from any browsing context changes.
   link.rel = 'noopener noreferrer';
   document.body.appendChild(link);
   link.click();
@@ -2589,12 +2635,10 @@ function sanitizeCsvFormulaValue(value) {
 }
 
 function createId(seed = Date.now()) {
-  // Security enhancement: Prefer crypto.randomUUID for stronger randomness
   if (typeof crypto !== 'undefined') {
     if (crypto.randomUUID) {
       return `task-${crypto.randomUUID()}`;
     }
-    // Fallback: use crypto.getRandomValues if randomUUID is unavailable
     if (crypto.getRandomValues) {
       const arr = new Uint32Array(2);
       crypto.getRandomValues(arr);
@@ -2603,8 +2647,6 @@ function createId(seed = Date.now()) {
   }
   throw new Error('Secure random number generation is not supported in this environment');
 }
-
-// ⚡ Bolt: Memoize date parsing and validation to reduce GC pressure and expensive Date allocations in tight render loops
 
 function isValidDateString(value) {
   if (!isValidDateString.cache) isValidDateString.cache = new Map();
@@ -2617,7 +2659,6 @@ function isValidDateString(value) {
     return false;
   }
   const isValid = formatDateInput(new Date(dateStringToUtcMs(value))) === value;
-  // Bolt: Increase cache limits to prevent cache thrashing in large loops.
   if (validDateCache.size < 10000) {
     validDateCache.set(value, isValid);
   }
@@ -2631,12 +2672,10 @@ function dateStringToUtcMs(value) {
   if (dateToUtcMsCache.has(value)) {
     return dateToUtcMsCache.get(value);
   }
-  // Bolt: Avoid split().map() array allocations in tight rendering loops.
   const year = Number(value.substring(0, 4));
   const month = Number(value.substring(5, 7));
   const day = Number(value.substring(8, 10));
   const ms = Date.UTC(year, month - 1, day);
-  // Bolt: Increase cache limits to prevent cache thrashing in large loops.
   if (dateToUtcMsCache.size < 10000) {
     dateToUtcMsCache.set(value, ms);
   }
@@ -2754,7 +2793,6 @@ function debounce(callback, wait) {
   return debounced;
 }
 
-// Export for testing
 if (typeof window !== 'undefined') {
   window.validateDraft = validateDraft;
   window.sanitizeCsvFormulaValue = sanitizeCsvFormulaValue;
