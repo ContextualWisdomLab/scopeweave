@@ -81,6 +81,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   durable audit evidence under the same savepoint; an audit-outbox failure now
   rolls back the corresponding usable-grant transition instead of creating an
   unaudited security state, while historical evidence survives resource deletion.
+- Aborted the shared SQLite transaction when savepoint rollback itself fails,
+  preventing an unconfirmed grant transition from reaching a later commit.
 
 ### Changed
 

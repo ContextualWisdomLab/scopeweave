@@ -323,7 +323,12 @@ test('savepoint cleanup failures never replace the causal persistence error', as
       assert.equal(
         faultDb.commands.some((sql) => sql.startsWith('RELEASE access_grant_insert_state')),
         false,
-        'an unconfirmed rollback must not release the failed savepoint',
+        'a failed rollback must not release the failed savepoint',
+      );
+      assert.equal(
+        faultDb.commands.some((sql) => sql === 'ROLLBACK'),
+        true,
+        'a failed savepoint rollback must abort the shared transaction',
       );
     }
     db.close();

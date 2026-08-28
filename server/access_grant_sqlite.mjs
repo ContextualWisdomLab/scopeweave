@@ -32,7 +32,13 @@ function withSavepoint(db, name, operation) {
       db.exec(`ROLLBACK TO ${name}`);
       rollbackSucceeded = true;
     } catch {
-      // Leave an unconfirmed failed savepoint open rather than risk committing partial state.
+      // The transaction state is unknown; abort the whole transaction rather than
+      // leave partial grant state available to a later shared-connection commit.
+      try {
+        db.exec('ROLLBACK');
+      } catch {
+        // Preserve the causal operation error; the caller must discard this connection.
+      }
     }
     if (rollbackSucceeded) {
       try {
