@@ -559,6 +559,10 @@ select[data-inline-progress]:focus {
   margin-top: auto;
 }
 
+.app-shell:has(.empty-state-cell) .bottom-action-bar {
+  position: static;
+}
+
 #task-dependent-actions-help {
   display: none;
   flex-basis: 100%;
