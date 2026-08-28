@@ -190,6 +190,41 @@ test('preserves planning metadata in wbs.json sync output', async ({ page }) => 
   });
 });
 
+test('normalizes unrelated falsy planning metadata in wbs.json sync output', async ({ page }) => {
+  await page.addInitScript(() => {
+    window.__savedWbsJson = null;
+    window.showSaveFilePicker = async () => ({
+      async createWritable() {
+        return {
+          async write(content) {
+            window.__savedWbsJson = content;
+          },
+          async close() {},
+        };
+      },
+    });
+  });
+  await seedPersistedTask(page, {
+    predecessors: 0,
+    sprint: false,
+    budget: 0,
+    actualCost: 0,
+    storyPoints: 0,
+  });
+
+  await page.getByRole('button', { name: 'wbs.json 자동저장 연결' }).click();
+  await expect.poll(async () => page.evaluate(() => window.__savedWbsJson)).not.toBeNull();
+  const savedPayload = await page.evaluate(() => JSON.parse(window.__savedWbsJson));
+
+  expect(savedPayload[0]).toMatchObject({
+    predecessors: '',
+    sprint: '',
+    budget: 0,
+    actualCost: 0,
+    storyPoints: 0,
+  });
+});
+
 test('exports numeric zero values instead of empty CSV cells', async ({ page }) => {
   await seedPersistedTask(page, { budget: 0, actualCost: 0, storyPoints: 0 });
 
