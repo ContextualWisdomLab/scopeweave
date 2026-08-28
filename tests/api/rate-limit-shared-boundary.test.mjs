@@ -41,6 +41,31 @@ assert.equal(
   `Shared-boundary client-identity regression failed:\n${directBoundaryIdentityProbe.stderr}`,
 );
 
+const importOrderIsolationProbe = runProbe(`
+  import assert from 'node:assert/strict';
+  process.env.SCOPEWEAVE_DB = ':memory:';
+  process.env.SCOPEWEAVE_JWT_SECRET = '${validJwtSecret}';
+  process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '1';
+  process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS = '60000';
+  process.env.SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX = '8';
+  delete process.env.SCOPEWEAVE_TRUSTED_PROXY_IPS;
+
+  await import('./server/app.mjs');
+  const { app: sharedApp } = await import('./server/application_routes.mjs');
+
+  assert.equal((await sharedApp.request('/api/health')).status, 200);
+  assert.equal(
+    (await sharedApp.request('/api/health')).status,
+    429,
+    'importing the public app first must not leave the separately supported shared boundary cached with rate limiting disabled',
+  );
+`);
+assert.equal(
+  importOrderIsolationProbe.status,
+  0,
+  `Shared-boundary import-order regression failed:\n${importOrderIsolationProbe.stderr}`,
+);
+
 const inviteOrderingProbe = runProbe(`
   import assert from 'node:assert/strict';
   process.env.SCOPEWEAVE_DB = ':memory:';
