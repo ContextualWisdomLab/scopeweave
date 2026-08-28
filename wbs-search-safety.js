@@ -1,5 +1,6 @@
 const filterInput = document.getElementById('task-filter');
 const tableBody = document.getElementById('task-table-body');
+const addRootButton = document.getElementById('add-root-task');
 
 const isFilterActive = () => Boolean(filterInput?.value.trim());
 const isEditorOpen = () => Boolean(tableBody?.querySelector('.editor-panel'));
@@ -18,6 +19,39 @@ export function synchronizeFilteredDragSafety() {
   const draggable = !isFilterActive();
   tableBody.querySelectorAll('tr[data-task-id]').forEach((row) => {
     row.draggable = draggable;
+  });
+}
+
+/**
+ * Prevent create controls from opening an editor at a row hidden by search.
+ *
+ * Create-mode editors are anchored after an existing task. Search can hide
+ * that anchor, so creation is paused until the complete hierarchy is visible.
+ */
+export function synchronizeFilteredCreateSafety() {
+  const filterActive = isFilterActive();
+  if (addRootButton) {
+    addRootButton.disabled = filterActive;
+  }
+  if (!tableBody) return;
+  tableBody.querySelectorAll('button[data-action="add-child"]').forEach((button) => {
+    const structurallyDisabled = button.getAttribute('aria-disabled') === 'true';
+    button.disabled = filterActive || structurallyDisabled;
+  });
+}
+
+/**
+ * Prevent collapse state from changing invisibly while search owns visibility.
+ *
+ * Filtered results are selected from matches plus context ancestors rather than
+ * from each task's persisted expanded state. Toggle controls are therefore
+ * paused until normal hierarchy rendering resumes.
+ */
+export function synchronizeFilteredToggleSafety() {
+  if (!tableBody) return;
+  const filterActive = isFilterActive();
+  tableBody.querySelectorAll('button[data-action="toggle"]').forEach((button) => {
+    button.disabled = filterActive;
   });
 }
 
@@ -43,6 +77,8 @@ export function synchronizeEditorSearchSafety() {
 
 function synchronizeSearchInteractions() {
   synchronizeFilteredDragSafety();
+  synchronizeFilteredCreateSafety();
+  synchronizeFilteredToggleSafety();
   synchronizeEditorSearchSafety();
 }
 
