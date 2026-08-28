@@ -60,3 +60,33 @@ test('provider timeout stays sanitized and is counted as a refresh timeout', asy
   assert.equal(metrics.attachmentStatusRefreshDownstreamLookupFailures, 0);
   assert.equal(rows[0].status, 'PENDING');
 });
+
+test('a persistence TimeoutError remains a persistence failure', async () => {
+  const rows = [{ id: 1, jobId: 'job-ready', status: 'PENDING' }];
+  const categories = [];
+  const metrics = {};
+  const counts = await refreshAttachmentStatuses(rows, {
+    orgId: 1,
+    userId: 2,
+    timeoutMs: 30_000,
+    budgetMs: 60_000,
+    metrics,
+    onError: ({ category }) => categories.push(category),
+    jobStatus: async () => 'READY',
+    updateStatus: async () => {
+      throw new DOMException('storage deadline', 'TimeoutError');
+    },
+  });
+
+  assert.deepEqual(counts, {
+    attempted: 1,
+    changed: 0,
+    failed: 1,
+    skipped: 0,
+    deferred: 0,
+  });
+  assert.deepEqual(categories, ['status_persistence']);
+  assert.equal(metrics.attachmentStatusRefreshTimeoutFailures, 0);
+  assert.equal(metrics.attachmentStatusRefreshPersistenceFailures, 1);
+  assert.equal(rows[0].status, 'PENDING');
+});
