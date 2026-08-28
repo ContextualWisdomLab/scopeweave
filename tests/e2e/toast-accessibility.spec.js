@@ -47,6 +47,12 @@ test('disabled empty-state actions expose and announce a reason plus next action
   await expect(help).not.toHaveAttribute('role', 'status');
   await expect(help).toBeVisible();
   await expect(help).toContainText('작업을 추가하거나 CSV를 가져오세요');
+  const emptyState = page.locator('.table-empty');
+  const emptyStateBox = await emptyState.boundingBox();
+  const actionBarBox = await page.locator('.bottom-action-bar').boundingBox();
+  expect(emptyStateBox).not.toBeNull();
+  expect(actionBarBox).not.toBeNull();
+  expect(emptyStateBox.y + emptyStateBox.height).toBeLessThanOrEqual(actionBarBox.y);
   await expect(status).toHaveAttribute('role', 'status');
   await expect(status).toHaveAttribute('aria-live', 'polite');
   await expect(status).toHaveAttribute('aria-atomic', 'true');
