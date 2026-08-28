@@ -2208,7 +2208,10 @@ function exportJsonArray() {
     [LEGACY_PLANNED_END_FIELD]: task.plannedEndDate,
     actualProgressStatus: task.actualProgressStatus,
     actualStartDate: task.actualStartDate,
-    actualEndDate: task.actualEndDate
+    actualEndDate: task.actualEndDate,
+    budget: task.budget === 0 ? 0 : (task.budget || ''),
+    actualCost: task.actualCost === 0 ? 0 : (task.actualCost || ''),
+    storyPoints: task.storyPoints === 0 ? 0 : (task.storyPoints || '')
   }));
 }
 
