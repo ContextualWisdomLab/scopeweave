@@ -710,12 +710,15 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
 
   if (hasChildren) {
     const toggleButton = toggleButtonTemplate.cloneNode(false);
-    const toggleLabel = task.expanded ? '접기' : '펼치기';
+    const filterActive = Boolean(state.taskQuery.trim());
+    const expanded = filterActive || task.expanded;
+    const toggleLabel = filterActive ? '검색 중 계층 맥락 고정' : (task.expanded ? '접기' : '펼치기');
     toggleButton.setAttribute('aria-label', `${toggleLabel} - ${rowEntityName}`);
-    toggleButton.setAttribute('aria-expanded', String(task.expanded));
+    toggleButton.setAttribute('aria-expanded', String(expanded));
     toggleButton.title = `${toggleLabel} - ${rowEntityName}`;
+    toggleButton.disabled = filterActive;
     const toggleIcon = toggleIconTemplate.cloneNode(false);
-    toggleIcon.textContent = task.expanded ? '▼' : '▶';
+    toggleIcon.textContent = expanded ? '▼' : '▶';
     toggleButton.appendChild(toggleIcon);
     actionStack.appendChild(toggleButton);
   } else {
