@@ -13,10 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recovery action.
 - Added browser JSON download for portable WBS backups, including extended
   planning fields, alongside CSV export.
+<<<<<<< HEAD
 - Added first-visit sample WBS onboarding with persistent dismissal and a
   confirmed clear-to-empty-plan action.
-- Added search-mode guardrails that keep hierarchy edits and drag reordering
-  out of the filtered view while an inline editor is open.
+- Added search-mode guardrails that keep hierarchy edits, row editing, progress
+  status changes, and drag reordering out of the filtered view.
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS
   estimation coverage, dependency risk, and procurement package section checks.
 - Preserved PM-analysis research papers, NASA WBS handbook, BCP 14, and JSON
