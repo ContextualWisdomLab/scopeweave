@@ -23,10 +23,12 @@ test.describe('WBS search interaction safety', () => {
     const rows = page.locator('tbody tr[data-task-id]');
     const addRoot = page.getByRole('button', { name: '최상위 작업 추가' });
     const addChild = rows.first().getByRole('button', { name: /하위 추가 -/ });
+    const deleteButton = rows.first().getByRole('button', { name: /삭제 -/ });
 
     await expect(addRoot).toHaveAttribute('aria-disabled', 'true');
     await expect(rows.first().locator('button[data-action="toggle"]')).toBeDisabled();
     await expect(addChild).toHaveAttribute('aria-disabled', 'true');
+    await expect(deleteButton).toHaveAttribute('aria-disabled', 'true');
 
     await addChild.dispatchEvent('click');
     await expect(page.locator('#toast')).toContainText('검색 중에는 작업을 추가할 수 없습니다.');
@@ -35,6 +37,10 @@ test.describe('WBS search interaction safety', () => {
     await addRoot.dispatchEvent('click');
     await expect(page.locator('#toast')).toContainText('검색 중에는 작업을 추가할 수 없습니다.');
     await expect(page.locator('.editor-panel')).toHaveCount(0);
+
+    await deleteButton.dispatchEvent('click');
+    await expect(page.locator('#toast')).toContainText('검색 중에는 작업을 삭제할 수 없습니다.');
+    await expect(rows).toHaveCount(3);
   });
 
   test('keeps an open editor visible by pausing search changes until editing finishes', async ({ page }) => {

@@ -792,7 +792,12 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
   const editButton = createActionButton(`편집 - ${rowEntityName}`, '✎', 'edit', `편집 - ${rowEntityName}`);
   editButton.setAttribute('aria-haspopup', 'dialog');
 
-  const deleteButton = createActionButton(`삭제 - ${rowEntityName}`, '🗑', 'delete', `삭제 - ${rowEntityName}`);
+  const deleteButton = createActionButton(`삭제 - ${rowEntityName}`, '🗑', 'delete', filterActive
+    ? '검색 중에는 작업을 삭제할 수 없습니다. 검색을 먼저 지워주세요.'
+    : `삭제 - ${rowEntityName}`);
+  if (filterActive) {
+    deleteButton.setAttribute('aria-disabled', 'true');
+  }
 
   actionStack.append(
     dragHandle,
@@ -1197,7 +1202,7 @@ function handleRowAction(action, taskId) {
     return;
   }
 
-  if (state.taskQuery.trim() && (action === 'toggle' || action === 'add-child')) {
+  if (state.taskQuery.trim() && (action === 'toggle' || action === 'add-child' || action === 'delete')) {
     showToast('검색 중에는 계층을 변경할 수 없습니다. 검색을 먼저 지워주세요.');
     return;
   }
