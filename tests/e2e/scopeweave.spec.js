@@ -39,6 +39,7 @@ const importCsv = async (page, csvText) => {
 };
 
 const createActivitySubtree = async (page, activityName, taskName) => {
+  await expect(page.locator('tbody tr[data-task-id]').first()).toBeVisible();
   await page.locator('tbody tr[data-task-id]').first().getByRole('button', { name: '하위 추가' }).click();
   await page.locator('[data-testid="editor-activity"]').fill(activityName);
   await page.getByRole('button', { name: '저장', exact: true }).click();
