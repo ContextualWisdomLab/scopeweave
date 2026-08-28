@@ -290,6 +290,28 @@ test('database constraints reject impossible grant lifetimes', async () => {
   db.close();
 });
 
+test('resource deletion during mint maps foreign-key failure to the nondisclosing rejection', async () => {
+  const db = fixture();
+  const repository = createSqliteAccessGrantRepository(db);
+  const result = await repository.insertGrant({
+    grant_id: 'agr_missing_attachment',
+    token_hash: '3'.repeat(64),
+    subject_id: '1',
+    project_id: '1000',
+    purpose: ACCESS_GRANT_PURPOSES.ATTACHMENT_VIEW,
+    audience: ACCESS_GRANT_AUDIENCES.ATTACHMENT_VIEW,
+    attachment_id: '9999',
+    issued_at_ms: 10,
+    expires_at_ms: 20,
+    used_at_ms: null,
+    revoked_at_ms: null,
+  });
+  assert.equal(result, null);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM access_grants').get().count, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM access_grant_audit_outbox').get().count, 0);
+  db.close();
+});
+
 test('savepoint cleanup failures never replace the causal persistence error', async () => {
   const record = {
     grant_id: 'agr_cleanup_failure',

@@ -205,20 +205,26 @@ export function createSqliteAccessGrantRepository(database) {
       return withSavepoint(db, INSERT_SAVEPOINT, () => {
         const membership = membershipAtMint.get(record.project_id, record.subject_id);
         if (!membership?.membership_version) return null;
-        insert.run(
-          record.grant_id,
-          record.token_hash,
-          record.subject_id,
-          record.project_id,
-          record.purpose,
-          record.audience,
-          record.attachment_id,
-          String(membership.membership_version),
-          record.issued_at_ms,
-          record.expires_at_ms,
-          record.used_at_ms,
-          record.revoked_at_ms,
-        );
+        try {
+          insert.run(
+            record.grant_id,
+            record.token_hash,
+            record.subject_id,
+            record.project_id,
+            record.purpose,
+            record.audience,
+            record.attachment_id,
+            String(membership.membership_version),
+            record.issued_at_ms,
+            record.expires_at_ms,
+            record.used_at_ms,
+            record.revoked_at_ms,
+          );
+        } catch (error) {
+          // node:sqlite reports SQLITE_CONSTRAINT_FOREIGNKEY as extended code 787.
+          if (error?.errcode === 787) return null;
+          throw error;
+        }
         insertAudit.run(
           record.grant_id,
           'minted',
