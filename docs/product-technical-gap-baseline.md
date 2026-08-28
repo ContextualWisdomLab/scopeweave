@@ -27,10 +27,10 @@
 | --- | --- | --- |
 | 3단계 WBS 편집·계층 보존 | `app.js`의 단일 `state.tasks`, `renderAll()`, expand/collapse·subtree 이동 | 완료 |
 | 계획/실적 진척 및 일정 통제 | `analytics.js`의 EVM, S-curve, CPM, workload | 완료 |
-| 작업 검색과 계층 맥락 유지 | 현재 `develop`에는 미포함. #621의 `6d08288` 제출본에 구현됨 | 제출됨, 병합 대기 |
+| 작업 검색과 계층 맥락 유지 | 현재 `develop`에는 미포함. #621의 `4c8d09d` 제출본에 구현됨 | 제출됨, 병합 대기 |
 | CSV 왕복 | `exportCsv()`, CSV parser/validation, E2E·fuzz 계약 | 완료 |
 | JSON seed·localStorage·선택적 파일 sync | `loadSeedTasks()`, `localStorage`, `exportJsonArray()`, File System Access API | 완료 |
-| 명시적 JSON 다운로드 | 현재 `develop` UI에는 없음. #621의 `6d08288` 제출본에 구현됨 | 제출됨, 병합 대기 |
+| 명시적 JSON 다운로드 | 현재 `develop` UI에는 없음. #621의 `4c8d09d` 제출본에 구현됨 | 제출됨, 병합 대기 |
 | 첫 방문 샘플 안내와 빈 계획 전환 | 현재 `develop`에는 미포함. #624가 #621에 병합되어 제출됨 | 제출됨, 병합 대기 |
 | 정적 배포 | `pages.yml`, 상대 경로 자산, `404.html` | 구현 완료, 실제 출판 증거 필요 |
 | Cloud 인증·멀티테넌시·협업 | `server/`, `cloud-sync.js`, API smoke/E2E | 코드·테스트 존재, 운영 환경 검증 필요 |
@@ -86,8 +86,8 @@ HEAD가 바뀌면 다시 확인해야 한다.
 
 | ID | Gap / 고객 영향 | 현재 제출 상태 | 조치 |
 | --- | --- | --- | --- |
-| G-01 | 큰 WBS에서 작업 위치를 찾는 비용 | #621 `6d08288`, `develop` 병합 대기 | 작업·담당자·산출물 등 필드 검색과 상위 계층 표시 |
-| G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `6d08288`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
+| G-01 | 큰 WBS에서 작업 위치를 찾는 비용 | #621 `4c8d09d`, `develop` 병합 대기 | 작업·담당자·산출물 등 필드 검색과 상위 계층 표시 |
+| G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `4c8d09d`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | 미해결 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
 | G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #610/#601 Strix 실패; #610 OpenCode current verdict 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
@@ -95,9 +95,9 @@ HEAD가 바뀌면 다시 확인해야 한다.
 ### Exact-head queue evidence
 
 - #621: `develop@2c328875` 대상
-  `6d0828841987c633a6428e65bd252bca07cbc496`. CSV 성공 import 시 stale 검색어를
-  초기화하고, 첫 방문 seed 탐색 중 progress/order 변경이 sample을 영속화하지 않는
-  현재 제출본이다.
+  `4c8d09d17024202a1f5236ef62b31a8b5d9480c1`. CSV 성공 import 시 stale 검색어를
+  초기화하고, 첫 방문 seed 탐색 중 progress/order 변경이 sample을 영속화하지 않으며,
+  빠른 검색 입력의 전체 재렌더를 디바운스하는 현재 제출본이다.
 - #610: `40f26217609dd5836a91ab535c01ead266143078`. 일반 보안·테스트·cloud
   E2E는 통과했지만 OpenCode는 해당 HEAD verdict 부재로 실패했고, Strix는
   provider HTTP 500과 구조화 vulnerability report 부재로 fail-closed 되었다.
