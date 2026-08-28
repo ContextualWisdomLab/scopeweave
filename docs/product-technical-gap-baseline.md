@@ -299,9 +299,16 @@ HEAD가 바뀌면 다시 확인해야 한다.
 - #505: `develop@2c328875` 대상
   `b8435c719baf4ee9eaa2907e2c93c6d959711d66`. provider가 반환한 Checkout
   redirect가 임의 HTTPS 호스트로 향하지 않도록 정확한
-  `checkout.stripe.com` 기본 포트를 검증하는 최소 보완을 넣었다. local
-  billing unit/API는 통과했으며 replacement hosted Checks는 queued이고
-  qualifying approval은 없다.
+  `checkout.stripe.com` 기본 포트를 검증하는 최소 보완을 넣었다. CodeGraph와
+  resolved review를 current head에서 대조했고 billing config 6개, checkout
+  11개, API 1개, 전체 unit/API, fuzz 14개, config 3개, docstring 및 c8
+  coverage가 통과했다. billing.mjs lines/functions 100%, branches 97.72%,
+  billing_configuration.mjs lines/functions/branches 100%였으며 global
+  coverage는 46.47%다. exact-head hosted security·CodeQL·dependency·OSV·
+  unit/API·cloud-e2e는 성공했지만 OpenCode는 current verdict 없이 failure,
+  Strix는 orchestrator provider HTTP 500으로 report artifact를 만들지 못해
+  fail-closed 되었다. `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, 미해결 스레드 8개
+  모두 resolved, qualifying approval 0개이므로 병합하지 않았다.
 - #506: `develop@2c328875` 대상
   `f3ae1f1f4ee66024776507d75f8fb752b2bf748c`. short-lived access-grant domain의
   purpose/audience 고정, tenant-nondisclosing authorization, immutable grant
