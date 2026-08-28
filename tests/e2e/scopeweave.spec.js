@@ -962,6 +962,17 @@ test.describe('ScopeWeave Planner', () => {
     expect(snapshot[2].task).toBe('고아Task');
   });
 
+  test('clears a stale search after a successful CSV import', async ({ page }) => {
+    await page.getByRole('searchbox', { name: 'WBS 작업 검색' }).fill('검색에 없는 작업');
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(0);
+
+    await importCsv(page, ['단계,Activity,Task,대분류,중분류,산출물,담당자,지원팀,진행상태,계획시작일,계획종료일,일수,계획진척률,가중치,가중치진척률,실적진척상태,실적진척률,실적시작일,실적종료일,가중치실적진척률', 'P5000.가져오기,,가져온Task,가져오기,,,담당자A,,,2026-06-01,2026-06-03,,,미착수(0%),,,'].join('\n'));
+
+    await expect(page.getByRole('searchbox', { name: 'WBS 작업 검색' })).toHaveValue('');
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(3);
+    await expect(page.locator('#task-table-body')).toContainText('가져온Task');
+  });
+
   test('normalizes repeated flat CSV rows into shared hierarchy nodes', async ({ page }) => {
     const header = '단계,Activity,Task,대분류,중분류,산출물,담당자,지원팀,진행상태,계획시작일,계획종료일,일수,계획진척률,가중치,가중치진척률,실적진척상태,실적진척률,실적시작일,실적종료일,가중치실적진척률';
     await importCsv(page, [

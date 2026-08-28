@@ -2169,6 +2169,7 @@ async function handleCsvImport(event) {
     const text = await file.text();
     const imported = parseCsv(text);
     state.tasks = validateImportedTasks(normalizeImportedTasks(imported));
+    state.taskQuery = '';
     invalidateTaskIndexCache();
     closeEditor(true);
     persistState();
