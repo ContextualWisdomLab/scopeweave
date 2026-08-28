@@ -2209,8 +2209,10 @@ function exportJsonArray() {
     actualProgressStatus: task.actualProgressStatus,
     actualStartDate: task.actualStartDate,
     actualEndDate: task.actualEndDate,
+    predecessors: task.predecessors ?? '',
     budget: task.budget === 0 ? 0 : (task.budget || ''),
     actualCost: task.actualCost === 0 ? 0 : (task.actualCost || ''),
+    sprint: task.sprint ?? '',
     storyPoints: task.storyPoints === 0 ? 0 : (task.storyPoints || '')
   }));
 }
