@@ -103,10 +103,24 @@ test('declared and streamed provider response bodies are bounded', async () => {
     /clearfolio status response invalid/,
   );
 
-  responder = async () => new Response(
-    new Uint8Array(CLEARFOLIO_MAX_RESPONSE_BYTES + 1),
-    { headers: { 'content-type': 'application/json' } },
-  );
+  responder = async () => {
+    const response = new Response(
+      new ReadableStream({
+        start(controller) {
+          controller.enqueue(new Uint8Array(CLEARFOLIO_MAX_RESPONSE_BYTES));
+          controller.enqueue(new Uint8Array(1));
+          controller.close();
+        },
+      }),
+      { headers: { 'content-type': 'application/json' } },
+    );
+    assert.equal(
+      response.headers.get('content-length'),
+      null,
+      'streamed-overflow regression must reach the byte counter without a declared length',
+    );
+    return response;
+  };
   await assert.rejects(
     () => jobStatus(1, 2, 'job-1'),
     /clearfolio status response invalid/,
