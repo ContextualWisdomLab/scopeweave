@@ -130,6 +130,38 @@ test('caller cancellation remains composed with the provider request budget', as
   );
 });
 
+test('caller cancellation after provider start preserves the caller abort reason', async () => {
+  const controller = new AbortController();
+  const callerReason = new Error('caller cancelled after provider start');
+  let providerSignal;
+  let requestStarted;
+  const started = new Promise((resolve) => { requestStarted = resolve; });
+
+  responder = async (_url, options) => {
+    providerSignal = options.signal;
+    requestStarted();
+    return new Promise((_resolve, reject) => {
+      const rejectOnAbort = () => reject(providerSignal.reason);
+      if (providerSignal.aborted) rejectOnAbort();
+      else providerSignal.addEventListener('abort', rejectOnAbort, { once: true });
+    });
+  };
+
+  const pending = jobStatus(1, 2, 'job-1', { signal: controller.signal });
+  await started;
+  controller.abort(callerReason);
+
+  await assert.rejects(
+    () => pending,
+    (error) => {
+      assert.equal(error.message, 'clearfolio status unavailable');
+      return true;
+    },
+  );
+  assert.equal(providerSignal.aborted, true);
+  assert.equal(providerSignal.reason, callerReason);
+});
+
 test('status body timeout remains a timeout for refresh categorization', async () => {
   const originalSetTimeout = globalThis.setTimeout;
   const originalClearTimeout = globalThis.clearTimeout;
