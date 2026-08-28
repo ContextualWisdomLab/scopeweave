@@ -1,6 +1,6 @@
 # ScopeWeave 제품·기술 Gap Baseline
 
-> 기준일: 2026-08-28  |  보호 기준 브랜치: `develop`  |  보호 기준 HEAD: `2c328875e00e86537df3e965170be80532571cad`
+> 기준일: 2026-08-29  |  보호 기준 브랜치: `develop`  |  보호 기준 HEAD: `2c328875e00e86537df3e965170be80532571cad`
 
 이 문서는 저장소의 PRD 역할을 하는 설계 문서와 README, 기술 계약,
 구현·테스트·운영 게이트를 현재 파일과 실행 증거에 연결하는 기준선이다.
@@ -127,12 +127,6 @@ HEAD가 바뀌면 다시 확인해야 한다.
   구성으로 바꾸고 2,000-task/40-comment 브라우저 회귀를 통과했다. 현재
   hosted Strix는 provider/backend unavailable로 authoritative report를
   만들지 못했고 qualifying approval도 없어 병합하지 않았다.
-- #601: `98f4354733c68c9f361e516f86ba2d95e97af20e`. 날짜 formatter benchmark는
-  protected base 대비 46.79% 개선과 checksum `118184592`를 기록했으나 Strix
-  provider/backend 실패와 승인 부재로 병합하지 않았다.
-- #515: `develop@2c328875` 대상 `36c11dd0bf907569184d7d73172b675d21bd0ff1`.
-  Phase → Activity → Task → Duty 도메인 검증과 투영은 로컬·hosted 전체 적용
-  테스트를 통과했지만 `REVIEW_REQUIRED`라 병합하지 않았다.
 - #623: stacked base `refactor/schema-migration-ledger-433@9f2e6818` 대상
   `81072df8f4dd2e2df269710eb7cc852312ff7543`, draft 상태. canonical SQLite
   rename의 31개 schema/migration 테스트는 통과했지만 독립 병합 근거가 없다.
@@ -224,8 +218,10 @@ HEAD가 바뀌면 다시 확인해야 한다.
 - 런타임 의존성은 브라우저 native API와 현재 서버의 최소 의존성만 사용한다.
 - `app.js`는 `new Function` 테스트 계약 때문에 top-level ESM import/export를
   사용하지 않는다.
-- 입력은 신뢰 경계에서 길이·날짜·CSV 수식·JSON prototype pollution을 검증하고,
-  동적 HTML 삽입 대신 `textContent`를 사용한다.
+- 입력은 신뢰 경계에서 길이·날짜·CSV 수식·JSON prototype pollution을 검증한다.
+  확인된 앱 UI의 동적 텍스트 출력은 `textContent` 경로를 사용하고,
+  `innerHTML`은 cloud-sync의 상수 UI 템플릿으로 제한한다. `escapeHtml()`은
+  현재 호출 경로가 확인되지 않아 보안 근거로 세지 않는다.
 - 접근성은 레이블, landmark, keyboard focus, live status, disabled 상태,
   reduced motion을 최소 기준으로 삼는다.
 - 검증 명령은 `npm run test:unit`, `npm run test:api`, `npm run test:e2e`,
