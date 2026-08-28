@@ -79,7 +79,7 @@ function deterministicRandom() {
 function createService(db, nowMs = 5_000) {
   return createAccessGrantService({
     repository: createSqliteAccessGrantRepository(db),
-    clock: { nowMs: () => nowMs },
+    clock: { nowMs: typeof nowMs === 'function' ? nowMs : () => nowMs },
     randomSource: deterministicRandom(),
     auditSink: { record: async () => {} },
     projectAuthorization: createSqliteAccessGrantAuthorizationPort(db),
@@ -143,6 +143,39 @@ test('repository returns null for unknown hashes and rejects a mismatched bindin
     db.prepare('SELECT used_at_ms FROM access_grants WHERE grant_id = ?').get(minted.grantId).used_at_ms,
     null,
     'wrong resource binding does not burn the correct grant',
+  );
+  db.close();
+});
+
+test('backward clock rejects a grant without leaking a SQLite constraint error or consuming it', async () => {
+  const db = fixture();
+  let nowMs = 5_000;
+  const service = createService(db, () => nowMs);
+  const minted = await service.mint({
+    subjectId: '1',
+    projectId: '1000',
+    purpose: ACCESS_GRANT_PURPOSES.ATTACHMENT_VIEW,
+    audience: ACCESS_GRANT_AUDIENCES.ATTACHMENT_VIEW,
+    attachmentId: '5000',
+    ttlSeconds: 60,
+  });
+
+  nowMs = 4_999;
+  await assert.rejects(
+    service.redeem({
+      secret: minted.secret,
+      purpose: ACCESS_GRANT_PURPOSES.ATTACHMENT_VIEW,
+      audience: ACCESS_GRANT_AUDIENCES.ATTACHMENT_VIEW,
+      projectId: '1000',
+      attachmentId: '5000',
+    }),
+    (error) => error?.code === 'access_grant_unauthorized' && error?.status === 401,
+    'clock rollback fails through the same opaque unauthorized boundary as other invalid grants',
+  );
+  assert.equal(
+    db.prepare('SELECT used_at_ms FROM access_grants WHERE grant_id = ?').get(minted.grantId).used_at_ms,
+    null,
+    'clock rollback does not consume the one-time grant',
   );
   db.close();
 });

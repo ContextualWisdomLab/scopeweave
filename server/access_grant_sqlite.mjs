@@ -175,6 +175,7 @@ export function createSqliteAccessGrantRepository(database) {
        AND used_at_ms IS NULL
        AND revoked_at_ms IS NULL
        AND ? < expires_at_ms
+       AND ? >= issued_at_ms
        AND membership_version = ?
        AND EXISTS (
          SELECT 1
@@ -248,6 +249,7 @@ export function createSqliteAccessGrantRepository(database) {
           binding.project_id,
           binding.attachment_id,
           binding.attachment_id,
+          binding.now_ms,
           binding.now_ms,
           currentMembershipVersion,
           currentMembershipVersion,

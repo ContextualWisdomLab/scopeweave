@@ -51,11 +51,11 @@ The consume operation is a single conditional `UPDATE access_grants SET used_at_
 2. purpose and audience match;
 3. project and optional attachment binding match;
 4. `used_at_ms` and `revoked_at_ms` are still null;
-5. current time is strictly before expiry;
+5. current time is strictly before expiry and not earlier than issuance;
 6. the current `membership_id:token_version` equals the grant's persisted mint-time `membership_version`; and
 7. the same current version still matches live project membership and user `token_version` inside the conditional write.
 
-Because the unused-state predicate, persisted mint snapshot, and live membership predicate participate in the same write statement, two concurrent consumers cannot both perform the unused→used transition, and a version change between mint and redemption cannot silently authorize the older credential. A membership removal/re-add changes the durable membership identity; logout-all/password-style session invalidation changes `token_version`. Either change makes an already minted but unused grant fail closed.
+Because the unused-state predicate, persisted mint snapshot, live membership predicate, and monotonic timestamp guard participate in the same write statement, two concurrent consumers cannot both perform the unused→used transition, a version change between mint and redemption cannot silently authorize the older credential, and a backward clock fails closed as an opaque unauthorized result rather than leaking a raw SQLite CHECK error. A membership removal/re-add changes the durable membership identity; logout-all/password-style session invalidation changes `token_version`. Either change makes an already minted but unused grant fail closed.
 
 The consume `UPDATE` and the corresponding `consumed` audit-outbox insert execute under one SQLite savepoint. If durable audit evidence cannot be inserted, the savepoint rolls the consume transition back, leaving the grant unused and safely retryable after the durable boundary recovers. Mint uses the same pattern: the secret is not returned from a successful repository call unless the hash-only usable-grant row, mint-time membership snapshot, and `minted` audit evidence commit.
 
