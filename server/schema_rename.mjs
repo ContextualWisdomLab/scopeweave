@@ -79,16 +79,18 @@ export function runCanonicalSchemaRename(database) {
     throw new SchemaMigrationStateError('canonical rename requires PRAGMA legacy_alter_table = OFF');
   }
 
-  const startingState = ensureSchemaMigrationState(database);
-  if (startingState === 'canonical_ready') {
-    verifyDatabaseIntegrity(database);
-    return 'canonical_ready';
-  }
-
   let ownsTransaction = false;
   try {
     database.exec('BEGIN IMMEDIATE');
     ownsTransaction = true;
+
+    const startingState = ensureSchemaMigrationState(database);
+    if (startingState === 'canonical_ready') {
+      verifyDatabaseIntegrity(database);
+      database.exec('COMMIT');
+      ownsTransaction = false;
+      return 'canonical_ready';
+    }
 
     for (const [legacyName, canonicalName] of SCHEMA_RENAME_PAIRS) {
       database.exec(`ALTER TABLE ${legacyName} RENAME TO ${canonicalName}`);

@@ -201,6 +201,30 @@ test('canonical rename rolls every table rename and canonical ledger row back af
   database.close();
 });
 
+test('canonical rename rolls back first-time ledger creation with a mid-cutover failure', () => {
+  const database = createPopulatedLegacyDatabase();
+  database.exec('DROP TABLE schema_migrations');
+  const adapter = {
+    exec(sql) {
+      if (/ALTER TABLE projects RENAME TO project_records/.test(sql)) {
+        throw new Error('injected first-time rename failure');
+      }
+      return database.exec(sql);
+    },
+    prepare(sql) {
+      return database.prepare(sql);
+    },
+  };
+
+  assert.throws(() => runCanonicalSchemaRename(adapter), /injected first-time rename failure/);
+
+  const names = tableNames(database);
+  for (const legacyName of LEGACY_SCHEMA_OBJECTS) assert.equal(names.has(legacyName), true);
+  for (const canonicalName of CANONICAL_SCHEMA_OBJECTS) assert.equal(names.has(canonicalName), false);
+  assert.equal(names.has('schema_migrations'), false);
+  database.close();
+});
+
 test('canonical rename validates the database adapter before attempting a migration', () => {
   assert.throws(() => runCanonicalSchemaRename(null), /exec and prepare/);
   assert.throws(() => runCanonicalSchemaRename({ exec() {} }), /exec and prepare/);
