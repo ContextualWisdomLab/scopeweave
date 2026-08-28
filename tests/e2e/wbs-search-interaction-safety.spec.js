@@ -16,6 +16,20 @@ test.describe('WBS search interaction safety', () => {
     await expect(rows.nth(2)).toHaveAttribute('draggable', 'false');
   });
 
+  test('disables hierarchy changes while filtered rows hide context', async ({ page }) => {
+    const search = page.getByRole('searchbox', { name: 'WBS 작업 검색' });
+    await search.fill('단계작업계획');
+
+    const rows = page.locator('tbody tr[data-task-id]');
+    await expect(page.getByRole('button', { name: '최상위 작업 추가' })).toHaveAttribute('aria-disabled', 'true');
+    await expect(rows.first().locator('button[data-action="toggle"]')).toBeDisabled();
+
+    const addChild = rows.first().getByRole('button', { name: /하위 추가 -/ });
+    await expect(addChild).toHaveAttribute('aria-disabled', 'true');
+    await addChild.dispatchEvent('click');
+    await expect(page.locator('.editor-panel')).toHaveCount(0);
+  });
+
   test('keeps an open editor visible by pausing search changes until editing finishes', async ({ page }) => {
     const firstRow = page.locator('tbody tr[data-task-id]').first();
     await firstRow.getByRole('button', { name: /편집 -/ }).click();

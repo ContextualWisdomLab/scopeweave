@@ -306,7 +306,14 @@ function bindHeaderEvents(persistAndRenderMetadata) {
   });
   elements.baseDateInput.addEventListener('blur', persistAndRenderMetadata.flush);
 
-  elements.addRootButton.addEventListener('click', () => openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() }));
+  elements.addRootButton.addEventListener('click', (event) => {
+    if (elements.addRootButton.getAttribute('aria-disabled') === 'true') {
+      event.preventDefault();
+      showToast('검색 중에는 작업을 추가할 수 없습니다. 검색을 먼저 지워주세요.');
+      return;
+    }
+    openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() });
+  });
   elements.exportCsvButton.addEventListener('click', (e) => {
     if (elements.exportCsvButton.getAttribute('aria-disabled') === 'true') {
       e.preventDefault();
@@ -342,6 +349,9 @@ function bindHeaderEvents(persistAndRenderMetadata) {
   });
 
   elements.taskFilterInput.addEventListener('input', (event) => {
+    if (state.editor.mode) {
+      return;
+    }
     state.taskQuery = String(event.target.value).slice(0, 120);
     renderAll();
   });
@@ -448,6 +458,10 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
   });
 
   elements.tableBody.addEventListener('dragstart', (event) => {
+    if (state.taskQuery.trim()) {
+      event.preventDefault();
+      return;
+    }
     const row = event.target.closest('tr[data-task-id]');
     if (!row) {
       return;
@@ -467,6 +481,9 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
   });
 
   elements.tableBody.addEventListener('dragover', (event) => {
+    if (state.taskQuery.trim()) {
+      return;
+    }
     const row = event.target.closest('tr[data-task-id]');
     if (!row || !state.dragTaskId || row.dataset.taskId === state.dragTaskId) {
       return;
@@ -496,6 +513,11 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
   });
 
   elements.tableBody.addEventListener('drop', (event) => {
+    if (state.taskQuery.trim()) {
+      event.preventDefault();
+      clearDragState();
+      return;
+    }
     const row = event.target.closest('tr[data-task-id]');
     if (!row || !state.dragTaskId) {
       return;
@@ -519,6 +541,8 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
 const cachedHasChildrenSet = new Set();
 function renderAll() {
   const metrics = computeTaskMetrics();
+  const filterActive = Boolean(state.taskQuery.trim());
+  const editorOpen = Boolean(state.editor.mode);
 
   elements.projectNameInput.value = state.projectName;
   document.title = state.projectName === DEFAULT_PROJECT_NAME ? DEFAULT_PROJECT_NAME : `${state.projectName} - ${DEFAULT_PROJECT_NAME}`;
@@ -529,6 +553,14 @@ function renderAll() {
   elements.syncStatus.textContent = state.jsonSyncHandle ? '연결된 wbs.json 파일에 자동저장 중' : '브라우저 로컬 자동저장 사용 중';
   if (elements.taskFilterInput.value !== state.taskQuery) {
     elements.taskFilterInput.value = state.taskQuery;
+  }
+  elements.taskFilterInput.disabled = editorOpen;
+  if (editorOpen) {
+    elements.taskFilterInput.setAttribute('aria-disabled', 'true');
+    elements.taskFilterInput.title = '편집을 완료하거나 취소한 후 검색할 수 있습니다.';
+  } else {
+    elements.taskFilterInput.removeAttribute('aria-disabled');
+    elements.taskFilterInput.removeAttribute('title');
   }
 
   if (typeof window !== 'undefined') {
@@ -545,7 +577,6 @@ function renderAll() {
 
   const visibleTasks = getVisibleTasks();
   const rows = [];
-  const filterActive = Boolean(state.taskQuery.trim());
   elements.clearTaskFilterButton.hidden = !filterActive;
   elements.taskFilterStatus.textContent = filterActive
     ? `${visibleTasks.length}개 작업 표시 중 (전체 ${state.tasks.length}개)`
@@ -561,6 +592,8 @@ function renderAll() {
   }
   elements.exportCsvButton.title = hasTasks ? '' : '내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.';
   elements.openGanttButton.title = hasTasks ? '' : '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.';
+  elements.addRootButton.setAttribute('aria-disabled', String(filterActive));
+  elements.addRootButton.title = filterActive ? '검색 중에는 작업을 추가할 수 없습니다. 검색을 먼저 지워주세요.' : '';
 
   // ⚡ Bolt: Cache parent IDs to convert O(N^2) render loop to O(N)
   cachedHasChildrenSet.clear();
@@ -702,6 +735,8 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
   const row = taskRowTemplate.cloneNode(false);
   row.className = `task-row depth-${task.depth} ${index % 2 === 1 ? 'striped-even' : ''}`;
   row.dataset.taskId = task.id;
+  const filterActive = Boolean(state.taskQuery.trim());
+  row.draggable = !filterActive;
 
   const actionCell = actionCellTemplate.cloneNode(false);
   const actionStack = actionStackTemplate.cloneNode(false);
@@ -712,11 +747,13 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
     const toggleButton = toggleButtonTemplate.cloneNode(false);
     const searchExpanded = cachedSearchExpandedParentIds.has(task.id);
     const expanded = searchExpanded || task.expanded;
-    const toggleLabel = searchExpanded ? '검색 중 계층 맥락 고정' : (task.expanded ? '접기' : '펼치기');
+    const toggleLabel = searchExpanded
+      ? '검색 중 계층 맥락 고정'
+      : (filterActive ? '검색 중 비활성화' : (task.expanded ? '접기' : '펼치기'));
     toggleButton.setAttribute('aria-label', `${toggleLabel} - ${rowEntityName}`);
     toggleButton.setAttribute('aria-expanded', String(expanded));
     toggleButton.title = `${toggleLabel} - ${rowEntityName}`;
-    toggleButton.disabled = searchExpanded;
+    toggleButton.disabled = filterActive || searchExpanded;
     const toggleIcon = toggleIconTemplate.cloneNode(false);
     toggleIcon.textContent = expanded ? '▼' : '▶';
     toggleButton.appendChild(toggleIcon);
@@ -731,8 +768,11 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
   const isLeaf = task.depth >= 3;
   const addChildButton = createActionButton(`하위 추가 - ${rowEntityName}`, '＋', 'add-child', isLeaf ? '최대 3단계까지만 추가할 수 있습니다.' : `하위 추가 - ${rowEntityName}`);
 
-  if (isLeaf) {
+  if (isLeaf || filterActive) {
     addChildButton.setAttribute('aria-disabled', 'true');
+    if (filterActive && !isLeaf) {
+      addChildButton.title = '검색 중에는 작업을 추가할 수 없습니다. 검색을 먼저 지워주세요.';
+    }
   } else {
     addChildButton.removeAttribute('aria-disabled');
   }
@@ -1145,6 +1185,11 @@ function handleRowAction(action, taskId) {
     return;
   }
 
+  if (state.taskQuery.trim() && (action === 'toggle' || action === 'add-child')) {
+    showToast('검색 중에는 계층을 변경할 수 없습니다. 검색을 먼저 지워주세요.');
+    return;
+  }
+
   if (action === 'toggle') {
     task.expanded = !task.expanded;
     persistState();
@@ -1208,6 +1253,10 @@ function handleRowAction(action, taskId) {
 }
 
 function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertAfterId = null, draft = null }) {
+  if (mode === 'create' && state.taskQuery.trim()) {
+    showToast('검색 중에는 작업을 추가할 수 없습니다. 검색을 먼저 지워주세요.');
+    return;
+  }
   state.previousFocus = document.activeElement;
   if (mode === 'edit') {
     const task = findTask(targetId);
