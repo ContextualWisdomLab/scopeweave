@@ -162,11 +162,15 @@ HEAD가 바뀌면 다시 확인해야 한다.
   functional/security Checks는 통과했지만 OpenCode는 verdict 부재로, Strix는
   provider HTTP 500과 vulnerability report 부재로 fail-closed 되었으며
   qualifying approval이 없어 병합하지 않았다.
-- #610: `3bb2bd95905d590fe3d1d0d9a8fc6c6ec133c04a` (base
-  `develop@2c328875`). 이전 exact head의 Cloud E2E가 JSON sync에서 텍스트
-  `predecessors`/`sprint`의 `0`·`false`를 보존하는 결함을 검출했고, 이를
-  `task.predecessors || ''` 및 `task.sprint || ''`로 수정했다. 현재 head의
-  replacement Checks는 재실행 중이며, qualifying approval은 없다.
+- #610: `develop@2c328875` 대상
+  `3bb2bd95905d590fe3d1d0d9a8fc6c6ec133c04a`. numeric-zero 공통 정규화 경계와
+  JSON/CSV export를 current CodeGraph와 대조했고 focused numeric-zero 12개,
+  전체 unit 및 config 3개가 통과했다. 전체 Playwright는 88개 중 87개가
+  통과했으며 유일한 실패는 develop baseline의 modulepreload 누락(#490에서
+  별도 수정 중)이다. current-head hosted functional/security/fuzz/coverage
+  Checks는 통과했지만 OpenCode run `33180751297`/job `98980396931`은
+  current-head verdict 부재로 fail-closed 되었고 qualifying approval도 없어
+  병합하지 않았다.
 - #608: `2d7448cbb27f2580dacdbc2b4813efd8c99b08af` (base
   `develop@2c328875`). 동시 변경으로 제거됐던 cloud/analytics modulepreload와
   초기 task-dependent native `disabled`·`aria-describedby` 상태를 복원하고,
@@ -202,8 +206,11 @@ HEAD가 바뀌면 다시 확인해야 한다.
   provider 미설정으로 실패했고 artifact에도 vulnerability report가 없어
   fail-closed 되었으며 qualifying approval도 없어 병합하지 않았다.
 - #623: stacked base `refactor/schema-migration-ledger-433@9f2e6818` 대상
-  `81072df8f4dd2e2df269710eb7cc852312ff7543`, draft 상태. canonical SQLite
-  rename의 31개 schema/migration 테스트는 통과했지만 독립 병합 근거가 없다.
+  `0e8f65a02fb77ea52481a6339a1f517f5389807a`, draft 상태. canonical SQLite
+  rename이 첫 ledger 생성까지 `BEGIN IMMEDIATE` 안에서 수행되도록 보강하고,
+  중간 실패 시 ledger와 10개 table rename이 함께 rollback되는 회귀를 추가했다.
+  focused rename 12개와 전체 unit은 통과했으며 exact-head Server/OSV/Dependency
+  Checks는 아직 진행 중이고 qualifying approval은 없다.
 - #500: `develop@2c328875` 대상
   `b7ef5c587aac52d03880b087af39580ff52384cc`. fail-closed schema migration
   ledger의 unknown-object, ledger-contract, compatibility-column 및 concurrent
