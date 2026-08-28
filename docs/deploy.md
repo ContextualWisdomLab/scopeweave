@@ -38,7 +38,7 @@ persists the database in the `scopeweave-data` volume.
 | `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | for live billing | Enables real Stripe Checkout (`npm i stripe` too). Without them, billing uses the mock path. |
 | `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI` | for real SSO | Points the OIDC login at your IdP. Outside explicit `SCOPEWEAVE_DEV=1`, a missing issuer fails closed with `404 sso not configured`; the built-in mock exists only when the issuer is unset **and** development mode is explicitly enabled. |
 | `ORCHESTRATOR_URL` | for AI briefing | contextual-orchestrator origin. A missing URL fails closed outside explicit `SCOPEWEAVE_DEV=1`; the deterministic mock exists only in development mode. |
-| `ORCHESTRATOR_TOKEN` | with URL | Required Bearer token for configured orchestrator requests (`CONTEXTUAL_ORCHESTRATOR_TOKEN`). |
+| `ORCHESTRATOR_TOKEN` | with URL | Required Bearer token for configured orchestrator requests. Set it to the same value as the orchestrator's `CONTEXTUAL_ORCHESTRATOR_TOKEN` setting. |
 | `CLEARFOLIO_URL` | for 산출물 viewer | Clearfolio 문서 뷰어 백엔드 주소. Unset → built-in mock (dev/test). |
 | `CLEARFOLIO_HMAC_SECRET` | optional | Signs tenant-claim headers (`clearfolio.tenant-claims.hmac-secret`와 동일 값). |
 | `SCOPEWEAVE_ATTACHMENT_STATUS_CONCURRENCY` | no (default 8, maximum 32) | Maximum concurrent Clearfolio status lookups during one attachment-list request. Invalid values fall back to 8; values above 32 are clamped. |
