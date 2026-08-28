@@ -342,8 +342,9 @@ export async function createCheckout({
   }
 
   if (mode === 'live') {
+    const secretKey = String(process.env.STRIPE_SECRET_KEY || '').trim();
+    const priceId = String(process.env.STRIPE_PRICE_ID || '').trim();
     const repository = await resolveAttemptRepository(attemptRepository);
-    const priceId = process.env.STRIPE_PRICE_ID?.trim();
     if (typeof priceId !== 'string' || priceId.trim().length === 0) {
       throw new HTTPException(503, { res: billingUnavailableResponse() });
     }
@@ -356,7 +357,6 @@ export async function createCheckout({
       }
       throw checkoutStateFailure();
     }
-
     const payload = {
       mode: 'subscription',
       line_items: [{ price: priceId, quantity: 1 }],
@@ -370,7 +370,7 @@ export async function createCheckout({
     try {
       if (stripeClientFactory) {
         try {
-          const stripe = await stripeClientFactory(process.env.STRIPE_SECRET_KEY);
+          const stripe = await stripeClientFactory(secretKey);
           session = await stripe.checkout.sessions.create(payload, {
             idempotencyKey: attempt.idempotencyKey,
           });
@@ -382,7 +382,7 @@ export async function createCheckout({
         }
       } else {
         session = await createStripeSessionWithFetch(
-          process.env.STRIPE_SECRET_KEY,
+          secretKey,
           payload,
           attempt.idempotencyKey,
         );

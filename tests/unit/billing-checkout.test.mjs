@@ -6,6 +6,16 @@ import { createCheckout } from '../../server/billing.mjs';
 const disabledConfiguration = { mode: 'disabled', publicOrigin: null };
 const mockConfiguration = { mode: 'mock', publicOrigin: 'http://127.0.0.1:8787' };
 const liveConfiguration = { mode: 'live', publicOrigin: 'https://planner.example.com' };
+const providerFailurePayloads = Object.freeze({
+  billing_provider_unavailable: {
+    error: 'billing_provider_unavailable',
+    action: 'Retry checkout. If the problem persists, verify Stripe connectivity and service health before retrying.',
+  },
+  billing_provider_invalid_response: {
+    error: 'billing_provider_invalid_response',
+    action: 'Retry checkout. If the problem persists, verify the Stripe Checkout provider configuration and service health.',
+  },
+});
 
 function createAttemptRepository(overrides = {}) {
   const events = [];
@@ -35,6 +45,71 @@ function createAttemptRepository(overrides = {}) {
 async function responsePayloadFrom(error) {
   assert.equal(typeof error.getResponse, 'function');
   return error.getResponse().json();
+}
+
+async function withDefaultStripeTransport(responseFactory, assertion) {
+  const previousSecret = process.env.STRIPE_SECRET_KEY;
+  const previousPrice = process.env.STRIPE_PRICE_ID;
+  const previousFetch = globalThis.fetch;
+  process.env.STRIPE_SECRET_KEY = 'sk_test_default_transport';
+  process.env.STRIPE_PRICE_ID = 'price_default_transport';
+  globalThis.fetch = responseFactory;
+
+  try {
+    await assertion();
+  } finally {
+    globalThis.fetch = previousFetch;
+    if (previousSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = previousSecret;
+    if (previousPrice === undefined) delete process.env.STRIPE_PRICE_ID;
+    else process.env.STRIPE_PRICE_ID = previousPrice;
+  }
+}
+
+async function assertProviderFailure(runCheckout, expectedCode = 'billing_provider_unavailable') {
+  let rejectedError;
+  await assert.rejects(
+    runCheckout(),
+    (error) => {
+      rejectedError = error;
+      assert.equal(error.status, 502);
+      assert.equal(typeof error.getResponse, 'function');
+      return true;
+    },
+  );
+
+  const response = rejectedError.getResponse();
+  assert.equal(response.status, 502);
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('content-type'), 'application/json; charset=UTF-8');
+  const payload = await response.json();
+  assert.deepEqual(payload, providerFailurePayloads[expectedCode]);
+}
+
+async function expectSafeProviderFailure(responseFactory, expectedCode = 'billing_provider_unavailable') {
+  await withDefaultStripeTransport(responseFactory, async () => {
+    await assertProviderFailure(
+      () => createCheckout({
+        orgId: 91,
+        configuration: liveConfiguration,
+        attemptRepository: createAttemptRepository(),
+      }),
+      expectedCode,
+    );
+  });
+}
+
+function fixedSessionFactory(session) {
+  return async () => ({
+    checkout: {
+      sessions: {
+        async create() {
+          if (!session || typeof session !== 'object') return session;
+          return { id: 'cs_test_fixture', ...session };
+        },
+      },
+    },
+  });
 }
 
 test('unconfigured production checkout fails closed with actionable HTTP 503', async () => {
@@ -246,6 +321,57 @@ test('default live provider transport sends the persisted Stripe Idempotency-Key
   }
 });
 
+test('default live provider transport rejects non-2xx Stripe responses with a safe retryable error', async () => {
+  await expectSafeProviderFailure(async () => new Response(JSON.stringify({
+    error: { message: 'No such price: price_secret_internal_detail' },
+  }), {
+    status: 400,
+    headers: { 'content-type': 'application/json; charset=utf-8' },
+  }));
+});
+
+test('live checkout trims configuration values before the provider boundary', async () => {
+  const previousSecret = process.env.STRIPE_SECRET_KEY;
+  const previousPrice = process.env.STRIPE_PRICE_ID;
+  process.env.STRIPE_SECRET_KEY = '  sk_test_trimmed  ';
+  process.env.STRIPE_PRICE_ID = '  price_trimmed  ';
+  const attemptRepository = createAttemptRepository({ attemptId: 'attempt-trimmed' });
+
+  try {
+    const checkout = await createCheckout({
+      orgId: 94,
+      configuration: liveConfiguration,
+      attemptRepository,
+      stripeClientFactory: async (secretKey) => {
+        assert.equal(secretKey, 'sk_test_trimmed');
+        return {
+          checkout: {
+            sessions: {
+              async create(payload) {
+                assert.equal(payload.line_items[0].price, 'price_trimmed');
+                return {
+                  id: 'cs_test_trimmed',
+                  url: 'https://checkout.stripe.com/c/pay/cs_test_trimmed',
+                };
+              },
+            },
+          },
+        };
+      },
+    });
+    assert.deepEqual(checkout, {
+      url: 'https://checkout.stripe.com/c/pay/cs_test_trimmed',
+      live: true,
+      checkoutAttemptId: 'attempt-trimmed',
+    });
+  } finally {
+    if (previousSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = previousSecret;
+    if (previousPrice === undefined) delete process.env.STRIPE_PRICE_ID;
+    else process.env.STRIPE_PRICE_ID = previousPrice;
+  }
+});
+
 test('live checkout fails closed when the durable attempt port cannot start or commit success', async () => {
   const previousPrice = process.env.STRIPE_PRICE_ID;
   process.env.STRIPE_PRICE_ID = 'price_state_failure';
@@ -296,6 +422,80 @@ test('live checkout fails closed when the durable attempt port cannot start or c
     if (previousPrice === undefined) delete process.env.STRIPE_PRICE_ID;
     else process.env.STRIPE_PRICE_ID = previousPrice;
   }
+});
+
+test('default live provider transport rejects network failures without leaking provider detail', async () => {
+  await expectSafeProviderFailure(async () => {
+    throw new Error('getaddrinfo ENOTFOUND api.stripe.com internal-network-detail');
+  });
+});
+
+test('default live provider transport rejects malformed successful session payloads', async () => {
+  await expectSafeProviderFailure(
+    async () => new Response(JSON.stringify({
+      id: 'cs_test_missing_url',
+      object: 'checkout.session',
+    }), {
+      status: 200,
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+    }),
+    'billing_provider_invalid_response',
+  );
+
+  await expectSafeProviderFailure(
+    async () => new Response('{not-json', {
+      status: 200,
+      headers: { 'content-type': 'application/json; charset=utf-8' },
+    }),
+    'billing_provider_invalid_response',
+  );
+});
+
+test('live checkout rejects absent and blank provider redirect shapes', async () => {
+  for (const session of [null, {}, { url: null }, { url: '' }, { url: '   ' }]) {
+    await assertProviderFailure(
+      () => createCheckout({
+        orgId: 92,
+        configuration: liveConfiguration,
+        attemptRepository: createAttemptRepository(),
+        stripeClientFactory: fixedSessionFactory(session),
+      }),
+      'billing_provider_invalid_response',
+    );
+  }
+});
+
+test('live checkout rejects unsafe or malformed provider redirect URLs', async () => {
+  for (const url of [
+    'http://checkout.stripe.com/c/pay/cs_test_plaintext',
+    'https://user@checkout.stripe.com/c/pay/cs_test_userinfo',
+    'https://:password@checkout.stripe.com/c/pay/cs_test_password',
+    'https://checkout.stripe.com.evil.example/c/pay/cs_test_suffix',
+    'https://checkout.stripe.com:444/c/pay/cs_test_port',
+    'https://attacker.example/c/pay/cs_test_foreign_host',
+    'not a URL',
+  ]) {
+    await assertProviderFailure(
+      () => createCheckout({
+        orgId: 92,
+        configuration: liveConfiguration,
+        attemptRepository: createAttemptRepository(),
+        stripeClientFactory: fixedSessionFactory({ url }),
+      }),
+      'billing_provider_invalid_response',
+    );
+  }
+});
+
+test('live checkout maps unexpected injected provider failures to the same safe envelope', async () => {
+  await assertProviderFailure(() => createCheckout({
+    orgId: 93,
+    configuration: liveConfiguration,
+    attemptRepository: createAttemptRepository(),
+    stripeClientFactory: async () => {
+      throw new Error('provider credential detail must not escape');
+    },
+  }));
 });
 
 test('stale uncertain Checkout state tells the customer not to mint a speculative retry', async () => {
