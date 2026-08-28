@@ -4,6 +4,13 @@
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import {
+  ensureLegacyCompatibilityColumns,
+  ensureSchemaMigrationState,
+  inspectSchemaBootstrapState,
+  runAtomicLegacySchemaBootstrap,
+  SchemaMigrationStateError,
+} from './schema_migration.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.SCOPEWEAVE_DB || join(__dirname, '..', 'data.db');
@@ -11,7 +18,19 @@ export const db = new DatabaseSync(dbPath);
 db.exec("PRAGMA journal_mode = WAL");
 db.exec("PRAGMA foreign_keys = ON");
 
-db.exec(`
+// Inspect the existing generation before legacy CREATE/ALTER statements can
+// mutate it. The current application query layer still targets legacy names, so
+// a complete canonical database is identified in the ledger and then rejected
+// until the query cutover ships; mixed/incomplete databases fail even earlier.
+const initialSchemaState = inspectSchemaBootstrapState(db);
+if (initialSchemaState === 'canonical_ready') {
+  ensureSchemaMigrationState(db);
+  throw new SchemaMigrationStateError(
+    'canonical schema generation is not yet supported by this application version',
+  );
+}
+
+runAtomicLegacySchemaBootstrap(db, `
 CREATE TABLE IF NOT EXISTS users (
   id INTEGER PRIMARY KEY,
   email TEXT UNIQUE NOT NULL,
@@ -172,10 +191,13 @@ CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(org_id);
 CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);
 `);
 
-// Migration for pre-existing DBs: add token_version if missing (idempotent).
-try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
-try { db.exec('ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
-try { db.exec("ALTER TABLE projects ADD COLUMN methodology TEXT NOT NULL DEFAULT 'waterfall'"); } catch { /* already there */ }
+// Compatibility migrations are catalog-driven so expected idempotence never
+// relies on swallowing unrelated SQLite failures as "already there".
+ensureLegacyCompatibilityColumns(db);
+
+// Issue #433 migration guard: record the complete naming generation and refuse
+// to serve a database left in a partial old/new table-name cutover.
+ensureSchemaMigrationState(db);
 
 // node:sqlite returns lastInsertRowid as number|bigint; normalize to Number.
 export const rowid = (r) => Number(r.lastInsertRowid);

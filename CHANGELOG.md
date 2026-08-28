@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added workflow ownership regression coverage so central review
   workflows stay inherited from `ContextualWisdomLab/.github`, not copied
   into this repository.
+- Added an append-only `schema_migrations` ledger and startup migration-state
+  guard that records the complete legacy/canonical table-name generation,
+  rejects unknown/corrupt history and backward generation rollback, and fails
+  closed if a rename cutover leaves the database partial or mixed.
+- Rejected unrecognized application tables during schema-generation
+  classification so an otherwise complete schema cannot bypass the migration
+  guard with an unverified object.
 
 ### Security
 
@@ -61,6 +68,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mode, delegating provider/model/topology policy to the shared service without
   weakening ScopeWeave's authenticated, fail-closed transport or response
   boundary controls.
+- Legacy `token_version`, `archived`, and `methodology` compatibility migrations
+  now inspect SQLite catalog metadata before `ALTER TABLE` and propagate real
+  DDL failures instead of treating every exception as an already-applied column.
 - Accepted XML whitespace before exact Microsoft Project element delimiters
   while preserving the linear, regex-free import scanner and rejecting
   attributes, longer names, non-XML whitespace, nested unmatched blocks, and
