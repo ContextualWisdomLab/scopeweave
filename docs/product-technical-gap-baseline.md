@@ -222,6 +222,14 @@ HEAD가 바뀌면 다시 확인해야 한다.
   coverage contract가 통과했다. hosted unit/API·cloud E2E·OSV·dependency
   Checks는 통과했지만 현재 base와 `DIRTY/CONFLICTING` 상태이고 qualifying
   approval이 없어 rebase·우회 병합하지 않았다.
+- #510: stacked base
+  `feat/access-grant-domain-413@f3ae1f1f4ee66024776507d75f8fb752b2bf748c`
+  대상 current head `98fd12d145292ed198fde111bd02690c3e18ecbf`. SQLite access-grant
+  schema·membership epoch·one-time consume/audit 경계를 current CodeGraph와
+  대조했고, attachment 삭제와 mint가 경합할 때 FK extended code 787을
+  nondisclosing `null` transition으로 변환하는 최소 수정과 회귀를 추가했다.
+  full unit·API·fuzz 및 access-grant focused 5+10+4+domain tests가 통과했으며,
+  replacement hosted Checks는 queued이고 qualifying approval은 없다.
 - #511: stacked base
   `fix/stripe-checkout-provider-boundary-488@5d1bf1b023d4152610d9bc247c02da27429d33cd` 대상
   `01be3a5d59979e4c52d17bfaa4428c177dec0237`. Checkout attempt idempotency와
