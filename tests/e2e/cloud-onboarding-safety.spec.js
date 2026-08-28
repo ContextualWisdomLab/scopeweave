@@ -5,6 +5,7 @@ const PORT = 8831;
 const BASE = `http://127.0.0.1:${PORT}`;
 let server;
 let token;
+let sampleToken;
 
 async function api(path, { method = 'GET', body, tok } = {}) {
   const response = await fetch(`${BASE}${path}`, {
@@ -42,6 +43,11 @@ test.beforeAll(async () => {
   token = (await api('/api/auth/signup', {
     method: 'POST',
     body: { email: 'onboarding-safety@cloud.com', password: 'password123' },
+  })).token;
+
+  sampleToken = (await api('/api/auth/signup', {
+    method: 'POST',
+    body: { email: 'sample-start@cloud.com', password: 'password123' },
   })).token;
 
   await api('/api/projects', {
@@ -142,5 +148,27 @@ test('picker-opened cloud projects establish a local snapshot and persist progre
   await expect.poll(async () => {
     const project = await api('/api/projects/1', { tok: token });
     return project.tasks.find((task) => task.id === 'cloud-task-1')?.actualProgressStatus;
+  }, { timeout: 4000 }).toBe('진행(50%)');
+});
+
+test('sample cloud onboarding adopts the plan before interactive saves', async ({ page }) => {
+  await page.goto(`${BASE}/`);
+  await page.evaluate((authToken) => {
+    localStorage.clear();
+    localStorage.setItem('scopeweave:token', authToken);
+  }, sampleToken);
+  await page.reload();
+
+  await page.getByRole('button', { name: '✨ 샘플로 시작' }).click();
+  await expect(page.getByTestId('project-name-input')).toHaveValue('샘플 프로젝트');
+  await expect(page.locator('#seed-onboarding')).toBeHidden();
+
+  const project = (await api('/api/projects', { tok: sampleToken })).projects[0];
+  const progress = page.locator('select[data-inline-progress]').first();
+  await progress.selectOption('진행(50%)');
+
+  await expect.poll(async () => {
+    const saved = await api(`/api/projects/${project.id}`, { tok: sampleToken });
+    return saved.tasks[0]?.actualProgressStatus;
   }, { timeout: 4000 }).toBe('진행(50%)');
 });
