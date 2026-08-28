@@ -23,4 +23,12 @@ test.describe('WBS search interaction safety', () => {
     await expect(page.locator('.editor-panel')).toBeVisible();
     await expect(page.getByRole('searchbox', { name: 'WBS 작업 검색' })).toBeDisabled();
   });
+
+  test('blocks create actions while filtered context could hide the editor anchor', async ({ page }) => {
+    const search = page.getByRole('searchbox', { name: 'WBS 작업 검색' });
+    await search.fill('단계작업계획');
+
+    await expect(page.getByRole('button', { name: '최상위 작업 추가' })).toBeDisabled();
+    await expect(page.locator('tbody tr[data-task-id]').first().getByRole('button', { name: /하위 추가 -/ })).toBeDisabled();
+  });
 });
