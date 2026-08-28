@@ -9,6 +9,9 @@ test('keeps WBS search ephemeral across persistence and reload', async ({ page }
   const rows = page.locator('tbody tr[data-task-id]');
 
   await expect(rows).toHaveCount(4);
+  await page.getByTestId('project-name-input').fill('Search persistence');
+  await expect.poll(async () => page.evaluate((storageKey) => localStorage.getItem(storageKey), STORAGE_KEY)).not.toBeNull();
+
   await search.fill('단계작업계획');
   await expect(rows).toHaveCount(3);
 
