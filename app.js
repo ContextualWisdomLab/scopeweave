@@ -999,6 +999,8 @@ function createStatusCellContent(progressState) {
   if (progressState.description) {
     badge.title = progressState.description;
     badge.setAttribute('aria-label', `${progressState.label} - ${progressState.description}`);
+    badge.setAttribute('tabindex', '0');
+    badge.setAttribute('role', 'note');
   }
   return badge;
 }
