@@ -23,7 +23,7 @@ test('cloud status feedback is visibly rendered as a non-focus-taking live statu
   ).toBe(false);
 });
 
-test('disabled empty-state actions expose and announce a reason plus next action', async ({ page }) => {
+test('disabled empty-state actions expose a reason without an unsolicited initial live announcement', async ({ page }) => {
   await page.addInitScript(() => {
     localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
       projectName: 'Empty Scope',
@@ -51,7 +51,7 @@ test('disabled empty-state actions expose and announce a reason plus next action
   await expect(status).toHaveAttribute('aria-live', 'polite');
   await expect(status).toHaveAttribute('aria-atomic', 'true');
   await expect(status).toHaveClass(/\bsr-only\b/);
-  await expect(status).toHaveText('작업이 없어 CSV 내보내기와 간트차트를 사용할 수 없습니다. 최상위 작업을 추가하거나 CSV를 가져오세요.');
+  await expect(status).toHaveText('');
 });
 
 test('task-dependent help disappears and detaches once the actions are available', async ({ page }) => {
