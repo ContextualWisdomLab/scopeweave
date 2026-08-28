@@ -81,7 +81,7 @@ classDiagram
 
 ## 4. 현재 PR 및 Gap 조치 상태
 
-이 표는 2026-08-28의 GitHub exact-head snapshot이다. Checks와 리뷰는
+이 표는 2026-08-29의 GitHub exact-head snapshot이다. Checks와 리뷰는
 HEAD가 바뀌면 다시 확인해야 한다.
 
 | ID | Gap / 고객 영향 | 현재 제출 상태 | 조치 |
@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `4c8d09d`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | 미해결 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #495/#621/#625/#628 OpenCode current verdict 부재; #576 Strix가 현재 webhook 경로의 SSRF를 보고; #578/#588 Strix provider 실패; #608 `83b8949`·#610 `3bb2bd9`·#587 `1f93371` Checks 재실행 중; #550은 Checks 통과지만 승인 없음; #596은 Checks 통과지만 승인 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #495/#621/#625/#628 OpenCode current verdict 부재; #576 Strix가 현재 webhook 경로의 SSRF를 보고; #578/#588 Strix provider 실패; #608 `83b8949`·#610 `3bb2bd9`·#587 `1f93371` Checks 재실행 중; #498 `9408588`·#505 `b8435c7` 수정 후 Checks 재실행 중; #550은 Checks 통과지만 승인 없음; #596은 Checks 통과지만 승인 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -144,6 +144,30 @@ HEAD가 바뀌면 다시 확인해야 한다.
   주소, DNS rebinding, pinned connection, legacy destination migration을 다룬다.
   일반 hosted 게이트는 통과했지만 Strix provider 실패와 qualifying approval
   부재로 병합하지 않았다.
+- #498: `fix/clearfolio-production-configuration@78f8b557` 대상
+  `940858859b27060241864e633659f656907616b1`. 이전 hosted unit-and-api가
+  persistence `TimeoutError` 회귀 테스트의 잘못된 `READY` fixture를
+  `invalid_status`로 분류해 실패했다. 공유 분류 함수는 provider lookup
+  단계에서만 native `TimeoutError`를 timeout으로 매핑하고, fixture는 유효한
+  `SUCCEEDED`로 고쳤다. local coverage/unit/API는 통과했으며 replacement
+  Checks는 queued이고 qualifying approval은 없다.
+- #505: `develop@2c328875` 대상
+  `b8435c719baf4ee9eaa2907e2c93c6d959711d66`. provider가 반환한 Checkout
+  redirect가 임의 HTTPS 호스트로 향하지 않도록 정확한
+  `checkout.stripe.com` 기본 포트를 검증하는 최소 보완을 넣었다. local
+  billing unit/API는 통과했으며 replacement hosted Checks는 queued이고
+  qualifying approval은 없다.
+- #511: stacked base
+  `fix/stripe-checkout-provider-boundary-488@5d1bf1b023d4152610d9bc247c02da27429d33cd` 대상
+  `01be3a5d59979e4c52d17bfaa4428c177dec0237`. Checkout attempt idempotency와
+  durable provider outcome 경계를 점검했고 current local billing unit/API와
+  hosted stacked Checks는 통과했지만 qualifying approval은 없다.
+- #537: stacked base `feat/clearfolio-capability-readiness-489@9e465a2c` 대상
+  `abcd68c20ef073818d1869f2a5e891fb99248a05`. Clearfolio configuration
+  readiness를 liveness와 분리하고 authenticated capability/503 표면을
+  추가한 제출본으로 local readiness·unit·API는 통과했다. 전체 E2E의 1개
+  modulepreload 실패는 이 stack 이전의 #628/#495 경로이며, stacked hosted
+  Checks는 통과했지만 protected develop 승인 근거는 없다.
 - #576: `develop@2c328875` 대상 `62484c2dbeb755fd80fbc123d34e55df7755bda8`.
   Strix exact-head report가 기존 webhook 등록 경로에서 인증 사용자가
   내부 주소로 outbound 요청을 유도할 수 있는 MEDIUM SSRF를 보고했다.
