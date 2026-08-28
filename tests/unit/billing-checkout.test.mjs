@@ -272,6 +272,9 @@ test('live checkout rejects unsafe or malformed provider redirect URLs', async (
     'http://checkout.stripe.com/c/pay/cs_test_plaintext',
     'https://user@checkout.stripe.com/c/pay/cs_test_userinfo',
     'https://:password@checkout.stripe.com/c/pay/cs_test_password',
+    'https://checkout.stripe.com.evil.example/c/pay/cs_test_suffix',
+    'https://checkout.stripe.com:444/c/pay/cs_test_port',
+    'https://attacker.example/c/pay/cs_test_foreign_host',
     'not a URL',
   ]) {
     await assertProviderFailure(() => createCheckout({

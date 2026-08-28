@@ -83,7 +83,13 @@ function validateCheckoutSessionUrl(session) {
     throw billingProviderUnavailable();
   }
 
-  if (checkoutUrl.protocol !== 'https:' || checkoutUrl.username || checkoutUrl.password) {
+  if (
+    checkoutUrl.protocol !== 'https:'
+    || checkoutUrl.hostname !== 'checkout.stripe.com'
+    || checkoutUrl.port !== ''
+    || checkoutUrl.username
+    || checkoutUrl.password
+  ) {
     throw billingProviderUnavailable();
   }
 
