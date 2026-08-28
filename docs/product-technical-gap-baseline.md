@@ -182,15 +182,17 @@ HEAD가 바뀌면 다시 확인해야 한다.
   focused accessibility E2E 4개, 관련 unit 6개, 전체 unit 및 config 3개가
   통과했으며, 기존 modulepreload baseline 실패는 #490 범위로 섞지 않았다.
   push 후 exact-head hosted Checks는 재실행 중이고 qualifying approval은 없다.
-- #587: `dcf37e81f8a5584accc4403e05b3a5e10b644872` (base
-  `develop@2c328875`). 직접 소비 가능한 `application_routes_core.mjs`가
-  오래된 첫 `x-forwarded-for` 기반 limiter를 사용하던 경계를 제거하고,
-  `server/rate_limit.mjs`의 설정 검증·trusted transport peer·bucket 상한을
-  공유하도록 했다. 후속 보안 감사에서 ordinary/429 request logger의 invite/share
-  bearer path leak을 확인해 공통 redaction과 실제 파일-DB 회귀를 추가했다.
-  direct-core rate-limit, 전체 coverage/API와 redaction 회귀는 로컬 통과했으며,
-  current-head hosted Checks에는 OpenCode failure가 있고 qualifying approval은
-  없다.
+- #587: `c542615f3746ca365a51711e91ffec3477a5025e` (base
+  `develop@2c328875`). 직접 소비 가능한
+  `application_routes_core.mjs`가 오래된 첫 `x-forwarded-for` 기반 limiter를
+  사용하던 경계를 제거하고, `server/rate_limit.mjs`의 설정 검증·trusted
+  transport peer·bucket 상한을 공유하도록 했다. ordinary/429 request logger의
+  invite/share bearer path leak은 공통 redaction으로 차단했고, OIDC guard
+  accounting probe와 대소문자 비구분 기존 계정 재사용을 보강했다. 배포 문서의
+  `ORCHESTRATOR_TOKEN`과 contextual-orchestrator 설정 키 관계도 명확히 했다.
+  direct-core rate-limit, OIDC production boundary, 전체 API/unit 및 config 3개가
+  로컬 통과했으며, 문서 push 후 exact-head hosted Checks는 재실행 중이고
+  qualifying approval은 없다.
 - #596: `develop@2c328875` 대상 `50f0c2d18e4361e5f11507ca194c94fc7caabbdc`.
   provider diagnostic sanitization과 bounded/cancelled response handling을
   current CodeGraph·resolved 리뷰와 대조했고 orchestrator unit·coverage·
