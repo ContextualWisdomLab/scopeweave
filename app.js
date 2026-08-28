@@ -467,7 +467,6 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
       return;
     }
 
-    // Cache task lookups for the drag-and-drop hot path.
     state.dragTaskCache = new Map(state.tasks.map(t => [t.id, t]));
     state.dragTaskId = row.dataset.taskId;
     state.dragElement = row;
@@ -524,7 +523,7 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
     }
 
     event.preventDefault();
-    const targetTask = (state.dragTaskCache ? state.dragTaskCache.get(row.dataset.taskId) : null) || findTask(row.dataset.taskId);
+    const targetTask = (state.dragTaskCache ? state.dragTaskCache.get(state.dragTaskId) : null) || findTask(row.dataset.taskId);
     const draggedTask = (state.dragTaskCache ? state.dragTaskCache.get(state.dragTaskId) : null) || findTask(state.dragTaskId);
     if (draggedTask && targetTask && canReorderWithinLevel(draggedTask, targetTask)) {
       const rect = row.getBoundingClientRect();
@@ -595,7 +594,6 @@ function renderAll() {
   elements.addRootButton.setAttribute('aria-disabled', String(filterActive));
   elements.addRootButton.title = filterActive ? '검색 중에는 작업을 추가할 수 없습니다. 검색을 먼저 지워주세요.' : '';
 
-  // ⚡ Bolt: Cache parent IDs to convert O(N^2) render loop to O(N)
   cachedHasChildrenSet.clear();
   state.tasks.forEach(task => {
     if (task.parentId) cachedHasChildrenSet.add(task.parentId);
@@ -689,7 +687,6 @@ function createEmptyStateRow() {
   return row;
 }
 
-// Cache an unattached td shell so hot render loops clone instead of allocate.
 let tableCellTemplate = null;
 function createTableCell(className, content) {
   if (!tableCellTemplate) {
@@ -705,9 +702,6 @@ function createTableCell(className, content) {
   return cell;
 }
 
-// ⚡ Bolt: Cache unattached DOM elements as templates to eliminate repetitive
-// document.createElement() JS-to-C++ allocation overhead during O(N) table rendering loops.
-// Using cloneNode() is measurably faster when creating thousands of rows.
 let taskRowTemplate = null;
 let actionCellTemplate = null;
 let actionStackTemplate = null;
@@ -740,7 +734,6 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
 
   const actionCell = actionCellTemplate.cloneNode(false);
   const actionStack = actionStackTemplate.cloneNode(false);
-
   const rowEntityName = task.task || task.activity || task.phase || '작업';
 
   if (hasChildren) {
@@ -764,7 +757,6 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
   }
 
   const dragHandle = getDragHandleTemplate();
-
   const isLeaf = task.depth >= 3;
   const addChildButton = createActionButton(`하위 추가 - ${rowEntityName}`, '＋', 'add-child', isLeaf ? '최대 3단계까지만 추가할 수 있습니다.' : `하위 추가 - ${rowEntityName}`);
 
@@ -787,12 +779,7 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
     deleteButton.setAttribute('aria-disabled', 'true');
   }
 
-  actionStack.append(
-    dragHandle,
-    addChildButton,
-    editButton,
-    deleteButton
-  );
+  actionStack.append(dragHandle, addChildButton, editButton, deleteButton);
   actionCell.appendChild(actionStack);
   row.appendChild(actionCell);
 
@@ -822,7 +809,6 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
   return row;
 }
 
-// ⚡ Bolt: Cache static DOM structures to avoid JS-to-C++ instantiation overhead in hot rendering paths.
 let dragHandleTemplate = null;
 function getDragHandleTemplate() {
   if (!dragHandleTemplate) {
@@ -856,11 +842,9 @@ function createActionButton(label, text, action, title) {
 function renderEditorRow(anchorId) {
   const draft = state.editor.draft || createEmptyTaskDraft();
   const depth = state.editor.depth;
-
   const row = document.createElement('tr');
   row.className = 'editor-row';
   row.dataset.editorAnchor = anchorId;
-
   const cell = document.createElement('td');
   cell.colSpan = 21;
   const panel = document.createElement('div');
@@ -906,7 +890,6 @@ function renderEditorRow(anchorId) {
   cancelButton.textContent = '취소';
   cancelButton.title = '취소 (Esc)';
   cancelButton.setAttribute('aria-keyshortcuts', 'Escape');
-  // ⚡ Bolt: Attach listener once during creation to prevent O(N) accumulation in renderEditorValidation
   cancelButton.addEventListener('click', () => closeEditor());
   const errors = document.createElement('div');
   errors.id = 'editor-errors';
@@ -914,7 +897,6 @@ function renderEditorRow(anchorId) {
   errors.setAttribute('aria-live', 'polite');
   errors.setAttribute('aria-atomic', 'true');
   editorActions.append(saveButton, cancelButton, errors);
-
   form.append(editorGrid, editorActions);
   panel.appendChild(form);
   cell.appendChild(panel);
@@ -944,17 +926,13 @@ function renderEditorField(label, field, value, type = 'text', required = false,
   input.setAttribute('data-testid', EDITOR_FIELD_TEST_IDS[field] || `editor-${toKebab(field)}`);
   input.dataset.editorField = field;
   input.type = type;
-  if (type === 'text') {
-    input.maxLength = 1000;
-  }
+  if (type === 'text') input.maxLength = 1000;
   input.value = value || '';
   if (required) {
     input.required = true;
     input.setAttribute('aria-required', 'true');
   }
-  if (placeholder) {
-    input.placeholder = placeholder;
-  }
+  if (placeholder) input.placeholder = placeholder;
   labelElement.append(labelText, input);
   return labelElement;
 }
@@ -981,28 +959,18 @@ function renderEditorSelectField(label, field, value, options) {
 }
 
 let treeValueTemplate = null;
-
 function createTreeCellContent(value, depth) {
-  if (!treeValueTemplate) {
-    treeValueTemplate = document.createElement('div');
-  }
+  if (!treeValueTemplate) treeValueTemplate = document.createElement('div');
   const treeValue = treeValueTemplate.cloneNode(false);
   treeValue.className = `tree-value indent-${depth}`;
-  if (value) {
-    treeValue.textContent = value;
-  } else {
-    treeValue.appendChild(createEmptyCell());
-  }
+  if (value) treeValue.textContent = value;
+  else treeValue.appendChild(createEmptyCell());
   return treeValue;
 }
 
 function createTextCellContent(value, warning = '') {
-  if (!value) {
-    return warning ? createWarningBadge(warning) : createEmptyCell();
-  }
-  if (!warning) {
-    return document.createTextNode(value);
-  }
+  if (!value) return warning ? createWarningBadge(warning) : createEmptyCell();
+  if (!warning) return document.createTextNode(value);
   const wrapper = document.createElement('div');
   wrapper.appendChild(document.createTextNode(value));
   const validation = document.createElement('div');
@@ -1012,32 +980,23 @@ function createTextCellContent(value, warning = '') {
   return wrapper;
 }
 
-// ⚡ Bolt: Cache empty cell DOM structure as a template and use cloneNode(true).
-// Repeatedly constructing DOM trees node-by-node in hot render paths causes significant
-// JS-to-C++ bridge overhead and GC pressure. Cloning an existing node structure is
-// substantially faster (often 2-3x in large grids).
 let emptyCellTemplate = null;
-
 function createEmptyCell() {
   if (!emptyCellTemplate) {
     emptyCellTemplate = document.createElement('span');
     emptyCellTemplate.className = 'empty-cell';
-
     const visibleDash = document.createElement('span');
     visibleDash.setAttribute('aria-hidden', 'true');
     visibleDash.textContent = '-';
-
     const srOnly = document.createElement('span');
     srOnly.className = 'sr-only';
     srOnly.textContent = '값 없음';
-
     emptyCellTemplate.append(visibleDash, srOnly);
   }
   return emptyCellTemplate.cloneNode(true);
 }
 
 let warningBadgeTemplate = null;
-
 function createWarningBadge(warning) {
   if (!warningBadgeTemplate) {
     warningBadgeTemplate = document.createElement('span');
@@ -1049,16 +1008,11 @@ function createWarningBadge(warning) {
 }
 
 const persistentOwnerColorMap = new Map();
-
 function createOwnerCellContent(owner) {
-  if (!owner) {
-    return createEmptyCell();
-  }
-
+  if (!owner) return createEmptyCell();
   if (!persistentOwnerColorMap.has(owner)) {
     persistentOwnerColorMap.set(owner, OWNER_COLORS[persistentOwnerColorMap.size % OWNER_COLORS.length]);
   }
-
   const badge = document.createElement('span');
   badge.className = 'owner-badge';
   badge.style.background = persistentOwnerColorMap.get(owner);
@@ -1067,9 +1021,7 @@ function createOwnerCellContent(owner) {
 }
 
 function createStatusCellContent(progressState) {
-  if (!progressState.label) {
-    return createEmptyCell();
-  }
+  if (!progressState.label) return createEmptyCell();
   const badge = document.createElement('span');
   badge.className = `status-badge ${progressState.className}`;
   badge.textContent = progressState.label;
@@ -1084,9 +1036,7 @@ const metricTextTemplate = document.createElement('span');
 metricTextTemplate.className = 'metric-text';
 function createMetricText(value, testId = '') {
   const metric = metricTextTemplate.cloneNode(false);
-  if (testId) {
-    metric.setAttribute('data-testid', testId);
-  }
+  if (testId) metric.setAttribute('data-testid', testId);
   metric.textContent = value;
   return metric;
 }
@@ -1115,6 +1065,12 @@ function createActualProgressCellContent(task, taskMetrics) {
   if (select.value !== task.actualProgressStatus) {
     select.value = '미착수(0%)';
   }
+  const filterActive = Boolean(state.taskQuery.trim());
+  select.disabled = filterActive;
+  if (filterActive) {
+    select.setAttribute('aria-disabled', 'true');
+    select.title = '검색 중에는 실적진척상태를 변경할 수 없습니다. 검색을 먼저 지워주세요.';
+  }
   label.append(srOnly, select);
 
   const warning = taskMetrics.plannedDateWarning || taskMetrics.actualDateWarning;
@@ -1134,21 +1090,14 @@ function renderEditorValidation() {
   const errors = validateDraft(state.editor.draft, state.editor.depth);
   state.editor.errors = errors;
   const errorElement = document.getElementById('editor-errors');
-  if (errorElement) {
-    errorElement.textContent = errors.join(' ');
-  }
-
+  if (errorElement) errorElement.textContent = errors.join(' ');
   const form = document.querySelector('form[data-editor-form="true"]');
-  if (!form) {
-    return;
-  }
-
+  if (!form) return;
   const saveButton = form.querySelector('button[type="submit"]');
   if (saveButton) {
     saveButton.disabled = errors.length > 0;
     saveButton.title = errors.length > 0 ? '입력값을 올바르게 수정해야 저장할 수 있습니다.' : '저장 (Enter)';
   }
-
   form.querySelectorAll('input[data-editor-field]').forEach((input) => {
     const label = CSV_FIELD_LABELS[input.dataset.editorField] || input.dataset.editorField;
     const hasError = errors.some((error) => label && error.includes(label));
@@ -1163,58 +1112,45 @@ function renderEditorValidation() {
 }
 
 function handleInlineProgressChange(event) {
-  const taskId = event.target.dataset.inlineProgress;
-  const task = findTask(taskId);
-  if (!task) {
+  if (state.taskQuery.trim()) {
+    renderAll();
+    showToast('검색 중에는 실적진척상태를 변경할 수 없습니다. 검색을 먼저 지워주세요.');
     return;
   }
-
+  const taskId = event.target.dataset.inlineProgress;
+  const task = findTask(taskId);
+  if (!task) return;
   const rawValue = event.target.value;
   task.actualProgressStatus = ACTUAL_PROGRESS_OPTIONS.includes(rawValue) ? rawValue : '미착수(0%)';
-
   persistState();
   renderAll();
-
-  // 🎨 Palette: Restore focus to the dropdown after full DOM re-render
   requestAnimationFrame(() => {
     const dropdown = document.querySelector(`[data-inline-progress="${taskId}"]`);
-    if (dropdown) {
-      dropdown.focus();
-    }
+    if (dropdown) dropdown.focus();
   });
 }
 
 function handleRowAction(action, taskId) {
   const task = findTask(taskId);
-  if (!task) {
-    return;
-  }
-
+  if (!task) return;
   if (state.taskQuery.trim() && (action === 'toggle' || action === 'add-child' || action === 'delete')) {
     showToast('검색 중에는 계층을 변경할 수 없습니다. 검색을 먼저 지워주세요.');
     return;
   }
-
   if (action === 'toggle') {
     task.expanded = !task.expanded;
     persistState();
     renderAll();
-
-    // 🎨 Palette: Restore focus to the toggle button after full DOM re-render
     requestAnimationFrame(() => {
       const toggleBtn = document.querySelector(`tr[data-task-id="${taskId}"] button[data-action="toggle"]`);
-      if (toggleBtn) {
-        toggleBtn.focus();
-      }
+      if (toggleBtn) toggleBtn.focus();
     });
     return;
   }
-
   if (action === 'edit') {
     openEditor({ mode: 'edit', targetId: taskId });
     return;
   }
-
   if (action === 'add-child') {
     if (task.depth >= 3) {
       showToast('최대 3단계까지만 추가할 수 있습니다.');
@@ -1224,32 +1160,24 @@ function handleRowAction(action, taskId) {
     openEditor({ mode: 'create', parentId: taskId, depth: task.depth + 1, insertAfterId: getLastDescendantId(taskId), draft: createChildDraft(task) });
     return;
   }
-
   if (action === 'delete') {
     if (window.confirm(`'${task.task || task.activity || task.phase || '선택한 작업'}' 항목과 모든 하위 작업을 삭제하시겠습니까?`)) {
       const visibleTasksBefore = getVisibleTasks();
       const currentIndex = visibleTasksBefore.findIndex(t => t.id === taskId);
-
       deleteTaskAndDescendants(taskId);
       persistState();
       renderAll();
       showToast('작업을 삭제했습니다.');
-
-      // 🎨 Palette: Restore focus after deletion to keep keyboard flow
       requestAnimationFrame(() => {
         const visibleTasksAfter = getVisibleTasks();
         if (visibleTasksAfter.length > 0) {
           const nextTargetIndex = Math.min(currentIndex, visibleTasksAfter.length - 1);
           const nextTargetId = visibleTasksAfter[nextTargetIndex].id;
           const nextTargetBtn = document.querySelector(`tr[data-task-id="${nextTargetId}"] button[data-action="delete"]`);
-          if (nextTargetBtn) {
-            nextTargetBtn.focus();
-          }
+          if (nextTargetBtn) nextTargetBtn.focus();
         } else {
           const addRootBtn = document.getElementById('add-root-task');
-          if (addRootBtn) {
-            addRootBtn.focus();
-          }
+          if (addRootBtn) addRootBtn.focus();
         }
       });
     }
@@ -1265,9 +1193,7 @@ function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertA
   state.previousFocus = document.activeElement;
   if (mode === 'edit') {
     const task = findTask(targetId);
-    if (!task) {
-      return;
-    }
+    if (!task) return;
     state.editor = {
       mode,
       targetId,
@@ -1292,26 +1218,18 @@ function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertA
     };
   }
   renderAll();
-
-  // Focus the first input/select in the editor to keep keyboard users in flow
   requestAnimationFrame(() => {
     const firstInput = document.querySelector('.editor-row input:not([type="hidden"]), .editor-row select');
-    if (firstInput) {
-      firstInput.focus();
-    }
+    if (firstInput) firstInput.focus();
   });
 }
 
 function closeEditor(force = false) {
   if (!force && editorHasUnsavedChanges()) {
-    if (!window.confirm('저장하지 않은 변경 사항이 있습니다. 편집을 취소하시겠습니까?')) {
-      return;
-    }
+    if (!window.confirm('저장하지 않은 변경 사항이 있습니다. 편집을 취소하시겠습니까?')) return;
   }
-
   state.editor = { ...DEFAULT_EDITOR_STATE, errors: [] };
   renderAll();
-
   if (state.previousFocus) {
     state.previousFocus.focus();
     state.previousFocus = null;
@@ -1325,7 +1243,6 @@ function saveEditor() {
     renderEditorValidation();
     return;
   }
-
   if (state.editor.mode === 'edit' && state.editor.targetId) {
     const index = getTaskIndexById(state.editor.targetId);
     if (index >= 0) {
@@ -1337,20 +1254,18 @@ function saveEditor() {
       };
     }
   }
-
   if (state.editor.mode === 'create') {
-      const newTask = {
-        ...createEmptyTaskDraft(),
-        ...sanitizeDraft(state.editor.draft),
-        id: createId(),
-        parentId: state.editor.parentId,
-        depth: state.editor.depth,
-        expanded: true,
-        isSynthetic: false
-      };
+    const newTask = {
+      ...createEmptyTaskDraft(),
+      ...sanitizeDraft(state.editor.draft),
+      id: createId(),
+      parentId: state.editor.parentId,
+      depth: state.editor.depth,
+      expanded: true,
+      isSynthetic: false
+    };
     insertTaskAfter(newTask, state.editor.insertAfterId);
   }
-
   closeEditor(true);
   persistState();
   renderAll();
@@ -1359,25 +1274,9 @@ function saveEditor() {
 
 function createEmptyTaskDraft() {
   return {
-    phase: '',
-    activity: '',
-    task: '',
-    categoryLarge: '',
-    categoryMedium: '',
-    documentName: '',
-    owner: '',
-    supportTeam: '',
-    plannedStartDate: '',
-    plannedEndDate: '',
-    actualProgressStatus: '미착수(0%)',
-    actualStartDate: '',
-    actualEndDate: '',
-    predecessors: '',
-    budget: '',
-    actualCost: '',
-    sprint: '',
-    storyPoints: '',
-    isSynthetic: false
+    phase: '', activity: '', task: '', categoryLarge: '', categoryMedium: '', documentName: '', owner: '', supportTeam: '',
+    plannedStartDate: '', plannedEndDate: '', actualProgressStatus: '미착수(0%)', actualStartDate: '', actualEndDate: '',
+    predecessors: '', budget: '', actualCost: '', sprint: '', storyPoints: '', isSynthetic: false
   };
 }
 
@@ -1395,10 +1294,8 @@ function createChildDraft(task) {
 function sanitizeDraft(draft) {
   const sanitized = {};
   EDITABLE_FIELDS.forEach((field) => {
-    // 🛡️ Sentinel: Enforce string coercion before trim() to prevent DoS via type confusion
     sanitized[field] = String(draft?.[field] || '').trim().slice(0, 1000);
   });
-  // 🛡️ Sentinel: Strictly validate against allowed options to prevent injection
   if (!sanitized.actualProgressStatus || !ACTUAL_PROGRESS_OPTIONS.includes(sanitized.actualProgressStatus)) {
     sanitized.actualProgressStatus = '미착수(0%)';
   }
@@ -1407,43 +1304,28 @@ function sanitizeDraft(draft) {
 
 function validateDraft(draft, depth) {
   const errors = [];
-  if (!draft) {
-    return errors;
-  }
+  if (!draft) return errors;
   const sanitized = sanitizeDraft(draft);
-
   EDITABLE_FIELDS.forEach((field) => {
     if (/[<>]/.test(sanitized[field])) {
       const label = CSV_FIELD_LABELS[field] || field;
       errors.push(`${label} 항목에는 HTML 태그 문자를 사용할 수 없습니다.`);
     }
   });
-
-  if (!sanitized.phase && depth === 1) {
-    errors.push('최상위 작업은 단계 값을 입력해야 합니다.');
-  }
-  if (depth === 2 && !sanitized.activity) {
-    errors.push('2단계 작업은 Activity 값을 입력해야 합니다.');
-  }
-  if (depth === 3 && !sanitized.task) {
-    errors.push('3단계 작업은 Task 값을 입력해야 합니다.');
-  }
-
+  if (!sanitized.phase && depth === 1) errors.push('최상위 작업은 단계 값을 입력해야 합니다.');
+  if (depth === 2 && !sanitized.activity) errors.push('2단계 작업은 Activity 값을 입력해야 합니다.');
+  if (depth === 3 && !sanitized.task) errors.push('3단계 작업은 Task 값을 입력해야 합니다.');
   validateDateField('계획시작일', sanitized.plannedStartDate, errors);
   validateDateField('계획종료일', sanitized.plannedEndDate, errors);
   validateDateField('실적시작일', sanitized.actualStartDate, errors);
   validateDateField('실적종료일', sanitized.actualEndDate, errors);
-
   validateDateRange('계획시작일', sanitized.plannedStartDate, '계획종료일', sanitized.plannedEndDate, errors);
   validateDateRange('실적시작일', sanitized.actualStartDate, '실적종료일', sanitized.actualEndDate, errors);
-
   return Array.from(new Set(errors));
 }
 
 function validateDateField(label, value, errors) {
-  if (!value) {
-    return;
-  }
+  if (!value) return;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || !isValidDateString(value)) {
     errors.push(`${label}은 YYYY-MM-DD 형식의 실제 달력 날짜여야 합니다.`);
   }
@@ -1456,19 +1338,16 @@ function validateDateRange(startLabel, startValue, endLabel, endValue, errors) {
 }
 
 function computeTaskMetrics() {
-  // ⚡ Bolt: Cache durationDays during total calculation to avoid recalculating for every task
   const durationCache = new Map();
   const totalDays = state.tasks.reduce((sum, task) => {
     const duration = calculateDurationDays(task.plannedStartDate, task.plannedEndDate);
     durationCache.set(task.id, duration);
     return sum + duration;
   }, 0);
-
   const baseDate = state.baseDate;
   const byTask = new Map();
   let totalWeightedPlannedRatio = 0;
   let totalWeightedActualRatio = 0;
-
   state.tasks.forEach((task) => {
     const durationDays = durationCache.get(task.id);
     const weightRatio = totalDays > 0 ? durationDays / totalDays : 0;
@@ -1479,105 +1358,47 @@ function computeTaskMetrics() {
     const plannedDateWarning = getDateRangeWarning(task.plannedStartDate, task.plannedEndDate, '계획종료일이 시작일보다 빠릅니다.');
     const actualDateWarning = getDateRangeWarning(task.actualStartDate, task.actualEndDate, '실적종료일이 시작일보다 빠릅니다.');
     const progressState = deriveProgressState(task, baseDate);
-
     totalWeightedPlannedRatio += weightedPlannedRatio;
     totalWeightedActualRatio += weightedActualRatio;
-
-    byTask.set(task.id, {
-      durationDays,
-      weightRatio,
-      plannedProgressRatio,
-      actualProgressRatio,
-      weightedPlannedRatio,
-      weightedActualRatio,
-      progressState,
-      plannedDateWarning,
-      actualDateWarning
-    });
+    byTask.set(task.id, { durationDays, weightRatio, plannedProgressRatio, actualProgressRatio, weightedPlannedRatio, weightedActualRatio, progressState, plannedDateWarning, actualDateWarning });
   });
-
-  return {
-    totalDays,
-    totalWeightedPlannedRatio,
-    totalWeightedActualRatio,
-    byTask
-  };
+  return { totalDays, totalWeightedPlannedRatio, totalWeightedActualRatio, byTask };
 }
 
 const PROGRESS_STATE_EMPTY = Object.freeze({ label: '', className: '', description: '' });
-const PROGRESS_STATE_DONE = Object.freeze({
-  label: '완료',
-  className: 'done',
-  description: '실적이 모두 입력되어 완료된 작업입니다.',
-});
-const PROGRESS_STATE_DELAY = Object.freeze({
-  label: '지연',
-  className: 'delay',
-  description: '계획 종료일이 지났으나 아직 완료되지 않은 작업입니다.',
-});
-const PROGRESS_STATE_ACTIVE = Object.freeze({
-  label: '진행',
-  className: 'active',
-  description: '실적이 입력되어 진행 중인 작업입니다.',
-});
-const PROGRESS_STATE_BEFORE = Object.freeze({
-  label: '진행전',
-  className: 'before',
-  description: '아직 계획 시작일이 도래하지 않은 작업입니다.',
-});
+const PROGRESS_STATE_DONE = Object.freeze({ label: '완료', className: 'done', description: '실적이 모두 입력되어 완료된 작업입니다.' });
+const PROGRESS_STATE_DELAY = Object.freeze({ label: '지연', className: 'delay', description: '계획 종료일이 지났으나 아직 완료되지 않은 작업입니다.' });
+const PROGRESS_STATE_ACTIVE = Object.freeze({ label: '진행', className: 'active', description: '실적이 입력되어 진행 중인 작업입니다.' });
+const PROGRESS_STATE_BEFORE = Object.freeze({ label: '진행전', className: 'before', description: '아직 계획 시작일이 도래하지 않은 작업입니다.' });
 
 function deriveProgressState(task, baseDate) {
-  if (!task.plannedStartDate || !task.plannedEndDate) {
-    return PROGRESS_STATE_EMPTY;
-  }
-
-  if (task.actualStartDate && task.actualEndDate) {
-    return PROGRESS_STATE_DONE;
-  }
-  if (compareDateStrings(baseDate, task.plannedEndDate) >= 0 && (!task.actualStartDate || !task.actualEndDate)) {
-    return PROGRESS_STATE_DELAY;
-  }
-  if (task.actualStartDate && !task.actualEndDate) {
-    return PROGRESS_STATE_ACTIVE;
-  }
+  if (!task.plannedStartDate || !task.plannedEndDate) return PROGRESS_STATE_EMPTY;
+  if (task.actualStartDate && task.actualEndDate) return PROGRESS_STATE_DONE;
+  if (compareDateStrings(baseDate, task.plannedEndDate) >= 0 && (!task.actualStartDate || !task.actualEndDate)) return PROGRESS_STATE_DELAY;
+  if (task.actualStartDate && !task.actualEndDate) return PROGRESS_STATE_ACTIVE;
   return PROGRESS_STATE_BEFORE;
 }
 
 function calculatePlannedProgressRatio(baseDate, startDate, endDate, durationDays) {
-  if (!baseDate || !startDate || !endDate) {
-    return 0;
-  }
-  if (compareDateStrings(baseDate, startDate) <= 0) {
-    return 0;
-  }
-  if (compareDateStrings(baseDate, endDate) >= 0) {
-    return 1;
-  }
-  // Bolt: Reuse passed durationDays if available to avoid redundant Date parsing and calculations.
+  if (!baseDate || !startDate || !endDate) return 0;
+  if (compareDateStrings(baseDate, startDate) <= 0) return 0;
+  if (compareDateStrings(baseDate, endDate) >= 0) return 1;
   const total = durationDays !== undefined ? durationDays : calculateDurationDays(startDate, endDate);
-  if (total <= 0) {
-    return 1;
-  }
+  if (total <= 0) return 1;
   const elapsed = calculateDurationDays(startDate, baseDate);
   return clamp(elapsed / total, 0, 1);
 }
 
 function calculateDurationDays(startDate, endDate) {
-  if (!isValidDateString(startDate) || !isValidDateString(endDate)) {
-    return 0;
-  }
+  if (!isValidDateString(startDate) || !isValidDateString(endDate)) return 0;
   const start = dateStringToUtcMs(startDate);
   const end = dateStringToUtcMs(endDate);
-  if (end < start) {
-    return 0;
-  }
+  if (end < start) return 0;
   return Math.max(1, Math.round((end - start) / 86400000));
 }
 
 function getDateRangeWarning(startDate, endDate, message) {
-  if (isValidDateString(startDate) && isValidDateString(endDate) && compareDateStrings(startDate, endDate) > 0) {
-    return message;
-  }
+  if (isValidDateString(startDate) && isValidDateString(endDate) && compareDateStrings(startDate, endDate) > 0) return message;
   return '';
 }
 
@@ -1597,7 +1418,6 @@ function getVisibleTasks() {
   const visible = [];
   cachedHiddenParentIds.clear();
   cachedSearchExpandedParentIds.clear();
-
   const query = state.taskQuery.trim().toLowerCase();
   if (query) {
     const tasksById = new Map(state.tasks.map((task) => [task.id, task]));
@@ -1609,29 +1429,21 @@ function getVisibleTasks() {
         while (current && !visitedIds.has(current.id)) {
           visitedIds.add(current.id);
           matchingIds.add(current.id);
-          if (current.id !== task.id) {
-            cachedSearchExpandedParentIds.add(current.id);
-          }
+          if (current.id !== task.id) cachedSearchExpandedParentIds.add(current.id);
           current = tasksById.get(current.parentId);
         }
       }
     });
     return state.tasks.filter((task) => matchingIds.has(task.id));
   }
-
-  // ⚡ Bolt Optimization: Single-pass O(N) visible task filtering to avoid redundant O(N * Depth) tree traversals
   state.tasks.forEach((task) => {
     if (cachedHiddenParentIds.has(task.parentId)) {
       cachedHiddenParentIds.add(task.id);
       return;
     }
-
     visible.push(task);
-    if (!task.expanded) {
-      cachedHiddenParentIds.add(task.id);
-    }
+    if (!task.expanded) cachedHiddenParentIds.add(task.id);
   });
-
   return visible;
 }
 
@@ -1652,7 +1464,6 @@ function insertTaskAfter(task, afterId) {
 }
 
 function deleteTaskAndDescendants(taskId) {
-  // ⚡ Bolt: Replace O(N * Depth) cascading loop with O(N) map-based BFS to prevent UI freeze during deletion
   const childrenMap = new Map();
   state.tasks.forEach(task => {
     if (task.parentId) {
@@ -1661,11 +1472,9 @@ function deleteTaskAndDescendants(taskId) {
       childrenMap.set(task.parentId, children);
     }
   });
-
   const idsToDelete = new Set([taskId]);
   const queue = [taskId];
   let queueIndex = 0;
-
   while (queueIndex < queue.length) {
     const currentId = queue[queueIndex++];
     const children = childrenMap.get(currentId);
@@ -1685,17 +1494,12 @@ function deleteTaskAndDescendants(taskId) {
 function reorderTaskWithinLevel(draggedId, targetId, placeAfter = true) {
   const draggedRange = getTaskSubtreeRange(draggedId);
   const targetRange = getTaskSubtreeRange(targetId);
-  if (!draggedRange || !targetRange) {
-    return;
-  }
+  if (!draggedRange || !targetRange) return;
   const draggedBlock = state.tasks.slice(draggedRange.startIndex, draggedRange.endIndex + 1);
   state.tasks.splice(draggedRange.startIndex, draggedBlock.length);
   invalidateTaskIndexCache();
-
   const refreshedTargetRange = getTaskSubtreeRange(targetId);
-  const insertionIndex = refreshedTargetRange
-    ? (placeAfter ? refreshedTargetRange.endIndex + 1 : refreshedTargetRange.startIndex)
-    : state.tasks.length;
+  const insertionIndex = refreshedTargetRange ? (placeAfter ? refreshedTargetRange.endIndex + 1 : refreshedTargetRange.startIndex) : state.tasks.length;
   state.tasks.splice(insertionIndex, 0, ...draggedBlock);
   invalidateTaskIndexCache();
 }
@@ -1705,7 +1509,6 @@ function canReorderWithinLevel(draggedTask, targetTask) {
 }
 
 function getLastRootTaskId() {
-  // Walk backward to avoid allocating an intermediate roots array.
   let lastRoot = null;
   for (let i = state.tasks.length - 1; i >= 0; i -= 1) {
     if (!state.tasks[i].parentId) {
@@ -1718,15 +1521,11 @@ function getLastRootTaskId() {
 
 function getLastDescendantId(taskId) {
   const startIndex = getTaskIndexById(taskId);
-  if (startIndex === -1) {
-    return taskId;
-  }
+  if (startIndex === -1) return taskId;
   const baseDepth = state.tasks[startIndex].depth;
   let lastId = taskId;
   for (let index = startIndex + 1; index < state.tasks.length; index += 1) {
-    if (state.tasks[index].depth <= baseDepth) {
-      break;
-    }
+    if (state.tasks[index].depth <= baseDepth) break;
     lastId = state.tasks[index].id;
   }
   return lastId;
@@ -1734,19 +1533,13 @@ function getLastDescendantId(taskId) {
 
 function getTaskSubtreeRange(taskId) {
   const startIndex = getTaskIndexById(taskId);
-  if (startIndex === -1) {
-    return null;
-  }
-
+  if (startIndex === -1) return null;
   const baseDepth = state.tasks[startIndex].depth;
   let endIndex = startIndex;
   for (let index = startIndex + 1; index < state.tasks.length; index += 1) {
-    if (state.tasks[index].depth <= baseDepth) {
-      break;
-    }
+    if (state.tasks[index].depth <= baseDepth) break;
     endIndex = index;
   }
-
   return { startIndex, endIndex };
 }
 
@@ -1767,16 +1560,10 @@ function persistState({ syncCloud = true } = {}) {
     console.error('State persistence failed:', error);
     showToast('로컬 스토리지 용량이 초과되어 저장하지 못했습니다.');
   }
-
   if (state.jsonSyncHandle) {
-    writeJsonSyncFile().catch(() => {
-      showToast('연결된 wbs.json 파일 저장에 실패했습니다.');
-    });
+    writeJsonSyncFile().catch(() => showToast('연결된 wbs.json 파일 저장에 실패했습니다.'));
   }
-
-  if (syncCloud && typeof window !== 'undefined') {
-    window.ScopeWeaveCloud?.push?.(payload);
-  }
+  if (syncCloud && typeof window !== 'undefined') window.ScopeWeaveCloud?.push?.(payload);
 }
 
 function loadLocalState() {
@@ -1791,28 +1578,20 @@ function loadLocalState() {
 function hydrateState(savedState) {
   state.projectName = String(savedState.projectName || DEFAULT_PROJECT_NAME).trim().slice(0, MAX_PROJECT_NAME_LENGTH) || DEFAULT_PROJECT_NAME;
   state.baseDate = String(savedState.baseDate || '').trim().slice(0, MAX_BASE_DATE_LENGTH) || formatLocalDateInput(new Date());
-  state.tasks = Array.isArray(savedState.tasks)
-    ? savedState.tasks.filter(isTaskRecord).map(normalizeStoredTask)
-    : [];
+  state.tasks = Array.isArray(savedState.tasks) ? savedState.tasks.filter(isTaskRecord).map(normalizeStoredTask) : [];
   invalidateTaskIndexCache();
 }
 
 function normalizeStoredTask(task) {
   const safeTask = isTaskRecord(task) ? task : {};
-  return createPersistableTask({
-    ...safeTask,
-    plannedEndDate: getPlannedEndDateValue(safeTask),
-    expanded: safeTask.expanded !== false
-  });
+  return createPersistableTask({ ...safeTask, plannedEndDate: getPlannedEndDateValue(safeTask), expanded: safeTask.expanded !== false });
 }
 
 function createPersistableTask(task) {
   const safeTask = isTaskRecord(task) ? task : {};
   const persistableTask = Object.create(null);
   for (const field of TASK_STORAGE_FIELDS) {
-    if (safeTask[field] !== undefined) {
-      persistableTask[field] = safeTask[field];
-    }
+    if (safeTask[field] !== undefined) persistableTask[field] = safeTask[field];
   }
   persistableTask.plannedEndDate = getPlannedEndDateValue(safeTask);
   persistableTask.expanded = safeTask.expanded !== false;
@@ -1826,9 +1605,7 @@ async function loadSeedTasks() {
   const timeoutId = window.setTimeout(() => controller.abort(), 5000);
   try {
     const response = await fetch('./wbs.json', { cache: 'no-store', signal: controller.signal });
-    if (!response.ok) {
-      throw new Error('seed-load-failed');
-    }
+    if (!response.ok) throw new Error('seed-load-failed');
     return parseSafeJson(await response.text());
   } catch {
     return [];
@@ -1842,9 +1619,7 @@ function parseSafeJson(text) {
 }
 
 function getPlannedEndDateValue(task) {
-  if (!isTaskRecord(task)) {
-    return '';
-  }
+  if (!isTaskRecord(task)) return '';
   return task.plannedEndDate || task[LEGACY_PLANNED_END_FIELD] || '';
 }
 
@@ -1853,19 +1628,11 @@ function isTaskRecord(task) {
 }
 
 function normalizeImportedTasks(sourceTasks) {
-  if (!Array.isArray(sourceTasks)) {
-    return [];
-  }
-  // Defensive: a hand-edited or tampered wbs.json / localStorage payload can
-  // contain non-object entries (null, numbers, arrays). Drop them so a junk
-  // seed row degrades gracefully instead of throwing an uncaught TypeError
-  // during bootstrap() (which does not wrap this call in try/catch).
+  if (!Array.isArray(sourceTasks)) return [];
   const records = sourceTasks.filter(isTaskRecord);
   records.forEach((task, index) => validateImportedTask(task, index));
   const hasExplicitDepth = records.some((task) => task.__depth || task.__id || task.__parentId);
-  if (!hasExplicitDepth) {
-    return buildHierarchicalTasksFromFlatSource(records);
-  }
+  if (!hasExplicitDepth) return buildHierarchicalTasksFromFlatSource(records);
   return records.map((task, index) => ({
     ...createNormalizedExternalRecord(task),
     id: task.__id || createId(index + 1),
@@ -1878,13 +1645,8 @@ function normalizeImportedTasks(sourceTasks) {
 }
 
 function clampImportedDepth(task) {
-  // The CSV path enforces __depth in {1,2,3} (validateCsvDepth). Apply the same
-  // contract to the JSON seed path so a tampered wbs.json can't inject an
-  // out-of-range depth (e.g. "4") that the 3-level renderer never expects.
   const parsedDepth = Number(task.__depth);
-  if (Number.isInteger(parsedDepth) && parsedDepth >= 1 && parsedDepth <= 3) {
-    return parsedDepth;
-  }
+  if (Number.isInteger(parsedDepth) && parsedDepth >= 1 && parsedDepth <= 3) return parsedDepth;
   return inferDepth(task);
 }
 
@@ -1894,56 +1656,27 @@ function validateImportedTask(task, index) {
   const plannedEndDate = getPlannedEndDateValue(task);
   const actualStartDate = task.actualStartDate || '';
   const actualEndDate = task.actualEndDate || '';
-
-  [
-    ['계획시작일', plannedStartDate],
-    ['계획종료일', plannedEndDate],
-    ['실적시작일', actualStartDate],
-    ['실적종료일', actualEndDate]
-  ].forEach(([label, value]) => {
-    if (value && !isValidDateString(value)) {
-      throw new Error(`${rowLabel}: ${label}은 YYYY-MM-DD 형식의 실제 달력 날짜여야 합니다.`);
-    }
+  [['계획시작일', plannedStartDate], ['계획종료일', plannedEndDate], ['실적시작일', actualStartDate], ['실적종료일', actualEndDate]].forEach(([label, value]) => {
+    if (value && !isValidDateString(value)) throw new Error(`${rowLabel}: ${label}은 YYYY-MM-DD 형식의 실제 달력 날짜여야 합니다.`);
   });
-
   const dateRangeErrors = [];
   validateDateRange('계획시작일', plannedStartDate, '계획종료일', plannedEndDate, dateRangeErrors);
   validateDateRange('실적시작일', actualStartDate, '실적종료일', actualEndDate, dateRangeErrors);
-  if (dateRangeErrors.length > 0) {
-    throw new Error(`${rowLabel}: ${dateRangeErrors[0]}`);
-  }
+  if (dateRangeErrors.length > 0) throw new Error(`${rowLabel}: ${dateRangeErrors[0]}`);
 }
 
 const createNormalizedExternalRecord = (task, defaults = {}) => ({
-  ...createEmptyTaskDraft(),
-  ...defaults,
-  phase: task.phase || defaults.phase || '',
-  activity: task.activity || defaults.activity || '',
-  task: task.task || defaults.task || '',
-  categoryLarge: task.categoryLarge || '',
-  categoryMedium: task.categoryMedium || '',
-  documentName: task.documentName || '',
-  owner: task.owner || '',
-  supportTeam: task.supportTeam || '',
-  plannedStartDate: task.plannedStartDate || '',
-  plannedEndDate: getPlannedEndDateValue(task),
+  ...createEmptyTaskDraft(), ...defaults,
+  phase: task.phase || defaults.phase || '', activity: task.activity || defaults.activity || '', task: task.task || defaults.task || '',
+  categoryLarge: task.categoryLarge || '', categoryMedium: task.categoryMedium || '', documentName: task.documentName || '', owner: task.owner || '', supportTeam: task.supportTeam || '',
+  plannedStartDate: task.plannedStartDate || '', plannedEndDate: getPlannedEndDateValue(task),
   actualProgressStatus: ACTUAL_PROGRESS_MAP[task.actualProgressStatus] !== undefined ? task.actualProgressStatus : '미착수(0%)',
-  actualStartDate: task.actualStartDate || '',
-  actualEndDate: task.actualEndDate || '',
-  predecessors: task.predecessors || defaults.predecessors || '',
-  budget: task.budget || defaults.budget || '',
-  actualCost: task.actualCost || defaults.actualCost || '',
-  sprint: task.sprint || defaults.sprint || '',
-  storyPoints: task.storyPoints || defaults.storyPoints || ''
+  actualStartDate: task.actualStartDate || '', actualEndDate: task.actualEndDate || '', predecessors: task.predecessors || defaults.predecessors || '',
+  budget: task.budget || defaults.budget || '', actualCost: task.actualCost || defaults.actualCost || '', sprint: task.sprint || defaults.sprint || '', storyPoints: task.storyPoints || defaults.storyPoints || ''
 });
 
-function getPhaseKey(task, index) {
-  return task.phase || `__phase-${index}`;
-}
-
-function getActivityKey(task, index) {
-  return `${getPhaseKey(task, index)}::${task.activity || `__activity-${index}`}`;
-}
+function getPhaseKey(task, index) { return task.phase || `__phase-${index}`; }
+function getActivityKey(task, index) { return `${getPhaseKey(task, index)}::${task.activity || `__activity-${index}`}`; }
 
 function ensureSyntheticNode(map, key, idPrefix, index, pushCallback) {
   if (!map.has(key)) {
@@ -1958,160 +1691,65 @@ function buildHierarchicalTasksFromFlatSource(sourceTasks) {
   const normalized = [];
   const phaseMap = new Map();
   const activityMap = new Map();
-
   const ensureSyntheticPhase = (task, index) => {
     const phaseKey = getPhaseKey(task, index);
-    return ensureSyntheticNode(phaseMap, phaseKey, 'phase', index, (phaseId) => {
-      normalized.push({
-        ...createNormalizedExternalRecord({ phase: task.phase }),
-        id: phaseId,
-        parentId: null,
-        depth: 1,
-        expanded: true,
-        pendingDelete: false,
-        isSynthetic: true
-      });
-    });
+    return ensureSyntheticNode(phaseMap, phaseKey, 'phase', index, (phaseId) => normalized.push({ ...createNormalizedExternalRecord({ phase: task.phase }), id: phaseId, parentId: null, depth: 1, expanded: true, pendingDelete: false, isSynthetic: true }));
   };
-
   const ensureSyntheticActivity = (task, index, parentPhaseId) => {
     const key = getActivityKey(task, index);
-    return ensureSyntheticNode(activityMap, key, 'activity', index, (activityId) => {
-      normalized.push({
-        ...createNormalizedExternalRecord({ phase: task.phase, activity: task.activity }),
-        id: activityId,
-        parentId: parentPhaseId,
-        depth: 2,
-        expanded: true,
-        pendingDelete: false,
-        isSynthetic: true
-      });
-    });
+    return ensureSyntheticNode(activityMap, key, 'activity', index, (activityId) => normalized.push({ ...createNormalizedExternalRecord({ phase: task.phase, activity: task.activity }), id: activityId, parentId: parentPhaseId, depth: 2, expanded: true, pendingDelete: false, isSynthetic: true }));
   };
-
   sourceTasks.forEach((task, index) => {
     const hasPhase = Boolean(task.phase);
     const hasActivity = Boolean(task.activity);
     const hasTask = Boolean(task.task);
-
     if (hasPhase && !hasActivity && !hasTask) {
       const phaseId = createId(`phase-${index}`);
-      normalized.push({
-        ...createNormalizedExternalRecord(task),
-        id: phaseId,
-        parentId: null,
-        depth: 1,
-        expanded: true,
-        pendingDelete: false,
-        isSynthetic: false
-      });
+      normalized.push({ ...createNormalizedExternalRecord(task), id: phaseId, parentId: null, depth: 1, expanded: true, pendingDelete: false, isSynthetic: false });
       phaseMap.set(getPhaseKey(task, index), phaseId);
       return;
     }
-
     const parentPhaseId = ensureSyntheticPhase(task, index);
-
     if (hasActivity && !hasTask) {
       const activityId = createId(`activity-${index}`);
-      normalized.push({
-        ...createNormalizedExternalRecord(task),
-        id: activityId,
-        parentId: parentPhaseId,
-        depth: 2,
-        expanded: true,
-        pendingDelete: false,
-        isSynthetic: false
-      });
+      normalized.push({ ...createNormalizedExternalRecord(task), id: activityId, parentId: parentPhaseId, depth: 2, expanded: true, pendingDelete: false, isSynthetic: false });
       activityMap.set(getActivityKey(task, index), activityId);
       return;
     }
-
     const parentActivityId = hasTask ? ensureSyntheticActivity(task, index, parentPhaseId) : parentPhaseId;
-    normalized.push({
-      ...createNormalizedExternalRecord(task),
-      id: createId(`leaf-${index}`),
-      parentId: hasTask ? parentActivityId : parentPhaseId,
-      depth: hasTask ? 3 : hasActivity ? 2 : 1,
-      expanded: true,
-      pendingDelete: false,
-      isSynthetic: false
-    });
+    normalized.push({ ...createNormalizedExternalRecord(task), id: createId(`leaf-${index}`), parentId: hasTask ? parentActivityId : parentPhaseId, depth: hasTask ? 3 : hasActivity ? 2 : 1, expanded: true, pendingDelete: false, isSynthetic: false });
   });
-
   return normalized;
 }
 
-function inferDepth(task) {
-  if (task.task) {
-    return 3;
-  }
-  if (task.activity) {
-    return 2;
-  }
-  return 1;
-}
+function inferDepth(task) { if (task.task) return 3; if (task.activity) return 2; return 1; }
 
 function exportCsv() {
   const metrics = computeTaskMetrics();
   const rows = state.tasks.map((task) => {
     const taskMetrics = metrics.byTask.get(task.id);
-    return [
-      task.phase,
-      task.activity,
-      task.task,
-      task.categoryLarge,
-      task.categoryMedium,
-      task.documentName,
-      task.owner,
-      task.supportTeam,
-      taskMetrics.progressState.label,
-      task.plannedStartDate,
-      task.plannedEndDate,
-      formatNumber(taskMetrics.durationDays),
-      formatPercent(taskMetrics.plannedProgressRatio * 100, 2),
-      formatDecimal(taskMetrics.weightRatio, 3),
-      formatPercent(taskMetrics.weightedPlannedRatio * 100, 2),
-      task.actualProgressStatus,
-      formatPercent(taskMetrics.actualProgressRatio * 100, 2),
-      task.actualStartDate,
-      task.actualEndDate,
-      formatPercent(taskMetrics.weightedActualRatio * 100, 2),
-      task.id,
-      task.parentId || '',
-      task.depth,
-      task.predecessors || '',
-      task.budget || '',
-      task.actualCost || '',
-      task.sprint || '',
-      task.storyPoints || ''
-    ];
+    return [task.phase, task.activity, task.task, task.categoryLarge, task.categoryMedium, task.documentName, task.owner, task.supportTeam, taskMetrics.progressState.label,
+      task.plannedStartDate, task.plannedEndDate, formatNumber(taskMetrics.durationDays), formatPercent(taskMetrics.plannedProgressRatio * 100, 2),
+      formatDecimal(taskMetrics.weightRatio, 3), formatPercent(taskMetrics.weightedPlannedRatio * 100, 2), task.actualProgressStatus,
+      formatPercent(taskMetrics.actualProgressRatio * 100, 2), task.actualStartDate, task.actualEndDate, formatPercent(taskMetrics.weightedActualRatio * 100, 2),
+      task.id, task.parentId || '', task.depth, task.predecessors || '', task.budget || '', task.actualCost || '', task.sprint || '', task.storyPoints || ''];
   });
-
-  const csvText = [CSV_HEADERS, ...rows]
-    .map((row) => row.map((cell) => csvEscape(cell)).join(','))
-    .join('\r\n');
+  const csvText = [CSV_HEADERS, ...rows].map((row) => row.map((cell) => csvEscape(cell)).join(',')).join('\r\n');
   downloadFile(csvText, `wbs_export_${formatCompactDate(new Date())}.csv`, 'text/csv;charset=utf-8');
 }
 
 async function handleCsvImport(event) {
   const [file] = event.target.files || [];
-  if (!file) {
+  if (!file) return;
+  if (state.tasks.length > 0 && !window.confirm('새 CSV 파일을 가져오면 현재 등록된 모든 작업 데이터가 지워집니다.\n계속하시겠습니까?')) {
+    event.target.value = '';
     return;
   }
-
-  if (state.tasks.length > 0) {
-    if (!window.confirm('새 CSV 파일을 가져오면 현재 등록된 모든 작업 데이터가 지워집니다.\n계속하시겠습니까?')) {
-      event.target.value = '';
-      return;
-    }
-  }
-
   if (file.size > 5 * 1024 * 1024) {
     showToast('파일 크기는 5MB를 초과할 수 없습니다.');
     event.target.value = '';
     return;
   }
-
   try {
     const text = await file.text();
     const imported = parseCsv(text);
@@ -2128,33 +1766,23 @@ async function handleCsvImport(event) {
   }
 }
 
-window.__scopeweaveTestApi = Object.assign(window.__scopeweaveTestApi || {}, {
-  validateImportedTasks
-});
+window.__scopeweaveTestApi = Object.assign(window.__scopeweaveTestApi || {}, { validateImportedTasks });
 
 function validateImportedTasks(tasks) {
   const seenIds = new Set();
   for (const task of tasks) {
-    if (seenIds.has(task.id)) {
-      throw new Error(`중복된 ID가 발견되었습니다: ${task.id}`);
-    }
+    if (seenIds.has(task.id)) throw new Error(`중복된 ID가 발견되었습니다: ${task.id}`);
     seenIds.add(task.id);
   }
   for (const task of tasks) {
-    if (task.parentId && !seenIds.has(task.parentId)) {
-      throw new Error(`존재하지 않는 부모 ID를 참조합니다: ${task.parentId}`);
-    }
+    if (task.parentId && !seenIds.has(task.parentId)) throw new Error(`존재하지 않는 부모 ID를 참조합니다: ${task.parentId}`);
   }
-  // Detect cycles
-  // ⚡ Bolt: Use O(1) Map lookup instead of O(N) tasks.find to prevent O(N^2) bottleneck during cycle detection
   const taskById = new Map(tasks.map(t => [t.id, t]));
   for (const task of tasks) {
     let current = task.parentId;
     const visited = new Set([task.id]);
     while (current) {
-      if (visited.has(current)) {
-        throw new Error(`순환 참조가 발견되었습니다: ${task.id}`);
-      }
+      if (visited.has(current)) throw new Error(`순환 참조가 발견되었습니다: ${task.id}`);
       visited.add(current);
       const parentTask = taskById.get(current);
       current = parentTask ? parentTask.parentId : null;
@@ -2167,26 +1795,16 @@ function validateCsvCell(value, fieldName) {
   if (!value) return value;
   const normalized = String(value);
   const label = CSV_FIELD_LABELS[fieldName] || fieldName;
-  if (normalized.length > 1000) {
-    throw new Error(`${label} 컬럼은 1000자 이하로 입력해야 합니다.`);
-  }
-  if (/[<>]/.test(normalized)) {
-    throw new Error(`${label} 컬럼에는 HTML 태그 문자를 사용할 수 없습니다.`);
-  }
+  if (normalized.length > 1000) throw new Error(`${label} 컬럼은 1000자 이하로 입력해야 합니다.`);
+  if (/[<>]/.test(normalized)) throw new Error(`${label} 컬럼에는 HTML 태그 문자를 사용할 수 없습니다.`);
   return sanitizeCsvFormulaValue(normalized);
 }
-
-function validateCsvInternalValue(value, fieldName) {
-  return validateCsvCell(value, fieldName);
-}
-
+function validateCsvInternalValue(value, fieldName) { return validateCsvCell(value, fieldName); }
 function validateCsvId(value) { return validateCsvInternalValue(value, '__id'); }
 function validateCsvParentId(value) { return validateCsvInternalValue(value, '__parentId'); }
 function validateCsvDepth(value) {
   const normalized = validateCsvInternalValue(value, '__depth');
-  if (normalized && !/^[1-3]$/.test(normalized)) {
-    throw new Error('__depth 컬럼은 1, 2, 3 중 하나여야 합니다.');
-  }
+  if (normalized && !/^[1-3]$/.test(normalized)) throw new Error('__depth 컬럼은 1, 2, 3 중 하나여야 합니다.');
   return normalized;
 }
 
@@ -2195,82 +1813,38 @@ function parseCsv(text) {
   let row = [];
   let current = '';
   let inQuotes = false;
-
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index];
     const nextChar = text[index + 1];
-
     if (char === '"') {
-      if (inQuotes && nextChar === '"') {
-        current += '"';
-        index += 1;
-      } else {
-        inQuotes = !inQuotes;
-      }
+      if (inQuotes && nextChar === '"') { current += '"'; index += 1; } else inQuotes = !inQuotes;
       continue;
     }
-
-    if (char === ',' && !inQuotes) {
-      row.push(current);
-      current = '';
-      continue;
-    }
-
+    if (char === ',' && !inQuotes) { row.push(current); current = ''; continue; }
     if ((char === '\n' || char === '\r') && !inQuotes) {
-      if (char === '\r' && nextChar === '\n') {
-        index += 1;
-      }
-      row.push(current);
-      rows.push(row);
-      row = [];
-      current = '';
-      continue;
+      if (char === '\r' && nextChar === '\n') index += 1;
+      row.push(current); rows.push(row); row = []; current = ''; continue;
     }
-
     current += char;
   }
-
-  if (current || row.length > 0) {
-    row.push(current);
-    rows.push(row);
-  }
-
-  if (rows.length < 2) {
-    throw new Error('CSV 데이터가 비어 있습니다.');
-  }
-
+  if (current || row.length > 0) { row.push(current); rows.push(row); }
+  if (rows.length < 2) throw new Error('CSV 데이터가 비어 있습니다.');
   const header = rows[0];
   const headerMap = new Map(header.map((name, index) => [name.replace(/^\ufeff/, ''), index]));
-
   const requiredHeaders = ['단계', 'Activity', 'Task', '대분류', '중분류', '산출물', '담당자', '지원팀', '실적진척상태', '계획시작일', '계획종료일', '실적시작일', '실적종료일'];
-  requiredHeaders.forEach((name) => {
-    if (!headerMap.has(name)) {
-      throw new Error(`필수 컬럼이 없습니다: ${name}`);
-    }
-  });
-
+  requiredHeaders.forEach((name) => { if (!headerMap.has(name)) throw new Error(`필수 컬럼이 없습니다: ${name}`); });
   return rows.slice(1).filter((cells) => cells.some((cell) => String(cell ?? '').trim() !== '')).map((cells) => ({
-    phase: validateCsvCell(readCsvCell(cells, headerMap, '단계'), 'phase'),
-    activity: validateCsvCell(readCsvCell(cells, headerMap, 'Activity'), 'activity'),
-    task: validateCsvCell(readCsvCell(cells, headerMap, 'Task'), 'task'),
-    categoryLarge: validateCsvCell(readCsvCell(cells, headerMap, '대분류'), 'categoryLarge'),
-    categoryMedium: validateCsvCell(readCsvCell(cells, headerMap, '중분류'), 'categoryMedium'),
-    documentName: validateCsvCell(readCsvCell(cells, headerMap, '산출물'), 'documentName'),
-    owner: validateCsvCell(readCsvCell(cells, headerMap, '담당자'), 'owner'),
-    supportTeam: validateCsvCell(readCsvCell(cells, headerMap, '지원팀'), 'supportTeam'),
-    plannedStartDate: validateCsvCell(readCsvCell(cells, headerMap, '계획시작일'), 'plannedStartDate'),
-    plannedEndDate: validateCsvCell(readCsvCell(cells, headerMap, '계획종료일'), 'plannedEndDate'),
+    phase: validateCsvCell(readCsvCell(cells, headerMap, '단계'), 'phase'), activity: validateCsvCell(readCsvCell(cells, headerMap, 'Activity'), 'activity'),
+    task: validateCsvCell(readCsvCell(cells, headerMap, 'Task'), 'task'), categoryLarge: validateCsvCell(readCsvCell(cells, headerMap, '대분류'), 'categoryLarge'),
+    categoryMedium: validateCsvCell(readCsvCell(cells, headerMap, '중분류'), 'categoryMedium'), documentName: validateCsvCell(readCsvCell(cells, headerMap, '산출물'), 'documentName'),
+    owner: validateCsvCell(readCsvCell(cells, headerMap, '담당자'), 'owner'), supportTeam: validateCsvCell(readCsvCell(cells, headerMap, '지원팀'), 'supportTeam'),
+    plannedStartDate: validateCsvCell(readCsvCell(cells, headerMap, '계획시작일'), 'plannedStartDate'), plannedEndDate: validateCsvCell(readCsvCell(cells, headerMap, '계획종료일'), 'plannedEndDate'),
     actualProgressStatus: validateCsvCell(readCsvCell(cells, headerMap, '실적진척상태') || '미착수(0%)', 'actualProgressStatus'),
-    actualStartDate: validateCsvCell(readCsvCell(cells, headerMap, '실적시작일'), 'actualStartDate'),
-    actualEndDate: validateCsvCell(readCsvCell(cells, headerMap, '실적종료일'), 'actualEndDate'),
-    predecessors: validateCsvCell(readCsvCell(cells, headerMap, '선행작업'), 'predecessors'),
-    budget: validateCsvCell(readCsvCell(cells, headerMap, '예산'), 'budget'),
-    actualCost: validateCsvCell(readCsvCell(cells, headerMap, '실투입비'), 'actualCost'),
-    sprint: validateCsvCell(readCsvCell(cells, headerMap, '스프린트'), 'sprint'),
-    storyPoints: validateCsvCell(readCsvCell(cells, headerMap, '스토리포인트'), 'storyPoints'),
-    __id: validateCsvId(readCsvCell(cells, headerMap, '__id')),
-    __parentId: validateCsvParentId(readCsvCell(cells, headerMap, '__parentId')),
-    __depth: validateCsvDepth(readCsvCell(cells, headerMap, '__depth'))
+    actualStartDate: validateCsvCell(readCsvCell(cells, headerMap, '실적시작일'), 'actualStartDate'), actualEndDate: validateCsvCell(readCsvCell(cells, headerMap, '실적종료일'), 'actualEndDate'),
+    predecessors: validateCsvCell(readCsvCell(cells, headerMap, '선행작업'), 'predecessors'), budget: validateCsvCell(readCsvCell(cells, headerMap, '예산'), 'budget'),
+    actualCost: validateCsvCell(readCsvCell(cells, headerMap, '실투입비'), 'actualCost'), sprint: validateCsvCell(readCsvCell(cells, headerMap, '스프린트'), 'sprint'),
+    storyPoints: validateCsvCell(readCsvCell(cells, headerMap, '스토리포인트'), 'storyPoints'), __id: validateCsvId(readCsvCell(cells, headerMap, '__id')),
+    __parentId: validateCsvParentId(readCsvCell(cells, headerMap, '__parentId')), __depth: validateCsvDepth(readCsvCell(cells, headerMap, '__depth'))
   }));
 }
 
@@ -2280,30 +1854,19 @@ function readCsvCell(cells, headerMap, name) {
 }
 
 async function connectJsonSync() {
-  if (!window.showSaveFilePicker) {
-    showToast('이 브라우저는 wbs.json 직접 저장 연결을 지원하지 않습니다.');
-    return;
-  }
-
+  if (!window.showSaveFilePicker) { showToast('이 브라우저는 wbs.json 직접 저장 연결을 지원하지 않습니다.'); return; }
   try {
-    state.jsonSyncHandle = await window.showSaveFilePicker({
-      suggestedName: 'wbs.json',
-      types: [{ description: 'JSON Files', accept: { 'application/json': ['.json'] } }]
-    });
+    state.jsonSyncHandle = await window.showSaveFilePicker({ suggestedName: 'wbs.json', types: [{ description: 'JSON Files', accept: { 'application/json': ['.json'] } }] });
     await writeJsonSyncFile();
     renderAll();
     showToast('wbs.json 자동저장 연결이 완료되었습니다.');
   } catch (error) {
-    if (error.name !== 'AbortError') {
-      showToast('wbs.json 연결에 실패했습니다.');
-    }
+    if (error.name !== 'AbortError') showToast('wbs.json 연결에 실패했습니다.');
   }
 }
 
 async function writeJsonSyncFile() {
-  if (!state.jsonSyncHandle) {
-    return;
-  }
+  if (!state.jsonSyncHandle) return;
   const writable = await state.jsonSyncHandle.createWritable();
   await writable.write(JSON.stringify(exportJsonArray(), null, 2));
   await writable.close();
@@ -2311,20 +1874,10 @@ async function writeJsonSyncFile() {
 
 function exportJsonArray() {
   return state.tasks.filter((task) => !task.isSynthetic).map((task) => ({
-    phase: task.phase,
-    activity: task.activity,
-    task: task.task,
-    categoryLarge: task.categoryLarge,
-    categoryMedium: task.categoryMedium,
-    documentName: task.documentName,
-    owner: task.owner,
-    supportTeam: task.supportTeam,
-    plannedStartDate: task.plannedStartDate,
-    plannedEndDate: task.plannedEndDate,
-    [LEGACY_PLANNED_END_FIELD]: task.plannedEndDate,
-    actualProgressStatus: task.actualProgressStatus,
-    actualStartDate: task.actualStartDate,
-    actualEndDate: task.actualEndDate
+    phase: task.phase, activity: task.activity, task: task.task, categoryLarge: task.categoryLarge, categoryMedium: task.categoryMedium,
+    documentName: task.documentName, owner: task.owner, supportTeam: task.supportTeam, plannedStartDate: task.plannedStartDate,
+    plannedEndDate: task.plannedEndDate, [LEGACY_PLANNED_END_FIELD]: task.plannedEndDate, actualProgressStatus: task.actualProgressStatus,
+    actualStartDate: task.actualStartDate, actualEndDate: task.actualEndDate
   }));
 }
 
@@ -2332,547 +1885,179 @@ function openGanttModal() {
   state.previousFocus = document.activeElement;
   elements.ganttModal.classList.remove('hidden');
   renderGantt();
-  // Focus the modal to handle Escape key properly
   elements.ganttModal.focus();
 }
-
 function closeGanttModal() {
   elements.ganttModal.classList.add('hidden');
-  if (state.previousFocus) {
-    state.previousFocus.focus();
-    state.previousFocus = null;
-  }
+  if (state.previousFocus) { state.previousFocus.focus(); state.previousFocus = null; }
 }
-
 function getGanttModalFocusableElements() {
-  return Array.from(elements.ganttModal.querySelectorAll([
-    'a[href]',
-    'button:not(:disabled):not([aria-disabled="true"])',
-    'input:not(:disabled)',
-    'select:not(:disabled)',
-    'textarea:not(:disabled)',
-    '[tabindex]:not([tabindex="-1"])'
-  ].join(','))).filter((element) => (
-    !element.closest('.hidden') && element.offsetParent !== null
-  ));
+  return Array.from(elements.ganttModal.querySelectorAll(['a[href]', 'button:not(:disabled):not([aria-disabled="true"])', 'input:not(:disabled)', 'select:not(:disabled)', 'textarea:not(:disabled)', '[tabindex]:not([tabindex="-1"])'].join(',')))
+    .filter((element) => !element.closest('.hidden') && element.offsetParent !== null);
 }
-
 function trapGanttModalFocus(event) {
   const focusableElements = getGanttModalFocusableElements();
-  if (focusableElements.length === 0) {
-    elements.ganttModal.focus();
-    event.preventDefault();
-    return;
-  }
-
+  if (focusableElements.length === 0) { elements.ganttModal.focus(); event.preventDefault(); return; }
   const firstElement = focusableElements[0];
   const lastElement = focusableElements[focusableElements.length - 1];
   const activeElement = document.activeElement;
-
-  if (event.shiftKey && (activeElement === firstElement || activeElement === elements.ganttModal)) {
-    lastElement.focus();
-    event.preventDefault();
-  } else if (!event.shiftKey && activeElement === lastElement) {
-    firstElement.focus();
-    event.preventDefault();
-  }
+  if (event.shiftKey && (activeElement === firstElement || activeElement === elements.ganttModal)) { lastElement.focus(); event.preventDefault(); }
+  else if (!event.shiftKey && activeElement === lastElement) { firstElement.focus(); event.preventDefault(); }
 }
 
 function renderGantt() {
   const plannedTasks = state.tasks.filter((task) => isValidDateString(task.plannedStartDate) && isValidDateString(task.plannedEndDate));
   if (plannedTasks.length === 0) {
-    const emptyDiv = document.createElement('div');
-    emptyDiv.className = 'gantt-empty table-empty';
-
-    const icon = document.createElement('div');
-    icon.className = 'empty-icon';
-    icon.setAttribute('aria-hidden', 'true');
-    icon.textContent = '📊';
-
-    const title = document.createElement('h3');
-    title.className = 'empty-title';
-    title.textContent = '표시할 간트 차트가 없습니다';
-
-    const description = document.createElement('p');
-    description.className = 'empty-desc';
-
-    const strongStart = document.createElement('strong');
-    strongStart.textContent = '계획시작일';
-
-    const strongEnd = document.createElement('strong');
-    strongEnd.textContent = '계획종료일';
-
-    description.append(
-      '작업 목록에서 ',
-      strongStart,
-      '과 ',
-      strongEnd,
-      '을 입력하면 차트가 나타납니다.'
-    );
-
-    const actions = document.createElement('div');
-    actions.className = 'empty-actions editor-actions';
-
-    const backBtn = document.createElement('button');
-    backBtn.type = 'button';
-    backBtn.className = 'primary-button';
-    backBtn.textContent = '작업 목록으로 돌아가기';
-    backBtn.title = '작업 목록으로 돌아가기 (Esc)';
-    backBtn.setAttribute('aria-keyshortcuts', 'Escape');
-    backBtn.addEventListener('click', closeGanttModal);
-
-    actions.appendChild(backBtn);
-
-    emptyDiv.append(icon, title, description, actions);
-    elements.ganttContent.replaceChildren(emptyDiv);
-    return;
+    const emptyDiv = document.createElement('div'); emptyDiv.className = 'gantt-empty table-empty';
+    const icon = document.createElement('div'); icon.className = 'empty-icon'; icon.setAttribute('aria-hidden', 'true'); icon.textContent = '📊';
+    const title = document.createElement('h3'); title.className = 'empty-title'; title.textContent = '표시할 간트 차트가 없습니다';
+    const description = document.createElement('p'); description.className = 'empty-desc';
+    const strongStart = document.createElement('strong'); strongStart.textContent = '계획시작일';
+    const strongEnd = document.createElement('strong'); strongEnd.textContent = '계획종료일';
+    description.append('작업 목록에서 ', strongStart, '과 ', strongEnd, '을 입력하면 차트가 나타납니다.');
+    const actions = document.createElement('div'); actions.className = 'empty-actions editor-actions';
+    const backBtn = document.createElement('button'); backBtn.type = 'button'; backBtn.className = 'primary-button'; backBtn.textContent = '작업 목록으로 돌아가기';
+    backBtn.title = '작업 목록으로 돌아가기 (Esc)'; backBtn.setAttribute('aria-keyshortcuts', 'Escape'); backBtn.addEventListener('click', closeGanttModal);
+    actions.appendChild(backBtn); emptyDiv.append(icon, title, description, actions); elements.ganttContent.replaceChildren(emptyDiv); return;
   }
-
-  // ⚡ Bolt: Use direct string comparison for minDate/maxDate calculation since plannedTasks already filter for valid dates.
   const minDate = plannedTasks.reduce((min, task) => (task.plannedStartDate < min ? task.plannedStartDate : min), plannedTasks[0].plannedStartDate);
   const maxDate = plannedTasks.reduce((max, task) => (task.plannedEndDate > max ? task.plannedEndDate : max), plannedTasks[0].plannedEndDate);
   const weekdays = buildWeekdayTimeline(minDate, maxDate);
   const weeks = groupTimelineByWeek(weekdays);
-
   const totalWidth = weekdays.length * 36;
-
-  const shell = document.createElement('div');
-  shell.className = 'gantt-shell';
-
-  const meta = document.createElement('div');
-  meta.className = 'gantt-meta';
-  meta.appendChild(createGanttMetaTable());
-
-  const chart = document.createElement('div');
-  chart.className = 'gantt-chart';
-  chart.appendChild(createGanttChartTable(weeks, weekdays, totalWidth));
-
-  shell.append(meta, chart);
-  elements.ganttContent.replaceChildren(shell);
+  const shell = document.createElement('div'); shell.className = 'gantt-shell';
+  const meta = document.createElement('div'); meta.className = 'gantt-meta'; meta.appendChild(createGanttMetaTable());
+  const chart = document.createElement('div'); chart.className = 'gantt-chart'; chart.appendChild(createGanttChartTable(weeks, weekdays, totalWidth));
+  shell.append(meta, chart); elements.ganttContent.replaceChildren(shell);
 }
 
 function createGanttMetaTable() {
-  const table = document.createElement('table');
-  const thead = document.createElement('thead');
-  const headerRow = document.createElement('tr');
-  [
-    '단계',
-    'Activity',
-    'Task',
-    '대분류',
-    '중분류',
-    '산출물',
-    '담당자',
-    '지원팀',
-    '계획시작일',
-    '계획종료일',
-    '실적시작일',
-    '실적종료일'
-  ].forEach((label) => {
-    const th = document.createElement('th');
-    th.textContent = label;
-    headerRow.appendChild(th);
+  const table = document.createElement('table'); const thead = document.createElement('thead'); const headerRow = document.createElement('tr');
+  ['단계','Activity','Task','대분류','중분류','산출물','담당자','지원팀','계획시작일','계획종료일','실적시작일','실적종료일'].forEach((label) => {
+    const th = document.createElement('th'); th.textContent = label; headerRow.appendChild(th);
   });
-  thead.appendChild(headerRow);
-
-  const tbody = document.createElement('tbody');
+  thead.appendChild(headerRow); const tbody = document.createElement('tbody');
   state.tasks.forEach((task) => {
     const row = document.createElement('tr');
-    row.append(
-      createTableCell('', createTreeCellContent(task.phase || task.activity || task.task || '-', task.depth)),
-      createTableCell('', createTextCellContent(task.activity)),
-      createTableCell('', createTextCellContent(task.task)),
-      createTableCell('', createTextCellContent(task.categoryLarge)),
-      createTableCell('', createTextCellContent(task.categoryMedium)),
-      createTableCell('', createTextCellContent(task.documentName)),
-      createTableCell('', createTextCellContent(task.owner)),
-      createTableCell('', createTextCellContent(task.supportTeam)),
-      createTableCell('', createTextCellContent(task.plannedStartDate)),
-      createTableCell('', createTextCellContent(task.plannedEndDate)),
-      createTableCell('', createTextCellContent(task.actualStartDate)),
-      createTableCell('', createTextCellContent(task.actualEndDate))
-    );
-    tbody.appendChild(row);
+    row.append(createTableCell('', createTreeCellContent(task.phase || task.activity || task.task || '-', task.depth)), createTableCell('', createTextCellContent(task.activity)),
+      createTableCell('', createTextCellContent(task.task)), createTableCell('', createTextCellContent(task.categoryLarge)), createTableCell('', createTextCellContent(task.categoryMedium)),
+      createTableCell('', createTextCellContent(task.documentName)), createTableCell('', createTextCellContent(task.owner)), createTableCell('', createTextCellContent(task.supportTeam)),
+      createTableCell('', createTextCellContent(task.plannedStartDate)), createTableCell('', createTextCellContent(task.plannedEndDate)), createTableCell('', createTextCellContent(task.actualStartDate)),
+      createTableCell('', createTextCellContent(task.actualEndDate))); tbody.appendChild(row);
   });
-
-  table.append(thead, tbody);
-  return table;
+  table.append(thead, tbody); return table;
 }
 
 function createGanttChartTable(weeks, weekdays, totalWidth) {
-  const table = document.createElement('table');
-  const thead = document.createElement('thead');
-  const weekRow = document.createElement('tr');
-  weeks.forEach((week) => {
-    const th = document.createElement('th');
-    th.className = 'gantt-week-header';
-    th.colSpan = week.days.length;
-    th.textContent = week.label;
-    weekRow.appendChild(th);
-  });
-
-  const dayRow = document.createElement('tr');
-  weekdays.forEach((day) => {
-    const th = document.createElement('th');
-    th.className = 'gantt-day-cell';
-    th.textContent = day.dayLabel;
-    dayRow.appendChild(th);
-  });
-  thead.append(weekRow, dayRow);
-
-  const tbody = document.createElement('tbody');
+  const table = document.createElement('table'); const thead = document.createElement('thead'); const weekRow = document.createElement('tr');
+  weeks.forEach((week) => { const th = document.createElement('th'); th.className = 'gantt-week-header'; th.colSpan = week.days.length; th.textContent = week.label; weekRow.appendChild(th); });
+  const dayRow = document.createElement('tr'); weekdays.forEach((day) => { const th = document.createElement('th'); th.className = 'gantt-day-cell'; th.textContent = day.dayLabel; dayRow.appendChild(th); });
+  thead.append(weekRow, dayRow); const tbody = document.createElement('tbody');
   state.tasks.forEach((task) => {
-    const row = document.createElement('tr');
-    const cell = document.createElement('td');
-    cell.colSpan = weekdays.length;
-
-    const track = document.createElement('div');
-    track.className = 'gantt-day-track';
-    track.style.width = `${totalWidth}px`;
-
+    const row = document.createElement('tr'); const cell = document.createElement('td'); cell.colSpan = weekdays.length;
+    const track = document.createElement('div'); track.className = 'gantt-day-track'; track.style.width = `${totalWidth}px`;
     const planBar = createGanttBarElement(task.plannedStartDate, task.plannedEndDate, weekdays, 'plan', task);
     const actualBar = createGanttBarElement(task.actualStartDate, task.actualEndDate, weekdays, 'actual', task);
-    if (planBar) {
-      track.appendChild(planBar);
-    }
-    if (actualBar) {
-      track.appendChild(actualBar);
-    }
-
-    cell.appendChild(track);
-    row.appendChild(cell);
-    tbody.appendChild(row);
+    if (planBar) track.appendChild(planBar); if (actualBar) track.appendChild(actualBar); cell.appendChild(track); row.appendChild(cell); tbody.appendChild(row);
   });
-
-  table.append(thead, tbody);
-  return table;
+  table.append(thead, tbody); return table;
 }
 
 function buildWeekdayTimeline(minDate, maxDate) {
-  const days = [];
-  let cursor = getMonday(minDate);
-  const endBoundary = getFriday(maxDate);
-  // ⚡ Bolt: Use direct string comparison for cursor loop since both are generated valid dates.
-  while (cursor <= endBoundary) {
-    if (!isWeekend(cursor)) {
-      days.push({
-        date: cursor,
-        dayLabel: cursor.slice(8, 10)
-      });
-    }
-    cursor = addDays(cursor, 1);
-  }
+  const days = []; let cursor = getMonday(minDate); const endBoundary = getFriday(maxDate);
+  while (cursor <= endBoundary) { if (!isWeekend(cursor)) days.push({ date: cursor, dayLabel: cursor.slice(8, 10) }); cursor = addDays(cursor, 1); }
   return days;
 }
-
 function groupTimelineByWeek(days) {
-  // ⚡ Bolt: Use an O(1) Map instead of O(N) Array.find to avoid O(N^2) bottleneck when grouping timeline days
-  const groups = [];
-  const groupMap = new Map();
-  days.forEach((day) => {
-    const monday = getMonday(day.date);
-    const existing = groupMap.get(monday);
-    if (existing) {
-      existing.days.push(day);
-    } else {
-      const newGroup = {
-        monday,
-        label: `${monday.slice(5, 7)}월 ${monday.slice(8, 10)}일 주간`,
-        days: [day]
-      };
-      groups.push(newGroup);
-      groupMap.set(monday, newGroup);
-    }
-  });
+  const groups = []; const groupMap = new Map();
+  days.forEach((day) => { const monday = getMonday(day.date); const existing = groupMap.get(monday); if (existing) existing.days.push(day); else { const newGroup = { monday, label: `${monday.slice(5, 7)}월 ${monday.slice(8, 10)}일 주간`, days: [day] }; groups.push(newGroup); groupMap.set(monday, newGroup); } });
   return groups;
 }
-
 function findFirstWeekdayIndexOnOrAfter(weekdays, targetDate) {
-  let result = -1;
-  let low = 0;
-  let high = weekdays.length - 1;
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    if (weekdays[mid].date >= targetDate) {
-      result = mid;
-      high = mid - 1;
-    } else {
-      low = mid + 1;
-    }
-  }
-
+  let result = -1, low = 0, high = weekdays.length - 1;
+  while (low <= high) { const mid = Math.floor((low + high) / 2); if (weekdays[mid].date >= targetDate) { result = mid; high = mid - 1; } else low = mid + 1; }
   return result;
 }
-
 function findLastWeekdayIndexOnOrBefore(weekdays, targetDate) {
-  let result = -1;
-  let low = 0;
-  let high = weekdays.length - 1;
-
-  while (low <= high) {
-    const mid = Math.floor((low + high) / 2);
-    if (weekdays[mid].date <= targetDate) {
-      result = mid;
-      low = mid + 1;
-    } else {
-      high = mid - 1;
-    }
-  }
-
+  let result = -1, low = 0, high = weekdays.length - 1;
+  while (low <= high) { const mid = Math.floor((low + high) / 2); if (weekdays[mid].date <= targetDate) { result = mid; low = mid + 1; } else high = mid - 1; }
   return result;
 }
-
 function createGanttBarElement(startDate, endDate, weekdays, type, task) {
-  if (!isValidDateString(startDate) || !isValidDateString(endDate)) {
-    return null;
-  }
+  if (!isValidDateString(startDate) || !isValidDateString(endDate)) return null;
   const startIndex = findFirstWeekdayIndexOnOrAfter(weekdays, startDate);
   const normalizedEndIndex = findLastWeekdayIndexOnOrBefore(weekdays, endDate);
-
-  if (startIndex === -1 || normalizedEndIndex === -1) {
-    return null;
-  }
-  if (normalizedEndIndex < startIndex) {
-    return null;
-  }
-  const bar = document.createElement('div');
-  bar.className = `gantt-bar ${type}`;
-  bar.style.left = `${startIndex * 36}px`;
-  bar.style.width = `${(normalizedEndIndex - startIndex + 1) * 36}px`;
-
-  const taskName = task.task || task.activity || task.phase || '작업';
-  const typeLabel = type === 'plan' ? '계획' : '실적';
-  const visibleStartDate = weekdays[startIndex].date;
-  const visibleEndDate = weekdays[normalizedEndIndex].date;
-  const tooltipText = `${taskName} ${typeLabel} (${visibleStartDate} ~ ${visibleEndDate})`;
-
-  bar.title = tooltipText;
-  bar.setAttribute('aria-label', tooltipText);
-  bar.setAttribute('role', 'img');
-  bar.tabIndex = 0;
-
-  return bar;
+  if (startIndex === -1 || normalizedEndIndex === -1 || normalizedEndIndex < startIndex) return null;
+  const bar = document.createElement('div'); bar.className = `gantt-bar ${type}`; bar.style.left = `${startIndex * 36}px`; bar.style.width = `${(normalizedEndIndex - startIndex + 1) * 36}px`;
+  const taskName = task.task || task.activity || task.phase || '작업'; const typeLabel = type === 'plan' ? '계획' : '실적';
+  const tooltipText = `${taskName} ${typeLabel} (${weekdays[startIndex].date} ~ ${weekdays[normalizedEndIndex].date})`;
+  bar.title = tooltipText; bar.setAttribute('aria-label', tooltipText); bar.setAttribute('role', 'img'); bar.tabIndex = 0; return bar;
 }
 
 function showToast(message) {
   elements.toast.textContent = message;
   elements.toast.classList.add('show');
   clearTimeout(state.toastTimer);
-  state.toastTimer = window.setTimeout(() => {
-    elements.toast.classList.remove('show');
-  }, 2200);
+  state.toastTimer = window.setTimeout(() => elements.toast.classList.remove('show'), 2200);
 }
-
 function clearDragState() {
-  state.dragTaskId = null;
-  state.dragTaskCache = null;
-  if (state.dragElement) {
-    state.dragElement.classList.remove('dragging');
-    state.dragElement = null;
-  }
+  state.dragTaskId = null; state.dragTaskCache = null;
+  if (state.dragElement) { state.dragElement.classList.remove('dragging'); state.dragElement = null; }
   clearDropTargets();
 }
-
 function clearDropTargets() {
-  if (state.dropTargetElement) {
-    state.dropTargetElement.classList.remove('drop-target');
-    delete state.dropTargetElement.dataset.dropPosition;
-    state.dropTargetElement = null;
-  }
+  if (state.dropTargetElement) { state.dropTargetElement.classList.remove('drop-target'); delete state.dropTargetElement.dataset.dropPosition; state.dropTargetElement = null; }
 }
-
 function downloadFile(content, fileName, mimeType) {
-  const blob = new Blob([content], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  // Keep generated download links isolated from any browsing context changes.
-  link.rel = 'noopener noreferrer';
-  document.body.appendChild(link);
-  link.click();
-  Element.prototype.remove.call(link);
-  URL.revokeObjectURL(url);
+  const blob = new Blob([content], { type: mimeType }); const url = URL.createObjectURL(blob); const link = document.createElement('a');
+  link.href = url; link.download = fileName; link.rel = 'noopener noreferrer'; document.body.appendChild(link); link.click(); Element.prototype.remove.call(link); URL.revokeObjectURL(url);
 }
-
-function csvEscape(value) {
-  const normalized = sanitizeCsvFormulaValue(value);
-  return `"${normalized.replace(/"/g, '""')}"`;
-}
-
-function sanitizeCsvFormulaValue(value) {
-  const normalized = String(value ?? '');
-  return CSV_FORMULA_PREFIX_PATTERN.test(normalized) ? `'${normalized}` : normalized;
-}
-
+function csvEscape(value) { const normalized = sanitizeCsvFormulaValue(value); return `"${normalized.replace(/"/g, '""')}"`; }
+function sanitizeCsvFormulaValue(value) { const normalized = String(value ?? ''); return CSV_FORMULA_PREFIX_PATTERN.test(normalized) ? `'${normalized}` : normalized; }
 function createId(seed = Date.now()) {
-  // Security enhancement: Prefer crypto.randomUUID for stronger randomness
   if (typeof crypto !== 'undefined') {
-    if (crypto.randomUUID) {
-      return `task-${crypto.randomUUID()}`;
-    }
-    // Fallback: use crypto.getRandomValues if randomUUID is unavailable
-    if (crypto.getRandomValues) {
-      const arr = new Uint32Array(2);
-      crypto.getRandomValues(arr);
-      return `task-${arr[0].toString(16)}-${arr[1].toString(16)}`;
-    }
+    if (crypto.randomUUID) return `task-${crypto.randomUUID()}`;
+    if (crypto.getRandomValues) { const arr = new Uint32Array(2); crypto.getRandomValues(arr); return `task-${arr[0].toString(16)}-${arr[1].toString(16)}`; }
   }
   throw new Error('Secure random number generation is not supported in this environment');
 }
-
-// ⚡ Bolt: Memoize date parsing and validation to reduce GC pressure and expensive Date allocations in tight render loops
-
 function isValidDateString(value) {
-  if (!isValidDateString.cache) isValidDateString.cache = new Map();
-  const validDateCache = isValidDateString.cache;
-
-  if (validDateCache.has(value)) {
-    return validDateCache.get(value);
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
-    return false;
-  }
+  if (!isValidDateString.cache) isValidDateString.cache = new Map(); const validDateCache = isValidDateString.cache;
+  if (validDateCache.has(value)) return validDateCache.get(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const isValid = formatDateInput(new Date(dateStringToUtcMs(value))) === value;
-  // Bolt: Increase cache limits to prevent cache thrashing in large loops.
-  if (validDateCache.size < 10000) {
-    validDateCache.set(value, isValid);
-  }
+  if (validDateCache.size < 10000) validDateCache.set(value, isValid);
   return isValid;
 }
-
 function dateStringToUtcMs(value) {
-  if (!dateStringToUtcMs.cache) dateStringToUtcMs.cache = new Map();
-  const dateToUtcMsCache = dateStringToUtcMs.cache;
-
-  if (dateToUtcMsCache.has(value)) {
-    return dateToUtcMsCache.get(value);
-  }
-  // Bolt: Avoid split().map() array allocations in tight rendering loops.
-  const year = Number(value.substring(0, 4));
-  const month = Number(value.substring(5, 7));
-  const day = Number(value.substring(8, 10));
-  const ms = Date.UTC(year, month - 1, day);
-  // Bolt: Increase cache limits to prevent cache thrashing in large loops.
-  if (dateToUtcMsCache.size < 10000) {
-    dateToUtcMsCache.set(value, ms);
-  }
-  return ms;
+  if (!dateStringToUtcMs.cache) dateStringToUtcMs.cache = new Map(); const dateToUtcMsCache = dateStringToUtcMs.cache;
+  if (dateToUtcMsCache.has(value)) return dateToUtcMsCache.get(value);
+  const year = Number(value.substring(0, 4)); const month = Number(value.substring(5, 7)); const day = Number(value.substring(8, 10)); const ms = Date.UTC(year, month - 1, day);
+  if (dateToUtcMsCache.size < 10000) dateToUtcMsCache.set(value, ms); return ms;
 }
+function compareDateStrings(left, right) { if (!isValidDateString(left) || !isValidDateString(right)) return 0; if (left === right) return 0; return left > right ? 1 : -1; }
+function addDays(value, amount) { const date = new Date(dateStringToUtcMs(value)); date.setUTCDate(date.getUTCDate() + amount); return formatDateInput(date); }
+function getMonday(value) { const date = new Date(dateStringToUtcMs(value)); const day = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() - day + 1); return formatDateInput(date); }
+function getFriday(value) { const date = new Date(dateStringToUtcMs(value)); const day = date.getUTCDay() || 7; date.setUTCDate(date.getUTCDate() + (5 - day)); return formatDateInput(date); }
+function isWeekend(value) { const day = new Date(dateStringToUtcMs(value)).getUTCDay(); return day === 0 || day === 6; }
+function clamp(value, min, max) { return Math.min(max, Math.max(min, value)); }
+function formatDateInput(date) { const year = date.getUTCFullYear(); const month = String(date.getUTCMonth() + 1).padStart(2, '0'); const day = String(date.getUTCDate()).padStart(2, '0'); return `${year}-${month}-${day}`; }
+function formatLocalDateInput(date) { const year = date.getFullYear(); const month = String(date.getMonth() + 1).padStart(2, '0'); const day = String(date.getDate()).padStart(2, '0'); return `${year}-${month}-${day}`; }
+function formatCompactDate(date) { return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`; }
+function formatPercent(value, digits) { return `${Number(value || 0).toFixed(digits)}%`; }
+function formatDecimal(value, digits) { return Number(value || 0).toFixed(digits); }
+function formatNumber(value) { if (!formatNumber.formatter) formatNumber.formatter = new Intl.NumberFormat('ko-KR'); return formatNumber.formatter.format(Number(value || 0)); }
 
-function compareDateStrings(left, right) {
-  if (!isValidDateString(left) || !isValidDateString(right)) {
-    return 0;
-  }
-  if (left === right) {
-    return 0;
-  }
-  return left > right ? 1 : -1;
-}
-
-function addDays(value, amount) {
-  const date = new Date(dateStringToUtcMs(value));
-  date.setUTCDate(date.getUTCDate() + amount);
-  return formatDateInput(date);
-}
-
-function getMonday(value) {
-  const date = new Date(dateStringToUtcMs(value));
-  const day = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() - day + 1);
-  return formatDateInput(date);
-}
-
-function getFriday(value) {
-  const date = new Date(dateStringToUtcMs(value));
-  const day = date.getUTCDay() || 7;
-  date.setUTCDate(date.getUTCDate() + (5 - day));
-  return formatDateInput(date);
-}
-
-function isWeekend(value) {
-  const day = new Date(dateStringToUtcMs(value)).getUTCDay();
-  return day === 0 || day === 6;
-}
-
-function clamp(value, min, max) {
-  return Math.min(max, Math.max(min, value));
-}
-
-function formatDateInput(date) {
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function formatLocalDateInput(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function formatCompactDate(date) {
-  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
-}
-
-function formatPercent(value, digits) {
-  return `${Number(value || 0).toFixed(digits)}%`;
-}
-
-function formatDecimal(value, digits) {
-  return Number(value || 0).toFixed(digits);
-}
-
-function formatNumber(value) {
-  if (!formatNumber.formatter) {
-    formatNumber.formatter = new Intl.NumberFormat('ko-KR');
-  }
-  return formatNumber.formatter.format(Number(value || 0));
-}
-
-const HTML_ESCAPE_ENTITIES = Object.assign(Object.create(null), {
-  '&': '&amp;',
-  '<': '&lt;',
-  '>': '&gt;',
-  '"': '&quot;',
-  "'": '&#39;'
-});
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (character) => HTML_ESCAPE_ENTITIES[character]);
-}
-
-function toKebab(value) {
-  return value
-    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
-    .replace(/_/g, '-')
-    .toLowerCase();
-}
-
+const HTML_ESCAPE_ENTITIES = Object.assign(Object.create(null), { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' });
+function escapeHtml(value) { return String(value).replace(/[&<>"']/g, (character) => HTML_ESCAPE_ENTITIES[character]); }
+function toKebab(value) { return value.replace(/([a-z0-9])([A-Z])/g, '$1-$2').replace(/_/g, '-').toLowerCase(); }
 function debounce(callback, wait) {
   let timeoutId = null;
-  const debounced = (...args) => {
-    clearTimeout(timeoutId);
-    timeoutId = setTimeout(() => {
-      timeoutId = null;
-      callback(...args);
-    }, wait);
-  };
-  debounced.flush = () => {
-    if (timeoutId === null) {
-      return;
-    }
-    clearTimeout(timeoutId);
-    timeoutId = null;
-    callback();
-  };
+  const debounced = (...args) => { clearTimeout(timeoutId); timeoutId = setTimeout(() => { timeoutId = null; callback(...args); }, wait); };
+  debounced.flush = () => { if (timeoutId === null) return; clearTimeout(timeoutId); timeoutId = null; callback(); };
   return debounced;
 }
 
-// Export for testing
 if (typeof window !== 'undefined') {
   window.validateDraft = validateDraft;
   window.sanitizeCsvFormulaValue = sanitizeCsvFormulaValue;
