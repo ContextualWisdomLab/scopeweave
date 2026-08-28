@@ -24,6 +24,7 @@ function fixture() {
       id INTEGER PRIMARY KEY,
       org_id INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL DEFAULT 'member',
       UNIQUE(org_id, user_id)
     );
     CREATE TABLE projects (

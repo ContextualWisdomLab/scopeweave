@@ -1,6 +1,7 @@
 const ATTACHMENT_VIEW_PURPOSE = 'attachment_view';
 const INSERT_SAVEPOINT = 'access_grant_insert_state';
 const CONSUME_SAVEPOINT = 'access_grant_consume_state';
+const MEMBERSHIP_MIGRATION_SAVEPOINT = 'access_grant_membership_identity_migration';
 
 function requireDatabase(db) {
   if (!db || typeof db.exec !== 'function' || typeof db.prepare !== 'function') {
@@ -44,6 +45,31 @@ function withSavepoint(db, name, operation) {
   }
 }
 
+function ensureMembershipIdsDoNotReuse(db) {
+  const schema = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'memberships'",
+  ).get();
+  if (!schema?.sql || /\bAUTOINCREMENT\b/i.test(schema.sql)) return;
+
+  withSavepoint(db, MEMBERSHIP_MIGRATION_SAVEPOINT, () => {
+    db.exec('ALTER TABLE memberships RENAME TO memberships_legacy');
+    db.exec('DROP INDEX IF EXISTS idx_memberships_user');
+    db.exec(`
+      CREATE TABLE memberships (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        org_id INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        role TEXT NOT NULL DEFAULT 'member',
+        UNIQUE(org_id, user_id)
+      );
+      INSERT INTO memberships(id, org_id, user_id, role)
+        SELECT id, org_id, user_id, role FROM memberships_legacy;
+      CREATE INDEX idx_memberships_user ON memberships(user_id);
+      DROP TABLE memberships_legacy;
+    `);
+  });
+}
+
 /**
  * Install the durable access-grant schema during database bootstrap.
  *
@@ -60,6 +86,7 @@ function withSavepoint(db, name, operation) {
  */
 export function installAccessGrantSchema(database) {
   const db = requireDatabase(database);
+  ensureMembershipIdsDoNotReuse(db);
   db.exec(`
     CREATE TABLE IF NOT EXISTS access_grants (
       grant_id TEXT PRIMARY KEY,

@@ -35,7 +35,7 @@ The persisted `access_grants` relation is in third normal form for this bounded 
 
 ## Secret and lifecycle boundaries
 
-The database stores `token_hash` but never the plaintext grant secret. Each usable-grant row binds the subject, project, purpose, audience, optional attachment, mint-time `membership_version`, issue/expiry timestamps, and use/revocation timestamps. `ON DELETE CASCADE` makes deletion of a subject, project, or bound attachment an immediate lifecycle revocation for dependent usable grants.
+The database stores `token_hash` but never the plaintext grant secret. Each usable-grant row binds the subject, project, purpose, audience, optional attachment, mint-time `membership_version`, issue/expiry timestamps, and use/revocation timestamps. `ON DELETE CASCADE` makes deletion of a subject, project, or bound attachment an immediate lifecycle revocation for dependent usable grants. Membership row identities are non-reusing SQLite `AUTOINCREMENT` identities, including after bootstrap upgrades an older database schema, so a remove/re-add cannot recreate the same revocation epoch.
 
 Audit-outbox rows store only the grant correlation ID and non-secret authorization/event facts. The plaintext secret and its hash are both absent from the outbox. Audit evidence deliberately survives lifecycle deletion of the underlying attachment or usable grant.
 
@@ -130,9 +130,9 @@ A local Node 22 direct adapter probe on the earlier persistence implementation e
 
 ## Migration, rollback, and compatibility
 
-The schema is installed only after referenced core tables exist. Idempotent `CREATE TABLE IF NOT EXISTS` plus the audit-delivery `CREATE INDEX IF NOT EXISTS` make bootstrap safe for databases created by this unshipped slice. This active branch adds the `membership_version` column before any protected runtime route consumes `access_grants`; no protected `develop` release has shipped the earlier branch-only schema, so no customer migration is claimed or required by this slice. The eventual protected integration must ship this schema as one coherent versioned change and must not treat a locally persisted pre-integration development database as release evidence.
+The schema is installed only after referenced core tables exist. Idempotent `CREATE TABLE IF NOT EXISTS` plus the audit-delivery `CREATE INDEX IF NOT EXISTS` make bootstrap safe for databases created by this unshipped slice. New databases define `memberships.id` as `INTEGER PRIMARY KEY AUTOINCREMENT`. Bootstrap also detects the legacy canonical `memberships` definition, rebuilds it inside a savepoint with the same existing IDs and columns, restores the user index, and only then installs access-grant tables. A failed rebuild rolls back rather than leaving a partially migrated membership table. This active branch adds the `membership_version` column before any protected runtime route consumes `access_grants`; no protected `develop` release has shipped the earlier branch-only access-grant schema, so the compatibility migration is retained for existing local/self-hosted databases rather than being presented as historical release evidence. The eventual protected integration must ship this schema as one coherent versioned change.
 
-This slice adds no destructive migration and does not rename legacy objects. Rollback removes the adapter import/bootstrap call, `access_grants` and `access_grant_audit_outbox` tables plus the audit-delivery index, adapter/audit tests, and this record together. Because no protected runtime route consumes the table in this slice, rollback does not strand a browser contract. Once a runtime route begins issuing grants, rollback planning must account for in-flight one-time grants and retained audit evidence and must default to revoking grants rather than restoring broad URL credentials.
+The membership compatibility migration is transactional and preserves existing rows and IDs; it is not a data-deleting rollback. Rollback of this slice removes the adapter import/bootstrap call, `access_grants` and `access_grant_audit_outbox` tables plus the audit-delivery index, adapter/audit tests, and this record together. Because no protected runtime route consumes the table in this slice, rollback does not strand a browser contract. Once a runtime route begins issuing grants, rollback planning must account for in-flight one-time grants and retained audit evidence and must default to revoking grants rather than restoring broad URL credentials.
 
 ## Traceability
 
@@ -150,5 +150,7 @@ Lodderstedt, T., Bradley, J., Labunets, A., & Fett, D. (2025). *Best current pra
 SQLite Consortium. (n.d.). *Foreign key support*. SQLite. Retrieved August 16, 2026, from https://www.sqlite.org/foreignkeys.html
 
 SQLite Consortium. (n.d.). *Isolation in SQLite*. SQLite. Retrieved August 16, 2026, from https://www.sqlite.org/isolation.html
+
+SQLite Consortium. (n.d.). *SQLite autoincrement*. SQLite. Retrieved August 28, 2026, from https://www.sqlite.org/autoinc.html
 
 SQLite Consortium. (n.d.). *Transaction*. SQLite. Retrieved August 16, 2026, from https://www.sqlite.org/lang_transaction.html

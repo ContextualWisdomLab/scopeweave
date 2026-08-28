@@ -31,6 +31,7 @@ function installCoreSchema(db) {
       id INTEGER PRIMARY KEY,
       org_id INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
       user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      role TEXT NOT NULL DEFAULT 'member',
       UNIQUE(org_id, user_id)
     );
     CREATE TABLE projects (
@@ -135,6 +136,12 @@ test('SQLite adapter atomically binds mint-time membership version to redemption
   seed(db);
   const { service } = serviceFor(db);
 
+  assert.match(
+    db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'memberships'").get().sql,
+    /AUTOINCREMENT/i,
+    'bootstrap upgrades legacy membership IDs to a non-reusing sequence',
+  );
+
   const tokenVersionGrant = await service.mint(attachmentRequest());
   db.prepare('UPDATE users SET token_version = token_version + 1 WHERE id = 1').run();
   await assert.rejects(
@@ -146,7 +153,12 @@ test('SQLite adapter atomically binds mint-time membership version to redemption
   db.prepare('UPDATE users SET token_version = 0 WHERE id = 1').run();
   const membershipGrant = await service.mint(attachmentRequest());
   db.prepare('DELETE FROM memberships WHERE id = 100').run();
-  db.prepare('INSERT INTO memberships(id, org_id, user_id) VALUES (101, 10, 1)').run();
+  db.prepare('INSERT INTO memberships(org_id, user_id) VALUES (10, 1)').run();
+  assert.notEqual(
+    db.prepare('SELECT id FROM memberships WHERE org_id = 10 AND user_id = 1').get().id,
+    100,
+    'remove/re-add cannot reuse the prior membership identity',
+  );
   await assert.rejects(
     service.redeem(redeemRequest(membershipGrant.secret)),
     (error) => error?.code === 'access_grant_unauthorized',
