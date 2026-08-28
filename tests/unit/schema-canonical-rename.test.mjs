@@ -100,6 +100,14 @@ function foreignKeyTargets(database, tableName) {
     .map((row) => String(row.table)));
 }
 
+function plainRow(row) {
+  return { ...row };
+}
+
+function plainRows(rows) {
+  return rows.map(plainRow);
+}
+
 test('canonical rename preserves populated rows and rewrites foreign-key targets atomically', () => {
   const database = createPopulatedLegacyDatabase();
 
@@ -111,15 +119,15 @@ test('canonical rename preserves populated rows and rewrites foreign-key targets
   assert.equal(names.has('schema_migrations'), true);
 
   assert.deepEqual(
-    database.prepare('SELECT id, email FROM user_accounts').get(),
+    plainRow(database.prepare('SELECT id, email FROM user_accounts').get()),
     { id: 'user-1', email: 'buyer@example.test' },
   );
   assert.deepEqual(
-    database.prepare('SELECT id, name FROM organization_records').get(),
+    plainRow(database.prepare('SELECT id, name FROM organization_records').get()),
     { id: 'org-1', name: 'Acquirer' },
   );
   assert.deepEqual(
-    database.prepare('SELECT id, name FROM project_records').get(),
+    plainRow(database.prepare('SELECT id, name FROM project_records').get()),
     { id: 'project-1', name: 'Migration rehearsal' },
   );
   assert.deepEqual(
@@ -130,9 +138,9 @@ test('canonical rename preserves populated rows and rewrites foreign-key targets
   assert.equal(database.prepare('PRAGMA foreign_key_check').all().length, 0);
   assert.equal(database.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
   assert.deepEqual(
-    database.prepare(
+    plainRows(database.prepare(
       'SELECT migration_key AS migrationKey, state_code AS stateCode FROM schema_migrations ORDER BY migration_key',
-    ).all(),
+    ).all()),
     [
       { migrationKey: 'canonical_schema_v2', stateCode: 'canonical_ready' },
       { migrationKey: 'legacy_schema_v1', stateCode: 'legacy_ready' },
@@ -184,9 +192,9 @@ test('canonical rename rolls every table rename and canonical ledger row back af
   for (const legacyName of LEGACY_SCHEMA_OBJECTS) assert.equal(names.has(legacyName), true);
   for (const canonicalName of CANONICAL_SCHEMA_OBJECTS) assert.equal(names.has(canonicalName), false);
   assert.deepEqual(
-    database.prepare(
+    plainRows(database.prepare(
       'SELECT migration_key AS migrationKey, state_code AS stateCode FROM schema_migrations ORDER BY migration_key',
-    ).all(),
+    ).all()),
     [{ migrationKey: 'legacy_schema_v1', stateCode: 'legacy_ready' }],
   );
   assert.equal(database.prepare('PRAGMA foreign_key_check').all().length, 0);
