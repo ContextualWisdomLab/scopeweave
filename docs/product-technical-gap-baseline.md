@@ -214,6 +214,14 @@ HEAD가 바뀌면 다시 확인해야 한다.
   `checkout.stripe.com` 기본 포트를 검증하는 최소 보완을 넣었다. local
   billing unit/API는 통과했으며 replacement hosted Checks는 queued이고
   qualifying approval은 없다.
+- #507: stacked base
+  `feat/stripe-trusted-checkout-config-488@b80d502e659fa9c65a665f7b74fd52a460b91e54`
+  대상 `12fd922ea76032c7b7855d8764fc5512476bddb8`. Stripe direct transport의
+  redirect 차단, 응답 body cleanup, 1 MiB response bound와 exact hosted-authority
+  검증을 current CodeGraph·resolved 리뷰와 대조했고 billing focused 10+8개와
+  coverage contract가 통과했다. hosted unit/API·cloud E2E·OSV·dependency
+  Checks는 통과했지만 현재 base와 `DIRTY/CONFLICTING` 상태이고 qualifying
+  approval이 없어 rebase·우회 병합하지 않았다.
 - #511: stacked base
   `fix/stripe-checkout-provider-boundary-488@5d1bf1b023d4152610d9bc247c02da27429d33cd` 대상
   `01be3a5d59979e4c52d17bfaa4428c177dec0237`. Checkout attempt idempotency와
