@@ -14,6 +14,11 @@ assert.equal(
   'npm run test:coverage',
   'the public coverage command delegates to the canonical coverage producer',
 );
+assert.equal(
+  scripts['ops:sqlite-backup'],
+  'node server/sqlite_backup.mjs',
+  'the verified SQLite backup boundary has one explicit operator command',
+);
 assert.match(
   scripts['test:coverage'],
   /\bc8\b.*--reporter=json(?![-\w]).*npm run test:coverage:cases/,
@@ -35,9 +40,24 @@ assert.match(
   'the abortable Clearfolio adapter is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/sqlite_backup\.mjs/,
+  'the verified SQLite backup boundary is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/sqlite-backup-recovery\.test\.mjs/,
+  'the SQLite backup and recovery contract executes under c8',
+);
+assert.match(
+  scripts['test:unit'],
+  /tests\/unit\/sqlite-backup-recovery\.test\.mjs/,
+  'the SQLite backup and recovery contract executes in normal unit CI',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],

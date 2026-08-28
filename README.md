@@ -96,7 +96,7 @@ Docker: set a **persistent** `SCOPEWEAVE_JWT_SECRET` first, then run `docker com
 | Var | Purpose |
 | --- | --- |
 | `SCOPEWEAVE_JWT_SECRET` | **Required** — JWT signing secret (at least 32 non-whitespace characters; startup fails closed otherwise) |
-| `SCOPEWEAVE_DB` | SQLite path (default `data.db`; `:memory:` for tests) |
+| `SCOPEWEAVE_DB` | SQLite path (default `data.db`; `:memory:` for tests). Back up or verify it with `npm run ops:sqlite-backup`; see [`docs/operations/sqlite-backup-recovery.md`](docs/operations/sqlite-backup-recovery.md). |
 | `PORT` | API port (default 8787) |
 | `OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI` | Real SSO IdP (mock when unset) |
 | `STRIPE_SECRET_KEY` | Real checkout (mock URL when unset) |
