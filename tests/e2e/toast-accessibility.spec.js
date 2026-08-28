@@ -45,6 +45,7 @@ test('disabled empty-state actions expose and announce a reason plus next action
   await expect(exportButton).toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
   await expect(ganttButton).toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
   await expect(help).not.toHaveAttribute('role', 'status');
+  await expect(help).not.toHaveAttribute('hidden');
   await expect(help).toBeVisible();
   await expect(help).toContainText('작업을 추가하거나 CSV를 가져오세요');
   await expect(status).toHaveAttribute('role', 'status');
@@ -69,6 +70,7 @@ test('task-dependent help disappears and detaches once the actions are available
   await expect(ganttButton).not.toHaveAttribute('aria-disabled', 'true');
   await expect(exportButton).not.toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
   await expect(ganttButton).not.toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
+  await expect(help).toHaveAttribute('hidden', '');
   await expect(help).toBeHidden();
   await expect(status).toHaveText('');
 });
