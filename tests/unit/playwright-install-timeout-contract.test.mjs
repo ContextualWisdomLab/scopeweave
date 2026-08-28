@@ -28,7 +28,17 @@ assert.doesNotMatch(
 assert.equal(
   cloudE2eScript,
   'playwright test tests/e2e/cloud.spec.js tests/e2e/toast-accessibility.spec.js',
-  'the required cloud-e2e step must reuse the workflow-bounded browser install instead of starting a second unbounded install inside npm',
+  'the targeted cloud script must remain available for focused local regression work without performing its own browser install',
+);
+assert.match(
+  serverTestsWorkflow,
+  /- name: Cloud UI e2e\r?\n\s+run: npm run test:e2e(?:\r?\n|$)/,
+  'the required cloud-e2e job must execute the complete Playwright suite so newly added regressions cannot be silently omitted',
+);
+assert.doesNotMatch(
+  serverTestsWorkflow,
+  /- name: Cloud UI e2e\r?\n\s+run: npm run test:e2e:cloud(?:\r?\n|$)/,
+  'the required cloud-e2e job must not use the historical subset-only script',
 );
 
 console.log('✓ Playwright installation reliability contract passed');
