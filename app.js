@@ -183,6 +183,7 @@ const state = {
   tasks: [],
   taskQuery: '',
   showSeedOnboarding: false,
+  planAdopted: false,
   editor: { ...DEFAULT_EDITOR_STATE, errors: [] },
   jsonSyncHandle: null,
   dragTaskId: null,
@@ -555,7 +556,7 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
       const rect = row.getBoundingClientRect();
       const placeAfter = event.clientY >= rect.top + rect.height / 2;
       reorderTaskWithinLevel(draggedTask.id, targetTask.id, placeAfter);
-      if (!state.showSeedOnboarding && loadLocalState()) {
+      if (!state.showSeedOnboarding && state.planAdopted) {
         persistState();
       }
       renderAll();
@@ -1207,7 +1208,7 @@ function handleInlineProgressChange(event) {
   const rawValue = event.target.value;
   task.actualProgressStatus = ACTUAL_PROGRESS_OPTIONS.includes(rawValue) ? rawValue : '미착수(0%)';
 
-  if (!state.showSeedOnboarding && loadLocalState()) {
+  if (!state.showSeedOnboarding && state.planAdopted) {
     persistState();
   }
   renderAll();
@@ -1233,7 +1234,7 @@ function handleRowAction(action, taskId) {
 
   if (action === 'toggle') {
     task.expanded = !task.expanded;
-    if (!state.showSeedOnboarding && loadLocalState()) {
+    if (!state.showSeedOnboarding && state.planAdopted) {
       persistState();
     }
     renderAll();
@@ -1784,6 +1785,7 @@ function findTask(taskId) {
 }
 
 function persistState({ syncCloud = true } = {}) {
+  state.planAdopted = true;
   state.showSeedOnboarding = false;
   const payload = {
     projectName: state.projectName,
@@ -1848,6 +1850,7 @@ function loadLocalState() {
 }
 
 function hydrateState(savedState) {
+  state.planAdopted = true;
   state.showSeedOnboarding = false;
   state.projectName = String(savedState.projectName || DEFAULT_PROJECT_NAME).trim().slice(0, MAX_PROJECT_NAME_LENGTH) || DEFAULT_PROJECT_NAME;
   state.baseDate = String(savedState.baseDate || '').trim().slice(0, MAX_BASE_DATE_LENGTH) || formatLocalDateInput(new Date());

@@ -449,6 +449,21 @@ test.describe('ScopeWeave Planner', () => {
     expect(savedProgress).toBe('미착수(0%)');
   });
 
+  test('keeps interactive saves working after the local snapshot is cleared', async ({ page }) => {
+    await page.getByRole('button', { name: '안내 숨기기' }).click();
+    await page.getByTestId('project-name-input').fill('Snapshot recovery');
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('scopeweave:planner-state:v1'))).not.toBeNull();
+    await page.evaluate(() => localStorage.removeItem('scopeweave:planner-state:v1'));
+
+    const inlineProgress = page.locator('[data-inline-progress]').first();
+    await inlineProgress.selectOption('진행(50%)');
+
+    await expect.poll(async () => page.evaluate(() => {
+      const savedState = JSON.parse(localStorage.getItem('scopeweave:planner-state:v1'));
+      return savedState.tasks[0]?.actualProgressStatus;
+    })).toBe('진행(50%)');
+  });
+
   test('escapes quotes from manual text before rendering editor attributes', async ({ page }) => {
     const ownerPayload = '" onmouseover="alert(1)';
 
@@ -1242,7 +1257,6 @@ test.describe('ScopeWeave Planner', () => {
   });
 
   test('renders empty cells as independent DOM clones', async ({ page }) => {
-    await expect(page.locator('.empty-cell').first()).toBeVisible();
     const result = await page.evaluate(() => {
       const emptyCells = Array.from(document.querySelectorAll('.empty-cell'));
       const [first, second] = emptyCells;

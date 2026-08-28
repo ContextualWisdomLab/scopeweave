@@ -64,6 +64,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Improved standalone mobile accessibility by keeping the cloud login label
   readable, enforcing a 24px minimum select target, and attaching browser
   screenshots with the WCAG visual audit.
+- Cloud project picker hydration now serves the browser cache adapter through
+  the authenticated server's strict static allowlist, so opened-project edits
+  reach the existing autosave path.
+- Interactive planner saves now keep working when a previously adopted local
+  snapshot is cleared or temporarily unreadable.
 - Switched the repository-local OpenCode development configuration from GitHub
   Models to an NVIDIA NIM-only candidate set while preserving organization-level
   review-workflow ownership in `ContextualWisdomLab/.github`.
