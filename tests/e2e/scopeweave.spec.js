@@ -183,16 +183,10 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.locator('.table-empty')).toContainText('등록된 작업이 없습니다');
     await expect(page.locator('.table-empty').getByRole('button', { name: '최상위 작업 추가' })).toBeVisible();
     await expect(page.locator('.table-empty').getByRole('button', { name: 'CSV 가져오기' })).toBeVisible();
-    const exportButton = page.getByRole('button', { name: 'CSV 내보내기' });
-    const ganttButton = page.getByRole('button', { name: '간트차트보기' });
-    await expect(exportButton).toBeDisabled();
-    await expect(exportButton).toHaveAttribute('aria-disabled', 'true');
-    await expect(exportButton).toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
-    await expect(ganttButton).toBeDisabled();
-    await expect(ganttButton).toHaveAttribute('aria-disabled', 'true');
-    await expect(ganttButton).toHaveAttribute('aria-describedby', 'task-dependent-actions-help');
-    await expect(page.locator('#task-dependent-actions-help')).toBeVisible();
-    await expect(page.locator('#task-dependent-actions-status')).toHaveText('작업이 없어 CSV 내보내기와 간트차트를 사용할 수 없습니다. 최상위 작업을 추가하거나 CSV를 가져오세요.');
+    await expect(page.getByRole('button', { name: 'CSV 내보내기' })).toHaveAttribute('aria-disabled', 'true');
+    await expect(page.getByRole('button', { name: 'CSV 내보내기' })).toHaveAttribute('title', '내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.');
+    await expect(page.getByRole('button', { name: '간트차트보기' })).toHaveAttribute('aria-disabled', 'true');
+    await expect(page.getByRole('button', { name: '간트차트보기' })).toHaveAttribute('title', '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.');
   });
 
   test('keeps the empty WBS state inside the mobile table viewport', async ({ page }) => {

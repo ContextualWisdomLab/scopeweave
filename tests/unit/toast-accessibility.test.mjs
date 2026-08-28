@@ -90,18 +90,16 @@ test('task-dependent help is visible only while native actions are unavailable a
   const help = taskHelpElementMarkup(indexHtml);
   const status = taskStatusElementMarkup(indexHtml);
 
-  assert.match(
+  assert.doesNotMatch(
     exportButton,
     /\baria-describedby=["']task-dependent-actions-help["']/i,
-    'task-dependent export starts linked to its unavailable-state explanation',
+    'enabled export markup must not start with an unavailable-state description',
   );
-  assert.match(
+  assert.doesNotMatch(
     ganttButton,
     /\baria-describedby=["']task-dependent-actions-help["']/i,
-    'task-dependent Gantt starts linked to its unavailable-state explanation',
+    'enabled Gantt markup must not start with an unavailable-state description',
   );
-  assert.match(exportButton, /\bdisabled\b/i, 'task-dependent export starts disabled until app state is loaded');
-  assert.match(ganttButton, /\bdisabled\b/i, 'task-dependent Gantt starts disabled until app state is loaded');
   assert.doesNotMatch(help, /\brole=["']status["']/i, 'the conditionally hidden visible helper is not itself a live region');
   assert.match(status, /\bclass=["'][^"']*\bsr-only\b[^"']*["']/i, 'the live region stays visually hidden without leaving the accessibility tree');
   assert.match(status, /\brole=["']status["']/i, 'availability changes use a dedicated WAI-ARIA status region');
