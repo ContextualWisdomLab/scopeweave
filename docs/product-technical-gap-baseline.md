@@ -27,11 +27,11 @@
 | --- | --- | --- |
 | 3단계 WBS 편집·계층 보존 | `app.js`의 단일 `state.tasks`, `renderAll()`, expand/collapse·subtree 이동 | 완료 |
 | 계획/실적 진척 및 일정 통제 | `analytics.js`의 EVM, S-curve, CPM, workload | 완료 |
-| 작업 검색과 계층 맥락 유지 | 현재 `develop`에는 미포함. #621의 `4c8d09d` 제출본에 구현됨 | 제출됨, 병합 대기 |
+| 작업 검색과 계층 맥락 유지 | 현재 `develop`에는 미포함. #621의 `3aaf9b7` 현재 제출본에 구현됨 | 제출됨, 병합 대기 |
 | CSV 왕복 | `exportCsv()`, CSV parser/validation, E2E·fuzz 계약 | 완료 |
 | JSON seed·localStorage·선택적 파일 sync | `loadSeedTasks()`, `localStorage`, `exportJsonArray()`, File System Access API | 완료 |
-| 명시적 JSON 다운로드 | 현재 `develop` UI에는 없음. #621의 `4c8d09d` 제출본에 구현됨 | 제출됨, 병합 대기 |
-| 첫 방문 샘플 안내와 빈 계획 전환 | 현재 `develop`에는 미포함. #624가 #621에 병합되어 제출됨 | 제출됨, 병합 대기 |
+| 명시적 JSON 다운로드 | 현재 `develop` UI에는 없음. #621의 `3aaf9b7` 현재 제출본에 구현됨 | 제출됨, 병합 대기 |
+| 첫 방문 샘플 안내와 빈 계획 전환 | 현재 `develop`에는 미포함. #624 변경이 포함된 #621 `3aaf9b7` 제출본 | 제출됨, 병합 대기 |
 | 정적 배포 | `pages.yml`, 상대 경로 자산, `404.html` | 구현 완료, 실제 출판 증거 필요 |
 | Cloud 인증·멀티테넌시·협업 | `server/`, `cloud-sync.js`, API smoke/E2E | 코드·테스트 존재, 운영 환경 검증 필요 |
 
@@ -89,18 +89,28 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-01 | 큰 WBS에서 작업 위치를 찾는 비용 | #621 `4c8d09d`, `develop` 병합 대기 | 작업·담당자·산출물 등 필드 검색과 상위 계층 표시 |
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `4c8d09d`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
-| G-04 | 핵심 상태의 시각 회귀 증거 부족 | #509 `ea90277`, `develop` 병합 대기 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #495/#621/#625/#628 OpenCode current verdict 부재; #621/#508 Strix provider 실패; #576 Strix가 현재 webhook 경로의 SSRF를 보고; #578/#588 Strix provider 실패; #608 `83b8949`·#610 `3bb2bd9`·#587 `1f93371` Checks 재실행 중; #498 `9408588`·#505 `b8435c7` 수정 후 Checks 재실행 중; #602 `78e8037` Hono 보안 패치 후 Checks 재실행 중; #531 `b6842e7`·#601 `98f4354` Strix provider 실패; #515 `36c11dd`는 Checks/Strix 통과지만 승인 없음; #550은 Checks 통과지만 승인 없음; #596은 Checks 통과지만 승인 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `03cdf855`가 #621 `3aaf9b7` 위에 제출됨, `develop` 병합 대기 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621/#625 OpenCode current-head check 실패; #621 Strix·Devin pending; #629의 최초 cloud-E2E 경쟁 조건은 `03cdf855`에서 보완되어 replacement Checks queued; 모든 대상에 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
 - #621: `develop@2c328875` 대상
-  `4c8d09d17024202a1f5236ef62b31a8b5d9480c1`. CSV 성공 import 시 stale 검색어를
+  `3aaf9b72e4b794c78b13b106692d4845243cc87a`. CSV 성공 import 시 stale 검색어를
   초기화하고, 첫 방문 seed 탐색 중 progress/order 변경이 sample을 영속화하지 않으며,
-  빠른 검색 입력의 전체 재렌더를 디바운스하는 현재 제출본이다. local unit·API와
-  검색·온보딩 focused E2E 6개는 통과했지만 OpenCode는 current-head verdict 부재로,
-  Strix는 provider HTTP 500과 vulnerability report 부재로 fail-closed 되었고
-  qualifying approval도 없다.
+  빠른 검색 입력의 전체 재렌더를 디바운스한다. 현재 부모 기준 local 전체 E2E
+  95개와 unit/API가 통과했다. exact HEAD hosted Checks는 테스트·보안·coverage가
+  통과했지만 OpenCode는 실패, Strix와 Devin은 pending이며 qualifying approval도 없다.
+- #629: stacked base `feat/wbs-search-context@3aaf9b72` 대상
+  `03cdf855fdf135ac2cd535e8fc76421c7cb32bf8`. 모바일에서 cloud 로그인 영역이
+  줄바꿈되고 select가 24px 이상 유지되도록 보완했으며, named controls·landmark·
+  skip link·overflow와 seed/empty screenshot을 실제 Playwright로 점검한다. 최초
+  cloud-E2E의 seed 비동기 경쟁 조건을 `.empty-cell` 렌더 대기로 수정했고 현재 HEAD
+  로컬 2-worker 전체 E2E는 96개가 통과했다. replacement cloud-E2E·unit/API·보안
+  Checks는 queued이며 Devin은 pending, qualifying approval은 없다.
+- #625: `develop@2c328875` 대상
+  `baf4b6365014d36a853a25aa7e743d1bf2e417a8`. 이 문서의 기준선 갱신 제출본이며
+  exact HEAD의 unit·API·coverage·보안·cloud E2E·Strix·Devin Checks는 통과했지만
+  OpenCode check가 실패하고 qualifying approval이 없어 병합하지 않았다.
 - #509: `develop@2c328875` 대상
   `ea9027743ebafd1ca5774a5a14227585cf796052`. summary metric explanation을
   keyboard stop 없이 지속 노출하고 gradient 대비를 보강한 접근성 제출본이다.
