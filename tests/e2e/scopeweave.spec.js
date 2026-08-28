@@ -426,6 +426,8 @@ test.describe('ScopeWeave Planner', () => {
 
   test('normalizes tampered inline progress values before saving state', async ({ page }) => {
     await page.getByRole('button', { name: '안내 숨기기' }).click();
+    await page.getByTestId('project-name-input').fill('Progress sanitization');
+    await expect.poll(async () => page.evaluate(() => localStorage.getItem('scopeweave:planner-state:v1'))).not.toBeNull();
     const inlineProgress = page.locator('[data-inline-progress]').first();
     await expect(inlineProgress).toBeVisible();
     const taskId = await inlineProgress.getAttribute('data-inline-progress');
