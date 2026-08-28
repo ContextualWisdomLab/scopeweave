@@ -118,12 +118,12 @@ HEAD가 바뀌면 다시 확인해야 한다.
   통과했고, hosted cloud/unit/API/OSV/dependency Checks도 통과했다. 전체
   Playwright 100개도 통과했으며 모든 Devin thread는 해결됐지만 qualifying
   approval은 없다.
-- #625: `develop@2c328875` 대상 `e8c75a557e090fdfb943e1346888df00681151c8`.
+- #625: `develop@2c328875` 대상 `a41db2daaac4656f5b9f9b70bd147a1aebb63832`.
   기준선 문서에 #587의 exact-head 보안·운영 수정과 현재 승인/게이트 상태를
-  반영했다. exact-head functional/security/coverage/unit Checks는 terminal
-  success이고 Scorecard·Trivy·OSV scanner는 neutral이다. OpenCode는 현재
-  head verdict 부재로 fail-closed 되었고 Strix는 현재 실행 중이며 qualifying
-  approval이 없어 병합하지 않았다.
+  반영했다. exact-head functional/security/coverage/unit/Strix Checks는
+  terminal success이고 Scorecard·Trivy·OSV scanner는 neutral이다. OpenCode
+  `98999983402`는 현재 head의 APPROVED/CHANGES_REQUESTED verdict 부재로
+  fail-closed 되었고 qualifying approval도 없어 병합하지 않았다.
 - #616: `develop@2c328875` 대상
   `b427cd455f41e7c09ae20fbbf400d42c4f61d4bf`. deterministic release-artifact
   manifest의 regular-file/no-symlink, bounded manifest read, SHA-256 및
@@ -255,8 +255,13 @@ HEAD가 바뀌면 다시 확인해야 한다.
 - #588: `develop@2c328875` 대상 `bc60476829ec98f37d83977a9432b79ba0b3c0d6`.
   outbound webhook SSRF 단일 수정 경로로서 encoded IP, IPv4/IPv6 special-use
   주소, DNS rebinding, pinned connection, legacy destination migration을 다룬다.
-  일반 hosted 게이트는 통과했지만 Strix provider 실패와 qualifying approval
-  부재로 병합하지 않았다.
+  current CodeGraph와 대조한 전송 정책·등록 facade·startup migration에 결함은
+  없었다. 전용 webhook 회귀 7개, 전체 unit·API·fuzz·config 3개·docstring·
+  aggregate coverage가 통과했고 전체 Playwright는 75/76 통과였으며 유일한
+  실패는 develop 기준선의 `modulepreload` 기대였다. current-head hosted
+  functional/security/coverage/fuzz Checks와 OpenCode는 통과했지만 Strix
+  `98670001775`는 OpenRouter unavailable 및 OpenAI 429 quota exhaustion으로
+  structured report 없이 fail-closed 되었고, qualifying approval도 없다.
 - #593: `develop@2c328875` 대상
   `a7bc39d16fe5240832ef08f0ee80e9c64dea7181`. pending invite roster에서 bearer
   token을 제거하고, canonical email이 유일하며 인증 subject와 일치할 때만
@@ -344,7 +349,9 @@ HEAD가 바뀌면 다시 확인해야 한다.
   four-level hierarchy domain의 immutable projection이 persisted `kind`와
   `sourceIndex`를 nested `record` 안에서 보존하는지 current CodeGraph와
   CodeRabbit 지적을 대조 검토했다. hierarchy unit 10개와 전체 unit·API·coverage가
-  통과했고 hosted Checks와 Strix도 통과했지만 qualifying approval은 없다.
+  통과했고 전체 Playwright는 부모 develop의 기존 modulepreload 1건 실패 외
+  75개가 통과했다. hosted Checks와 Strix도 통과했지만 qualifying approval은
+  없다.
 - #517: stacked base
   `feat/work-item-hierarchy-domain-287@36c11dd0bf907569184d7d73172b675d21bd0ff1`
   대상 `73ce4227d761c79a9fcad39b0455fec4b35b6274`. schedule outcome의 UTC
