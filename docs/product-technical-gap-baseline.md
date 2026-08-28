@@ -156,11 +156,14 @@ HEAD가 바뀌면 다시 확인해야 한다.
   `predecessors`/`sprint`의 `0`·`false`를 보존하는 결함을 검출했고, 이를
   `task.predecessors || ''` 및 `task.sprint || ''`로 수정했다. 현재 head의
   replacement Checks는 재실행 중이며, qualifying approval은 없다.
-- #608: `83b8949157e0bb6cd9a8b967c807e9238ddac943` (base
+- #608: `e48f3f64edda51f0bcdd3ac279d2ecf14c6b0160` (base
   `develop@2c328875`). 빈 상태 도움말의 DOM `hidden` 상태를 `renderAll()`의
   작업 존재 여부와 동기화하고, 제거된 tooltip을 기대하던 기존 E2E를
-  `disabled`·`aria-describedby`·지속 설명 계약으로 갱신했다. focused E2E와
-  unit은 통과했으며, 현재 head의 hosted Checks는 재실행 중이고 승인은 없다.
+  `disabled`·`aria-describedby`·지속 설명 계약으로 갱신했다. async bootstrap
+  중 빈 프로젝트 작업이 잠시 활성화되는 경계도 초기 HTML의 동일한 disabled
+  상태로 닫았고, cloud/analytics modulepreload 계약을 복원했다. 현재 HEAD의
+  로컬 전체 E2E 79개와 unit이 통과했으며, hosted Checks는 재실행 중이고
+  qualifying approval은 없다.
 - #587: `1f93371c9df84a2f60dd3386c6429d63d750c50c` (base
   `develop@2c328875`). 직접 소비 가능한 `application_routes_core.mjs`가
   오래된 첫 `x-forwarded-for` 기반 limiter를 사용하던 경계를 제거하고,
