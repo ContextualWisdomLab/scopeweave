@@ -118,7 +118,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
   통과했고, hosted cloud/unit/API/OSV/dependency Checks도 통과했다. hosted
   unit/API·OSV·dependency review는 통과했으며 qualifying approval은 없다.
 - #625: `develop@2c328875` 대상. 직전 docs-only 기준선 제출본
-  `15b2cd5674b8f8c7b10c1c0425b6040e1991e2a4`에서 주요 hosted Checks가 재실행
+  `63548a8c456881658a90728c79188c0fa63bab8b`에서 주요 hosted Checks가 재실행
   중이며, qualifying approval은 없다.
 - #616: `develop@2c328875` 대상
   `b427cd455f41e7c09ae20fbbf400d42c4f61d4bf`. deterministic release-artifact
@@ -209,8 +209,10 @@ HEAD가 바뀌면 다시 확인해야 한다.
   `0e8f65a02fb77ea52481a6339a1f517f5389807a`, draft 상태. canonical SQLite
   rename이 첫 ledger 생성까지 `BEGIN IMMEDIATE` 안에서 수행되도록 보강하고,
   중간 실패 시 ledger와 10개 table rename이 함께 rollback되는 회귀를 추가했다.
-  focused rename 12개와 전체 unit은 통과했으며 exact-head Server/OSV/Dependency
-  Checks는 아직 진행 중이고 qualifying approval은 없다.
+  focused rename 12개와 전체 unit이 통과했으며 exact-head cloud-E2E·unit/API·
+  OSV·Dependency Checks도 terminal success로 수렴했다. 다만 parent가 아직
+  보호 병합되지 않은 stacked draft이고 qualifying approval이 없어 병합하지
+  않았다.
 - #500: `develop@2c328875` 대상
   `b7ef5c587aac52d03880b087af39580ff52384cc`. fail-closed schema migration
   ledger의 unknown-object, ledger-contract, compatibility-column 및 concurrent
