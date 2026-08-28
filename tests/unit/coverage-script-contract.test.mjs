@@ -1,6 +1,7 @@
-// This contract prevents a subtle CI regression: the central review gate may
-// invoke `test:coverage` directly, so that script itself must create Istanbul
-// JSON rather than merely execute tests without instrumentation.
+// This contract prevents subtle CI regressions in required evidence. Coverage
+// commands must keep producing canonical Istanbul artifacts, and the protected
+// browser gate must execute the complete Playwright suite rather than a static
+// subset that can silently omit new regression specs.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
@@ -8,6 +9,10 @@ const packageJson = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 );
 const scripts = packageJson.scripts;
+const serverTestsWorkflow = readFileSync(
+  new URL('../../.github/workflows/server-tests.yml', import.meta.url),
+  'utf8',
+);
 
 assert.equal(
   scripts.coverage,
@@ -44,5 +49,15 @@ assert.doesNotMatch(
   /npm run (?:coverage|test:coverage)(?:\s|$)/,
   'coverage cases never recursively invoke a coverage wrapper',
 );
+assert.match(
+  serverTestsWorkflow,
+  /name:\s*Cloud UI e2e\s*\n\s*run:\s*npm run test:e2e(?:\s|$)/,
+  'the required cloud-e2e job executes the complete Playwright suite so new regressions cannot be silently omitted',
+);
+assert.doesNotMatch(
+  serverTestsWorkflow,
+  /name:\s*Cloud UI e2e\s*\n\s*run:\s*npm run test:e2e:cloud(?:\s|$)/,
+  'the required cloud-e2e job must not use the historical static two-spec subset',
+);
 
-console.log('✓ coverage script contract tests passed');
+console.log('✓ coverage and required browser-gate contract tests passed');
