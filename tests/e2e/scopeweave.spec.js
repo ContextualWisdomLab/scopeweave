@@ -76,8 +76,10 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.locator('link[rel="modulepreload"][href="cloud-sync.js"]')).toHaveCount(1);
     await expect(page.locator('link[rel="modulepreload"][href="analytics.js"]')).toHaveCount(1);
     await expect(page.locator('link[rel="modulepreload"][href="app.js"]')).toHaveCount(1);
-    await expect(page.getByRole('button', { name: '최상위 작업 추가' })).toBeVisible();
+    await expect(page.locator('#add-root-task')).toBeVisible();
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+    await expect(page.locator('#seed-onboarding')).toBeVisible();
+    await expect(page.locator('#seed-onboarding')).toContainText('샘플 WBS가 준비되어 있습니다');
     await expect(page.getByTestId('project-name-input')).toHaveValue(/ScopeWeave/i);
     await expect(page.getByTestId('summary-total-days')).not.toHaveText('0일');
     await expect(page.getByTestId('summary-planned-progress')).toContainText('%');
@@ -90,30 +92,64 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page).toHaveTitle('My New Project - ScopeWeave Planner');
   });
 
+  test('remembers hiding the first-run sample onboarding notice', async ({ page }) => {
+    const onboarding = page.locator('#seed-onboarding');
+
+    await expect(onboarding).toBeVisible();
+    await expect(onboarding).toHaveAttribute('aria-labelledby', 'seed-onboarding-title');
+    await expect(onboarding).toHaveAttribute('aria-describedby', 'seed-onboarding-description');
+    await onboarding.getByRole('button', { name: '안내 숨기기' }).click();
+    await expect(onboarding).toBeHidden();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+
+    await page.reload();
+    await expect(onboarding).toBeHidden();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+  });
+
+  test('clears the first-run sample into an empty plan', async ({ page }) => {
+    page.once('dialog', dialog => dialog.dismiss());
+    await page.locator('#clear-seed-data').click();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+    await expect(page.locator('#seed-onboarding')).toBeVisible();
+
+    page.once('dialog', dialog => dialog.accept());
+
+    await page.locator('#clear-seed-data').click();
+
+    await expect(page.locator('#seed-onboarding')).toBeHidden();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(0);
+    await expect(page.locator('.table-empty')).toContainText('등록된 작업이 없습니다');
+    await expect(page.locator('#toast')).toContainText('샘플 데이터를 삭제했습니다.');
+    await expect(page.locator('#add-root-task')).toBeVisible();
+    const savedTasks = await page.evaluate(() => JSON.parse(localStorage.getItem('scopeweave:planner-state:v1')).tasks);
+    expect(savedTasks).toEqual([]);
+  });
+
   test('filters WBS rows while preserving matching task hierarchy context', async ({ page }) => {
     const rows = page.locator('tbody tr[data-task-id]');
     const search = page.getByRole('searchbox', { name: 'WBS 작업 검색' });
 
     await expect(rows).toHaveCount(4);
-    await rows.first().locator('button[data-action="toggle"]').click();
-    await expect(rows).toHaveCount(1);
+    await expect(page.locator('#seed-onboarding')).toBeVisible();
     await search.fill('단계작업계획');
 
     await expect(rows).toHaveCount(3);
+    await expect(page.locator('#seed-onboarding')).toBeHidden();
     await expect(rows).toContainText(['P0000.준비단계', '프로젝트준비', '단계작업계획']);
     await expect(rows.filter({ hasText: '사업수행계획' })).toHaveCount(0);
     const contextToggle = rows.first().locator('button[data-action="toggle"]');
     await expect(contextToggle).toBeDisabled();
     await expect(contextToggle).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('#task-filter-status')).toHaveText('3개 작업 표시 중 (전체 4개)');
+    await search.fill('');
+    await expect(page.locator('#seed-onboarding')).toBeVisible();
 
     await search.fill('없는작업');
     await expect(rows).toHaveCount(0);
     await expect(page.locator('.table-empty')).toContainText('검색 결과가 없습니다');
 
     await page.getByRole('button', { name: '검색 지우기' }).click();
-    await expect(rows).toHaveCount(1);
-    await rows.first().locator('button[data-action="toggle"]').click();
     await expect(rows).toHaveCount(4);
   });
 

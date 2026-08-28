@@ -63,6 +63,17 @@
             <button id="clear-task-filter" type="button" class="filter-clear secondary-button" hidden>검색 지우기</button>
             <span id="task-filter-status" class="task-filter-status" role="status" aria-live="polite" aria-atomic="true">전체 0개 작업</span>
           </div>
+          <aside id="seed-onboarding" class="seed-onboarding" hidden aria-labelledby="seed-onboarding-title" aria-describedby="seed-onboarding-description">
+            <span class="seed-onboarding-mark" aria-hidden="true">빠른 시작</span>
+            <div class="seed-onboarding-copy">
+              <h2 id="seed-onboarding-title">샘플 WBS가 준비되어 있습니다</h2>
+              <p id="seed-onboarding-description">지금 보이는 데이터는 편집과 계산 흐름을 확인하는 예시입니다. 실제 계획을 시작하려면 샘플을 지운 뒤 첫 단계를 추가하세요.</p>
+            </div>
+            <div class="seed-onboarding-actions">
+              <button id="dismiss-seed-onboarding" type="button" class="secondary-button">안내 숨기기</button>
+              <button id="clear-seed-data" type="button" class="primary-button">샘플 지우고 시작</button>
+            </div>
+          </aside>
           <div class="table-scroll">
             <table class="wbs-table">
               <thead>
