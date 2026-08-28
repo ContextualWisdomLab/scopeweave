@@ -23,6 +23,7 @@ two modes:
 - Automatic day, weight, planned progress, actual progress, and weighted
   progress calculations
 - CSV import/export using the screen column contract
+- WBS search across task fields with matching hierarchy context
 - Local autosave with optional File System Access API sync to `wbs.json`
 - Weekly Gantt modal with planned (`#333333`) and actual (`#34cb03`) overlays
 - Responsive column reduction for screens under 800px

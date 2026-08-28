@@ -178,6 +178,7 @@ const state = {
   projectName: DEFAULT_PROJECT_NAME,
   baseDate: formatLocalDateInput(new Date()),
   tasks: [],
+  taskQuery: '',
   editor: { ...DEFAULT_EDITOR_STATE, errors: [] },
   jsonSyncHandle: null,
   dragTaskId: null,
@@ -224,6 +225,9 @@ const elements = {
   closeGanttButton: document.getElementById('close-gantt'),
   connectJsonSyncButton: document.getElementById('connect-json-sync'),
   syncStatus: document.getElementById('sync-status'),
+  taskFilterInput: document.getElementById('task-filter'),
+  clearTaskFilterButton: document.getElementById('clear-task-filter'),
+  taskFilterStatus: document.getElementById('task-filter-status'),
   toast: document.getElementById('toast')
 };
 
@@ -335,6 +339,16 @@ function bindHeaderEvents(persistAndRenderMetadata) {
       return;
     }
     await connectJsonSync();
+  });
+
+  elements.taskFilterInput.addEventListener('input', (event) => {
+    state.taskQuery = String(event.target.value).slice(0, 120);
+    renderAll();
+  });
+  elements.clearTaskFilterButton.addEventListener('click', () => {
+    state.taskQuery = '';
+    renderAll();
+    elements.taskFilterInput.focus();
   });
 }
 
@@ -513,6 +527,9 @@ function renderAll() {
   elements.plannedProgress.textContent = formatPercent(metrics.totalWeightedPlannedRatio * 100, 2);
   elements.actualProgress.textContent = formatPercent(metrics.totalWeightedActualRatio * 100, 2);
   elements.syncStatus.textContent = state.jsonSyncHandle ? '연결된 wbs.json 파일에 자동저장 중' : '브라우저 로컬 자동저장 사용 중';
+  if (elements.taskFilterInput.value !== state.taskQuery) {
+    elements.taskFilterInput.value = state.taskQuery;
+  }
 
   if (typeof window !== 'undefined') {
     window.ScopeWeaveAnalytics?.render?.({
@@ -528,6 +545,11 @@ function renderAll() {
 
   const visibleTasks = getVisibleTasks();
   const rows = [];
+  const filterActive = Boolean(state.taskQuery.trim());
+  elements.clearTaskFilterButton.hidden = !filterActive;
+  elements.taskFilterStatus.textContent = filterActive
+    ? `${visibleTasks.length}개 작업 표시 중 (전체 ${state.tasks.length}개)`
+    : `전체 ${state.tasks.length}개 작업`;
 
   const hasTasks = state.tasks.length > 0;
   if (!hasTasks) {
@@ -586,40 +608,47 @@ function createEmptyStateRow() {
   const icon = document.createElement('div');
   icon.className = 'empty-icon';
   icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = '📋';
+  const filtered = Boolean(state.taskQuery.trim());
+  icon.textContent = filtered ? '🔎' : '📋';
 
   const title = document.createElement('h3');
   title.className = 'empty-title';
-  title.textContent = '등록된 작업이 없습니다';
+  title.textContent = filtered ? '검색 결과가 없습니다' : '등록된 작업이 없습니다';
 
   const description = document.createElement('p');
   description.className = 'empty-desc';
-  description.append(
-    "하단의 '최상위 작업 추가' 버튼을 눌러 프로젝트를 시작하거나,",
-    document.createElement('br'),
-    "'CSV 가져오기'를 통해 기존 데이터를 불러오세요."
-  );
+  if (filtered) {
+    description.textContent = `‘${state.taskQuery}’에 일치하는 작업이 없습니다.`;
+  } else {
+    description.append(
+      "하단의 '최상위 작업 추가' 버튼을 눌러 프로젝트를 시작하거나,",
+      document.createElement('br'),
+      "'CSV 가져오기'를 통해 기존 데이터를 불러오세요."
+    );
+  }
 
   const actions = document.createElement('div');
   actions.className = 'empty-actions editor-actions';
 
-  const addRootBtn = document.createElement('button');
-  addRootBtn.type = 'button';
-  addRootBtn.className = 'primary-button';
-  addRootBtn.textContent = '최상위 작업 추가';
-  addRootBtn.addEventListener('click', () => {
-    openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() });
-  });
+  if (!filtered) {
+    const addRootBtn = document.createElement('button');
+    addRootBtn.type = 'button';
+    addRootBtn.className = 'primary-button';
+    addRootBtn.textContent = '최상위 작업 추가';
+    addRootBtn.addEventListener('click', () => {
+      openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() });
+    });
 
-  const importCsvBtn = document.createElement('button');
-  importCsvBtn.type = 'button';
-  importCsvBtn.className = 'secondary-button';
-  importCsvBtn.textContent = 'CSV 가져오기';
-  importCsvBtn.addEventListener('click', () => {
-    document.getElementById('csv-file-input').click();
-  });
+    const importCsvBtn = document.createElement('button');
+    importCsvBtn.type = 'button';
+    importCsvBtn.className = 'secondary-button';
+    importCsvBtn.textContent = 'CSV 가져오기';
+    importCsvBtn.addEventListener('click', () => {
+      document.getElementById('csv-file-input').click();
+    });
 
-  actions.append(addRootBtn, importCsvBtn);
+    actions.append(addRootBtn, importCsvBtn);
+  }
 
   emptyState.append(icon, title, description, actions);
   cell.appendChild(emptyState);
@@ -1496,10 +1525,35 @@ function getDateRangeWarning(startDate, endDate, message) {
 }
 
 const cachedHiddenParentIds = new Set();
+const TASK_SEARCH_FIELDS = [
+  'phase', 'activity', 'task', 'categoryLarge', 'categoryMedium', 'documentName',
+  'owner', 'supportTeam', 'actualProgressStatus', 'plannedStartDate',
+  'plannedEndDate', 'actualStartDate', 'actualEndDate', 'predecessors', 'sprint'
+];
+
+function taskSearchText(task) {
+  return TASK_SEARCH_FIELDS.map((field) => String(task[field] ?? '')).join(' ').toLowerCase();
+}
 
 function getVisibleTasks() {
   const visible = [];
   cachedHiddenParentIds.clear();
+
+  const query = state.taskQuery.trim().toLowerCase();
+  if (query) {
+    const tasksById = new Map(state.tasks.map((task) => [task.id, task]));
+    const matchingIds = new Set();
+    state.tasks.forEach((task) => {
+      if (taskSearchText(task).includes(query)) {
+        let current = task;
+        while (current) {
+          matchingIds.add(current.id);
+          current = tasksById.get(current.parentId);
+        }
+      }
+    });
+    return state.tasks.filter((task) => matchingIds.has(task.id));
+  }
 
   // ⚡ Bolt Optimization: Single-pass O(N) visible task filtering to avoid redundant O(N * Depth) tree traversals
   state.tasks.forEach((task) => {

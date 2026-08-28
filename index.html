@@ -6,6 +6,8 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'self';" />
     <title>ScopeWeave Planner</title>
     <link rel="preload" href="styles.css" as="style" />
+    <link rel="modulepreload" href="analytics.js" />
+    <link rel="modulepreload" href="cloud-sync.js" />
     <link rel="modulepreload" href="app.js" />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="toast-state.css" />
@@ -53,6 +55,14 @@
 
       <main id="main-content" tabindex="-1">
         <section class="table-section" aria-label="WBS 표">
+          <div class="table-toolbar">
+            <label class="task-filter" for="task-filter">
+              <span>WBS 작업 검색</span>
+              <input id="task-filter" type="search" maxlength="120" placeholder="단계, 작업, 담당자, 산출물 검색" aria-controls="task-table-body" aria-describedby="task-filter-status" />
+            </label>
+            <button id="clear-task-filter" type="button" class="filter-clear secondary-button" hidden>검색 지우기</button>
+            <span id="task-filter-status" class="task-filter-status" role="status" aria-live="polite" aria-atomic="true">전체 0개 작업</span>
+          </div>
           <div class="table-scroll">
             <table class="wbs-table">
               <thead>

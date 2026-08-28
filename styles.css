@@ -205,6 +205,49 @@ button {
   min-width: 0;
 }
 
+.table-toolbar {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-header);
+}
+
+.task-filter {
+  display: flex;
+  flex: 1 1 360px;
+  max-width: 560px;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.task-filter input {
+  min-height: 44px;
+  width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: #ffffff;
+  color: var(--text);
+  padding: 10px 14px;
+}
+
+.task-filter-status {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  white-space: nowrap;
+}
+
+.filter-clear {
+  min-height: 44px;
+}
+
 .table-scroll {
   overflow: auto;
   contain: paint;
@@ -839,6 +882,21 @@ select[data-inline-progress]:focus {
 
   .wbs-table {
     min-width: 1300px;
+  }
+
+  .table-toolbar {
+    align-items: stretch;
+    flex-wrap: wrap;
+    padding: 16px;
+  }
+
+  .task-filter {
+    flex-basis: 100%;
+    max-width: none;
+  }
+
+  .task-filter-status {
+    min-height: 0;
   }
 
   .priority-desktop {

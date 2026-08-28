@@ -8,7 +8,7 @@
 - `toast-state.css`: cloud overlay `.toast.visible` rendering so SaaS
   status messages stay visually observable.
 - `app.js`: state, rendering, editing, validation, persistence,
-  import/export, and Gantt logic.
+  import/export, WBS filtering, and Gantt logic.
 - `analytics.js`: EVM, S-curve, CPM, workload, cost, and requirements/RFI/RFP
   WBS-estimation readiness analysis.
 - `wbs.json`: seed data in the user-specified JSON array format.

@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added accessible WBS field search with hierarchy context and an empty-result
+  recovery action.
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS
   estimation coverage, dependency risk, and procurement package section checks.
 - Preserved PM-analysis research papers, NASA WBS handbook, BCP 14, and JSON
