@@ -54,4 +54,4 @@ jobs:
       - name: Install Playwright (chromium)
         run: npx playwright install chromium --with-deps
       - name: Cloud UI e2e
-        run: npm run test:e2e:cloud
+        run: npm run test:e2e

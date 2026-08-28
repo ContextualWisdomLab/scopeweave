@@ -47,6 +47,10 @@
 ## Persistence decision
 - `wbs.json` in the repository is treated as the initial seed and export format.
 - Every data mutation autosaves immediately to `localStorage`.
+- On a first visit with only seed data, the UI labels the sample explicitly and
+  provides a dismissible notice or a confirmed clear-to-empty-plan action.
+- The onboarding dismissal marker is stored separately from the planner payload
+  so the existing seed/autosave contract remains unchanged.
 - On browsers supporting File System Access API, the user can grant a writable handle for `wbs.json`; after that, each change also writes the JSON array to the chosen file automatically.
 - Where that API is unavailable, the app remains functional and exposes explicit JSON/CSV export paths; this is the safest achievable static-hosting behavior.
 

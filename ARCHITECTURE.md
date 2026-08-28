@@ -8,7 +8,7 @@
 - `toast-state.css`: cloud overlay `.toast.visible` rendering so SaaS
   status messages stay visually observable.
 - `app.js`: state, rendering, editing, validation, persistence,
-  import/export, and Gantt logic.
+  import/export, WBS filtering, and Gantt logic.
 - `analytics.js`: EVM, S-curve, CPM, workload, cost, and requirements/RFI/RFP
   WBS-estimation readiness analysis.
 - `wbs.json`: seed data in the user-specified JSON array format.
@@ -35,6 +35,9 @@
   optional File System Access API sync for `wbs.json` where supported.
 - Static hosting treats repository `wbs.json` as seed data;
   export/manual save remains the portability path.
+- A first seed-only visit exposes an accessible onboarding notice; its dismissal
+  marker is separate from the planner payload, while confirmed clearing persists
+  an empty `tasks` array through the normal `renderAll()` and autosave path.
 - Imported flat JSON may synthesize hierarchy wrapper nodes internally,
   but external `wbs.json` sync strips synthetic rows so the saved array
   stays in the requested user schema.

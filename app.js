@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'scopeweave:planner-state:v1';
+const ONBOARDING_DISMISSED_KEY = 'scopeweave:onboarding-dismissed:v1';
 const DEFAULT_PROJECT_NAME = 'ScopeWeave Planner';
 const MAX_PROJECT_NAME_LENGTH = 120;
 const MAX_BASE_DATE_LENGTH = 10;
@@ -21,6 +22,8 @@ const ACTUAL_PROGRESS_OPTIONS = [
   'PL검토(90%)',
   'PM확인(100%)'
 ];
+const SEARCH_PROGRESS_MUTATION_MESSAGE = '검색 중에는 실적진척상태를 변경할 수 없습니다. 검색을 먼저 지워주세요.';
+const SEARCH_EDIT_MESSAGE = '검색 중에는 작업을 편집할 수 없습니다. 검색을 먼저 지워주세요.';
 let actualProgressSelectTemplate = null;
 
 const ACTUAL_PROGRESS_MAP = Object.assign(Object.create(null), {
@@ -178,6 +181,9 @@ const state = {
   projectName: DEFAULT_PROJECT_NAME,
   baseDate: formatLocalDateInput(new Date()),
   tasks: [],
+  taskQuery: '',
+  showSeedOnboarding: false,
+  planAdopted: false,
   editor: { ...DEFAULT_EDITOR_STATE, errors: [] },
   jsonSyncHandle: null,
   dragTaskId: null,
@@ -214,8 +220,12 @@ const elements = {
   plannedProgress: document.getElementById('summary-planned-progress'),
   actualProgress: document.getElementById('summary-actual-progress'),
   tableBody: document.getElementById('task-table-body'),
+  seedOnboarding: document.getElementById('seed-onboarding'),
+  dismissSeedOnboardingButton: document.getElementById('dismiss-seed-onboarding'),
+  clearSeedDataButton: document.getElementById('clear-seed-data'),
   addRootButton: document.getElementById('add-root-task'),
   exportCsvButton: document.getElementById('export-csv'),
+  exportJsonButton: document.getElementById('export-json'),
   importCsvButton: document.getElementById('import-csv'),
   csvFileInput: document.getElementById('csv-file-input'),
   ganttModal: document.getElementById('gantt-modal'),
@@ -224,6 +234,9 @@ const elements = {
   closeGanttButton: document.getElementById('close-gantt'),
   connectJsonSyncButton: document.getElementById('connect-json-sync'),
   syncStatus: document.getElementById('sync-status'),
+  taskFilterInput: document.getElementById('task-filter'),
+  clearTaskFilterButton: document.getElementById('clear-task-filter'),
+  taskFilterStatus: document.getElementById('task-filter-status'),
   toast: document.getElementById('toast')
 };
 
@@ -245,16 +258,19 @@ async function bootstrap() {
 
   const cloudState = cloudApi ? await cloudApi.boot() : null;
   if (cloudState) {
+    state.showSeedOnboarding = false;
     hydrateState(cloudState);
     persistState({ syncCloud: false });
   } else {
     const savedState = loadLocalState();
     if (savedState) {
+      state.showSeedOnboarding = false;
       hydrateState(savedState);
       persistState();
     } else {
       const seedData = await loadSeedTasks();
       state.tasks = normalizeImportedTasks(seedData);
+      state.showSeedOnboarding = state.tasks.length > 0 && !isSeedOnboardingDismissed();
       invalidateTaskIndexCache();
     }
   }
@@ -267,6 +283,7 @@ function bindEvents() {
     persistState();
     renderAll();
   }, 150);
+  const renderTaskFilter = debounce(renderAll, 150);
   const renderDraftValidation = debounce(renderEditorValidation, 150);
   const updateEditorDraftFromEvent = (event) => {
     const field = event.target.dataset.editorField;
@@ -277,13 +294,13 @@ function bindEvents() {
     return true;
   };
 
-  bindHeaderEvents(persistAndRenderMetadata);
+  bindHeaderEvents(persistAndRenderMetadata, renderTaskFilter);
   bindModalEvents();
   bindGlobalEvents();
   bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent);
 }
 
-function bindHeaderEvents(persistAndRenderMetadata) {
+function bindHeaderEvents(persistAndRenderMetadata, renderTaskFilter) {
   elements.projectNameInput.addEventListener('input', (event) => {
     const sanitized = String(event.target.value).slice(0, MAX_PROJECT_NAME_LENGTH);
     if (event.target.value !== sanitized) {
@@ -302,7 +319,14 @@ function bindHeaderEvents(persistAndRenderMetadata) {
   });
   elements.baseDateInput.addEventListener('blur', persistAndRenderMetadata.flush);
 
-  elements.addRootButton.addEventListener('click', () => openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() }));
+  elements.addRootButton.addEventListener('click', (event) => {
+    if (elements.addRootButton.getAttribute('aria-disabled') === 'true') {
+      event.preventDefault();
+      showToast('검색 중에는 작업을 추가할 수 없습니다. 검색을 먼저 지워주세요.');
+      return;
+    }
+    openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() });
+  });
   elements.exportCsvButton.addEventListener('click', (e) => {
     if (elements.exportCsvButton.getAttribute('aria-disabled') === 'true') {
       e.preventDefault();
@@ -310,6 +334,14 @@ function bindHeaderEvents(persistAndRenderMetadata) {
       return;
     }
     exportCsv();
+  });
+  elements.exportJsonButton.addEventListener('click', (e) => {
+    if (elements.exportJsonButton.getAttribute('aria-disabled') === 'true') {
+      e.preventDefault();
+      showToast('내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.');
+      return;
+    }
+    exportJson();
   });
   elements.importCsvButton.addEventListener('click', () => elements.csvFileInput.click());
   elements.csvFileInput.addEventListener('change', handleCsvImport);
@@ -336,6 +368,21 @@ function bindHeaderEvents(persistAndRenderMetadata) {
     }
     await connectJsonSync();
   });
+
+  elements.taskFilterInput.addEventListener('input', (event) => {
+    if (state.editor.mode) {
+      return;
+    }
+    state.taskQuery = String(event.target.value).slice(0, 120);
+    renderTaskFilter();
+  });
+  elements.clearTaskFilterButton.addEventListener('click', () => {
+    state.taskQuery = '';
+    renderAll();
+    elements.taskFilterInput.focus();
+  });
+  elements.dismissSeedOnboardingButton.addEventListener('click', dismissSeedOnboarding);
+  elements.clearSeedDataButton.addEventListener('click', clearSeedData);
 }
 
 function bindModalEvents() {
@@ -402,6 +449,10 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
     }
 
     if (!event.target.closest('input, select, button, label, .drag-handle')) {
+      if (state.taskQuery.trim()) {
+        showToast(SEARCH_EDIT_MESSAGE);
+        return;
+      }
       openEditor({ mode: 'edit', targetId: taskId });
     }
   });
@@ -434,12 +485,15 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
   });
 
   elements.tableBody.addEventListener('dragstart', (event) => {
+    if (state.taskQuery.trim()) {
+      event.preventDefault();
+      return;
+    }
     const row = event.target.closest('tr[data-task-id]');
     if (!row) {
       return;
     }
 
-    // Cache task lookups for the drag-and-drop hot path.
     state.dragTaskCache = new Map(state.tasks.map(t => [t.id, t]));
     state.dragTaskId = row.dataset.taskId;
     state.dragElement = row;
@@ -453,6 +507,9 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
   });
 
   elements.tableBody.addEventListener('dragover', (event) => {
+    if (state.taskQuery.trim()) {
+      return;
+    }
     const row = event.target.closest('tr[data-task-id]');
     if (!row || !state.dragTaskId || row.dataset.taskId === state.dragTaskId) {
       return;
@@ -482,6 +539,11 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
   });
 
   elements.tableBody.addEventListener('drop', (event) => {
+    if (state.taskQuery.trim()) {
+      event.preventDefault();
+      clearDragState();
+      return;
+    }
     const row = event.target.closest('tr[data-task-id]');
     if (!row || !state.dragTaskId) {
       return;
@@ -494,7 +556,9 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
       const rect = row.getBoundingClientRect();
       const placeAfter = event.clientY >= rect.top + rect.height / 2;
       reorderTaskWithinLevel(draggedTask.id, targetTask.id, placeAfter);
-      persistState();
+      if (!state.showSeedOnboarding && state.planAdopted) {
+        persistState();
+      }
       renderAll();
       showToast('같은 계층 내에서 순서를 변경했습니다.');
     }
@@ -505,6 +569,8 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
 const cachedHasChildrenSet = new Set();
 function renderAll() {
   const metrics = computeTaskMetrics();
+  const filterActive = Boolean(state.taskQuery.trim());
+  const editorOpen = Boolean(state.editor.mode);
 
   elements.projectNameInput.value = state.projectName;
   document.title = state.projectName === DEFAULT_PROJECT_NAME ? DEFAULT_PROJECT_NAME : `${state.projectName} - ${DEFAULT_PROJECT_NAME}`;
@@ -513,6 +579,17 @@ function renderAll() {
   elements.plannedProgress.textContent = formatPercent(metrics.totalWeightedPlannedRatio * 100, 2);
   elements.actualProgress.textContent = formatPercent(metrics.totalWeightedActualRatio * 100, 2);
   elements.syncStatus.textContent = state.jsonSyncHandle ? '연결된 wbs.json 파일에 자동저장 중' : '브라우저 로컬 자동저장 사용 중';
+  if (elements.taskFilterInput.value !== state.taskQuery) {
+    elements.taskFilterInput.value = state.taskQuery;
+  }
+  elements.taskFilterInput.disabled = editorOpen;
+  if (editorOpen) {
+    elements.taskFilterInput.setAttribute('aria-disabled', 'true');
+    elements.taskFilterInput.title = '편집을 완료하거나 취소한 후 검색할 수 있습니다.';
+  } else {
+    elements.taskFilterInput.removeAttribute('aria-disabled');
+    elements.taskFilterInput.removeAttribute('title');
+  }
 
   if (typeof window !== 'undefined') {
     window.ScopeWeaveAnalytics?.render?.({
@@ -528,19 +605,28 @@ function renderAll() {
 
   const visibleTasks = getVisibleTasks();
   const rows = [];
+  elements.seedOnboarding.hidden = !state.showSeedOnboarding || filterActive;
+  elements.clearTaskFilterButton.hidden = !filterActive;
+  elements.taskFilterStatus.textContent = filterActive
+    ? `${visibleTasks.length}개 작업 표시 중 (전체 ${state.tasks.length}개)`
+    : `전체 ${state.tasks.length}개 작업`;
 
   const hasTasks = state.tasks.length > 0;
   if (!hasTasks) {
     elements.exportCsvButton.setAttribute('aria-disabled', 'true');
+    elements.exportJsonButton.setAttribute('aria-disabled', 'true');
     elements.openGanttButton.setAttribute('aria-disabled', 'true');
   } else {
     elements.exportCsvButton.removeAttribute('aria-disabled');
+    elements.exportJsonButton.removeAttribute('aria-disabled');
     elements.openGanttButton.removeAttribute('aria-disabled');
   }
   elements.exportCsvButton.title = hasTasks ? '' : '내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.';
+  elements.exportJsonButton.title = elements.exportCsvButton.title;
   elements.openGanttButton.title = hasTasks ? '' : '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.';
+  elements.addRootButton.setAttribute('aria-disabled', String(filterActive));
+  elements.addRootButton.title = filterActive ? '검색 중에는 작업을 추가할 수 없습니다. 검색을 먼저 지워주세요.' : '';
 
-  // ⚡ Bolt: Cache parent IDs to convert O(N^2) render loop to O(N)
   cachedHasChildrenSet.clear();
   state.tasks.forEach(task => {
     if (task.parentId) cachedHasChildrenSet.add(task.parentId);
@@ -586,40 +672,47 @@ function createEmptyStateRow() {
   const icon = document.createElement('div');
   icon.className = 'empty-icon';
   icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = '📋';
+  const filtered = Boolean(state.taskQuery.trim());
+  icon.textContent = filtered ? '🔎' : '📋';
 
   const title = document.createElement('h3');
   title.className = 'empty-title';
-  title.textContent = '등록된 작업이 없습니다';
+  title.textContent = filtered ? '검색 결과가 없습니다' : '등록된 작업이 없습니다';
 
   const description = document.createElement('p');
   description.className = 'empty-desc';
-  description.append(
-    "하단의 '최상위 작업 추가' 버튼을 눌러 프로젝트를 시작하거나,",
-    document.createElement('br'),
-    "'CSV 가져오기'를 통해 기존 데이터를 불러오세요."
-  );
+  if (filtered) {
+    description.textContent = `‘${state.taskQuery}’에 일치하는 작업이 없습니다.`;
+  } else {
+    description.append(
+      "하단의 '최상위 작업 추가' 버튼을 눌러 프로젝트를 시작하거나,",
+      document.createElement('br'),
+      "'CSV 가져오기'를 통해 기존 데이터를 불러오세요."
+    );
+  }
 
   const actions = document.createElement('div');
   actions.className = 'empty-actions editor-actions';
 
-  const addRootBtn = document.createElement('button');
-  addRootBtn.type = 'button';
-  addRootBtn.className = 'primary-button';
-  addRootBtn.textContent = '최상위 작업 추가';
-  addRootBtn.addEventListener('click', () => {
-    openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() });
-  });
+  if (!filtered) {
+    const addRootBtn = document.createElement('button');
+    addRootBtn.type = 'button';
+    addRootBtn.className = 'primary-button';
+    addRootBtn.textContent = '최상위 작업 추가';
+    addRootBtn.addEventListener('click', () => {
+      openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() });
+    });
 
-  const importCsvBtn = document.createElement('button');
-  importCsvBtn.type = 'button';
-  importCsvBtn.className = 'secondary-button';
-  importCsvBtn.textContent = 'CSV 가져오기';
-  importCsvBtn.addEventListener('click', () => {
-    document.getElementById('csv-file-input').click();
-  });
+    const importCsvBtn = document.createElement('button');
+    importCsvBtn.type = 'button';
+    importCsvBtn.className = 'secondary-button';
+    importCsvBtn.textContent = 'CSV 가져오기';
+    importCsvBtn.addEventListener('click', () => {
+      document.getElementById('csv-file-input').click();
+    });
 
-  actions.append(addRootBtn, importCsvBtn);
+    actions.append(addRootBtn, importCsvBtn);
+  }
 
   emptyState.append(icon, title, description, actions);
   cell.appendChild(emptyState);
@@ -627,7 +720,6 @@ function createEmptyStateRow() {
   return row;
 }
 
-// Cache an unattached td shell so hot render loops clone instead of allocate.
 let tableCellTemplate = null;
 function createTableCell(className, content) {
   if (!tableCellTemplate) {
@@ -643,9 +735,6 @@ function createTableCell(className, content) {
   return cell;
 }
 
-// ⚡ Bolt: Cache unattached DOM elements as templates to eliminate repetitive
-// document.createElement() JS-to-C++ allocation overhead during O(N) table rendering loops.
-// Using cloneNode() is measurably faster when creating thousands of rows.
 let taskRowTemplate = null;
 let actionCellTemplate = null;
 let actionStackTemplate = null;
@@ -673,6 +762,8 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
   const row = taskRowTemplate.cloneNode(false);
   row.className = `task-row depth-${task.depth} ${index % 2 === 1 ? 'striped-even' : ''}`;
   row.dataset.taskId = task.id;
+  const filterActive = Boolean(state.taskQuery.trim());
+  row.draggable = !filterActive;
 
   const actionCell = actionCellTemplate.cloneNode(false);
   const actionStack = actionStackTemplate.cloneNode(false);
@@ -681,12 +772,17 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
 
   if (hasChildren) {
     const toggleButton = toggleButtonTemplate.cloneNode(false);
-    const toggleLabel = task.expanded ? '접기' : '펼치기';
+    const searchExpanded = cachedSearchExpandedParentIds.has(task.id);
+    const expanded = searchExpanded || task.expanded;
+    const toggleLabel = searchExpanded
+      ? '검색 중 계층 맥락 고정'
+      : (filterActive ? '검색 중 비활성화' : (task.expanded ? '접기' : '펼치기'));
     toggleButton.setAttribute('aria-label', `${toggleLabel} - ${rowEntityName}`);
-    toggleButton.setAttribute('aria-expanded', String(task.expanded));
+    toggleButton.setAttribute('aria-expanded', String(expanded));
     toggleButton.title = `${toggleLabel} - ${rowEntityName}`;
+    toggleButton.disabled = filterActive || searchExpanded;
     const toggleIcon = toggleIconTemplate.cloneNode(false);
-    toggleIcon.textContent = task.expanded ? '▼' : '▶';
+    toggleIcon.textContent = expanded ? '▼' : '▶';
     toggleButton.appendChild(toggleIcon);
     actionStack.appendChild(toggleButton);
   } else {
@@ -699,16 +795,29 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
   const isLeaf = task.depth >= 3;
   const addChildButton = createActionButton(`하위 추가 - ${rowEntityName}`, '＋', 'add-child', isLeaf ? '최대 3단계까지만 추가할 수 있습니다.' : `하위 추가 - ${rowEntityName}`);
 
-  if (isLeaf) {
+  if (isLeaf || filterActive) {
     addChildButton.setAttribute('aria-disabled', 'true');
+    if (filterActive && !isLeaf) {
+      addChildButton.title = '검색 중에는 작업을 추가할 수 없습니다. 검색을 먼저 지워주세요.';
+    }
   } else {
     addChildButton.removeAttribute('aria-disabled');
   }
 
-  const editButton = createActionButton(`편집 - ${rowEntityName}`, '✎', 'edit', `편집 - ${rowEntityName}`);
+  const editButton = createActionButton(`편집 - ${rowEntityName}`, '✎', 'edit', filterActive
+    ? SEARCH_EDIT_MESSAGE
+    : `편집 - ${rowEntityName}`);
   editButton.setAttribute('aria-haspopup', 'dialog');
+  if (filterActive) {
+    editButton.setAttribute('aria-disabled', 'true');
+  }
 
-  const deleteButton = createActionButton(`삭제 - ${rowEntityName}`, '🗑', 'delete', `삭제 - ${rowEntityName}`);
+  const deleteButton = createActionButton(`삭제 - ${rowEntityName}`, '🗑', 'delete', filterActive
+    ? '검색 중에는 작업을 삭제할 수 없습니다. 검색을 먼저 지워주세요.'
+    : `삭제 - ${rowEntityName}`);
+  if (filterActive) {
+    deleteButton.setAttribute('aria-disabled', 'true');
+  }
 
   actionStack.append(
     dragHandle,
@@ -745,7 +854,6 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
   return row;
 }
 
-// ⚡ Bolt: Cache static DOM structures to avoid JS-to-C++ instantiation overhead in hot rendering paths.
 let dragHandleTemplate = null;
 function getDragHandleTemplate() {
   if (!dragHandleTemplate) {
@@ -829,7 +937,6 @@ function renderEditorRow(anchorId) {
   cancelButton.textContent = '취소';
   cancelButton.title = '취소 (Esc)';
   cancelButton.setAttribute('aria-keyshortcuts', 'Escape');
-  // ⚡ Bolt: Attach listener once during creation to prevent O(N) accumulation in renderEditorValidation
   cancelButton.addEventListener('click', () => closeEditor());
   const errors = document.createElement('div');
   errors.id = 'editor-errors';
@@ -935,10 +1042,6 @@ function createTextCellContent(value, warning = '') {
   return wrapper;
 }
 
-// ⚡ Bolt: Cache empty cell DOM structure as a template and use cloneNode(true).
-// Repeatedly constructing DOM trees node-by-node in hot render paths causes significant
-// JS-to-C++ bridge overhead and GC pressure. Cloning an existing node structure is
-// substantially faster (often 2-3x in large grids).
 let emptyCellTemplate = null;
 
 function createEmptyCell() {
@@ -1038,6 +1141,11 @@ function createActualProgressCellContent(task, taskMetrics) {
   if (select.value !== task.actualProgressStatus) {
     select.value = '미착수(0%)';
   }
+  if (state.taskQuery.trim()) {
+    select.disabled = true;
+    select.setAttribute('aria-disabled', 'true');
+    select.title = SEARCH_PROGRESS_MUTATION_MESSAGE;
+  }
   label.append(srOnly, select);
 
   const warning = taskMetrics.plannedDateWarning || taskMetrics.actualDateWarning;
@@ -1086,6 +1194,11 @@ function renderEditorValidation() {
 }
 
 function handleInlineProgressChange(event) {
+  if (state.taskQuery.trim()) {
+    event.preventDefault();
+    showToast(SEARCH_PROGRESS_MUTATION_MESSAGE);
+    return;
+  }
   const taskId = event.target.dataset.inlineProgress;
   const task = findTask(taskId);
   if (!task) {
@@ -1095,10 +1208,11 @@ function handleInlineProgressChange(event) {
   const rawValue = event.target.value;
   task.actualProgressStatus = ACTUAL_PROGRESS_OPTIONS.includes(rawValue) ? rawValue : '미착수(0%)';
 
-  persistState();
+  if (!state.showSeedOnboarding && state.planAdopted) {
+    persistState();
+  }
   renderAll();
 
-  // 🎨 Palette: Restore focus to the dropdown after full DOM re-render
   requestAnimationFrame(() => {
     const dropdown = document.querySelector(`[data-inline-progress="${taskId}"]`);
     if (dropdown) {
@@ -1113,12 +1227,18 @@ function handleRowAction(action, taskId) {
     return;
   }
 
+  if (state.taskQuery.trim() && (action === 'toggle' || action === 'add-child' || action === 'edit' || action === 'delete')) {
+    showToast('검색 중에는 계층을 변경할 수 없습니다. 검색을 먼저 지워주세요.');
+    return;
+  }
+
   if (action === 'toggle') {
     task.expanded = !task.expanded;
-    persistState();
+    if (!state.showSeedOnboarding && state.planAdopted) {
+      persistState();
+    }
     renderAll();
 
-    // 🎨 Palette: Restore focus to the toggle button after full DOM re-render
     requestAnimationFrame(() => {
       const toggleBtn = document.querySelector(`tr[data-task-id="${taskId}"] button[data-action="toggle"]`);
       if (toggleBtn) {
@@ -1153,7 +1273,6 @@ function handleRowAction(action, taskId) {
       renderAll();
       showToast('작업을 삭제했습니다.');
 
-      // 🎨 Palette: Restore focus after deletion to keep keyboard flow
       requestAnimationFrame(() => {
         const visibleTasksAfter = getVisibleTasks();
         if (visibleTasksAfter.length > 0) {
@@ -1176,6 +1295,10 @@ function handleRowAction(action, taskId) {
 }
 
 function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertAfterId = null, draft = null }) {
+  if (mode === 'create' && state.taskQuery.trim()) {
+    showToast('검색 중에는 작업을 추가할 수 없습니다. 검색을 먼저 지워주세요.');
+    return;
+  }
   state.previousFocus = document.activeElement;
   if (mode === 'edit') {
     const task = findTask(targetId);
@@ -1207,7 +1330,6 @@ function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertA
   }
   renderAll();
 
-  // Focus the first input/select in the editor to keep keyboard users in flow
   requestAnimationFrame(() => {
     const firstInput = document.querySelector('.editor-row input:not([type="hidden"]), .editor-row select');
     if (firstInput) {
@@ -1309,10 +1431,8 @@ function createChildDraft(task) {
 function sanitizeDraft(draft) {
   const sanitized = {};
   EDITABLE_FIELDS.forEach((field) => {
-    // 🛡️ Sentinel: Enforce string coercion before trim() to prevent DoS via type confusion
     sanitized[field] = String(draft?.[field] || '').trim().slice(0, 1000);
   });
-  // 🛡️ Sentinel: Strictly validate against allowed options to prevent injection
   if (!sanitized.actualProgressStatus || !ACTUAL_PROGRESS_OPTIONS.includes(sanitized.actualProgressStatus)) {
     sanitized.actualProgressStatus = '미착수(0%)';
   }
@@ -1370,7 +1490,6 @@ function validateDateRange(startLabel, startValue, endLabel, endValue, errors) {
 }
 
 function computeTaskMetrics() {
-  // ⚡ Bolt: Cache durationDays during total calculation to avoid recalculating for every task
   const durationCache = new Map();
   const totalDays = state.tasks.reduce((sum, task) => {
     const duration = calculateDurationDays(task.plannedStartDate, task.plannedEndDate);
@@ -1467,7 +1586,6 @@ function calculatePlannedProgressRatio(baseDate, startDate, endDate, durationDay
   if (compareDateStrings(baseDate, endDate) >= 0) {
     return 1;
   }
-  // Bolt: Reuse passed durationDays if available to avoid redundant Date parsing and calculations.
   const total = durationDays !== undefined ? durationDays : calculateDurationDays(startDate, endDate);
   if (total <= 0) {
     return 1;
@@ -1496,12 +1614,43 @@ function getDateRangeWarning(startDate, endDate, message) {
 }
 
 const cachedHiddenParentIds = new Set();
+const cachedSearchExpandedParentIds = new Set();
+const TASK_SEARCH_FIELDS = [
+  'phase', 'activity', 'task', 'categoryLarge', 'categoryMedium', 'documentName',
+  'owner', 'supportTeam', 'actualProgressStatus', 'plannedStartDate',
+  'plannedEndDate', 'actualStartDate', 'actualEndDate', 'predecessors', 'sprint'
+];
+
+function taskSearchText(task) {
+  return TASK_SEARCH_FIELDS.map((field) => String(task[field] ?? '')).join(' ').toLowerCase();
+}
 
 function getVisibleTasks() {
   const visible = [];
   cachedHiddenParentIds.clear();
+  cachedSearchExpandedParentIds.clear();
 
-  // ⚡ Bolt Optimization: Single-pass O(N) visible task filtering to avoid redundant O(N * Depth) tree traversals
+  const query = state.taskQuery.trim().toLowerCase();
+  if (query) {
+    const tasksById = new Map(state.tasks.map((task) => [task.id, task]));
+    const matchingIds = new Set();
+    state.tasks.forEach((task) => {
+      if (taskSearchText(task).includes(query)) {
+        let current = task;
+        const visitedIds = new Set();
+        while (current && !visitedIds.has(current.id)) {
+          visitedIds.add(current.id);
+          matchingIds.add(current.id);
+          if (current.id !== task.id) {
+            cachedSearchExpandedParentIds.add(current.id);
+          }
+          current = tasksById.get(current.parentId);
+        }
+      }
+    });
+    return state.tasks.filter((task) => matchingIds.has(task.id));
+  }
+
   state.tasks.forEach((task) => {
     if (cachedHiddenParentIds.has(task.parentId)) {
       cachedHiddenParentIds.add(task.id);
@@ -1534,7 +1683,6 @@ function insertTaskAfter(task, afterId) {
 }
 
 function deleteTaskAndDescendants(taskId) {
-  // ⚡ Bolt: Replace O(N * Depth) cascading loop with O(N) map-based BFS to prevent UI freeze during deletion
   const childrenMap = new Map();
   state.tasks.forEach(task => {
     if (task.parentId) {
@@ -1587,7 +1735,6 @@ function canReorderWithinLevel(draggedTask, targetTask) {
 }
 
 function getLastRootTaskId() {
-  // Walk backward to avoid allocating an intermediate roots array.
   let lastRoot = null;
   for (let i = state.tasks.length - 1; i >= 0; i -= 1) {
     if (!state.tasks[i].parentId) {
@@ -1638,6 +1785,8 @@ function findTask(taskId) {
 }
 
 function persistState({ syncCloud = true } = {}) {
+  state.planAdopted = true;
+  state.showSeedOnboarding = false;
   const payload = {
     projectName: state.projectName,
     baseDate: state.baseDate,
@@ -1661,6 +1810,36 @@ function persistState({ syncCloud = true } = {}) {
   }
 }
 
+function isSeedOnboardingDismissed() {
+  try {
+    return localStorage.getItem(ONBOARDING_DISMISSED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function dismissSeedOnboarding() {
+  try {
+    localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true');
+  } catch {
+  }
+  state.showSeedOnboarding = false;
+  renderAll();
+}
+
+function clearSeedData() {
+  if (!state.showSeedOnboarding || !window.confirm('샘플 데이터를 지우고 빈 계획으로 시작하시겠습니까?')) {
+    return;
+  }
+  state.tasks = [];
+  state.showSeedOnboarding = false;
+  invalidateTaskIndexCache();
+  persistState();
+  renderAll();
+  showToast('샘플 데이터를 삭제했습니다. 첫 단계를 추가해 계획을 시작하세요.');
+  requestAnimationFrame(() => elements.addRootButton.focus());
+}
+
 function loadLocalState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -1671,6 +1850,8 @@ function loadLocalState() {
 }
 
 function hydrateState(savedState) {
+  state.planAdopted = true;
+  state.showSeedOnboarding = false;
   state.projectName = String(savedState.projectName || DEFAULT_PROJECT_NAME).trim().slice(0, MAX_PROJECT_NAME_LENGTH) || DEFAULT_PROJECT_NAME;
   state.baseDate = String(savedState.baseDate || '').trim().slice(0, MAX_BASE_DATE_LENGTH) || formatLocalDateInput(new Date());
   state.tasks = Array.isArray(savedState.tasks)
@@ -1738,10 +1919,6 @@ function normalizeImportedTasks(sourceTasks) {
   if (!Array.isArray(sourceTasks)) {
     return [];
   }
-  // Defensive: a hand-edited or tampered wbs.json / localStorage payload can
-  // contain non-object entries (null, numbers, arrays). Drop them so a junk
-  // seed row degrades gracefully instead of throwing an uncaught TypeError
-  // during bootstrap() (which does not wrap this call in try/catch).
   const records = sourceTasks.filter(isTaskRecord);
   records.forEach((task, index) => validateImportedTask(task, index));
   const hasExplicitDepth = records.some((task) => task.__depth || task.__id || task.__parentId);
@@ -1760,9 +1937,6 @@ function normalizeImportedTasks(sourceTasks) {
 }
 
 function clampImportedDepth(task) {
-  // The CSV path enforces __depth in {1,2,3} (validateCsvDepth). Apply the same
-  // contract to the JSON seed path so a tampered wbs.json can't inject an
-  // out-of-range depth (e.g. "4") that the 3-level renderer never expects.
   const parsedDepth = Number(task.__depth);
   if (Number.isInteger(parsedDepth) && parsedDepth >= 1 && parsedDepth <= 3) {
     return parsedDepth;
@@ -1975,6 +2149,11 @@ function exportCsv() {
   downloadFile(csvText, `wbs_export_${formatCompactDate(new Date())}.csv`, 'text/csv;charset=utf-8');
 }
 
+function exportJson() {
+  const jsonText = JSON.stringify(exportJsonArray({ includeExtendedFields: true }), null, 2);
+  downloadFile(jsonText, `wbs_export_${formatCompactDate(new Date())}.json`, 'application/json;charset=utf-8');
+}
+
 async function handleCsvImport(event) {
   const [file] = event.target.files || [];
   if (!file) {
@@ -1998,6 +2177,7 @@ async function handleCsvImport(event) {
     const text = await file.text();
     const imported = parseCsv(text);
     state.tasks = validateImportedTasks(normalizeImportedTasks(imported));
+    state.taskQuery = '';
     invalidateTaskIndexCache();
     closeEditor(true);
     persistState();
@@ -2027,8 +2207,6 @@ function validateImportedTasks(tasks) {
       throw new Error(`존재하지 않는 부모 ID를 참조합니다: ${task.parentId}`);
     }
   }
-  // Detect cycles
-  // ⚡ Bolt: Use O(1) Map lookup instead of O(N) tasks.find to prevent O(N^2) bottleneck during cycle detection
   const taskById = new Map(tasks.map(t => [t.id, t]));
   for (const task of tasks) {
     let current = task.parentId;
@@ -2191,30 +2369,41 @@ async function writeJsonSyncFile() {
   await writable.close();
 }
 
-function exportJsonArray() {
-  return state.tasks.filter((task) => !task.isSynthetic).map((task) => ({
-    phase: task.phase,
-    activity: task.activity,
-    task: task.task,
-    categoryLarge: task.categoryLarge,
-    categoryMedium: task.categoryMedium,
-    documentName: task.documentName,
-    owner: task.owner,
-    supportTeam: task.supportTeam,
-    plannedStartDate: task.plannedStartDate,
-    plannedEndDate: task.plannedEndDate,
-    [LEGACY_PLANNED_END_FIELD]: task.plannedEndDate,
-    actualProgressStatus: task.actualProgressStatus,
-    actualStartDate: task.actualStartDate,
-    actualEndDate: task.actualEndDate
-  }));
+function exportJsonArray({ includeExtendedFields = false } = {}) {
+  return state.tasks.filter((task) => !task.isSynthetic).map((task) => {
+    const record = {
+      phase: task.phase,
+      activity: task.activity,
+      task: task.task,
+      categoryLarge: task.categoryLarge,
+      categoryMedium: task.categoryMedium,
+      documentName: task.documentName,
+      owner: task.owner,
+      supportTeam: task.supportTeam,
+      plannedStartDate: task.plannedStartDate,
+      plannedEndDate: task.plannedEndDate,
+      [LEGACY_PLANNED_END_FIELD]: task.plannedEndDate,
+      actualProgressStatus: task.actualProgressStatus,
+      actualStartDate: task.actualStartDate,
+      actualEndDate: task.actualEndDate
+    };
+    if (includeExtendedFields) {
+      Object.assign(record, {
+        predecessors: task.predecessors ?? '',
+        budget: task.budget ?? '',
+        actualCost: task.actualCost ?? '',
+        sprint: task.sprint ?? '',
+        storyPoints: task.storyPoints ?? ''
+      });
+    }
+    return record;
+  });
 }
 
 function openGanttModal() {
   state.previousFocus = document.activeElement;
   elements.ganttModal.classList.remove('hidden');
   renderGantt();
-  // Focus the modal to handle Escape key properly
   elements.ganttModal.focus();
 }
 
@@ -2310,7 +2499,6 @@ function renderGantt() {
     return;
   }
 
-  // ⚡ Bolt: Use direct string comparison for minDate/maxDate calculation since plannedTasks already filter for valid dates.
   const minDate = plannedTasks.reduce((min, task) => (task.plannedStartDate < min ? task.plannedStartDate : min), plannedTasks[0].plannedStartDate);
   const maxDate = plannedTasks.reduce((max, task) => (task.plannedEndDate > max ? task.plannedEndDate : max), plannedTasks[0].plannedEndDate);
   const weekdays = buildWeekdayTimeline(minDate, maxDate);
@@ -2434,7 +2622,6 @@ function buildWeekdayTimeline(minDate, maxDate) {
   const days = [];
   let cursor = getMonday(minDate);
   const endBoundary = getFriday(maxDate);
-  // ⚡ Bolt: Use direct string comparison for cursor loop since both are generated valid dates.
   while (cursor <= endBoundary) {
     if (!isWeekend(cursor)) {
       days.push({
@@ -2448,7 +2635,6 @@ function buildWeekdayTimeline(minDate, maxDate) {
 }
 
 function groupTimelineByWeek(days) {
-  // ⚡ Bolt: Use an O(1) Map instead of O(N) Array.find to avoid O(N^2) bottleneck when grouping timeline days
   const groups = [];
   const groupMap = new Map();
   days.forEach((day) => {
@@ -2570,7 +2756,6 @@ function downloadFile(content, fileName, mimeType) {
   const link = document.createElement('a');
   link.href = url;
   link.download = fileName;
-  // Keep generated download links isolated from any browsing context changes.
   link.rel = 'noopener noreferrer';
   document.body.appendChild(link);
   link.click();
@@ -2589,12 +2774,10 @@ function sanitizeCsvFormulaValue(value) {
 }
 
 function createId(seed = Date.now()) {
-  // Security enhancement: Prefer crypto.randomUUID for stronger randomness
   if (typeof crypto !== 'undefined') {
     if (crypto.randomUUID) {
       return `task-${crypto.randomUUID()}`;
     }
-    // Fallback: use crypto.getRandomValues if randomUUID is unavailable
     if (crypto.getRandomValues) {
       const arr = new Uint32Array(2);
       crypto.getRandomValues(arr);
@@ -2603,8 +2786,6 @@ function createId(seed = Date.now()) {
   }
   throw new Error('Secure random number generation is not supported in this environment');
 }
-
-// ⚡ Bolt: Memoize date parsing and validation to reduce GC pressure and expensive Date allocations in tight render loops
 
 function isValidDateString(value) {
   if (!isValidDateString.cache) isValidDateString.cache = new Map();
@@ -2617,7 +2798,6 @@ function isValidDateString(value) {
     return false;
   }
   const isValid = formatDateInput(new Date(dateStringToUtcMs(value))) === value;
-  // Bolt: Increase cache limits to prevent cache thrashing in large loops.
   if (validDateCache.size < 10000) {
     validDateCache.set(value, isValid);
   }
@@ -2631,12 +2811,10 @@ function dateStringToUtcMs(value) {
   if (dateToUtcMsCache.has(value)) {
     return dateToUtcMsCache.get(value);
   }
-  // Bolt: Avoid split().map() array allocations in tight rendering loops.
   const year = Number(value.substring(0, 4));
   const month = Number(value.substring(5, 7));
   const day = Number(value.substring(8, 10));
   const ms = Date.UTC(year, month - 1, day);
-  // Bolt: Increase cache limits to prevent cache thrashing in large loops.
   if (dateToUtcMsCache.size < 10000) {
     dateToUtcMsCache.set(value, ms);
   }
@@ -2754,7 +2932,6 @@ function debounce(callback, wait) {
   return debounced;
 }
 
-// Export for testing
 if (typeof window !== 'undefined') {
   window.validateDraft = validateDraft;
   window.sanitizeCsvFormulaValue = sanitizeCsvFormulaValue;

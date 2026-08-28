@@ -453,7 +453,9 @@ async function makeProject(name, seedState) {
   const meta = projectsCache.find((x) => String(x.id) === String(r.id));
   if (meta) currentOrgId = meta.orgId;
   const base = seedState || host?.getState?.() || { baseDate: '', tasks: [] };
-  await doPush({ ...base, projectName: name }); // keep the chosen project name
+  host?.hydrateState?.({ ...base, projectName: name });
+  host?.renderAll?.();
+  await doPush(host?.getState?.() || { ...base, projectName: name });
   subscribe(r.id);
   renderAuthUI();
   return r;

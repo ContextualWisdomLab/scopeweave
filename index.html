@@ -6,6 +6,9 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'self';" />
     <title>ScopeWeave Planner</title>
     <link rel="preload" href="styles.css" as="style" />
+    <link rel="modulepreload" href="analytics.js" />
+    <link rel="modulepreload" href="cloud-sync.js" />
+    <link rel="modulepreload" href="cloud-project-cache.js" />
     <link rel="modulepreload" href="app.js" />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="toast-state.css" />
@@ -53,6 +56,25 @@
 
       <main id="main-content" tabindex="-1">
         <section class="table-section" aria-label="WBS 표">
+          <div class="table-toolbar">
+            <label class="task-filter" for="task-filter">
+              <span>WBS 작업 검색</span>
+              <input id="task-filter" type="search" maxlength="120" placeholder="단계, 작업, 담당자, 산출물 검색" aria-controls="task-table-body" aria-describedby="task-filter-status" />
+            </label>
+            <button id="clear-task-filter" type="button" class="filter-clear secondary-button" hidden>검색 지우기</button>
+            <span id="task-filter-status" class="task-filter-status" role="status" aria-live="polite" aria-atomic="true">전체 0개 작업</span>
+          </div>
+          <aside id="seed-onboarding" class="seed-onboarding" hidden aria-labelledby="seed-onboarding-title" aria-describedby="seed-onboarding-description">
+            <span class="seed-onboarding-mark" aria-hidden="true">빠른 시작</span>
+            <div class="seed-onboarding-copy">
+              <h2 id="seed-onboarding-title">샘플 WBS가 준비되어 있습니다</h2>
+              <p id="seed-onboarding-description">지금 보이는 데이터는 편집과 계산 흐름을 확인하는 예시입니다. 실제 계획을 시작하려면 샘플을 지운 뒤 첫 단계를 추가하세요.</p>
+            </div>
+            <div class="seed-onboarding-actions">
+              <button id="dismiss-seed-onboarding" type="button" class="secondary-button">안내 숨기기</button>
+              <button id="clear-seed-data" type="button" class="primary-button">샘플 지우고 시작</button>
+            </div>
+          </aside>
           <div class="table-scroll">
             <table class="wbs-table">
               <thead>
@@ -89,6 +111,7 @@
       <footer class="bottom-action-bar">
         <button id="add-root-task" type="button" class="primary-button">최상위 작업 추가</button>
         <button id="export-csv" type="button" class="secondary-button">CSV 내보내기</button>
+        <button id="export-json" type="button" class="secondary-button">JSON 내보내기</button>
         <button id="import-csv" type="button" class="secondary-button">CSV 가져오기</button>
         <button id="open-gantt" type="button" class="secondary-button" aria-haspopup="dialog" aria-controls="gantt-modal">간트차트보기</button>
       </footer>
@@ -113,6 +136,7 @@
     </div>
 
     <script type="module" src="cloud-sync.js"></script>
+    <script type="module" src="cloud-project-cache.js"></script>
     <script type="module" src="analytics.js"></script>
     <script type="module" src="app.js"></script>
   </body>

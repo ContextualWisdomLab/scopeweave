@@ -1393,6 +1393,7 @@ const STATIC = {
   '/pricing': ['landing.html', 'text/html; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
   '/cloud-sync.js': ['cloud-sync.js', 'text/javascript; charset=utf-8'],
+  '/cloud-project-cache.js': ['cloud-project-cache.js', 'text/javascript; charset=utf-8'],
   '/analytics.js': ['analytics.js', 'text/javascript; charset=utf-8'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],
   '/toast-state.css': ['toast-state.css', 'text/css; charset=utf-8'],
