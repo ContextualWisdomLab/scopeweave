@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `4c8d09d`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | 미해결 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621/#625 OpenCode current verdict 부재; #588 Strix provider 실패; #628 OpenCode current verdict 부재; qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #495/#621/#625/#628 OpenCode current verdict 부재; #588 Strix provider 실패; qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -123,10 +123,12 @@ HEAD가 바뀌면 다시 확인해야 한다.
   추가했고 단독 E2E 75개가 통과했다. 현재 base의 modulepreload 누락으로
   기존 static E2E 1개가 실패하며, OpenCode current-head verdict 부재와
   qualifying approval 없음으로 병합하지 않았다.
-- #495: `develop@2c328875` 대상 `dcdc8da7f8f07dfda42f6ad0f189d4d842d94736`.
+- #495: `develop@2c328875` 대상 `9cc7ecc204dafe3dafcb78b605455beb07bbce3b`.
   정적 shell의 `cloud-sync.js`·`analytics.js` modulepreload를 제공하는
   제출본이다. #628에서 확인한 기존 E2E 실패의 별도 소유 경로이며, OpenCode/
-  Strix 게이트와 qualifying approval을 재확인해야 한다.
+  Strix 게이트와 qualifying approval을 재확인해야 한다. 로컬 5,000행
+  production benchmark는 180초 제한에서 interaction probe가 종료되지 않아
+  hosted 성능 증거로 대체하지 않았다.
 - #626: `d0141077d3bb790786520efa3d115d4dd2ce70bf`는 #508의
   `computeTaskMetrics` 최적화와 중복되어 종료했다. #627:
   `c91715a4ad4f8865e7e6a90ffc51fdb8b16fd360`은 문자열 필터만으로는
