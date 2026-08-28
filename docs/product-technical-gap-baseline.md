@@ -167,14 +167,14 @@ HEAD가 바뀌면 다시 확인해야 한다.
   provider HTTP 500과 vulnerability report 부재로 fail-closed 되었으며
   qualifying approval이 없어 병합하지 않았다.
 - #610: `develop@2c328875` 대상
-  `3bb2bd95905d590fe3d1d0d9a8fc6c6ec133c04a`. numeric-zero 공통 정규화 경계와
-  JSON/CSV export를 current CodeGraph와 대조했고 focused numeric-zero 12개,
-  전체 unit 및 config 3개가 통과했다. 전체 Playwright는 88개 중 87개가
-  통과했으며 유일한 실패는 develop baseline의 modulepreload 누락(#490에서
-  별도 수정 중)이다. current-head hosted functional/security/fuzz/coverage
-  Checks는 통과했지만 OpenCode run `33180751297`/job `98980396931`은
-  current-head verdict 부재로 fail-closed 되었고 qualifying approval도 없어
-  병합하지 않았다.
+  `0ead5e6c5f53dc74c6cb2666e36d35153ce2fd91`. numeric-zero 공통 정규화 경계와
+  Hono 4.13.5 lock alignment를 current CodeGraph와 대조했고 numeric-zero
+  round-trip E2E 12개, 전체 unit·API·fuzz·config 3개가 통과했다. 전체
+  Playwright는 88개 중 87개가 통과했으며 유일한 실패는 develop baseline의
+  modulepreload 누락(#490에서 별도 수정 중)이다. current-head hosted
+  functional/security/fuzz/coverage Checks는 통과했지만 OpenCode job
+  `98995709958`은 current-head verdict 부재로 fail-closed 되었고 qualifying
+  approval도 없어 병합하지 않았다.
 - #608: `28a217891bba7c515b93755ba6593f476b6a9adc` (base
   `develop@2c328875`). 빈 상태 task-dependent action의 정적 초기 markup에도
   native `disabled`, `aria-disabled`, `aria-describedby`를 설정해 seed/cloud
