@@ -210,7 +210,7 @@ async function verifyProductionOidcIdentity(idToken, expectedNonce) {
 }
 
 function upsertProductionSsoUser(email) {
-  let user = db.prepare('SELECT id, email, token_version FROM users WHERE email = ?').get(email);
+  let user = db.prepare('SELECT id, email, token_version FROM users WHERE lower(email) = ?').get(email);
   if (user) return user;
 
   db.exec('BEGIN');
