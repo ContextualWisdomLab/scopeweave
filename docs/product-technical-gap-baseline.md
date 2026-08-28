@@ -27,11 +27,11 @@
 | --- | --- | --- |
 | 3단계 WBS 편집·계층 보존 | `app.js`의 단일 `state.tasks`, `renderAll()`, expand/collapse·subtree 이동 | 완료 |
 | 계획/실적 진척 및 일정 통제 | `analytics.js`의 EVM, S-curve, CPM, workload | 완료 |
-| 작업 검색과 계층 맥락 유지 | 현재 `develop`에는 미포함. #621의 `acb94c12` 현재 제출본에 구현됨 | 제출됨, 병합 대기 |
+| 작업 검색과 계층 맥락 유지 | 현재 `develop`에는 미포함. #621의 `5c6c2530` 현재 제출본에 구현됨 | 제출됨, 병합 대기 |
 | CSV 왕복 | `exportCsv()`, CSV parser/validation, E2E·fuzz 계약 | 완료 |
 | JSON seed·localStorage·선택적 파일 sync | `loadSeedTasks()`, `localStorage`, `exportJsonArray()`, File System Access API | 완료 |
-| 명시적 JSON 다운로드 | 현재 `develop` UI에는 없음. #621의 `acb94c12` 현재 제출본에 구현됨 | 제출됨, 병합 대기 |
-| 첫 방문 샘플 안내와 빈 계획 전환 | 현재 `develop`에는 미포함. #624 변경이 포함된 #621 `acb94c12` 제출본 | 제출됨, 병합 대기 |
+| 명시적 JSON 다운로드 | 현재 `develop` UI에는 없음. #621의 `5c6c2530` 현재 제출본에 구현됨 | 제출됨, 병합 대기 |
+| 첫 방문 샘플 안내와 빈 계획 전환 | 현재 `develop`에는 미포함. #624 변경이 포함된 #621 `5c6c2530` 제출본 | 제출됨, 병합 대기 |
 | 정적 배포 | `pages.yml`, 상대 경로 자산, `404.html`; GitHub Pages 성공 배포 `develop@2c328875`와 공개 응답 확인 (`https://contextualwisdomlab.github.io/scopeweave/`) | 완료 |
 | Cloud 인증·멀티테넌시·협업 | `server/`, `cloud-sync.js`, API smoke/E2E | 코드·테스트 존재, 운영 환경 검증 필요 |
 
@@ -86,22 +86,23 @@ HEAD가 바뀌면 다시 확인해야 한다.
 
 | ID | Gap / 고객 영향 | 현재 제출 상태 | 조치 |
 | --- | --- | --- | --- |
-| G-01 | 큰 WBS에서 작업 위치를 찾는 비용 | #621 `acb94c12`, `develop` 병합 대기 | 작업·담당자·산출물 등 필드 검색과 상위 계층 표시 |
-| G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `acb94c12`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
-| G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, 현재 #621 `acb94c12`, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
+| G-01 | 큰 WBS에서 작업 위치를 찾는 비용 | #621 `5c6c2530`, `develop` 병합 대기 | 작업·담당자·산출물 등 필드 검색과 상위 계층 표시 |
+| G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `5c6c2530`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
+| G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, 현재 #621 `5c6c2530`, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `3c82b48`이 #621 `3aaf9b7` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 `acb94c12`은 OpenCode 실패와 Strix pending, 나머지 주요 hosted Checks 통과; #625 `bc938989`는 OpenCode 실패와 Strix 진행 중 외 주요 Checks 통과; #629 `3c82b48d`는 cloud-E2E 실패; 모든 대상에 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 `5c6c2530`은 새 hosted run 진행 중; #625 `c881fbba`는 OpenCode 실패와 Strix pending 외 주요 Checks 통과; #629 `3c82b48d`는 cloud-E2E 실패; 모든 대상에 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
 - #621: `develop@2c328875` 대상
-  `acb94c12b0419bf1166b106a4bb0e95957c28a6c`. CSV 성공 import 시 stale 검색어를
+  `5c6c2530454b982a7f765cb317d6ef3fd16930cf`. CSV 성공 import 시 stale 검색어를
   초기화하고, 첫 방문 seed 탐색 중 progress/order 변경이 sample을 영속화하지 않으며,
   빠른 검색 입력의 전체 재렌더를 디바운스한다. 프로젝트 선택 후 인라인 변경이
   autosave되도록 cloud cache adapter를 서버 정적 허용목록에도 등록했다. 현재 HEAD의
-  local 전체 E2E 98개, unit, API, fuzz, workflow 설정 테스트가 통과했다. 저장소
+  local 전체 E2E 99개, unit, API, fuzz, workflow 설정 테스트가 통과했다. 저장소
   snapshot이 사라져도 interactive 저장이 cloud/file sync까지 계속되도록 메모리 adoption
-  flag와 회귀 테스트를 추가했다. hosted
+  flag와 회귀 테스트를 추가했고, sample cloud onboarding도 프로젝트 생성 즉시 같은
+  hydrate 경로로 adoption되도록 보강했다. hosted
   unit/API·coverage·cloud-E2E·Noema·CodeQL·Semgrep·OSV·Trivy-FS·property fuzz는
   통과했고 Scorecard/OSV scanner는 neutral이다. Strix는 pending이며 OpenCode는
   current-head verdict 부재로 실패했다. 현재 HEAD qualifying approval은 없다.
