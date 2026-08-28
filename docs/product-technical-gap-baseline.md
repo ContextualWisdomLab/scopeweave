@@ -372,9 +372,11 @@ HEAD가 바뀌면 다시 확인해야 한다.
   대상 `95982819c49cf08ed92b18795a80234882676d53`. terminal reason의 action
   authorization, cancellation의 독립 approval·self-approval 방지, exact resource
   version과 atomic commit receipt를 current CodeGraph·resolved 리뷰와 대조했고
-  reason-event unit 13+1개와 coverage contract가 통과했다. hosted listed
-  unit/API·cloud E2E·OSV·dependency 및 Devin Checks는 통과했지만 current
-  OpenCode/Strix check entry와 qualifying approval은 없어 병합하지 않았다.
+  focused reason/outcome unit 34개, 전체 unit/API, fuzz 14개, config 3개,
+  Python docstring 및 diff 검사가 통과했다. hosted exact-head listed
+  unit/API·cloud E2E·OSV·dependency checks도 terminal success였지만 current
+  OpenCode/Strix check는 stacked base에 없고 qualifying approval도 없어 병합하지
+  않았다.
 - #541: stacked base
   `cursor/bc-4522f1d4-ae7e-434e-b612-d250afa4d097-5645@e2f560078d3e2862c5dc6c395c159d12dfe1e6fa`
   대상 `1e491bac2fc42b1f17c93666223ce1da78c6ba61`. calendar subscription SQLite
