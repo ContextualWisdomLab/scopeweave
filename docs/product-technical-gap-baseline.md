@@ -330,10 +330,14 @@ HEAD가 바뀌면 다시 확인해야 한다.
   Checks는 통과했다. 부모 #506이 아직 보호 병합되지 않았고 qualifying approval도
   없어 병합하지 않았다.
 - #511: stacked base
-  `fix/stripe-checkout-provider-boundary-488@5d1bf1b023d4152610d9bc247c02da27429d33cd` 대상
-  `01be3a5d59979e4c52d17bfaa4428c177dec0237`. Checkout attempt idempotency와
-  durable provider outcome 경계를 점검했고 current local billing unit/API와
-  hosted stacked Checks는 통과했지만 qualifying approval은 없다.
+  `fix/stripe-checkout-provider-boundary-488@6df68ade5064bd2a3b308f0d463792cc6f4e7111` 대상
+  `219f3b31db5be2e04ebaeb9491b7fbaf5775d651`. stale parent를 force-push 없이
+  merge commit으로 재조정하고 Checkout attempt idempotency, provider outcome,
+  secret/price 정규화 및 안전한 오류 경계를 current CodeGraph와 대조했다. exact
+  merge worktree의 billing focused, 전체 unit/API, fuzz 14개, config 3개, Python
+  docstring 및 diff 검사가 통과했다. 새 head의 hosted dependency는 success,
+  cloud-e2e·OSV·unit/API는 재실행 중이며 manifest coverage는 skipped, current
+  unresolved thread 0·qualifying approval 0이므로 병합하지 않았다.
 - #537: stacked base
   `feat/clearfolio-capability-readiness-489@9e465a2cdebc6769717914160f24ecb2b339e163`
   대상 `abcd68c20ef073818d1869f2a5e891fb99248a05`. Clearfolio configuration
