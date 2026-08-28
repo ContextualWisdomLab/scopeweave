@@ -84,6 +84,7 @@ function expectUnresolved(attemptRepository, message) {
 
 test('live Checkout uses one bounded direct Stripe HTTPS request and preserves the hosted URL', async () => {
   await withStripeEnv(async () => {
+    process.env.STRIPE_PRICE_ID = '  price_provider_boundary  ';
     const observed = [];
     const attemptRepository = createAttemptRepository();
     globalThis.fetch = async (url, options) => {
@@ -119,6 +120,10 @@ test('live Checkout uses one bounded direct Stripe HTTPS request and preserves t
     assert.equal(form.get('cancel_url'), 'https://planner.example.com/?billing=cancel');
     assert.equal(form.get('client_reference_id'), '73');
     assert.equal(form.get('metadata[orgId]'), '73');
+    assert.deepEqual(attemptRepository.events[0], {
+      type: 'start',
+      input: { organizationId: 73, priceId: 'price_provider_boundary' },
+    });
     assert.deepEqual(attemptRepository.events.at(-1), {
       type: 'success',
       input: {
@@ -185,7 +190,7 @@ test('uncertain transport failures stay pending and remain sanitized', async () 
   });
 });
 
-test('Stripe server and malformed-success outcomes remain indeterminate while 4xx closes retry identity', async () => {
+test('Stripe server and malformed-success outcomes remain indeterminate while known 4xx closes retry identity', async () => {
   await withStripeEnv(async () => {
     let attemptRepository = createAttemptRepository();
     globalThis.fetch = async () => new Response('provider incident body', {
@@ -210,6 +215,18 @@ test('Stripe server and malformed-success outcomes remain indeterminate while 4x
     );
     assert.doesNotMatch(clientErrorPayload, /invalid request body detail/);
     assert.equal(attemptRepository.events.at(-1).type, 'failure');
+
+    attemptRepository = createAttemptRepository();
+    globalThis.fetch = async () => new Response('concurrent request', {
+      status: 409,
+      headers: { 'content-type': 'application/json' },
+    });
+    const conflictPayload = await expectProviderError(
+      () => liveCheckout(attemptRepository),
+      'billing_provider_unavailable',
+    );
+    assert.doesNotMatch(conflictPayload, /concurrent request/);
+    expectUnresolved(attemptRepository, '409 concurrent idempotency conflict remains retryable with the same key');
 
     attemptRepository = createAttemptRepository();
     globalThis.fetch = async () => new Response('<html>not json</html>', {
@@ -251,6 +268,7 @@ test('rejected Stripe responses cancel unread bodies while preserving retry-stat
     for (const scenario of [
       { status: 503, contentType: 'application/json', expectedCode: 'billing_provider_unavailable', closesAttempt: false },
       { status: 400, contentType: 'application/json', expectedCode: 'billing_provider_unavailable', closesAttempt: true },
+      { status: 409, contentType: 'application/json', expectedCode: 'billing_provider_unavailable', closesAttempt: false },
       { status: 200, contentType: 'text/html', expectedCode: 'billing_provider_invalid_response', closesAttempt: false },
     ]) {
       let cancelled = false;

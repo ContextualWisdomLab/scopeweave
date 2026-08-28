@@ -31,7 +31,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   inside a 23-hour safety window; network/abort, Stripe 5xx, malformed or
   untrusted successful responses, and local success-persistence failures remain
   pending for same-key retry or reconciliation, while known Stripe 4xx outcomes
-  close the attempt before a later deliberate Checkout receives fresh authority.
+  other than concurrent 409 conflicts close the attempt before a later deliberate
+  Checkout receives fresh authority.
 - Bounded hosted Stripe Checkout provider calls to one 15-second, no-retry
   attempt with a 1 MiB response ceiling before JSON parsing until durable
   idempotency exists; validated returned destinations as exact HTTPS

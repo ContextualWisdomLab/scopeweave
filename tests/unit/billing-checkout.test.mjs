@@ -137,6 +137,46 @@ test('live checkout binds SDK-style calls to the durable idempotency identity', 
   }
 });
 
+test('SDK-reported 409 conflicts preserve the durable retry identity', async () => {
+  const previousSecret = process.env.STRIPE_SECRET_KEY;
+  const previousPrice = process.env.STRIPE_PRICE_ID;
+  process.env.STRIPE_SECRET_KEY = 'sk_test_sdk_conflict';
+  process.env.STRIPE_PRICE_ID = 'price_sdk_conflict';
+  const attemptRepository = createAttemptRepository();
+  const stripeClientFactory = async () => ({
+    checkout: {
+      sessions: {
+        async create() {
+          const error = new Error('concurrent idempotency conflict');
+          error.statusCode = 409;
+          throw error;
+        },
+      },
+    },
+  });
+
+  try {
+    await assert.rejects(
+      createCheckout({
+        orgId: 73,
+        configuration: liveConfiguration,
+        attemptRepository,
+        stripeClientFactory,
+      }),
+      (error) => {
+        assert.equal(error.status, 502);
+        return true;
+      },
+    );
+    assert.deepEqual(attemptRepository.events.map((event) => event.type), ['start']);
+  } finally {
+    if (previousSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = previousSecret;
+    if (previousPrice === undefined) delete process.env.STRIPE_PRICE_ID;
+    else process.env.STRIPE_PRICE_ID = previousPrice;
+  }
+});
+
 test('default live provider transport sends the persisted Stripe Idempotency-Key', async () => {
   const previousSecret = process.env.STRIPE_SECRET_KEY;
   const previousPrice = process.env.STRIPE_PRICE_ID;

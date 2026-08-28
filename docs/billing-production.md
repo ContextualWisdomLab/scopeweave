@@ -126,8 +126,10 @@ Provider outcomes are intentionally asymmetric:
 - **Stripe 5xx** — keep the attempt `pending`; Stripe explicitly documents 500
   mutations as indeterminate and warns that retrying with a fresh key can repeat
   side effects;
-- **Stripe 4xx** — close as `provider_failed`; Stripe's low-level guidance says
-  the safest 4xx strategy is a fresh idempotency key when trying again;
+- **Stripe 4xx other than concurrent 409** — close as `provider_failed`; a
+  corrected deliberate retry can use fresh provider authority. A 409 caused by
+  a concurrent request remains unresolved because Stripe says endpoint execution
+  did not begin and the same idempotency key may be retried;
 - **validated 2xx Checkout Session** — validate provider session ID and hosted
   destination, persist `provider_succeeded` plus the provider session ID, then
   return the hosted URL;

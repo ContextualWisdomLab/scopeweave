@@ -104,6 +104,18 @@ function providerInvalidResponseFailure() {
   );
 }
 
+function providerOutcomeKnownForStatus(status) {
+  const statusCode = Number(status);
+  return Number.isInteger(statusCode)
+    && statusCode >= 400
+    && statusCode < 500
+    && statusCode !== 409;
+}
+
+function providerOutcomeKnownForError(error) {
+  return providerOutcomeKnownForStatus(error?.statusCode ?? error?.status);
+}
+
 function stripeCheckoutForm(payload) {
   return new URLSearchParams([
     ['mode', payload.mode],
@@ -206,8 +218,10 @@ async function createStripeSessionWithFetch(secretKey, payload, idempotencyKey) 
     // the original request can have produced side effects even though the client
     // received an error. Preserve the pending identity for every server error so
     // no later caller silently creates a second Checkout Session with a fresh key.
-    // Stripe's documented safest strategy for 4xx is a fresh idempotency key.
-    const outcomeKnown = response.status < 500;
+    // A concurrent idempotent request returns 409 before endpoint execution and
+    // remains retryable with the same key. Other received 4xx responses are known
+    // request failures and can safely receive fresh authority after correction.
+    const outcomeKnown = providerOutcomeKnownForStatus(response.status);
     await cancelUnreadProviderBody(response);
     throw providerUnavailableFailure(outcomeKnown);
   }
@@ -298,7 +312,8 @@ function markKnownProviderFailure(repository, attemptId, error) {
  * a 1 MiB response-body ceiling, and a durable per-attempt idempotency key.
  * Network/abort, Stripe 5xx, and malformed/untrusted 2xx response outcomes keep
  * the attempt pending so a later call reuses the same key; known 4xx responses
- * close the attempt so a deliberate later checkout gets fresh provider authority.
+ * other than concurrent 409 conflicts close the attempt so a deliberate later
+ * Checkout gets fresh provider authority.
  * The hosted destination must use Stripe's standard HTTPS authority; provider-
  * issued client fragments are preserved verbatim.
  *
@@ -328,7 +343,7 @@ export async function createCheckout({
 
   if (mode === 'live') {
     const repository = await resolveAttemptRepository(attemptRepository);
-    const priceId = process.env.STRIPE_PRICE_ID;
+    const priceId = process.env.STRIPE_PRICE_ID?.trim();
     if (typeof priceId !== 'string' || priceId.trim().length === 0) {
       throw new HTTPException(503, { res: billingUnavailableResponse() });
     }
@@ -359,10 +374,11 @@ export async function createCheckout({
           session = await stripe.checkout.sessions.create(payload, {
             idempotencyKey: attempt.idempotencyKey,
           });
-        } catch {
+        } catch (error) {
           // The injected seam models an SDK/network boundary. Without a concrete
-          // provider response, its outcome is uncertain and must remain retryable.
-          throw providerUnavailableFailure(false);
+          // provider response, its outcome is uncertain; Stripe SDK status codes
+          // preserve the same known-4xx/409 semantics as the direct transport.
+          throw providerUnavailableFailure(providerOutcomeKnownForError(error));
         }
       } else {
         session = await createStripeSessionWithFetch(

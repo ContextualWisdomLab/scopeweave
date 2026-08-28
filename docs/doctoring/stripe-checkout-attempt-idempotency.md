@@ -28,7 +28,7 @@ local ceiling, not a claim that Stripe purges every key at exactly 24 hours.
 | A network failure can leave the client unable to know whether Stripe executed the mutation. | Network/abort failures leave the attempt `pending`; the next caller reuses the same key. | `tests/unit/billing-provider-boundary.test.mjs` |
 | Stripe documents server errors, especially HTTP 500, as indeterminate and warns that a fresh key can duplicate side effects. | All Stripe 5xx responses keep the attempt `pending`; no fresh key is issued merely because a server-error response arrived. | regression commit `35571be0c0e81359dff09238f5815ed13dcf0440` followed by the production fix |
 | A successful HTTP response can still be unusable locally after the provider has performed the mutation. | Malformed, unreadable, over-budget, or untrusted 2xx responses remain unresolved and reuse the same idempotency key instead of closing the attempt. | `tests/unit/billing-checkout-review-regressions.test.mjs` and provider-boundary regressions |
-| Stripe's safest documented strategy for 4xx errors is a fresh idempotency key after correcting/retrying the request. | A received 4xx closes the current local attempt as `provider_failed`; a later deliberate Checkout obtains fresh authority. | provider-boundary 4xx regression |
+| A received 4xx normally identifies a correctable request failure, but Stripe does not begin endpoint execution for a concurrent idempotency conflict. | Known 4xx responses other than 409 close the current local attempt as `provider_failed`; a concurrent 409 remains pending so the same key can be retried. | provider-boundary 4xx/409 regression |
 | Checkout Sessions expose `client_reference_id` for reconciliation with internal systems. | Send organization identity as `client_reference_id` and metadata while retaining a separate opaque local attempt ID. | transport form assertions |
 
 ## Data model
@@ -70,8 +70,10 @@ must converge before billing release approval.
    `billing_provider_unavailable`; local attempt remains pending.
 2. **Stripe 5xx** — customer receives the same sanitized 502; local attempt
    remains pending because provider side effects are indeterminate.
-3. **Stripe 4xx** — customer receives sanitized 502; the local attempt becomes
-   `provider_failed` so a later corrected Checkout can use a fresh key.
+3. **Stripe known 4xx other than concurrent 409** — customer receives sanitized
+   502; the local attempt becomes `provider_failed` so a later corrected Checkout
+   can use a fresh key. A concurrent 409 remains pending because Stripe allows
+   retrying the same idempotency key when endpoint execution did not begin.
 4. **Successful HTTP response with malformed/unbounded/untrusted content** — the
    provider may already have committed the mutation, so the local attempt remains
    pending; no provider body, network address, or credential is reflected to the
