@@ -729,6 +729,31 @@ app.get('/api/metrics', (c) => {
 });
 
 // ------------------------------------------------------------------- webhooks
+
+function isSafeWebhookUrl(urlStr) {
+  let u;
+  try {
+    u = new URL(urlStr);
+  } catch {
+    return false;
+  }
+  const hn = u.hostname;
+  if (
+    hn === 'localhost' ||
+    hn === '[::1]' ||
+    /^127\.\d+\.\d+\.\d+$/.test(hn) ||
+    /^10\.\d+\.\d+\.\d+$/.test(hn) ||
+    /^192\.168\.\d+\.\d+$/.test(hn) ||
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+$/.test(hn) ||
+    /^169\.254\.\d+\.\d+$/.test(hn) ||
+    /^0\.\d+\.\d+\.\d+$/.test(hn) ||
+    hn === ''
+  ) {
+    return false;
+  }
+  return true;
+}
+
 app.get('/api/orgs/:id/webhooks', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -748,6 +773,7 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
   if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  if (!isSafeWebhookUrl(url)) return c.json({ error: 'unsafe webhook url' }, 400);
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
