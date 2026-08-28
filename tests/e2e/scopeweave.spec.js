@@ -39,6 +39,7 @@ const importCsv = async (page, csvText) => {
 };
 
 const createActivitySubtree = async (page, activityName, taskName) => {
+  await expect(page.locator('tbody tr[data-task-id]').first()).toBeVisible();
   await page.locator('tbody tr[data-task-id]').first().getByRole('button', { name: '하위 추가' }).click();
   await page.locator('[data-testid="editor-activity"]').fill(activityName);
   await page.getByRole('button', { name: '저장', exact: true }).click();
@@ -1257,6 +1258,7 @@ test.describe('ScopeWeave Planner', () => {
   });
 
   test('renders empty cells as independent DOM clones', async ({ page }) => {
+    await expect(page.locator('.empty-cell').first()).toBeVisible();
     const result = await page.evaluate(() => {
       const emptyCells = Array.from(document.querySelectorAll('.empty-cell'));
       const [first, second] = emptyCells;
