@@ -50,11 +50,13 @@ owned names are descriptive multi-word `snake_case` identifiers.
 A partial unique index on `(organization_id, price_id)` while the state is
 `pending` or `reconciliation_required` prevents two unresolved retry identities
 for the same tenant/price. The repository uses a savepoint around each synchronous
-state mutation. Clock rollback is fail-safe: a pending attempt whose calculated
-age is negative is moved to `reconciliation_required` rather than silently
-replayed, and terminal writes clamp `updated_at_ms` to at least `created_at_ms`
-so a provider outcome can still be recorded without violating the timestamp
-constraint.
+state mutation; if savepoint rollback cannot confirm the state, it aborts the
+shared transaction and preserves the causal error, and a connection that also
+cannot roll back must be discarded. Clock rollback is fail-safe: a pending
+attempt whose calculated age is negative is moved to `reconciliation_required`
+rather than silently replayed, and terminal writes clamp `updated_at_ms` to at
+least `created_at_ms` so a provider outcome can still be recorded without
+violating the timestamp constraint.
 
 The table is installed only during database bootstrap after the referenced
 organization table exists. Repository construction and request handling do not

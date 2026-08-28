@@ -76,7 +76,9 @@ function withSavepoint(database, operation) {
       database.exec(`ROLLBACK TO SAVEPOINT ${SAVEPOINT_NAME}`);
       rollbackSucceeded = true;
     } catch {
-      // Keep an unconfirmed failed savepoint open instead of risking a partial commit.
+      // Abort the shared transaction when savepoint rollback cannot confirm state.
+      // If this also fails, the caller must discard the database connection.
+      try { database.exec('ROLLBACK'); } catch { /* connection is no longer trustworthy */ }
     }
     if (rollbackSucceeded) {
       try {

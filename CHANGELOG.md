@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Aborted the shared SQLite transaction when a Checkout-attempt savepoint
+  rollback cannot confirm state, preserving the causal write error and marking
+  a connection that also cannot roll back as unsafe to reuse.
 - Made contextual-orchestrator briefing requests fail closed unless an authenticated endpoint is configured. Deterministic generated text is restricted to explicit `SCOPEWEAVE_DEV=1`, message/provider responses are bounded and validated, and non-loopback HTTP transport is rejected.
 - Persisted a tenant/price-scoped Stripe Checkout attempt identity and opaque
   idempotency key before live Session creation, reusing unresolved identity only

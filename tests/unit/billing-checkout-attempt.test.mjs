@@ -337,7 +337,7 @@ test('invalid clock and identifier sources roll back without leaving a pending r
   );
 });
 
-test('rollback cleanup preserves the causal attempt write failure and never releases unconfirmed state', () => {
+test('rollback cleanup aborts the shared transaction and preserves the causal write failure', () => {
   const database = createDatabase();
   installBillingCheckoutAttemptSchema(database);
   database.exec(`
@@ -371,6 +371,11 @@ test('rollback cleanup preserves the causal attempt write failure and never rele
   assert.equal(
     executed.filter((sql) => sql === 'RELEASE SAVEPOINT billing_checkout_attempt_write').length,
     0,
-    'failed rollback must not release an unconfirmed savepoint and accidentally commit partial state',
+    'failed rollback must not release an unconfirmed savepoint',
+  );
+  assert.equal(
+    executed.filter((sql) => sql === 'ROLLBACK').length,
+    1,
+    'failed savepoint rollback must abort the shared transaction',
   );
 });
