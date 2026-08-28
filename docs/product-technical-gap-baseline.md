@@ -364,9 +364,10 @@ HEAD가 바뀌면 다시 확인해야 한다.
   대상 `73ce4227d761c79a9fcad39b0455fec4b35b6274`. schedule outcome의 UTC
   explicit-offset timestamp, blocker lifecycle, terminal-reason precedence와
   immutable explanation을 current CodeGraph·resolved 리뷰와 대조했고 domain
-  unit 12+8개가 통과했다. hosted listed unit/API·cloud E2E·OSV·dependency 및
-  Devin Checks는 통과했지만 current OpenCode/Strix check entry와 qualifying
-  approval은 없어 병합하지 않았다.
+  unit 20개, 전체 unit/API, fuzz 14개, config 3개, Python docstring 및 diff
+  검사가 통과했다. hosted exact-head listed unit/API·cloud E2E·OSV·dependency
+  checks는 terminal success였고 manifest coverage는 skipped였지만 OpenCode/Strix
+  는 stacked base에 없으며 qualifying approval도 없어 병합하지 않았다.
 - #518: stacked base
   `feat/schedule-outcome-domain-287@73ce4227d761c79a9fcad39b0455fec4b35b6274`
   대상 `95982819c49cf08ed92b18795a80234882676d53`. terminal reason의 action
