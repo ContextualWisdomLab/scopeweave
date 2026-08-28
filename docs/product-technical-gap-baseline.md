@@ -150,6 +150,13 @@ HEAD가 바뀌면 다시 확인해야 한다.
 - #623: stacked base `refactor/schema-migration-ledger-433@9f2e6818` 대상
   `81072df8f4dd2e2df269710eb7cc852312ff7543`, draft 상태. canonical SQLite
   rename의 31개 schema/migration 테스트는 통과했지만 독립 병합 근거가 없다.
+- #500: `develop@2c328875` 대상
+  `b7ef5c587aac52d03880b087af39580ff52384cc`. fail-closed schema migration
+  ledger의 unknown-object, ledger-contract, compatibility-column 및 concurrent
+  startup 경계를 current CodeGraph·resolved 리뷰와 대조했고 관련 unit/API와
+  coverage 전체 계약은 통과했다. hosted 보안·테스트 게이트는 통과했지만
+  OpenCode는 current-head 승인 verdict 부재로, Strix는 provider HTTP 500과
+  vulnerability report 부재로 fail-closed 되었으며 qualifying approval도 없다.
 - #552: `develop@2c328875` 대상 `92487d1f9e5215cd4b7302275c23393596799ba3`,
   draft 상태. 일반 hosted 게이트는 통과하고 Strix는 취약점 0건을 출력한 뒤
   provider 장애와 authoritative report 부재로 fail-closed 되었다.
