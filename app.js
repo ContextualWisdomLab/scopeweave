@@ -22,6 +22,7 @@ const ACTUAL_PROGRESS_OPTIONS = [
   'PM확인(100%)'
 ];
 const SEARCH_PROGRESS_MUTATION_MESSAGE = '검색 중에는 실적진척상태를 변경할 수 없습니다. 검색을 먼저 지워주세요.';
+const SEARCH_EDIT_MESSAGE = '검색 중에는 작업을 편집할 수 없습니다. 검색을 먼저 지워주세요.';
 let actualProgressSelectTemplate = null;
 
 const ACTUAL_PROGRESS_MAP = Object.assign(Object.create(null), {
@@ -427,6 +428,10 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
     }
 
     if (!event.target.closest('input, select, button, label, .drag-handle')) {
+      if (state.taskQuery.trim()) {
+        showToast(SEARCH_EDIT_MESSAGE);
+        return;
+      }
       openEditor({ mode: 'edit', targetId: taskId });
     }
   });
@@ -778,8 +783,13 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
     addChildButton.removeAttribute('aria-disabled');
   }
 
-  const editButton = createActionButton(`편집 - ${rowEntityName}`, '✎', 'edit', `편집 - ${rowEntityName}`);
+  const editButton = createActionButton(`편집 - ${rowEntityName}`, '✎', 'edit', filterActive
+    ? SEARCH_EDIT_MESSAGE
+    : `편집 - ${rowEntityName}`);
   editButton.setAttribute('aria-haspopup', 'dialog');
+  if (filterActive) {
+    editButton.setAttribute('aria-disabled', 'true');
+  }
 
   const deleteButton = createActionButton(`삭제 - ${rowEntityName}`, '🗑', 'delete', filterActive
     ? '검색 중에는 작업을 삭제할 수 없습니다. 검색을 먼저 지워주세요.'
@@ -1201,7 +1211,7 @@ function handleRowAction(action, taskId) {
     return;
   }
 
-  if (state.taskQuery.trim() && (action === 'toggle' || action === 'add-child' || action === 'delete')) {
+  if (state.taskQuery.trim() && (action === 'toggle' || action === 'add-child' || action === 'edit' || action === 'delete')) {
     showToast('검색 중에는 계층을 변경할 수 없습니다. 검색을 먼저 지워주세요.');
     return;
   }
