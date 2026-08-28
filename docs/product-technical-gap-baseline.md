@@ -135,8 +135,11 @@ HEAD가 바뀌면 다시 확인해야 한다.
 - #509: `develop@2c328875` 대상
   `ea9027743ebafd1ca5774a5a14227585cf796052`. summary metric explanation을
   keyboard stop 없이 지속 노출하고 gradient 대비를 보강한 접근성 제출본이다.
-  focused 접근성·literal-title E2E 6개와 hosted required Checks·Strix는 통과했지만
-  `REVIEW_REQUIRED`이며 qualifying approval이 없어 병합하지 않았다.
+  CodeGraph와 static HTML/CSS 경계를 대조했으며 focused 접근성·literal-title E2E
+  6개, 전체 Playwright, 전체 unit, fuzz, config 3개 및 Python docstring 검사가
+  exact head에서 통과했다. hosted listed Checks·Strix는 통과했지만 synthetic
+  merge checkout evidence가 승격되지 않았고, `REVIEW_REQUIRED`이며 qualifying
+  approval도 없어 병합하지 않았다.
 - #508: `develop@2c328875` 대상
   `642034faf5c97ca8730a70ef89edf6f4fdd54840`. `computeTaskMetrics`의
   duration cache를 `Int32Array`와 명시적 loop로 바꾼 제출본으로 benchmark-base
