@@ -89,8 +89,8 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-01 | 큰 WBS에서 작업 위치를 찾는 비용 | #621 `4c8d09d`, `develop` 병합 대기 | 작업·담당자·산출물 등 필드 검색과 상위 계층 표시 |
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `4c8d09d`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
-| G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `03cdf855`가 #621 `3aaf9b7` 위에 제출됨, `develop` 병합 대기 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 OpenCode current-head check 실패 및 Strix provider HTTP 500/no-report fail-closed; #625는 문서 push 후 replacement Checks queued (이전 OpenCode 실패는 current-head verdict 부재); #629의 최초 cloud-E2E 경쟁 조건은 `03cdf855`에서 보완되어 replacement Checks 통과; 모든 대상에 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `3c82b48`이 #621 `3aaf9b7` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 OpenCode current-head check 실패 및 Strix provider HTTP 500/no-report fail-closed; #625는 최신 문서 push 후 replacement Checks 재실행; #629는 최신 접근성 수정 후 replacement Checks 재실행 중; 모든 대상에 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -103,12 +103,13 @@ HEAD가 바뀌면 다시 확인해야 한다.
   vulnerability report 부재로 fail-closed 되었다. Devin은 통과했지만 qualifying
   approval은 없다.
 - #629: stacked base `feat/wbs-search-context@3aaf9b72` 대상
-  `03cdf855fdf135ac2cd535e8fc76421c7cb32bf8`. 모바일에서 cloud 로그인 영역이
+  `3c82b48da698c42337a21016af785bcf46d1a975`. 모바일에서 cloud 로그인 영역이
   줄바꿈되고 select가 24px 이상 유지되도록 보완했으며, named controls·landmark·
   skip link·overflow와 seed/empty screenshot을 실제 Playwright로 점검한다. 최초
-  cloud-E2E의 seed 비동기 경쟁 조건을 `.empty-cell` 렌더 대기로 수정했고 현재 HEAD
-  로컬 2-worker 전체 E2E는 96개가 통과했다. replacement cloud-E2E·unit/API·보안
-  Checks는 queued이며 Devin은 pending, qualifying approval은 없다.
+  cloud-E2E의 seed 비동기 경쟁 조건을 `.empty-cell` 렌더 대기로 수정하고, Devin이
+  지적한 모바일 정렬·로그인 폭 floor도 보완했다. 현재 HEAD 로컬 2-worker 전체
+  E2E는 96개가 통과했고 Devin current-head 리뷰는 해결로 기록됐다. replacement
+  cloud-E2E·unit/API·보안 Checks는 재실행 중이며 qualifying approval은 없다.
 - #625: `develop@2c328875` 대상. 이 문서의 기준선 갱신 제출본이며, 최신 push 후
   replacement Checks가 queued 상태다. 이전 exact head에서는 unit·API·coverage·
   보안·cloud E2E·Strix·Devin Checks가 통과했지만 OpenCode check가 current-head
