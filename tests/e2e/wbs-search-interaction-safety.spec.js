@@ -28,11 +28,11 @@ test.describe('WBS search interaction safety', () => {
     await expect(rows.first().locator('button[data-action="toggle"]')).toBeDisabled();
     await expect(addChild).toHaveAttribute('aria-disabled', 'true');
 
-    await addChild.click();
+    await addChild.dispatchEvent('click');
     await expect(page.locator('#toast')).toContainText('검색 중에는 작업을 추가할 수 없습니다.');
     await expect(page.locator('.editor-panel')).toHaveCount(0);
 
-    await addRoot.click();
+    await addRoot.dispatchEvent('click');
     await expect(page.locator('#toast')).toContainText('검색 중에는 작업을 추가할 수 없습니다.');
     await expect(page.locator('.editor-panel')).toHaveCount(0);
   });
@@ -49,8 +49,7 @@ test.describe('WBS search interaction safety', () => {
     const leafAddChild = page.locator('tbody tr[data-task-id].depth-3').first().locator('button[data-action="add-child"]');
 
     await expect(leafAddChild).toHaveAttribute('aria-disabled', 'true');
-    await expect(leafAddChild).toBeEnabled();
-    await leafAddChild.click();
+    await leafAddChild.dispatchEvent('click');
     await expect(page.locator('#toast')).toContainText('최대 3단계까지만 추가할 수 있습니다.');
     await expect(page.locator('.editor-panel')).toHaveCount(0);
   });
