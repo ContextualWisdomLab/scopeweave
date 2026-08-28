@@ -214,6 +214,13 @@ HEAD가 바뀌면 다시 확인해야 한다.
   `checkout.stripe.com` 기본 포트를 검증하는 최소 보완을 넣었다. local
   billing unit/API는 통과했으며 replacement hosted Checks는 queued이고
   qualifying approval은 없다.
+- #506: `develop@2c328875` 대상
+  `f3ae1f1f4ee66024776507d75f8fb752b2bf748c`. short-lived access-grant domain의
+  purpose/audience 고정, tenant-nondisclosing authorization, immutable grant
+  return boundary, atomic membership-version contract와 감사 내구성을 current
+  CodeGraph·resolved 리뷰와 대조했고 domain/edge/coverage contract가
+  통과했다. hosted OpenCode·Strix·security·unit/API·cloud E2E Checks는
+  통과했지만 `REVIEW_REQUIRED`이고 qualifying approval이 없어 병합하지 않았다.
 - #507: stacked base
   `feat/stripe-trusted-checkout-config-488@b80d502e659fa9c65a665f7b74fd52a460b91e54`
   대상 `12fd922ea76032c7b7855d8764fc5512476bddb8`. Stripe direct transport의
