@@ -7,3 +7,6 @@
 ## 2026-07-12 - Replacing Array callbacks and Map with for loops and Int32Array
 **Learning:** For high-performance O(N) loops in JavaScript, replacing `Array.prototype.reduce`/`forEach` and `Map` caching with standard `for` loops and typed arrays (e.g., `Int32Array`) eliminates JS engine callback allocation, garbage collection, and hash-lookup overhead.
 **Action:** Apply standard `for` loops and typed arrays for numerical caches instead of higher-order array methods and Maps on hot paths or large datasets to ensure maximum performance.
+## 2026-08-28 - Float64Array over Int32Array for Numeric Safety
+**Learning:** Using `Int32Array` in JavaScript for caching standard numeric values can introduce silent truncation errors if the values ever become fractional or `NaN`, which breaks math operations down the line.
+**Action:** Default to `Float64Array` or a standard `Array(length)` when caching calculated numbers unless the type is strictly known and guaranteed to be an integer.

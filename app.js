@@ -1370,9 +1370,9 @@ function validateDateRange(startLabel, startValue, endLabel, endValue, errors) {
 }
 
 function computeTaskMetrics() {
-  // ⚡ Bolt: Optimize with standard for loops and Int32Array to avoid JS callback overhead, GC overhead and hash lookups for duration tracking
+  // ⚡ Bolt: Optimize with standard for loops and Float64Array to avoid JS callback overhead, GC overhead and hash lookups for duration tracking
   const tasksLen = state.tasks.length;
-  const durationCache = new Int32Array(tasksLen);
+  const durationCache = new Float64Array(tasksLen);
   let totalDays = 0;
 
   for (let i = 0; i < tasksLen; i++) {
