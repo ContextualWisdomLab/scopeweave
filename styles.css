@@ -939,6 +939,10 @@ select[data-inline-progress]:focus {
     white-space: nowrap;
   }
 
+  .cloud-auth > button:only-child {
+    min-width: 120px;
+  }
+
   .meta-grid-primary,
   .meta-grid-secondary,
   .editor-grid {
