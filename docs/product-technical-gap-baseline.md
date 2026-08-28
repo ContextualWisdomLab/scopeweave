@@ -32,7 +32,7 @@
 | JSON seed·localStorage·선택적 파일 sync | `loadSeedTasks()`, `localStorage`, `exportJsonArray()`, File System Access API | 완료 |
 | 명시적 JSON 다운로드 | 현재 `develop` UI에는 없음. #621의 `3aaf9b7` 현재 제출본에 구현됨 | 제출됨, 병합 대기 |
 | 첫 방문 샘플 안내와 빈 계획 전환 | 현재 `develop`에는 미포함. #624 변경이 포함된 #621 `3aaf9b7` 제출본 | 제출됨, 병합 대기 |
-| 정적 배포 | `pages.yml`, 상대 경로 자산, `404.html` | 구현 완료, 실제 출판 증거 필요 |
+| 정적 배포 | `pages.yml`, 상대 경로 자산, `404.html`; GitHub Pages 성공 배포 `develop@2c328875`와 공개 응답 확인 (`https://contextualwisdomlab.github.io/scopeweave/`) | 완료 |
 | Cloud 인증·멀티테넌시·협업 | `server/`, `cloud-sync.js`, API smoke/E2E | 코드·테스트 존재, 운영 환경 검증 필요 |
 
 ## 3. UML 및 데이터 흐름
