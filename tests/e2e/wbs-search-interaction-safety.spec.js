@@ -16,17 +16,24 @@ test.describe('WBS search interaction safety', () => {
     await expect(rows.nth(2)).toHaveAttribute('draggable', 'false');
   });
 
-  test('disables hierarchy changes while filtered rows hide context', async ({ page }) => {
+  test('blocks hierarchy changes while filtered rows hide context', async ({ page }) => {
     const search = page.getByRole('searchbox', { name: 'WBS 작업 검색' });
     await search.fill('단계작업계획');
 
     const rows = page.locator('tbody tr[data-task-id]');
-    await expect(page.getByRole('button', { name: '최상위 작업 추가' })).toHaveAttribute('aria-disabled', 'true');
-    await expect(rows.first().locator('button[data-action="toggle"]')).toBeDisabled();
-
+    const addRoot = page.getByRole('button', { name: '최상위 작업 추가' });
     const addChild = rows.first().getByRole('button', { name: /하위 추가 -/ });
+
+    await expect(addRoot).toHaveAttribute('aria-disabled', 'true');
+    await expect(rows.first().locator('button[data-action="toggle"]')).toBeDisabled();
     await expect(addChild).toHaveAttribute('aria-disabled', 'true');
-    await addChild.dispatchEvent('click');
+
+    await addChild.click();
+    await expect(page.locator('#toast')).toContainText('검색 중에는 작업을 추가할 수 없습니다.');
+    await expect(page.locator('.editor-panel')).toHaveCount(0);
+
+    await addRoot.click();
+    await expect(page.locator('#toast')).toContainText('검색 중에는 작업을 추가할 수 없습니다.');
     await expect(page.locator('.editor-panel')).toHaveCount(0);
   });
 
@@ -38,11 +45,13 @@ test.describe('WBS search interaction safety', () => {
     await expect(page.getByRole('searchbox', { name: 'WBS 작업 검색' })).toBeDisabled();
   });
 
-  test('blocks create actions while filtered context could hide the editor anchor', async ({ page }) => {
-    const search = page.getByRole('searchbox', { name: 'WBS 작업 검색' });
-    await search.fill('단계작업계획');
+  test('keeps the depth-limit explanation actionable when search is inactive', async ({ page }) => {
+    const leafAddChild = page.locator('tbody tr[data-task-id].depth-3').first().locator('button[data-action="add-child"]');
 
-    await expect(page.getByRole('button', { name: '최상위 작업 추가' })).toBeDisabled();
-    await expect(page.locator('tbody tr[data-task-id]').first().getByRole('button', { name: /하위 추가 -/ })).toBeDisabled();
+    await expect(leafAddChild).toHaveAttribute('aria-disabled', 'true');
+    await expect(leafAddChild).toBeEnabled();
+    await leafAddChild.click();
+    await expect(page.locator('#toast')).toContainText('최대 3단계까지만 추가할 수 있습니다.');
+    await expect(page.locator('.editor-panel')).toHaveCount(0);
   });
 });
