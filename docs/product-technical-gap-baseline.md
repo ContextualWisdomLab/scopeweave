@@ -221,6 +221,13 @@ HEAD가 바뀌면 다시 확인해야 한다.
   CodeGraph·resolved 리뷰와 대조했고 domain/edge/coverage contract가
   통과했다. hosted OpenCode·Strix·security·unit/API·cloud E2E Checks는
   통과했지만 `REVIEW_REQUIRED`이고 qualifying approval이 없어 병합하지 않았다.
+- #503: `develop@2c328875` 대상
+  `abc9639ffd7a6bd835a0f8206854185722d60965`. README·ARCHITECTURE·CLAUDE·
+  AGENTS 사이의 canonical runtime authority, live PR ancestry와 protected
+  branch 안내를 current CodeGraph·resolved 리뷰와 대조했고
+  documentation-authority unit이 통과했다. hosted OpenCode·Strix·security·
+  unit/API·cloud E2E Checks는 통과했지만 qualifying approval이 없어 병합하지
+  않았다.
 - #507: stacked base
   `feat/stripe-trusted-checkout-config-488@b80d502e659fa9c65a665f7b74fd52a460b91e54`
   대상 `12fd922ea76032c7b7855d8764fc5512476bddb8`. Stripe direct transport의
