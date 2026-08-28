@@ -54,6 +54,10 @@ select {
   font: inherit;
 }
 
+select {
+  min-height: 24px;
+}
+
 button {
   cursor: pointer;
 }
@@ -920,6 +924,19 @@ select[data-inline-progress]:focus {
     --table-empty-page-gutter: 34px; /* 2 * 16px shell padding + 2px table-section border */
     padding: 16px;
     gap: 16px;
+  }
+
+  .title-row {
+    flex-wrap: wrap;
+  }
+
+  .cloud-auth {
+    flex: 1 1 100%;
+    justify-content: flex-start;
+  }
+
+  .cloud-auth > button {
+    white-space: nowrap;
   }
 
   .meta-grid-primary,
