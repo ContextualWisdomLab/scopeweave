@@ -66,6 +66,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   reach the existing autosave path.
 - Interactive planner saves now keep working when a previously adopted local
   snapshot is cleared or temporarily unreadable.
+- Cloud sample-project onboarding now adopts the created project before its
+  initial push, preserving local snapshots and subsequent interactive saves.
 - Switched the repository-local OpenCode development configuration from GitHub
   Models to an NVIDIA NIM-only candidate set while preserving organization-level
   review-workflow ownership in `ContextualWisdomLab/.github`.
