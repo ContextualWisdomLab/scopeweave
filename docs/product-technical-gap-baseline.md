@@ -387,9 +387,12 @@ HEAD가 바뀌면 다시 확인해야 한다.
   `b6842e7cf60f77b1d5cee04e1c020e411afc9a6f`. SQLite backup의 read-only
   source/WAL 처리, bounded schema streaming, destination race 방지,
   source replacement guard와 recovery 문서 포인터를 current CodeGraph·테스트·리뷰
-  지적과 대조했고 focused recovery/output/schema/source/temp 테스트는 통과했다.
-  Strix artifact는 `invalid_tools` 400으로 중단되어 authoritative clean verdict가
-  없고, qualifying approval도 없어 병합하지 않았다.
+  지적과 대조했고 focused recovery/output/schema/source/temp 테스트와 전체
+  unit·API·fuzz·config·docstring·coverage 검사가 통과했다. exact-head hosted
+  functional/security checks는 terminal success였지만 Strix는
+  `STRIX_PROVIDER_UNAVAILABLE`로 실패했고 artifact 원인은 `invalid_tools` 400
+  (tool description 길이 제한)로 authoritative clean verdict가 없다. 현재
+  unresolved thread는 0개지만 qualifying approval이 없어 병합하지 않았다.
 - #601: `develop@2c328875` 대상
   `98f4354733c68c9f361e516f86ba2d95e97af20e`. 날짜 formatter의 native-compatible
   zero-padding과 benchmark checksum fail-closed 수정을 current CodeGraph·리뷰와
