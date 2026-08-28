@@ -118,6 +118,13 @@ HEAD가 바뀌면 다시 확인해야 한다.
   current CodeGraph·resolved 리뷰와 대조했고 hosted unit·API·cloud E2E는
   통과했다. OpenCode는 current-head verdict 부재로, Strix는 provider HTTP 500과
   vulnerability report 부재로 fail-closed 되었으며 qualifying approval도 없다.
+- #468: `develop@2c328875` 대상
+  `815af8138df2454cea99ba1a4a384de4f55d6199`. editor validation의 submit 경계,
+  키보드·포인터 저장 재검증, `aria-disabled`/오류 설명 연결과 CSV formula
+  compatibility 문자를 current CodeGraph·resolved 리뷰와 대조했다. local
+  unit·coverage/API와 전체 E2E 81개, screenshot 검수 및 hosted OpenCode·보안·
+  테스트 게이트는 통과했다. Strix artifact는 0 findings를 기록했지만 후속
+  provider 장애로 gate가 fail-closed 되었고 qualifying approval도 없다.
 - #610: `3bb2bd95905d590fe3d1d0d9a8fc6c6ec133c04a` (base
   `develop@2c328875`). 이전 exact head의 Cloud E2E가 JSON sync에서 텍스트
   `predecessors`/`sprint`의 `0`·`false`를 보존하는 결함을 검출했고, 이를
