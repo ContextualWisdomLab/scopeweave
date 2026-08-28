@@ -283,7 +283,7 @@ export async function refreshAttachmentStatuses(rows, options) {
         counts.failed += 1;
         const category = (
           error?.name === ATTACHMENT_STATUS_TIMEOUT_ERROR
-          || error?.name === 'TimeoutError'
+          || (failureCategory === 'downstream_lookup' && error?.name === 'TimeoutError')
         ) ? 'timeout' : failureCategory;
         failureCounts[category] += 1;
         reportRefreshFailure(options.onError, category);

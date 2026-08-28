@@ -72,7 +72,7 @@ test('a persistence TimeoutError remains a persistence failure', async () => {
     budgetMs: 60_000,
     metrics,
     onError: ({ category }) => categories.push(category),
-    jobStatus: async () => 'READY',
+    jobStatus: async () => 'SUCCEEDED',
     updateStatus: async () => {
       throw new DOMException('storage deadline', 'TimeoutError');
     },
