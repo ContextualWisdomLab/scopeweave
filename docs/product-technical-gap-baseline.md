@@ -105,8 +105,8 @@ HEAD가 바뀌면 다시 확인해야 한다.
   protected base 대비 46.79% 개선과 checksum `118184592`를 기록했으나 Strix
   provider/backend 실패와 승인 부재로 병합하지 않았다.
 - #624: `69eff955bc16295a6d82b72174b25d8ec94345c1`은 base
-  `feat/wbs-search-context`에 normal squash merge되어 merge commit
-  `5f8a3d7759aef628f4bcf06f3780c53737ca2a53`를 만들었다.
+  `feat/wbs-search-context`에 normal squash merge되어 단일 squash commit
+  `5f8a3d7759aef628f4bcf06f3780c53737ca2a53`가 되었다.
 
 ## 5. 품질·보안 기준선
 
