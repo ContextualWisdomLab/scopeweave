@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `4c8d09d`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #509 `ea90277`, `develop` 병합 대기 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #495/#621/#625/#628 OpenCode current verdict 부재; #621 Strix provider 실패; #576 Strix가 현재 webhook 경로의 SSRF를 보고; #578/#588 Strix provider 실패; #608 `83b8949`·#610 `3bb2bd9`·#587 `1f93371` Checks 재실행 중; #498 `9408588`·#505 `b8435c7` 수정 후 Checks 재실행 중; #602 `78e8037` Hono 보안 패치 후 Checks 재실행 중; #531 `b6842e7`·#601 `98f4354` Strix provider 실패; #515 `36c11dd`는 Checks/Strix 통과지만 승인 없음; #550은 Checks 통과지만 승인 없음; #596은 Checks 통과지만 승인 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #495/#621/#625/#628 OpenCode current verdict 부재; #621/#508 Strix provider 실패; #576 Strix가 현재 webhook 경로의 SSRF를 보고; #578/#588 Strix provider 실패; #608 `83b8949`·#610 `3bb2bd9`·#587 `1f93371` Checks 재실행 중; #498 `9408588`·#505 `b8435c7` 수정 후 Checks 재실행 중; #602 `78e8037` Hono 보안 패치 후 Checks 재실행 중; #531 `b6842e7`·#601 `98f4354` Strix provider 실패; #515 `36c11dd`는 Checks/Strix 통과지만 승인 없음; #550은 Checks 통과지만 승인 없음; #596은 Checks 통과지만 승인 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -106,6 +106,12 @@ HEAD가 바뀌면 다시 확인해야 한다.
   keyboard stop 없이 지속 노출하고 gradient 대비를 보강한 접근성 제출본이다.
   focused 접근성·literal-title E2E 6개와 hosted required Checks·Strix는 통과했지만
   `REVIEW_REQUIRED`이며 qualifying approval이 없어 병합하지 않았다.
+- #508: `develop@2c328875` 대상
+  `642034faf5c97ca8730a70ef89edf6f4fdd54840`. `computeTaskMetrics`의
+  duration cache를 `Int32Array`와 명시적 loop로 바꾼 제출본으로 benchmark-base
+  unit 16개와 hosted unit·API·cloud E2E는 통과했다. OpenCode는 current-head
+  verdict 부재로, Strix는 provider HTTP 500과 vulnerability report 부재로
+  fail-closed 되었고 `REVIEW_REQUIRED`/qualifying approval 부재로 병합하지 않았다.
 - #610: `3bb2bd95905d590fe3d1d0d9a8fc6c6ec133c04a` (base
   `develop@2c328875`). 이전 exact head의 Cloud E2E가 JSON sync에서 텍스트
   `predecessors`/`sprint`의 `0`·`false`를 보존하는 결함을 검출했고, 이를
