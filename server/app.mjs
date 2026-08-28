@@ -134,8 +134,8 @@ const quietLogs = String(process.env.SCOPEWEAVE_DB || '').includes(':memory:'); 
 // Bearer secrets that are part of a route path must never be persisted in logs.
 // Keep the route shape for incident triage while replacing only secret segments.
 const redactRequestLogPath = (path) => String(path)
-  .replace(/^\/api\/invites\/[^/]+\/accept$/, '/api/invites/:token/accept')
-  .replace(/^\/api\/shared\/[^/]+$/, '/api/shared/:token');
+  .replace(/^\/api\/invites\/[^/]+(?=\/|$)/, '/api/invites/:token')
+  .replace(/^\/api\/shared\/[^/]+(?=\/|$)/, '/api/shared/:token');
 app.use('*', async (c, next) => {
   const t = Date.now();
   await next();
