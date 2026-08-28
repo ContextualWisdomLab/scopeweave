@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added accessible WBS field search with hierarchy context and an empty-result
   recovery action.
+- Added browser JSON download for portable WBS backups, including extended
+  planning fields, alongside CSV export.
 - Added search-mode guardrails that keep hierarchy edits, row editing, progress
   status changes, and drag reordering out of the filtered view.
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS

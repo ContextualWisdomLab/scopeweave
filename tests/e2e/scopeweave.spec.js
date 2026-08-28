@@ -212,6 +212,7 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.locator('.table-empty').getByRole('button', { name: 'CSV 가져오기' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'CSV 내보내기' })).toHaveAttribute('aria-disabled', 'true');
     await expect(page.getByRole('button', { name: 'CSV 내보내기' })).toHaveAttribute('title', '내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.');
+    await expect(page.getByRole('button', { name: 'JSON 내보내기' })).toHaveAttribute('aria-disabled', 'true');
     await expect(page.getByRole('button', { name: '간트차트보기' })).toHaveAttribute('aria-disabled', 'true');
     await expect(page.getByRole('button', { name: '간트차트보기' })).toHaveAttribute('title', '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.');
   });
@@ -1006,6 +1007,79 @@ test.describe('ScopeWeave Planner', () => {
     expect(csvText).toContain(`"'=HYPERLINK(""http://evil.test"",""Click"")"`);
     expect(csvText).toContain(`"'@SUM(1,1)"`);
     expect(csvText).toContain(`"'|'cmd' /C calc'!A0"`);
+  });
+
+  test('can trigger JSON export download in the seed contract', async ({ page }, testInfo) => {
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'JSON 내보내기' }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/^wbs_export_\d{8}\.json$/);
+    const downloadPath = await download.path();
+    const jsonPath = downloadPath || testInfo.outputPath(download.suggestedFilename());
+    if (!downloadPath) {
+      await download.saveAs(jsonPath);
+    }
+    const exported = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    expect(exported).toHaveLength(2);
+    expect(exported[1]).toMatchObject({
+      task: '단계작업계획',
+      plannedEndDate: '2026-05-15',
+      plannedEndDdate: '2026-05-15'
+    });
+    expect(exported[0]).not.toHaveProperty('id');
+  });
+
+  test('preserves extended planning fields in JSON download', async ({ page }, testInfo) => {
+    await page.evaluate(() => {
+      localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
+        projectName: 'Extended JSON',
+        baseDate: '2026-05-01',
+        tasks: [{
+          id: 'extended-1',
+          parentId: null,
+          depth: 1,
+          expanded: true,
+          isSynthetic: false,
+          phase: 'P1000.계획',
+          activity: '',
+          task: '',
+          categoryLarge: '',
+          categoryMedium: '',
+          documentName: '',
+          owner: '',
+          supportTeam: '',
+          plannedStartDate: '2026-05-01',
+          plannedEndDate: '2026-05-05',
+          actualProgressStatus: '미착수(0%)',
+          actualStartDate: '',
+          actualEndDate: '',
+          predecessors: 'P2000',
+          budget: '1000',
+          actualCost: '200',
+          sprint: 'S1',
+          storyPoints: '5'
+        }]
+      }));
+    });
+    await page.reload();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(1);
+
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'JSON 내보내기' }).click();
+    const download = await downloadPromise;
+    const downloadPath = await download.path();
+    const jsonPath = downloadPath || testInfo.outputPath(download.suggestedFilename());
+    if (!downloadPath) {
+      await download.saveAs(jsonPath);
+    }
+    const [exported] = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    expect(exported).toMatchObject({
+      predecessors: 'P2000',
+      budget: '1000',
+      actualCost: '200',
+      sprint: 'S1',
+      storyPoints: '5'
+    });
   });
 
   test('can trigger CSV import file chooser', async ({ page }) => {

@@ -26,7 +26,7 @@
 | 계획/실적 진척 및 일정 통제 | `analytics.js`의 EVM, S-curve, CPM, workload, PM readiness | 완료 |
 | 계획을 찾고 계층 맥락을 유지 | `#task-filter`, `getVisibleTasks()`, `tests/e2e/scopeweave.spec.js` 검색 회귀 | 완료(이번 변경) |
 | CSV 왕복 | `exportCsv()`, CSV parser/validation, E2E·fuzz 테스트 | 완료 |
-| JSON seed·로컬 자동 저장 | `loadSeedTasks()`, `localStorage`, `exportJsonArray()` | 부분 완료: 명시적 JSON 다운로드는 미제공 |
+| JSON seed·로컬 자동 저장 | `loadSeedTasks()`, `localStorage`, `exportJsonArray()`, JSON download | 완료 |
 | 정적 배포 | `pages.yml`, 상대 경로 자산, `404.html` | 구현 완료, 실제 출판은 별도 런타임 증거 필요 |
 | Cloud 인증·멀티테넌시·협업 | `server/`, `cloud-sync.js`, API smoke/E2E | 코드·테스트 존재, 운영 배포는 환경별 검증 필요 |
 
@@ -79,7 +79,7 @@ classDiagram
 | ID | Gap / 고객 영향 | 조치 | 상태 |
 | --- | --- | --- | --- |
 | G-01 | 큰 WBS에서 작업 위치를 찾는 비용이 높았음 | 작업·담당자·산출물 등 고객 필드를 검색하고 일치 행의 상위 계층을 함께 표시 | **완료** |
-| G-02 | 정적 사용자가 JSON을 파일로 회수하려면 File System Access API에 의존 | 브라우저 다운로드용 JSON export를 CSV와 같은 portability 계약으로 추가 | 다음 개발 |
+| G-02 | 정적 사용자가 JSON을 파일로 회수하려면 File System Access API에 의존 | 추가 계획 필드를 보존하는 브라우저 다운로드용 JSON export를 추가하고, 자동저장 seed 계약은 유지 | **완료** |
 | G-03 | 빈 화면에서 첫 계획을 만드는 안내가 seed 데이터 유무에 따라 달라짐 | 최소 온보딩/샘플 사용 경로와 삭제 가능한 샘플 상태를 제품 결정 후 추가 | 조사 필요 |
 | G-04 | 키보드·스크린리더 회귀는 E2E 일부로 보호되지만 시각 회귀 자동 검사는 없음 | 핵심 상태의 실제 브라우저 스크린샷과 WCAG 2.2 점검을 릴리스 증거에 포함 | 다음 검증 |
 | G-05 | 보호 PR 큐는 소스와 무관한 Strix 공급자 429/Invalid URL 및 승인 부재로 차단될 수 있음 | 게이트를 약화하지 않고 원인 로그·artifact·현재 HEAD를 재검증한 뒤 재실행/중앙 수정 | 외부 상태 대기 |
@@ -95,8 +95,8 @@ classDiagram
   reduced motion을 최소 기준으로 삼는다.
 - 검증 명령은 `npm run test:unit`, `npm run test:api`,
   `npm run test:e2e`, `python3 -m pytest tests/config`, `npm run fuzz`다.
-  이번 G-01의 직접 증거는 `npm run test:e2e` 84개 통과와 검색 중 편집·실적진척
-  변경 차단 회귀 테스트의 통과다.
+  이번 G-01/G-02의 직접 증거는 `npm run test:e2e` 86개 통과와 검색·JSON 회귀
+  테스트의 통과다.
 
 ## 6. 표준·연구 근거
 
