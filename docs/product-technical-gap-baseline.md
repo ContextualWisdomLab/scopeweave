@@ -151,7 +151,9 @@ HEAD가 바뀌면 다시 확인해야 한다.
   persisted ID 방어를 current CodeGraph·resolved 리뷰와 대조했다. modulepreload
   선언 누락으로 재현된 static E2E 회귀를 `cloud-sync.js`·`analytics.js` 선언
   복원으로 수정했고, unit 및 전체 Playwright 85개가 통과했다. current-head
-  replacement Checks는 실행 중이며 qualifying approval이 없어 병합하지 않았다.
+  functional/security Checks는 통과했지만 OpenCode는 verdict 부재로, Strix는
+  provider HTTP 500과 vulnerability report 부재로 fail-closed 되었으며
+  qualifying approval이 없어 병합하지 않았다.
 - #610: `3bb2bd95905d590fe3d1d0d9a8fc6c6ec133c04a` (base
   `develop@2c328875`). 이전 exact head의 Cloud E2E가 JSON sync에서 텍스트
   `predecessors`/`sprint`의 `0`·`false`를 보존하는 결함을 검출했고, 이를
