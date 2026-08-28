@@ -65,16 +65,17 @@ test('exploring sample order does not adopt or persist the sample plan', async (
 
   const dragged = rows.nth(2);
   const target = rows.nth(3);
-  const draggedId = await dragged.getAttribute('data-task-id');
-  const targetId = await target.getAttribute('data-task-id');
-  expect(draggedId).toBeTruthy();
-  expect(targetId).toBeTruthy();
-  expect(draggedId).not.toBe(targetId);
+  const draggedTask = await dragged.locator('td').nth(3).innerText();
+  const targetTask = await target.locator('td').nth(3).innerText();
+  expect(draggedTask).not.toBe(targetTask);
 
-  await dragged.dragTo(target);
+  const targetBox = await target.boundingBox();
+  await dragged.dragTo(target, {
+    targetPosition: { x: 20, y: Math.max(4, Math.round((targetBox?.height || 40) - 4)) }
+  });
 
-  await expect(rows.nth(2)).toHaveAttribute('data-task-id', targetId);
-  await expect(rows.nth(3)).toHaveAttribute('data-task-id', draggedId);
+  await expect(rows.nth(2).locator('td').nth(3)).toHaveText(targetTask);
+  await expect(rows.nth(3).locator('td').nth(3)).toHaveText(draggedTask);
   await expect(onboarding).toBeVisible();
   expect(await page.evaluate((key) => localStorage.getItem(key), PLANNER_STORAGE_KEY)).toBeNull();
 
@@ -82,6 +83,6 @@ test('exploring sample order does not adopt or persist the sample plan', async (
 
   await expect(onboarding).toBeVisible();
   await expect(rows).toHaveCount(4);
-  await expect(rows.nth(2)).toHaveAttribute('data-task-id', draggedId);
-  await expect(rows.nth(3)).toHaveAttribute('data-task-id', targetId);
+  await expect(rows.nth(2).locator('td').nth(3)).toHaveText(draggedTask);
+  await expect(rows.nth(3).locator('td').nth(3)).toHaveText(targetTask);
 });
