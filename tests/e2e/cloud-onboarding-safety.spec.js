@@ -113,3 +113,28 @@ test('opening a real cloud project clears first-visit sample state before destru
     expect.objectContaining({ id: 'cloud-task-1', task: '보존되어야 할 실제 작업' }),
   ]));
 });
+
+test('picker-opened cloud projects persist progress changes even without a planner autosave entry', async ({ page }) => {
+  await page.goto(`${BASE}/`);
+  await page.evaluate((authToken) => {
+    localStorage.clear();
+    localStorage.setItem('scopeweave:token', authToken);
+  }, token);
+  await page.reload();
+
+  const projectPicker = page.getByRole('combobox', { name: '프로젝트 선택' });
+  await expect(projectPicker).toBeVisible();
+  await projectPicker.selectOption('1');
+  await expect(page.getByTestId('project-name-input')).toHaveValue('실제 클라우드 프로젝트');
+
+  expect(await page.evaluate(() => localStorage.getItem('scopeweave:planner-state:v1'))).toBeNull();
+
+  const progress = page.locator('select[data-inline-progress]').first();
+  await expect(progress).toBeEnabled();
+  await progress.selectOption({ label: '진행(50%)' });
+
+  await expect.poll(async () => {
+    const project = await api('/api/projects/1', { tok: token });
+    return project.tasks.find((task) => task.id === 'cloud-task-1')?.actualProgressStatus;
+  }, { timeout: 4000 }).toBe('진행(50%)');
+});
