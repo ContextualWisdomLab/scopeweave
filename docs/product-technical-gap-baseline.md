@@ -81,7 +81,7 @@ classDiagram
 | G-01 | 큰 WBS에서 작업 위치를 찾는 비용이 높았음 | 작업·담당자·산출물 등 고객 필드를 검색하고 일치 행의 상위 계층을 함께 표시 | **완료** |
 | G-02 | 정적 사용자가 JSON을 파일로 회수하려면 File System Access API에 의존 | 추가 계획 필드를 보존하는 브라우저 다운로드용 JSON export를 추가하고, 자동저장 seed 계약은 유지 | **완료** |
 | G-03 | 첫 방문자가 seed 데이터와 실제 계획을 구분하기 어려움 | 첫 seed 방문에 샘플 WBS 안내를 표시하고, 안내 숨김과 확인 가능한 샘플 삭제 후 빈 계획 시작 경로를 제공 | **완료** |
-| G-04 | 키보드·스크린리더 회귀는 E2E 일부로 보호되지만 시각 회귀 자동 검사는 없음 | 핵심 상태의 실제 브라우저 스크린샷과 WCAG 2.2 점검을 릴리스 증거에 포함 | 다음 검증 |
+| G-04 | 키보드·스크린리더 회귀는 E2E 일부로 보호되지만 시각 회귀 자동 검사는 없음 | `tests/e2e/accessibility-visual-evidence.spec.js`에서 모바일 핵심 상태를 실제 브라우저로 캡처하고, named control·24px target·landmark·skip link·overflow를 WCAG 2.2 기준으로 점검 | **완료** |
 | G-05 | 보호 PR 큐는 소스와 무관한 Strix 공급자 429/Invalid URL 및 승인 부재로 차단될 수 있음 | 게이트를 약화하지 않고 원인 로그·artifact·현재 HEAD를 재검증한 뒤 재실행/중앙 수정 | 외부 상태 대기 |
 
 ## 5. 품질·보안 기준선
@@ -95,8 +95,9 @@ classDiagram
   reduced motion을 최소 기준으로 삼는다.
 - 검증 명령은 `npm run test:unit`, `npm run test:api`,
   `npm run test:e2e`, `python3 -m pytest tests/config`, `npm run fuzz`다.
-  이번 G-01/G-02/G-03의 직접 증거는 `npm run test:e2e` 86개 통과와 검색·JSON·온보딩
-  회귀 테스트의 통과다.
+  이번 G-01/G-02/G-03/G-04의 직접 증거는 `npm run test:e2e` 91개 통과와
+  검색·JSON·온보딩·모바일 접근성/시각 증거 테스트의 통과다. G-04 테스트는
+  seed와 빈 계획 상태의 실제 PNG를 Playwright 증거 attachment로 남긴다.
 
 ## 6. 표준·연구 근거
 
