@@ -109,6 +109,7 @@ const productionIdentityRegression = String.raw`
   };
 
   const { app: configuredRoutes } = await import('./server/application_routes.mjs?oidc-production-token-regression=1');
+  const { db, rowid } = await import('./server/db.mjs');
   const begin = async () => {
     const start = await configuredRoutes.request('https://scopeweave.example/api/auth/oidc/start');
     assert.equal(start.status, 302, 'configured OIDC starts the authorization-code flow');
@@ -187,6 +188,47 @@ const productionIdentityRegression = String.raw`
 
   const replay = await callback(valid.state, 'replayed-code');
   assert.equal(replay.status, 400, 'OIDC state is single-use after a successful callback');
+
+  const legacyUserId = rowid(db.prepare('INSERT INTO users(email,password_hash,name) VALUES(?,?,?)')
+    .run('Legacy.User@Example.com', 'legacy-password-hash', 'Legacy User'));
+  const legacyOrgId = rowid(db.prepare('INSERT INTO orgs(name,owner_id) VALUES(?,?)')
+    .run('Legacy workspace', legacyUserId));
+  db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)')
+    .run(legacyOrgId, legacyUserId, 'owner');
+  const usersBeforeCaseLink = db.prepare('SELECT COUNT(*) AS count FROM users').get().count;
+  const orgsBeforeCaseLink = db.prepare('SELECT COUNT(*) AS count FROM orgs').get().count;
+
+  const legacyCase = await begin();
+  issuedIdToken = signIdToken({
+    iss: process.env.OIDC_ISSUER,
+    aud: process.env.OIDC_CLIENT_ID,
+    exp: now + 300,
+    iat: now,
+    nonce: legacyCase.nonce,
+    sub: 'legacy-verified-subject',
+    email_verified: true,
+    email: 'legacy.user@example.com',
+  });
+  result = await callback(legacyCase.state, 'legacy-case-code');
+  assert.equal(result.status, 302, 'verified OIDC email reuses an existing account regardless of stored email case');
+  const sessionToken = new URL(result.headers.get('location'), 'https://scopeweave.example').hash.slice('#token='.length);
+  const sessionPayload = JSON.parse(Buffer.from(sessionToken.split('.')[1], 'base64url').toString('utf8'));
+  assert.equal(sessionPayload.sub, legacyUserId, 'OIDC session remains bound to the pre-existing account');
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS count FROM users').get().count,
+    usersBeforeCaseLink,
+    'case-only identity differences never create a duplicate user',
+  );
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS count FROM orgs').get().count,
+    orgsBeforeCaseLink,
+    'reusing an existing case-variant account never creates a second personal workspace',
+  );
+  assert.equal(
+    db.prepare('SELECT email FROM users WHERE id = ?').get(legacyUserId).email,
+    'Legacy.User@Example.com',
+    'account linking does not silently rewrite the stored login identifier',
+  );
 
   const wrongAudience = await begin();
   issuedIdToken = signIdToken({
