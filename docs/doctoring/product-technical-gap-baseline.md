@@ -6,7 +6,8 @@
 - Distinguished shipped behavior from open PR submissions so #621/#624 features are
   not reported as already available on `develop`.
 - Recorded the exact #624 squash merge into the #621 feature branch and the subsequent
-  #621 exact head `5e9ba508031f4899f1505c08fa5810abe69dc2dd`.
+  #621 exact head `6d0828841987c633a6428e65bd252bca07cbc496`, including the CSV search
+  reset and sample-onboarding persistence fixes.
 - Recorded #610 OpenCode/Strix gate failures as non-authorizing external evidence,
   including the missing current-head verdict and provider HTTP 500 report absence.
 - Research mapping remains anchored to ISO 21502, ISO 21511, ISO 21508, WCAG 2.2,
