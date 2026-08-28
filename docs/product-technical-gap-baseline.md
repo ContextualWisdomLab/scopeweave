@@ -194,6 +194,13 @@ HEAD가 바뀌면 다시 확인해야 한다.
   주소, DNS rebinding, pinned connection, legacy destination migration을 다룬다.
   일반 hosted 게이트는 통과했지만 Strix provider 실패와 qualifying approval
   부재로 병합하지 않았다.
+- #493: `develop@2c328875` 대상
+  `78f8b557cd2b9cab238af72304f0ed42e1557759`. Clearfolio production 설정의
+  fail-closed 경계, tenant HMAC 헤더의 redirect 재전송 방지, artifact link의
+  same-origin·credential·fragment 검증을 current CodeGraph·resolved 리뷰와
+  대조했다. Clearfolio 관련 unit 4개와 전체 unit·API, hosted OpenCode·Strix·
+  security·cloud E2E Checks가 통과했지만 qualifying approval이 없어 병합하지
+  않았다.
 - #498: `fix/clearfolio-production-configuration@78f8b557` 대상
   `940858859b27060241864e633659f656907616b1`. 이전 hosted unit-and-api가
   persistence `TimeoutError` 회귀 테스트의 잘못된 `READY` fixture를
