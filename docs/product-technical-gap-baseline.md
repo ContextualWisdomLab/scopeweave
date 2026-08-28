@@ -164,12 +164,15 @@ HEAD가 바뀌면 다시 확인해야 한다.
   상태로 닫았고, cloud/analytics modulepreload 계약을 복원했다. 현재 HEAD의
   로컬 전체 E2E 79개와 unit이 통과했으며, hosted Checks는 재실행 중이고
   qualifying approval은 없다.
-- #587: `1f93371c9df84a2f60dd3386c6429d63d750c50c` (base
+- #587: `dcf37e81f8a5584accc4403e05b3a5e10b644872` (base
   `develop@2c328875`). 직접 소비 가능한 `application_routes_core.mjs`가
   오래된 첫 `x-forwarded-for` 기반 limiter를 사용하던 경계를 제거하고,
   `server/rate_limit.mjs`의 설정 검증·trusted transport peer·bucket 상한을
-  공유하도록 했다. direct-core rate-limit, 전체 coverage/API는 로컬 통과했으며,
-  replacement hosted Checks는 queued이고 qualifying approval은 없다.
+  공유하도록 했다. 후속 보안 감사에서 ordinary/429 request logger의 invite/share
+  bearer path leak을 확인해 공통 redaction과 실제 파일-DB 회귀를 추가했다.
+  direct-core rate-limit, 전체 coverage/API와 redaction 회귀는 로컬 통과했으며,
+  current-head hosted Checks에는 OpenCode failure가 있고 qualifying approval은
+  없다.
 - #596: `develop@2c328875` 대상 `50f0c2d18e4361e5f11507ca194c94fc7caabbdc`.
   provider diagnostic sanitization과 bounded/cancelled response handling을
   current CodeGraph·resolved 리뷰와 대조했고 orchestrator unit·coverage·
