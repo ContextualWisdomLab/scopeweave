@@ -994,14 +994,15 @@ function createOwnerCellContent(owner) {
   if (!owner) {
     return createEmptyCell();
   }
+  const ownerValue = String(owner);
 
   if (!ownerBadgeTemplate) {
     ownerBadgeTemplate = document.createElement('span');
     ownerBadgeTemplate.className = 'owner-badge';
   }
   const badge = ownerBadgeTemplate.cloneNode(false);
-  badge.className = `owner-badge owner-badge--color-${getOwnerColorIndex(owner)}`;
-  badge.textContent = owner;
+  badge.className = `owner-badge owner-badge--color-${getOwnerColorIndex(ownerValue)}`;
+  badge.textContent = ownerValue;
   return badge;
 }
 

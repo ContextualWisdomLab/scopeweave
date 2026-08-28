@@ -229,6 +229,10 @@ assert.equal(secondOwnerCell.text, '홍길동');
 assert.equal(firstOwnerCell.className, secondOwnerCell.className, 'owner color class stays deterministic');
 assert.equal(getOwnerBadgeTemplate(), ownerShell, 'owner rendering reuses one immutable shell');
 
+const numericOwnerCell = createOwnerCellContent(123);
+assert.equal(numericOwnerCell.text, '123', 'owner values are stringified before hashing and rendering');
+assert.match(numericOwnerCell.className, /^owner-badge owner-badge--color-\d+$/);
+
 const createElementCallsBeforeOwners = getCreateElementCalls();
 for (let index = 0; index < 300; index += 1) {
   const ownerCell = createOwnerCellContent(`owner-${index}`);
