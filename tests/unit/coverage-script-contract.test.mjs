@@ -9,6 +9,7 @@ const publicApp = readFileSync(new URL('../../server/app.mjs', import.meta.url),
 const routeImportSeam = readFileSync(new URL('../../server/app_routes.mjs', import.meta.url), 'utf8');
 const applicationRoutes = readFileSync(new URL('../../server/application_routes.mjs', import.meta.url), 'utf8');
 const applicationRoutesCore = readFileSync(new URL('../../server/application_routes_core.mjs', import.meta.url), 'utf8');
+const applicationRoutesImplementation = readFileSync(new URL('../../server/application_routes_implementation.mjs', import.meta.url), 'utf8');
 const rateLimitModule = readFileSync(new URL('../../server/rate_limit.mjs', import.meta.url), 'utf8');
 
 assert.match(
@@ -143,7 +144,12 @@ assert.match(
 assert.match(
   scripts['test:coverage'],
   /--include=server\/application_routes_core\.mjs/,
-  'the protected application implementation remains owned-production coverage',
+  'the direct-core fail-closed boundary remains owned-production coverage',
+);
+assert.match(
+  scripts['test:coverage'],
+  /--include=server\/application_routes_implementation\.mjs/,
+  'the protected application implementation remains owned-production coverage after the boundary split',
 );
 assert.match(
   scripts['test:coverage'],
@@ -202,11 +208,16 @@ assert.match(
 );
 assert.match(
   applicationRoutesCore,
+  /app\.use\(\s*['"]\/api\/auth\/oidc\/start['"]\s*,\s*requireVerifiedOidcBoundary\s*\)[\s\S]*app\.use\(\s*['"]\/api\/auth\/oidc\/callback['"]\s*,\s*requireVerifiedOidcBoundary\s*\)[\s\S]*app\.route\(\s*['"]\/['"]\s*,\s*implementationRoutes\s*\)/,
+  'the direct-core boundary fails production OIDC closed before delegating to the legacy implementation graph',
+);
+assert.match(
+  applicationRoutesImplementation,
   /verifyStripeWebhookRequest/,
-  'the protected Stripe route is fail-closed so every supported mount verifies raw-body authenticity',
+  'the protected Stripe route remains fail-closed in the delegated implementation graph',
 );
 assert.doesNotMatch(
-  applicationRoutesCore,
+  applicationRoutesImplementation,
   /checkout\.session\.completed[\s\S]{0,500}UPDATE orgs SET plan = 'pro'/,
   'checkout.session.completed JSON is never authority to upgrade orgs.plan',
 );
