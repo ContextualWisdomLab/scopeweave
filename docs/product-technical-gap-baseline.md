@@ -213,6 +213,12 @@ HEAD가 바뀌면 다시 확인해야 한다.
   OSV·Dependency Checks도 terminal success로 수렴했다. 다만 parent가 아직
   보호 병합되지 않은 stacked draft이고 qualifying approval이 없어 병합하지
   않았다.
+- #597: stacked base `feat/schedule-reason-project-version-287@22883d16` 대상
+  `ae670764a54d451103e72c2453c74ff3f95c198f`, draft 상태. schedule terminal
+  reason route의 실제 SQLite version transition, JWT/PAT revocation, tenant
+  membership, SSE 및 webhook 경계를 API·전체 unit 테스트로 통과시켰고 exact-head
+  cloud-E2E·unit/API·OSV·Dependency Checks도 terminal success다. parent가 아직
+  보호 병합되지 않았고 qualifying approval이 없어 병합하지 않았다.
 - #500: `develop@2c328875` 대상
   `b7ef5c587aac52d03880b087af39580ff52384cc`. fail-closed schema migration
   ledger의 unknown-object, ledger-contract, compatibility-column 및 concurrent
