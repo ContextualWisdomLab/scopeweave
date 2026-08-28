@@ -117,9 +117,9 @@ HEAD가 바뀌면 다시 확인해야 한다.
   empty-cell과 공통 activity-subtree helper에 대기를 추가해 로컬 targeted E2E가
   통과했고, hosted cloud/unit/API/OSV/dependency Checks도 통과했다. hosted
   unit/API·OSV·dependency review는 통과했으며 qualifying approval은 없다.
-- #625: `develop@2c328875` 대상. 직전 기준선 제출본
-  `24d45a560b412f2a441600afcce8c72c25023d73`에서 주요 hosted Checks가 재실행 중이며,
-  qualifying approval은 없다.
+- #625: `develop@2c328875` 대상. 직전 docs-only 기준선 제출본
+  `15b2cd5674b8f8c7b10c1c0425b6040e1991e2a4`에서 주요 hosted Checks가 재실행
+  중이며, qualifying approval은 없다.
 - #509: `develop@2c328875` 대상
   `ea9027743ebafd1ca5774a5a14227585cf796052`. summary metric explanation을
   keyboard stop 없이 지속 노출하고 gradient 대비를 보강한 접근성 제출본이다.
