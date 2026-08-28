@@ -543,11 +543,23 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
         signal: request.signal,
         redirect: 'error',
       });
-    } catch {
-      throw new Error('clearfolio status unavailable');
+    } catch (error) {
+      const unavailable = new Error('clearfolio status unavailable');
+      if (error?.name === 'TimeoutError') unavailable.name = 'TimeoutError';
+      throw unavailable;
     }
     if (!res.ok) return rejectProviderResponse(res, `clearfolio status failed (${res.status})`);
-    const data = await readBoundedJson(res, 'clearfolio status response invalid');
+    let data;
+    try {
+      data = await readBoundedJson(res, 'clearfolio status response invalid');
+    } catch (error) {
+      if (request.signal.aborted && request.signal.reason?.name === 'TimeoutError') {
+        const unavailable = new Error('clearfolio status unavailable');
+        unavailable.name = 'TimeoutError';
+        throw unavailable;
+      }
+      throw error;
+    }
     if (!isJsonRecord(data) || !isClearfolioJobStatus(data.status)) {
       throw new Error('clearfolio status response invalid');
     }
