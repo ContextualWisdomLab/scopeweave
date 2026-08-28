@@ -10,3 +10,11 @@ test('released changelog versions keep their published notes', () => {
   assert.match(changelog, /## \[1\.0\.1\] - 2026-06-25/);
   assert.match(changelog, /O\(1\) 해시맵\(Map\) 기반의 캐싱 조회 로직/);
 });
+
+test('changelog never contains unresolved merge conflict markers', () => {
+  assert.doesNotMatch(
+    changelog,
+    /^(?:<<<<<<<|=======|>>>>>>>)(?: .*)?$/m,
+    'CHANGELOG.md must not publish unresolved merge conflict markers',
+  );
+});
