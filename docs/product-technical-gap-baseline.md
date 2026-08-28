@@ -342,9 +342,10 @@ HEAD가 바뀌면 다시 확인해야 한다.
   Hono를 registry 최신 보안 패치 4.13.5로 갱신하고 package/lockfile을 함께
   재생성했다. `npm ci`, production `npm audit`(취약점 0), unit·API·coverage는
   통과했다. 전체 E2E는 75/76 통과했으며 유일한 실패는 기존
-  `modulepreload` 링크 기대다. 이전 4.13.4 head의 OpenCode verdict 부재와
-  Strix LLM HTTP 500은 current-head 보안 판정이 아니며, 새 head replacement
-  Checks는 queued/in-progress이고 qualifying approval은 없다.
+  `modulepreload` 링크 기대다. current-head functional/security/fuzz/coverage
+  Checks는 통과했고 OpenCode `98895401107`은 current-head verdict 부재로
+  fail-closed 되었으며, 해당 exact commit의 check-run 목록에는 중앙 Strix
+  결과가 없어 qualifying approval과 함께 병합하지 않았다.
 - #515: `develop@2c328875` 대상 `36c11dd0bf907569184d7d73172b675d21bd0ff1`.
   four-level hierarchy domain의 immutable projection이 persisted `kind`와
   `sourceIndex`를 nested `record` 안에서 보존하는지 current CodeGraph와
