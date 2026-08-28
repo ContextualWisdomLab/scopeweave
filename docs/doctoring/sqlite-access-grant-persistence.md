@@ -28,12 +28,10 @@ The persisted `access_grants` relation is in third normal form for this bounded 
 ### Owned database objects
 
 - `access_grants`
-- `access_grant_token_hash_index`
-- `access_grant_subject_resource_index`
 - `access_grant_audit_outbox`
 - `access_grant_audit_delivery_index`
 
-All newly owned objects use descriptive multi-word snake_case names. Existing legacy single-word objects are outside this slice and remain tracked separately by #433.
+`token_hash TEXT NOT NULL UNIQUE` deliberately relies on SQLite's constraint-owned unique index rather than creating a second explicit token-hash index. The adapter also does not create a forward-looking subject/resource index because no current query uses that access path. This avoids duplicate storage and write amplification while preserving the exact lookup uniqueness required by the repository. New explicit objects use descriptive multi-word snake_case names; SQLite-owned automatic indexes are implementation details rather than ScopeWeave-owned schema names. Existing legacy single-word objects are outside this slice and remain tracked separately by #433.
 
 ## Secret and lifecycle boundaries
 
@@ -93,6 +91,8 @@ The defect was causal rather than test infrastructure. The previous adapter obta
 
 The existing failing regression is retained, renamed to make its mint-time invariant explicit, and the persistence test now directly asserts the stored snapshot (`100:0`) before redemption. Hosted exact-current-head evidence after the correction remains authoritative; queued, cancelled, predecessor-head, or merge-preview evidence for an older head is not promoted to passing.
 
+A later current-head review identified two unnecessary explicit indexes on `access_grants`: one duplicated the implicit index already owned by `token_hash UNIQUE`, and one covered a subject/resource access path that the adapter never queries. Commit `340cf264...` added the realistic schema regression first. Server Tests run `33127984486`, job `98710585231`, failed RED on that regression and reported both explicit index names as the unexpected actual state. The production correction removed only those two explicit indexes while preserving the uniqueness constraint. The next run `33128070491`, job `98710864961`, then exposed a predecessor expectation in the schema-name test that still listed the deleted indexes; the test contract was aligned to the intentionally smaller owned-object set while the independent `PRAGMA index_list` regression remains responsible for proving that no redundant explicit indexes return.
+
 ## TDD evidence
 
 The first two commits on the stacked branch were intentionally RED: `tests/unit/access-grant-sqlite.test.mjs` imported a not-yet-existing `server/access_grant_sqlite.mjs`, and the canonical test/coverage scripts were updated to execute that contract before production implementation existed. Hosted workflows for that predecessor head were cancelled after later branch movement; cancelled evidence is not promoted to passing.
@@ -100,6 +100,8 @@ The first two commits on the stacked branch were intentionally RED: `tests/unit/
 The audit-durability hardening was also test-first. `tests/unit/access-grant-audit-outbox.test.mjs` first required a not-yet-existing outbox and transactional rollback semantics. The implementation then added the immutable outbox relation and savepoint-coupled mint/consume transitions; the pre-existing schema-name regression was updated only because the new compliant outbox/index became intentionally owned database objects.
 
 The later exact-head Server Tests failure described above supplied a second RED regression for the revocation-epoch gap. The correction preserves that regression rather than replacing it with an assertion-only surrogate.
+
+The redundant-index repair supplied another exact hosted RED. Its retained edge regression interrogates SQLite's own `PRAGMA index_list('access_grants')`, requires no explicitly created (`origin = 'c'`) index for the current table, and separately verifies that a uniqueness-constraint-owned (`origin = 'u'`) index still exists. This distinguishes performance cleanup from accidental loss of the security-critical token-hash uniqueness constraint.
 
 Current tests cover:
 
@@ -115,6 +117,7 @@ Current tests cover:
 - null-resource stream grants and project-only authorization;
 - unknown-hash and wrong-resource failures without burning the correct grant;
 - bootstrap idempotence and missing-database failures;
+- absence of redundant or unused explicit `access_grants` indexes while token-hash uniqueness remains constraint-enforced;
 - membership-port fail-closed behavior;
 - schema lifetime constraints;
 - mint and consume audit evidence with no plaintext secret;
@@ -127,9 +130,9 @@ A local Node 22 direct adapter probe on the earlier persistence implementation e
 
 ## Migration, rollback, and compatibility
 
-The schema is installed only after referenced core tables exist. `CREATE TABLE/INDEX IF NOT EXISTS` makes bootstrap idempotent for databases created by this unshipped slice. This active branch adds the `membership_version` column before any protected runtime route consumes `access_grants`; no protected `develop` release has shipped the earlier branch-only schema, so no customer migration is claimed or required by this slice. The eventual protected integration must ship this schema as one coherent versioned change and must not treat a locally persisted pre-integration development database as release evidence.
+The schema is installed only after referenced core tables exist. Idempotent `CREATE TABLE IF NOT EXISTS` plus the audit-delivery `CREATE INDEX IF NOT EXISTS` make bootstrap safe for databases created by this unshipped slice. This active branch adds the `membership_version` column before any protected runtime route consumes `access_grants`; no protected `develop` release has shipped the earlier branch-only schema, so no customer migration is claimed or required by this slice. The eventual protected integration must ship this schema as one coherent versioned change and must not treat a locally persisted pre-integration development database as release evidence.
 
-This slice adds no destructive migration and does not rename legacy objects. Rollback removes the adapter import/bootstrap call, `access_grants` and `access_grant_audit_outbox` tables/indexes, adapter/audit tests, and this record together. Because no protected runtime route consumes the table in this slice, rollback does not strand a browser contract. Once a runtime route begins issuing grants, rollback planning must account for in-flight one-time grants and retained audit evidence and must default to revoking grants rather than restoring broad URL credentials.
+This slice adds no destructive migration and does not rename legacy objects. Rollback removes the adapter import/bootstrap call, `access_grants` and `access_grant_audit_outbox` tables plus the audit-delivery index, adapter/audit tests, and this record together. Because no protected runtime route consumes the table in this slice, rollback does not strand a browser contract. Once a runtime route begins issuing grants, rollback planning must account for in-flight one-time grants and retained audit evidence and must default to revoking grants rather than restoring broad URL credentials.
 
 ## Traceability
 
