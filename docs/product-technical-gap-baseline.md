@@ -143,10 +143,13 @@ HEAD가 바뀌면 다시 확인해야 한다.
 - #508: `develop@2c328875` 대상
   `642034faf5c97ca8730a70ef89edf6f4fdd54840`. `computeTaskMetrics`의
   duration cache를 `Int32Array`와 명시적 loop로 바꾼 제출본으로 benchmark-base
-  unit 16개와 protected-base/candidate를 고정한 local benchmark가 통과했다
-  (semantic digest 동일, local median 개선 5.93%). current-head hosted required
-  Checks와 OpenCode·Strix는 terminal success이며 `REVIEW_REQUIRED`/qualifying
-  approval 부재로 병합하지 않았다.
+  unit 16개와 immutable base/candidate SHA를 명시한 local benchmark가 통과했다
+  (semantic digest·aggregate 동일, median regression 없음). 전체 Playwright는
+  75개가 통과했고, benchmark의 로컬 SHA 입력 부재 1건과 develop의 기존
+  `modulepreload` 기대 1건이 실패했다. current-head functional/security Checks는
+  통과했지만 OpenCode는 current-head verdict 부재로, Strix는 provider HTTP 500와
+  report 부재로 fail-closed 되었으며, `REVIEW_REQUIRED`/qualifying approval
+  부재로 병합하지 않았다.
 - #495: `develop@2c328875` 대상
   `9cc7ecc204dafe3dafcb78b605455beb07bbce3b`. metadata-only render 경계,
   owner/status DOM shell 재사용, row identity 보존과 badge contrast 회귀를
