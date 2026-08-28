@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `4c8d09d`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `03cdf855`가 #621 `3aaf9b7` 위에 제출됨, `develop` 병합 대기 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621/#625 OpenCode current-head check 실패; #621 Strix·Devin pending; #629의 최초 cloud-E2E 경쟁 조건은 `03cdf855`에서 보완되어 replacement Checks queued; 모든 대상에 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 OpenCode current-head check 실패 및 Strix pending; #625는 문서 push 후 replacement Checks queued (이전 OpenCode 실패는 current-head verdict 부재); #629의 최초 cloud-E2E 경쟁 조건은 `03cdf855`에서 보완되어 replacement Checks 통과; 모든 대상에 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -107,10 +107,10 @@ HEAD가 바뀌면 다시 확인해야 한다.
   cloud-E2E의 seed 비동기 경쟁 조건을 `.empty-cell` 렌더 대기로 수정했고 현재 HEAD
   로컬 2-worker 전체 E2E는 96개가 통과했다. replacement cloud-E2E·unit/API·보안
   Checks는 queued이며 Devin은 pending, qualifying approval은 없다.
-- #625: `develop@2c328875` 대상
-  `baf4b6365014d36a853a25aa7e743d1bf2e417a8`. 이 문서의 기준선 갱신 제출본이며
-  exact HEAD의 unit·API·coverage·보안·cloud E2E·Strix·Devin Checks는 통과했지만
-  OpenCode check가 실패하고 qualifying approval이 없어 병합하지 않았다.
+- #625: `develop@2c328875` 대상. 이 문서의 기준선 갱신 제출본이며, 최신 push 후
+  replacement Checks가 queued 상태다. 이전 exact head에서는 unit·API·coverage·
+  보안·cloud E2E·Strix·Devin Checks가 통과했지만 OpenCode check가 current-head
+  verdict 부재로 실패했고 qualifying approval도 없었다.
 - #509: `develop@2c328875` 대상
   `ea9027743ebafd1ca5774a5a14227585cf796052`. summary metric explanation을
   keyboard stop 없이 지속 노출하고 gradient 대비를 보강한 접근성 제출본이다.
