@@ -175,13 +175,13 @@ HEAD가 바뀌면 다시 확인해야 한다.
   Checks는 통과했지만 OpenCode run `33180751297`/job `98980396931`은
   current-head verdict 부재로 fail-closed 되었고 qualifying approval도 없어
   병합하지 않았다.
-- #608: `2d7448cbb27f2580dacdbc2b4813efd8c99b08af` (base
-  `develop@2c328875`). 동시 변경으로 제거됐던 cloud/analytics modulepreload와
-  초기 task-dependent native `disabled`·`aria-describedby` 상태를 복원하고,
-  제거된 tooltip 기대를 `disabled`·description·visible helper·live-region
-  계약으로 갱신했다. predecessor에서 재현된 local E2E 2건을 current tree에서
-  먼저 확인한 뒤 전체 Playwright 79개와 accessibility unit이 통과했다. current
-  HEAD hosted Checks는 재실행 중이고 qualifying approval은 없다.
+- #608: `28a217891bba7c515b93755ba6593f476b6a9adc` (base
+  `develop@2c328875`). 빈 상태 task-dependent action의 정적 초기 markup에도
+  native `disabled`, `aria-disabled`, `aria-describedby`를 설정해 seed/cloud
+  hydration 중 빈 CSV export와 빈 Gantt 진입 race를 fail-closed로 막았다.
+  focused accessibility E2E 4개, 관련 unit 6개, 전체 unit 및 config 3개가
+  통과했으며, 기존 modulepreload baseline 실패는 #490 범위로 섞지 않았다.
+  push 후 exact-head hosted Checks는 재실행 중이고 qualifying approval은 없다.
 - #587: `dcf37e81f8a5584accc4403e05b3a5e10b644872` (base
   `develop@2c328875`). 직접 소비 가능한 `application_routes_core.mjs`가
   오래된 첫 `x-forwarded-for` 기반 limiter를 사용하던 경계를 제거하고,
