@@ -23,6 +23,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Security
 
 - Made contextual-orchestrator briefing requests fail closed unless an authenticated endpoint is configured. Deterministic generated text is restricted to explicit `SCOPEWEAVE_DEV=1`, message/provider responses are bounded and validated, and non-loopback HTTP transport is rejected.
+- Bounded hosted Stripe Checkout provider calls to one 15-second, no-retry
+  attempt with a 1 MiB response ceiling before JSON parsing until durable
+  idempotency exists; validated returned destinations as exact HTTPS
+  `checkout.stripe.com` URLs without credentials or non-standard ports while
+  preserving Stripe-issued client fragments; and mapped provider failures to
+  sanitized no-store 502 responses.
 - Bound Stripe Checkout success/cancel redirects to an operator-configured
   canonical public origin instead of request authority, rejected partial or
   ambiguous billing configuration at startup, and confined successful mock
