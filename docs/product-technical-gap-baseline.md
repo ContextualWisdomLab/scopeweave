@@ -178,6 +178,14 @@ HEAD가 바뀌면 다시 확인해야 한다.
   대조했고 audit/cleanup/timeout/coverage 및 API 검증은 통과했다. hosted
   required Checks와 Strix는 통과했지만 qualifying approval이 없어 병합하지
   않았다.
+- #523: `develop@2c328875` 대상
+  `135117e0594939240e787a161574b6fb4e10f155`. Server Tests의 PR head 고정,
+  runtime checkout 검증, browser/server coverage failure evidence, live-base
+  dependency comparison, CodeQL/OSV exact-head 및 stacked PR contract를
+  current CodeGraph·resolved 리뷰와 대조했고 local server coverage 100%와
+  browser coverage 154개가 통과했다. hosted unit·API·cloud E2E·security·
+  CodeQL·fuzz·Noema는 통과했지만 OpenCode current-head required check는
+  실패했고 qualifying approval도 없어 병합하지 않았다.
 - #552: `develop@2c328875` 대상 `92487d1f9e5215cd4b7302275c23393596799ba3`,
   draft 상태. 일반 hosted 게이트는 통과하고 Strix는 취약점 0건을 출력한 뒤
   provider 장애와 authoritative report 부재로 fail-closed 되었다.
