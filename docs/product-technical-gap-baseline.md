@@ -89,8 +89,8 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-01 | 큰 WBS에서 작업 위치를 찾는 비용 | #621 `5c6c2530`, `develop` 병합 대기 | 작업·담당자·산출물 등 필드 검색과 상위 계층 표시 |
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `5c6c2530`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, 현재 #621 `5c6c2530`, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
-| G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `3c82b48`이 #621 `3aaf9b7` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 `5c6c2530`은 새 hosted run 진행 중; #625 `c881fbba`는 OpenCode 실패와 Strix pending 외 주요 Checks 통과; #629 `3c82b48d`는 cloud-E2E 실패; 모든 대상에 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `89fff38b`이 #621 `5c6c2530` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 `5c6c2530`은 Strix 진행 중·OpenCode 실패; #625 `9070adbc`는 Strix pending·OpenCode 실패 외 주요 Checks 통과; #629 `89fff38b`는 seed-load race 수정 후 hosted Checks 재실행 중; 모든 대상에 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -104,20 +104,20 @@ HEAD가 바뀌면 다시 확인해야 한다.
   flag와 회귀 테스트를 추가했고, sample cloud onboarding도 프로젝트 생성 즉시 같은
   hydrate 경로로 adoption되도록 보강했다. hosted
   unit/API·coverage·cloud-E2E·Noema·CodeQL·Semgrep·OSV·Trivy-FS·property fuzz는
-  통과했고 Scorecard/OSV scanner는 neutral이다. Strix는 pending이며 OpenCode는
+  통과했고 Scorecard/OSV scanner는 neutral이다. Strix는 진행 중이며 OpenCode는
   current-head verdict 부재로 실패했다. 현재 HEAD qualifying approval은 없다.
-- #629: stacked base `feat/wbs-search-context@3aaf9b72` 대상
-  `3c82b48da698c42337a21016af785bcf46d1a975`. 모바일에서 cloud 로그인 영역이
+- #629: stacked base `feat/wbs-search-context@5c6c2530` 대상
+  `89fff38b54169d0582af43aee2deea13da6684bb`. 모바일에서 cloud 로그인 영역이
   줄바꿈되고 select가 24px 이상 유지되도록 보완했으며, named controls·landmark·
   skip link·overflow와 seed/empty screenshot을 실제 Playwright로 점검한다. 최초
   cloud-E2E의 seed 비동기 경쟁 조건을 `.empty-cell` 렌더 대기로 수정하고, Devin이
-  지적한 모바일 정렬·로그인 폭 floor도 보완했다. 현재 HEAD 로컬 2-worker 전체
-  E2E는 96개가 통과했고 Devin current-head 리뷰는 해결로 기록됐다. hosted
-  unit/API·OSV·dependency review는 통과했지만 cloud-E2E가 실패했으며 qualifying
-  approval은 없다.
+  지적한 모바일 정렬·로그인 폭 floor도 보완했다. 현재 HEAD의 seed-load race는
+  empty-cell과 공통 activity-subtree helper에 대기를 추가해 로컬 targeted E2E가
+  통과했고, hosted Checks는 새 head에서 재실행 중이다. hosted
+  unit/API·OSV·dependency review는 통과했으며 qualifying approval은 없다.
 - #625: `develop@2c328875` 대상. 이 문서의 기준선 갱신 제출본이며, 최신 push 후
-  `bc938989d9224ecc0ba3b23a0876ca2d8b272536` 기준 주요 unit·API·coverage·보안·
-  cloud E2E Checks는 통과했지만 Strix는 진행 중이고 OpenCode check가 current-head verdict 부재로
+  `9070adbce35a8c201c9e187dadcf19c3a6f27839` 기준 주요 unit·API·coverage·보안·
+  cloud E2E Checks는 통과했지만 Strix는 pending이고 OpenCode check가 current-head verdict 부재로
   실패했고 qualifying approval도 없었다.
 - #509: `develop@2c328875` 대상
   `ea9027743ebafd1ca5774a5a14227585cf796052`. summary metric explanation을
