@@ -187,7 +187,7 @@ async function readBoundedProviderJson(response) {
 
 async function cancelUnreadProviderBody(response) {
   try {
-    await response.body.cancel();
+    await response.body?.cancel();
   } catch {
     // Cleanup failure must never replace the stable provider failure returned below.
   }

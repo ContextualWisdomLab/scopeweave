@@ -267,7 +267,7 @@ test('rejected Stripe responses cancel unread bodies while preserving retry-stat
   await withStripeEnv(async () => {
     for (const scenario of [
       { status: 503, contentType: 'application/json', expectedCode: 'billing_provider_unavailable', closesAttempt: false },
-      { status: 400, contentType: 'application/json', expectedCode: 'billing_provider_unavailable', closesAttempt: true },
+      { status: 400, body: null, contentType: 'application/json', expectedCode: 'billing_provider_unavailable', closesAttempt: true },
       { status: 409, contentType: 'application/json', expectedCode: 'billing_provider_unavailable', closesAttempt: false },
       { status: 200, contentType: 'text/html', expectedCode: 'billing_provider_invalid_response', closesAttempt: false },
     ]) {
@@ -281,16 +281,23 @@ test('rejected Stripe responses cancel unread bodies while preserving retry-stat
         },
       });
       const attemptRepository = createAttemptRepository();
-      globalThis.fetch = async () => new Response(unreadBody, {
-        status: scenario.status,
-        headers: { 'content-type': scenario.contentType },
-      });
+      globalThis.fetch = async () => new Response(
+        scenario.body === null ? null : unreadBody,
+        {
+          status: scenario.status,
+          headers: { 'content-type': scenario.contentType },
+        },
+      );
 
       await expectProviderError(
         () => liveCheckout(attemptRepository),
         scenario.expectedCode,
       );
-      assert.equal(cancelled, true, `${scenario.expectedCode} cancels its unread response body`);
+      assert.equal(
+        cancelled,
+        scenario.body === null ? false : true,
+        `${scenario.expectedCode} cancels its unread response body when one exists`,
+      );
       if (scenario.closesAttempt) {
         assert.equal(attemptRepository.events.at(-1).type, 'failure');
       } else {
