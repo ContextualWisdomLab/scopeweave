@@ -145,12 +145,12 @@ HEAD가 바뀌면 다시 확인해야 한다.
   테스트 게이트는 통과했다. Strix artifact는 0 findings를 기록했지만 후속
   provider 장애로 gate가 fail-closed 되었고 qualifying approval도 없다.
 - #490: `develop@2c328875` 대상
-  `10bd1f3cedb1898fd3a50c4ab84161d7fd9b232e`. editor invoker의 stable ID/action/
+  `2888a5ba776c6c8943278bb7e35f070aebf964da`. editor invoker의 stable ID/action/
   task identity 기록, rerender 이후 allowlisted control 복원과 selector-hostile
-  persisted ID 방어를 current CodeGraph·resolved 리뷰와 대조했다. focused
-  focus E2E 9개와 editor unit은 통과했고, hosted OpenCode·보안·테스트 게이트는
-  통과했다. Strix는 SARIF 0 findings 뒤 provider infrastructure failure로
-  fail-closed 되었으며 qualifying approval도 없어 병합하지 않았다.
+  persisted ID 방어를 current CodeGraph·resolved 리뷰와 대조했다. modulepreload
+  선언 누락으로 재현된 static E2E 회귀를 `cloud-sync.js`·`analytics.js` 선언
+  복원으로 수정했고, unit 및 전체 Playwright 85개가 통과했다. current-head
+  replacement Checks는 실행 중이며 qualifying approval이 없어 병합하지 않았다.
 - #610: `3bb2bd95905d590fe3d1d0d9a8fc6c6ec133c04a` (base
   `develop@2c328875`). 이전 exact head의 Cloud E2E가 JSON sync에서 텍스트
   `predecessors`/`sprint`의 `0`·`false`를 보존하는 결함을 검출했고, 이를
