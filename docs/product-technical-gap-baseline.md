@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `4c8d09d`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | 미해결 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #495/#621/#625/#628 OpenCode current verdict 부재; #588 Strix provider 실패; #608 `83b8949`·#610 `3bb2bd9`·#587 `1f93371` Checks 재실행 중; #596은 Checks 통과지만 승인 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #495/#621/#625/#628 OpenCode current verdict 부재; #588 Strix provider 실패; #608 `83b8949`·#610 `3bb2bd9`·#587 `1f93371` Checks 재실행 중; #550은 Checks 통과지만 승인 없음; #596은 Checks 통과지만 승인 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -117,6 +117,11 @@ HEAD가 바뀌면 다시 확인해야 한다.
 - #596: `50f0c2d18e4361e5f11507ca194c94fc7caabbdc`. 공급자 진단을 고객에게
   노출하지 않는 502 envelope이며 hosted 보안·테스트·OpenCode·Strix·Devin
   Checks는 통과했지만 qualifying approval이 없어 병합하지 않았다.
+- #550: `9267d2d7686ea7891591a600187ebc21428b13ba` (base
+  `develop@2c328875`). 로컬 CSV와 cloud 조직·캘린더·감사 로그 다운로드가
+  공유된 안전한 임시 앵커 경로를 사용하고, 설정·click·cleanup·URL revoke
+  오류의 최초 원인을 보존한다. 현재 hosted required Checks는 통과했고
+  Devin은 결함을 보고하지 않았지만 qualifying approval이 없어 병합하지 않았다.
 - #601: `98f4354733c68c9f361e516f86ba2d95e97af20e`. 날짜 formatter benchmark는
   protected base 대비 46.79% 개선과 checksum `118184592`를 기록했으나 Strix
   provider/backend 실패와 승인 부재로 병합하지 않았다.
