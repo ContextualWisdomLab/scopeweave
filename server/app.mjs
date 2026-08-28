@@ -596,8 +596,7 @@ app.post('/api/orgs/:id/checkout', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
   if (orgRole(uid, orgId) !== 'owner') return c.json({ error: 'only the owner can upgrade' }, 403);
-  const origin = new URL(c.req.url).origin;
-  const session = await createCheckout({ orgId, origin });
+  const session = await createCheckout({ orgId });
   return c.json(session);
 });
 

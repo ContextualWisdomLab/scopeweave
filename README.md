@@ -99,9 +99,9 @@ Docker: set a **persistent** `SCOPEWEAVE_JWT_SECRET` first, then run `docker com
 | `SCOPEWEAVE_DB` | SQLite path (default `data.db`; `:memory:` for tests) |
 | `PORT` | API port (default 8787) |
 | `OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI` | Real SSO IdP (mock when unset) |
-| `STRIPE_SECRET_KEY` | Real checkout (mock URL when unset) |
+| `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, `SCOPEWEAVE_PUBLIC_ORIGIN` | Live Stripe checkout; production billing is disabled unless the complete tuple is configured |
 | `SCOPEWEAVE_RATE_LIMIT_MAX` (+`_WINDOW_MS`) | Opt-in per-IP rate limiting |
-| `SCOPEWEAVE_DEV=1` | Dev-only endpoints (activate-pro) |
+| `SCOPEWEAVE_DEV=1` | Dev-only endpoints (activate-pro); with a loopback `SCOPEWEAVE_PUBLIC_ORIGIN`, enables the mock checkout |
 
 ## Verification
 

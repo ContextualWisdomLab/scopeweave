@@ -213,6 +213,42 @@ test('default live provider transport rejects non-2xx Stripe responses with a sa
   }));
 });
 
+test('live checkout trims configuration values before the provider boundary', async () => {
+  const previousSecret = process.env.STRIPE_SECRET_KEY;
+  const previousPrice = process.env.STRIPE_PRICE_ID;
+  process.env.STRIPE_SECRET_KEY = '  sk_test_trimmed  ';
+  process.env.STRIPE_PRICE_ID = '  price_trimmed  ';
+
+  try {
+    const checkout = await createCheckout({
+      orgId: 94,
+      configuration: liveConfiguration,
+      stripeClientFactory: async (secretKey) => {
+        assert.equal(secretKey, 'sk_test_trimmed');
+        return {
+          checkout: {
+            sessions: {
+              async create(payload) {
+                assert.equal(payload.line_items[0].price, 'price_trimmed');
+                return { url: 'https://checkout.stripe.com/c/pay/cs_test_trimmed' };
+              },
+            },
+          },
+        };
+      },
+    });
+    assert.deepEqual(checkout, {
+      url: 'https://checkout.stripe.com/c/pay/cs_test_trimmed',
+      live: true,
+    });
+  } finally {
+    if (previousSecret === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = previousSecret;
+    if (previousPrice === undefined) delete process.env.STRIPE_PRICE_ID;
+    else process.env.STRIPE_PRICE_ID = previousPrice;
+  }
+});
+
 test('default live provider transport rejects network failures without leaking provider detail', async () => {
   await expectSafeProviderFailure(async () => {
     throw new Error('getaddrinfo ENOTFOUND api.stripe.com internal-network-detail');
@@ -258,6 +294,9 @@ test('live checkout rejects unsafe or malformed provider redirect URLs', async (
     'http://checkout.stripe.com/c/pay/cs_test_plaintext',
     'https://user@checkout.stripe.com/c/pay/cs_test_userinfo',
     'https://:password@checkout.stripe.com/c/pay/cs_test_password',
+    'https://checkout.stripe.com.evil.example/c/pay/cs_test_suffix',
+    'https://checkout.stripe.com:444/c/pay/cs_test_port',
+    'https://attacker.example/c/pay/cs_test_foreign_host',
     'not a URL',
   ]) {
     await assertProviderFailure(

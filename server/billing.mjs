@@ -239,9 +239,11 @@ export async function createCheckout({
   }
 
   if (mode === 'live') {
+    const secretKey = String(process.env.STRIPE_SECRET_KEY || '').trim();
+    const priceId = String(process.env.STRIPE_PRICE_ID || '').trim();
     const payload = {
       mode: 'subscription',
-      line_items: [{ price: process.env.STRIPE_PRICE_ID, quantity: 1 }],
+      line_items: [{ price: priceId, quantity: 1 }],
       success_url: `${publicOrigin}/?billing=success`,
       cancel_url: `${publicOrigin}/?billing=cancel`,
       client_reference_id: String(orgId),
@@ -251,13 +253,13 @@ export async function createCheckout({
     let session;
     if (stripeClientFactory) {
       try {
-        const stripe = await stripeClientFactory(process.env.STRIPE_SECRET_KEY);
+        const stripe = await stripeClientFactory(secretKey);
         session = await stripe.checkout.sessions.create(payload);
       } catch {
         throw providerUnavailableFailure();
       }
     } else {
-      session = await createStripeSessionWithFetch(process.env.STRIPE_SECRET_KEY, payload);
+      session = await createStripeSessionWithFetch(secretKey, payload);
     }
 
     return {
