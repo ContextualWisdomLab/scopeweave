@@ -61,6 +61,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Improved standalone mobile accessibility by keeping the cloud login label
+  readable, enforcing a 24px minimum select target, and attaching browser
+  screenshots with the WCAG visual audit.
 - Switched the repository-local OpenCode development configuration from GitHub
   Models to an NVIDIA NIM-only candidate set while preserving organization-level
   review-workflow ownership in `ContextualWisdomLab/.github`.

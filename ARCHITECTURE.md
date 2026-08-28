@@ -25,6 +25,8 @@
   for dependency scanning.
 - `tests/e2e/scopeweave.spec.js`: Playwright coverage for the user-facing
   app flows.
+- `tests/e2e/accessibility-visual-evidence.spec.js`: mobile WCAG control
+  audit and attached seed/empty-state screenshots.
 - `tests/config/`: repository governance and workflow ownership checks.
 
 ## Core decisions
