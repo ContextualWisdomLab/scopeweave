@@ -52,13 +52,12 @@ request host cannot replace that origin.
 
 ## Provider trust boundary
 
-> Active PR state: this section describes the stacked provider-boundary work in
-> PR #507. It is not protected-`develop` shipped truth until its parent PR #505
-> and this PR are independently approved and integrated.
+> Active PR state: the provider-boundary behavior originates in stacked PR #507;
+> the durable retry behavior below is active PR #511. Neither is protected-
+> `develop` shipped truth until the stack is independently approved and integrated.
 
 The live hosted-Checkout adapter performs one direct server-side HTTPS request to
-Stripe until a later lifecycle slice introduces durable checkout-attempt and
-idempotency state:
+Stripe for each ScopeWeave attempt:
 
 - endpoint: exact constant `https://api.stripe.com/v1/checkout/sessions`;
 - method/body: one POST with `application/x-www-form-urlencoded` fields;
@@ -66,12 +65,12 @@ idempotency state:
   constant Stripe API authority;
 - total request budget: 15,000 ms using an abort signal;
 - redirect policy: provider HTTP redirects are rejected;
-- automatic application retries: none;
+- automatic in-request retry loop: none;
 - successful response budget: at most 1 MiB before UTF-8 decoding and JSON
   parsing; invalid, negative, or oversized `Content-Length` declarations are
   rejected, and a streamed body that crosses the ceiling is cancelled;
-- network, abort, or non-2xx provider failures: stable HTTP 502
-  `billing_provider_unavailable` with `Cache-Control: no-store`;
+- provider/network failures: stable HTTP 502 `billing_provider_unavailable` with
+  `Cache-Control: no-store`;
 - successful non-JSON, bodyless, unreadable, malformed JSON, or oversized
   responses: stable HTTP 502 `billing_provider_invalid_response` with
   `Cache-Control: no-store`;
@@ -83,9 +82,9 @@ idempotency state:
 This exact-host check deliberately rejects suffix-confusion names such as
 `checkout.stripe.com.evil.example`. Stripe's current Checkout Session API
 reference shows a standard hosted `checkout.stripe.com` URL containing an opaque
-`#fidk...` fragment. ScopeWeave therefore preserves provider-issued fragments
-verbatim after the authority checks instead of treating a fragment as an origin
-or hostname decision.
+client fragment. ScopeWeave preserves provider-issued fragments verbatim after
+the authority checks because fragments do not participate in HTTPS authority
+selection.
 
 Stripe Checkout custom domains are not silently trusted. Supporting one requires
 a separate operator-owned allowlist or canonical-domain configuration contract
@@ -98,24 +97,74 @@ customer receives a retry/diagnostic next action rather than downstream internal
 The provider boundary intentionally uses the documented Stripe HTTPS API instead
 of dynamically importing an undeclared runtime SDK. A clean deployment therefore
 does not depend on a hidden `stripe` package merely to create the hosted Session.
-Package provenance remains part of the normal application supply-chain gate, but
-there is no Stripe SDK package gate for this direct adapter.
+
+## Durable Checkout attempt and idempotency boundary
+
+> Active PR state: this section describes PR #511 only. It is not yet release or
+> protected-`develop` truth.
+
+Before the live POST, ScopeWeave persists a `billing_checkout_attempts` row with
+an opaque local attempt ID, tenant/price scope, and an opaque Stripe idempotency
+key. A partial unique index permits at most one unresolved attempt (`pending` or
+`reconciliation_required`) for the same organization and price. The generated
+key is sent as the Stripe `Idempotency-Key` header; no secret key, bearer token,
+or webhook secret is stored in this ledger.
+
+An unresolved attempt is reused only while its age is non-negative and strictly
+less than 23 hours. The 23-hour local ceiling is intentionally shorter than
+Stripe's documented 24-hour safe-retry horizon / at-least-24-hour key-retention
+boundary. At or beyond that local ceiling, or after a local clock rollback, the
+old unresolved attempt becomes `reconciliation_required`; checkout then fails
+closed until authoritative provider/webhook reconciliation resolves that held
+identity. ScopeWeave does not mint a fresh key merely because local time is stale
+or contradictory.
+
+Provider outcomes are intentionally asymmetric:
+
+- **network/abort/no HTTP response** — provider outcome is unknown; keep the
+  attempt `pending` so the next checkout reuses the exact key;
+- **Stripe 5xx** — keep the attempt `pending`; Stripe explicitly documents 500
+  mutations as indeterminate and warns that retrying with a fresh key can repeat
+  side effects;
+- **Stripe 4xx other than concurrent 409** — close as `provider_failed`; a
+  corrected deliberate retry can use fresh provider authority. A 409 caused by
+  a concurrent request remains unresolved because Stripe says endpoint execution
+  did not begin and the same idempotency key may be retried;
+- **validated 2xx Checkout Session** — validate provider session ID and hosted
+  destination, persist `provider_succeeded` plus the provider session ID, then
+  return the hosted URL;
+- **2xx with malformed, over-budget, unreadable, or untrusted content** — the
+  provider may already have committed the mutation, so keep the attempt `pending`
+  and return only the stable sanitized error contract; a later retry must reuse
+  the same idempotency key rather than create a speculative second Session;
+- **provider success followed by local persistence failure** — return
+  `billing_checkout_state_unavailable` and leave the attempt pending. A later
+  checkout can replay the same key instead of creating a second provider object.
+
+Repository construction and request handling perform no DDL. The schema is
+installed during database bootstrap after the organization table exists. That
+matches the repository's current migration style, but billing release approval
+remains blocked until this schema is reconciled with the formal migration-ledger,
+restore, and rollback work elsewhere in the repository.
+
+`docs/doctoring/stripe-checkout-attempt-idempotency.md` records the evidence,
+TDD chronology, data model, threat/rollback reasoning, and APA 7 references.
 
 ## Current lifecycle boundary
 
-The trusted-configuration and provider-trust slices do **not** declare the Stripe
-subscription lifecycle production complete. Before production billing can be
-release-approved, ScopeWeave still needs the remaining #488 controls, including:
+The trusted-configuration, provider-trust, and durable-attempt slices do **not**
+declare the Stripe subscription lifecycle production complete. Before production
+billing can be release-approved, ScopeWeave still needs the remaining #488
+controls, including raw-body webhook signature verification and streaming size
+limits; durable event deduplication; out-of-order reconciliation; normalized
+customer/subscription/payment/entitlement state; transactional reversible
+entitlement changes; migration and restore evidence; retention/privacy/incident
+runbooks; provider smoke plus release acceptance; and operator-visible alerting,
+inspection, and audited resolution for `reconciliation_required` attempts.
 
-a durable checkout-attempt UUID and stable idempotency key; raw-body webhook
-signature verification and streaming size limits; durable event deduplication;
-out-of-order reconciliation; normalized customer/subscription/payment/entitlement
-state; transactional reversible entitlement changes; migration and restore
-evidence; privacy/incident runbooks; and provider smoke plus release acceptance.
-
-No automatic provider retry should be enabled before durable idempotency exists.
 No custom Checkout domain should be accepted before an operator-owned trust
-configuration exists.
+configuration exists. No unresolved attempt record should be deleted merely to
+force a retry with a fresh provider key.
 
 ## Operator verification
 
@@ -131,23 +180,34 @@ Before a billing-enabled rollout:
 4. Capture the canary's outbound request destination and verify exactly one POST
    goes to `api.stripe.com/v1/checkout/sessions`, redirects are not followed, and
    the request aborts within the configured 15-second total budget.
-5. Exercise network failure, non-2xx response, non-JSON success, malformed JSON,
-   bodyless success, invalid/oversized declared response length, streamed
-   response overflow, stream-read failure, and provider timeout handling.
-   Confirm response bodies above 1 MiB are not buffered/parsed and callers
-   receive only the stable no-store 502 contract without provider body, network,
-   stream, or credential detail.
-6. Reject null, malformed, plaintext, credential-bearing, non-standard-port,
+5. Confirm the outbound request contains an opaque `Idempotency-Key`, then force a
+   transport timeout and retry the same organization/price inside the local
+   safety window. The second request must reuse the same key and local attempt ID.
+6. Exercise HTTP 400 and HTTP 503 responses separately. A 400 must close the
+   attempt so a later deliberate checkout receives a fresh key; a 503 must leave
+   the attempt pending so a later retry cannot silently duplicate provider side
+   effects.
+7. Exercise non-JSON success, malformed JSON, bodyless success,
+   invalid/oversized declared response length, streamed response overflow,
+   stream-read failure, and provider timeout handling. Confirm response bodies
+   above 1 MiB are not buffered/parsed, callers receive only the stable no-store
+   error contract without provider body/network/credential detail, and every
+   malformed 2xx case remains pending for same-key retry/reconciliation.
+8. Reject null, malformed, plaintext, credential-bearing, non-standard-port,
    and hostname-confusion Checkout destinations; accept and preserve the exact
    standard `https://checkout.stripe.com/...#...` hosted destination, including
    its provider-issued fragment.
-7. Keep the rollout blocked until the remaining #488 lifecycle controls are
-   implemented and their exact-head security, coverage, review, rollback, and
-   recovery gates pass together.
+9. Simulate a successful Stripe response followed by a local state-write failure.
+   The customer must receive `billing_checkout_state_unavailable`, and a later
+   retry must preserve the original idempotency identity rather than minting a
+   duplicate Checkout Session.
+10. Keep the rollout blocked until the remaining #488 lifecycle controls and the
+    formal migration/restore path are implemented and their exact-head security,
+    coverage, review, rollback, and recovery gates pass together.
 
-Rollback for the trusted-configuration/provider-boundary stack is data-neutral:
-revert the validation and provider-boundary source, tests, documentation, and
-CHANGELOG entries together. No database migration or persisted billing state is
-introduced by these slices. If billing must be disabled while investigating a
-provider outage, remove the complete live provider tuple and restart; never
-substitute a production mock.
+Rollback is no longer data-neutral once PR #511 exists. Disable the complete live
+Stripe configuration and restart before reverting request-path code. Preserve
+`pending`, `reconciliation_required`, and `provider_succeeded` attempt rows for
+reconciliation. Do not drop or truncate the ledger during a provider incident;
+any eventual schema removal must be a reviewed reversible migration with
+export/restore evidence.
