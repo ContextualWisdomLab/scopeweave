@@ -248,7 +248,9 @@ HEAD가 바뀌면 다시 확인해야 한다.
   current CodeGraph·resolved 리뷰와 대조했고 local server coverage 100%와
   browser coverage 154개가 통과했다. hosted unit·API·cloud E2E·security·
   CodeQL·fuzz·Noema는 통과했지만 OpenCode current-head required check는
-  실패했고 qualifying approval도 없어 병합하지 않았다.
+  현재 SHA verdict 부재로 실패했고 Strix는 취소되어 scan report가 없다.
+  current unresolved thread는 0개지만 qualifying approval도 없어 병합하지
+  않았다.
 - #552: `develop@2c328875` 대상 `92487d1f9e5215cd4b7302275c23393596799ba3`,
   draft 상태. 일반 hosted 게이트는 통과하고 Strix는 취약점 0건을 출력한 뒤
   provider 장애와 authoritative report 부재로 fail-closed 되었다.
