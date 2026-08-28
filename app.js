@@ -21,6 +21,7 @@ const ACTUAL_PROGRESS_OPTIONS = [
   'PL검토(90%)',
   'PM확인(100%)'
 ];
+const SEARCH_PROGRESS_MUTATION_MESSAGE = '검색 중에는 실적진척상태를 변경할 수 없습니다. 검색을 먼저 지워주세요.';
 let actualProgressSelectTemplate = null;
 
 const ACTUAL_PROGRESS_MAP = Object.assign(Object.create(null), {
@@ -1115,6 +1116,11 @@ function createActualProgressCellContent(task, taskMetrics) {
   if (select.value !== task.actualProgressStatus) {
     select.value = '미착수(0%)';
   }
+  if (state.taskQuery.trim()) {
+    select.disabled = true;
+    select.setAttribute('aria-disabled', 'true');
+    select.title = SEARCH_PROGRESS_MUTATION_MESSAGE;
+  }
   label.append(srOnly, select);
 
   const warning = taskMetrics.plannedDateWarning || taskMetrics.actualDateWarning;
@@ -1163,6 +1169,11 @@ function renderEditorValidation() {
 }
 
 function handleInlineProgressChange(event) {
+  if (state.taskQuery.trim()) {
+    event.preventDefault();
+    showToast(SEARCH_PROGRESS_MUTATION_MESSAGE);
+    return;
+  }
   const taskId = event.target.dataset.inlineProgress;
   const task = findTask(taskId);
   if (!task) {
