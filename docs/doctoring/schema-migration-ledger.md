@@ -19,10 +19,15 @@ rename plan:
   `webhook_endpoints`, `project_baselines`, `project_comments`,
   `project_sprints`, `project_attachments`.
 
-Other already-compliant ScopeWeave tables do not determine the migration
-generation. Any missing table, old/new mixture, or duplicated generation is an
-invalid startup state and raises `SchemaMigrationStateError` before request
-handling begins.
+The `schema_migrations` table is migration metadata and is excluded from the
+generation catalog. Any other unrecognized table, missing table, old/new
+mixture, or duplicated generation is an invalid startup state and raises
+`SchemaMigrationStateError` before request handling begins. This prevents an
+otherwise complete generation from being trusted alongside an object that the
+query layer has not verified. The existing non-renamed tables
+(`webhook_deliveries`, `audit_log`, `api_tokens`, `project_revisions`,
+`share_tokens`, and `project_seen`) are explicitly allowlisted as stable
+application objects.
 
 ## Pre-bootstrap boundary
 
@@ -109,6 +114,8 @@ must restore the ledger from the same verified recovery point.
 - a distinct canonical-generation ledger record;
 - preservation of valid legacy history when the canonical record is appended;
 - rejection of unknown or corrupted migration-ledger identities/states;
+- rejection of an otherwise complete generation paired with an unknown
+  application table;
 - rejection of a canonical ledger record paired with a legacy schema generation;
 - fail-closed mixed-generation detection;
 - incomplete schema rejection;

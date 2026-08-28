@@ -10,6 +10,7 @@ const SCHEMA_OBJECT_RENAMES = Object.freeze({
   sprints: 'project_sprints',
   attachments: 'project_attachments',
 });
+const SCHEMA_MIGRATIONS_TABLE = 'schema_migrations';
 
 const MIGRATION_LEDGER_STATES = Object.freeze(Object.assign(Object.create(null), {
   legacy_schema_v1: 'legacy_ready',
@@ -58,9 +59,20 @@ export const LEGACY_SCHEMA_OBJECTS = Object.freeze(Object.keys(SCHEMA_OBJECT_REN
 /** Canonical two-or-more-word tables required after issue #433 migration. */
 export const CANONICAL_SCHEMA_OBJECTS = Object.freeze(Object.values(SCHEMA_OBJECT_RENAMES));
 
+/** Existing application tables outside the ten-object rename set. */
+export const STABLE_SCHEMA_OBJECTS = Object.freeze([
+  'webhook_deliveries',
+  'audit_log',
+  'api_tokens',
+  'project_revisions',
+  'share_tokens',
+  'project_seen',
+]);
+
 const KNOWN_SCHEMA_OBJECTS = new Set([
   ...LEGACY_SCHEMA_OBJECTS,
   ...CANONICAL_SCHEMA_OBJECTS,
+  ...STABLE_SCHEMA_OBJECTS,
 ]);
 const UNRELATED_SCHEMA_OBJECT_SENTINEL = '__scopeweave_unrelated_schema_object__';
 
@@ -129,8 +141,8 @@ export function runAtomicLegacySchemaBootstrap(database, bootstrapSql) {
 /**
  * Classify the database as the complete legacy or complete canonical schema.
  *
- * Unrelated compliant tables are intentionally ignored. Any mixture, missing
- * expected table, or duplicate old/new naming generation fails closed.
+ * Any unrelated table, mixture, missing expected table, or duplicate old/new
+ * naming generation fails closed.
  *
  * @param {Set<string>} objectNames - Current SQLite table names.
  * @returns {'legacy_ready'|'canonical_ready'} Complete schema generation.
@@ -139,6 +151,9 @@ export function runAtomicLegacySchemaBootstrap(database, bootstrapSql) {
  */
 export function classifySchemaMigrationState(objectNames) {
   if (!(objectNames instanceof Set)) throw new TypeError('objectNames must be a Set');
+  if ([...objectNames].some((name) => !KNOWN_SCHEMA_OBJECTS.has(name))) {
+    throw new SchemaMigrationStateError('unknown schema migration state');
+  }
 
   const legacyCount = LEGACY_SCHEMA_OBJECTS.filter((name) => objectNames.has(name)).length;
   const canonicalCount = CANONICAL_SCHEMA_OBJECTS.filter((name) => objectNames.has(name)).length;
@@ -161,9 +176,9 @@ export function classifySchemaMigrationState(objectNames) {
  * SQLite internal tables are excluded because they are not ScopeWeave-owned
  * schema objects and cannot participate in the naming migration. Known legacy
  * and canonical names are retained exactly; every unrelated application table
- * collapses to one sentinel so a non-empty unknown database cannot be mistaken
- * for a pristine bootstrap while an arbitrarily large catalog cannot force an
- * equally large in-memory result set.
+ * collapses to one sentinel so it is rejected without allowing an arbitrarily
+ * large catalog to force an equally large in-memory result set. The ledger is
+ * metadata owned by this module, not a schema generation object.
  *
  * @param {{prepare: Function}} database - node:sqlite-compatible database.
  * @returns {Set<string>} Bounded current application table-name evidence.
@@ -176,6 +191,7 @@ function readApplicationTableNames(database) {
   let sawUnrelatedObject = false;
   for (const row of statement.iterate()) {
     const name = String(row.name);
+    if (name === SCHEMA_MIGRATIONS_TABLE) continue;
     if (KNOWN_SCHEMA_OBJECTS.has(name)) objectNames.add(name);
     else sawUnrelatedObject = true;
   }
@@ -306,7 +322,12 @@ export function inspectSchemaBootstrapState(database) {
   }
 
   const objectNames = readApplicationTableNames(database);
-  if (objectNames.size === 0) return 'uninitialized';
+  if (objectNames.size === 0) {
+    if (migrationLedgerExists(database)) {
+      throw new SchemaMigrationStateError('partial or mixed schema migration state');
+    }
+    return 'uninitialized';
+  }
   return classifySchemaMigrationState(objectNames);
 }
 

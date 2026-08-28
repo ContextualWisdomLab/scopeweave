@@ -11,7 +11,6 @@ function legacyCatalogRows() {
   return [
     ...LEGACY_SCHEMA_OBJECTS.map((name) => ({ name })),
     { name: 'schema_migrations' },
-    { name: 'unrelated_extension_table' },
   ];
 }
 
@@ -39,6 +38,24 @@ test('schema bootstrap streams catalog rows instead of materializing an unbounde
   };
 
   assert.equal(inspectSchemaBootstrapState(fakeDatabase), 'legacy_ready');
+
+  const unknownDatabase = {
+    prepare(sql) {
+      assert.match(sql, /FROM sqlite_master/);
+      return {
+        all() {
+          throw new Error('schema catalog must be streamed instead of materialized with all()');
+        },
+        *iterate() {
+          yield* [...legacyCatalogRows(), { name: 'unrelated_extension_table' }];
+        },
+      };
+    },
+  };
+  assert.throws(
+    () => inspectSchemaBootstrapState(unknownDatabase),
+    /unknown schema migration state/,
+  );
 });
 
 test('established legacy schema still runs additive idempotent bootstrap DDL without an explicit write reservation', () => {

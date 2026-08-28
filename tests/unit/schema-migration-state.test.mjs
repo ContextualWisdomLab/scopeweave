@@ -9,6 +9,7 @@ import { DatabaseSync } from 'node:sqlite';
 import {
   CANONICAL_SCHEMA_OBJECTS,
   LEGACY_SCHEMA_OBJECTS,
+  STABLE_SCHEMA_OBJECTS,
   SchemaMigrationStateError,
   classifySchemaMigrationState,
   ensureSchemaMigrationState,
@@ -166,9 +167,17 @@ test('migration guard rejects adapters missing required database operations', ()
 
 test('schema-state classifier rejects unusable inputs and names every expected object', () => {
   assert.equal(classifySchemaMigrationState(new Set(LEGACY_SCHEMA_OBJECTS)), 'legacy_ready');
+  assert.equal(
+    classifySchemaMigrationState(new Set([...LEGACY_SCHEMA_OBJECTS, ...STABLE_SCHEMA_OBJECTS])),
+    'legacy_ready',
+  );
   assert.equal(classifySchemaMigrationState(new Set(CANONICAL_SCHEMA_OBJECTS)), 'canonical_ready');
   assert.throws(() => classifySchemaMigrationState([]), /Set/);
   assert.throws(() => classifySchemaMigrationState(new Set()), /partial or mixed/);
+  assert.throws(
+    () => classifySchemaMigrationState(new Set([...LEGACY_SCHEMA_OBJECTS, '__unknown_table__'])),
+    (error) => error instanceof SchemaMigrationStateError && /unknown schema migration state/.test(error.message),
+  );
   assert.equal(new Set(LEGACY_SCHEMA_OBJECTS).size, 10);
   assert.equal(new Set(CANONICAL_SCHEMA_OBJECTS).size, 10);
 });
@@ -197,6 +206,15 @@ test('pre-bootstrap inspection permits only pristine or complete known generatio
     /partial or mixed schema migration state/,
   );
   ledgerOnlyDatabase.close();
+
+  const legacyWithExtraTable = new DatabaseSync(':memory:');
+  createTables(legacyWithExtraTable, LEGACY_SCHEMA_OBJECTS);
+  legacyWithExtraTable.exec('CREATE TABLE unrelated_extension_table (id INTEGER PRIMARY KEY)');
+  assert.throws(
+    () => inspectSchemaBootstrapState(legacyWithExtraTable),
+    (error) => error instanceof SchemaMigrationStateError && /unknown schema migration state/.test(error.message),
+  );
+  legacyWithExtraTable.close();
 });
 
 test('initial legacy bootstrap rolls back every table when DDL is interrupted', () => {

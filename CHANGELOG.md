@@ -23,6 +23,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   guard that records the complete legacy/canonical table-name generation,
   rejects unknown/corrupt history and backward generation rollback, and fails
   closed if a rename cutover leaves the database partial or mixed.
+- Rejected unrecognized application tables during schema-generation
+  classification so an otherwise complete schema cannot bypass the migration
+  guard with an unverified object.
 
 ### Security
 
