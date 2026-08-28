@@ -722,13 +722,13 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
 
   if (hasChildren) {
     const toggleButton = toggleButtonTemplate.cloneNode(false);
-    const filterActive = Boolean(state.taskQuery.trim());
-    const expanded = filterActive || task.expanded;
-    const toggleLabel = filterActive ? '검색 중 계층 맥락 고정' : (task.expanded ? '접기' : '펼치기');
+    const searchExpanded = cachedSearchExpandedParentIds.has(task.id);
+    const expanded = searchExpanded || task.expanded;
+    const toggleLabel = searchExpanded ? '검색 중 계층 맥락 고정' : (task.expanded ? '접기' : '펼치기');
     toggleButton.setAttribute('aria-label', `${toggleLabel} - ${rowEntityName}`);
     toggleButton.setAttribute('aria-expanded', String(expanded));
     toggleButton.title = `${toggleLabel} - ${rowEntityName}`;
-    toggleButton.disabled = filterActive;
+    toggleButton.disabled = searchExpanded;
     const toggleIcon = toggleIconTemplate.cloneNode(false);
     toggleIcon.textContent = expanded ? '▼' : '▶';
     toggleButton.appendChild(toggleIcon);
@@ -1540,6 +1540,7 @@ function getDateRangeWarning(startDate, endDate, message) {
 }
 
 const cachedHiddenParentIds = new Set();
+const cachedSearchExpandedParentIds = new Set();
 const TASK_SEARCH_FIELDS = [
   'phase', 'activity', 'task', 'categoryLarge', 'categoryMedium', 'documentName',
   'owner', 'supportTeam', 'actualProgressStatus', 'plannedStartDate',
@@ -1553,6 +1554,7 @@ function taskSearchText(task) {
 function getVisibleTasks() {
   const visible = [];
   cachedHiddenParentIds.clear();
+  cachedSearchExpandedParentIds.clear();
 
   const query = state.taskQuery.trim().toLowerCase();
   if (query) {
@@ -1561,8 +1563,13 @@ function getVisibleTasks() {
     state.tasks.forEach((task) => {
       if (taskSearchText(task).includes(query)) {
         let current = task;
-        while (current) {
+        const visitedIds = new Set();
+        while (current && !visitedIds.has(current.id)) {
+          visitedIds.add(current.id);
           matchingIds.add(current.id);
+          if (current.id !== task.id) {
+            cachedSearchExpandedParentIds.add(current.id);
+          }
           current = tasksById.get(current.parentId);
         }
       }
