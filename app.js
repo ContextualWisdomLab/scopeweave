@@ -555,7 +555,7 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
       const rect = row.getBoundingClientRect();
       const placeAfter = event.clientY >= rect.top + rect.height / 2;
       reorderTaskWithinLevel(draggedTask.id, targetTask.id, placeAfter);
-      if (!state.showSeedOnboarding) {
+      if (!state.showSeedOnboarding && loadLocalState()) {
         persistState();
       }
       renderAll();
@@ -1207,7 +1207,7 @@ function handleInlineProgressChange(event) {
   const rawValue = event.target.value;
   task.actualProgressStatus = ACTUAL_PROGRESS_OPTIONS.includes(rawValue) ? rawValue : '미착수(0%)';
 
-  if (!state.showSeedOnboarding) {
+  if (!state.showSeedOnboarding && loadLocalState()) {
     persistState();
   }
   renderAll();
@@ -1233,7 +1233,7 @@ function handleRowAction(action, taskId) {
 
   if (action === 'toggle') {
     task.expanded = !task.expanded;
-    if (!state.showSeedOnboarding) {
+    if (!state.showSeedOnboarding && loadLocalState()) {
       persistState();
     }
     renderAll();
