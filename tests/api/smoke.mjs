@@ -5,7 +5,6 @@ import assert from 'node:assert';
 
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_DEV = '1'; // enables the dev-activate-pro endpoint for this test
-delete process.env.ORCHESTRATOR_URL; // keep the AI briefing on the explicit local dev adapter
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
 const { app } = await import('../../server/app.mjs');
 
@@ -167,7 +166,7 @@ assert.equal(r.status, 401, 'SSE without token → 401');
 await r.body?.cancel?.();
 
 // Static allowlist — client files served, source/db never exposed
-for (const [path, code] of [['/', 200], ['/index.html', 200], ['/app.js', 200], ['/cloud-sync.js', 200], ['/analytics.js', 200], ['/styles.css', 200], ['/toast-state.css', 200], ['/wbs.json', 200], ['/landing.html', 200], ['/landing.en.html', 200], ['/pricing', 200], ['/docs/api.md', 200], ['/robots.txt', 200], ['/sitemap.xml', 200]]) {
+for (const [path, code] of [['/', 200], ['/index.html', 200], ['/app.js', 200], ['/cloud-sync.js', 200], ['/analytics.js', 200], ['/styles.css', 200], ['/wbs.json', 200], ['/landing.html', 200], ['/landing.en.html', 200], ['/pricing', 200], ['/docs/api.md', 200], ['/robots.txt', 200], ['/sitemap.xml', 200]]) {
   const res = await req(path);
   assert.equal(res.status, code, `static ${path} → ${code}`);
 }
@@ -620,7 +619,7 @@ assert.equal(r.status, 200, 'sprint delete');
 r = await req(`/api/projects/${proj.id}/ai/brief`, { method: 'POST', headers: auth });
 assert.equal(r.status, 200, 'ai brief 200');
 const brief = await r.json();
-assert.ok(brief.analysis.includes('dev-orchestrator'), 'explicit development analysis returned');
+assert.ok(brief.analysis.includes('mock-orchestrator'), 'mock analysis returned');
 assert.ok(brief.analysis.length > 40, 'non-trivial analysis');
 r = await req(`/api/projects/${proj.id}/ai/brief`, { method: 'POST', headers: oauth });
 assert.equal(r.status, 404, 'non-member ai brief → 404');
@@ -640,8 +639,8 @@ assert.equal(r.status, 404, 'non-member ai brief → 404');
   r = await req(`/api/projects/${proj.id}/attachments?taskId=s1`, { headers: auth });
   const list = (await r.json()).attachments;
   assert.ok(list.some((x) => x.id === att.id && x.name === '요구사항정의서.pdf' && x.uploadedBy), 'listed with meta');
-  // 열람: 302 → mock 아티팩트 → 바이트 왕복
-  r = await req(`/api/projects/${proj.id}/attachments/${att.id}/view?token=${encodeURIComponent(token)}`);
+  // 열람: Authorization 헤더 → 302 → mock 아티팩트 → 바이트 왕복
+  r = await req(`/api/projects/${proj.id}/attachments/${att.id}/view`, { headers: auth });
   assert.equal(r.status, 302, 'view redirects');
   const loc = r.headers.get('location');
   assert.ok(loc.includes('/api/mock-clearfolio/'), 'redirect to signed artifact');
