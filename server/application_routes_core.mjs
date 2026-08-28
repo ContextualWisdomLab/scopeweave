@@ -12,6 +12,7 @@ import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from 
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
+import { createRateLimitMiddleware } from './rate_limit.mjs';
 
 const GUARD_ACCOUNTING_METHOD = Symbol.for('scopeweave.guard_accounting.original_method');
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
@@ -147,26 +148,10 @@ app.use('*', async (c, next) => {
   } catch { /* metrics/logging must never break a request */ }
 });
 
-// Rate limiting (opt-in via SCOPEWEAVE_RATE_LIMIT_MAX, per client IP, fixed
-// window). Protects against brute-force/abuse. Off by default so it never
-// surprises tests/dev. Ceiling: per-instance in-memory → use Redis for multi-node.
-const RL_MAX = Number(process.env.SCOPEWEAVE_RATE_LIMIT_MAX) || 0;
-const RL_WINDOW_MS = Number(process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS) || 60000;
-const rlBuckets = new Map();
-if (RL_MAX > 0) {
-  app.use('*', async (c, next) => {
-    const key = (c.req.header('x-forwarded-for') || '').split(',')[0].trim() || 'local';
-    const now = Date.now();
-    let b = rlBuckets.get(key);
-    if (!b || b.resetAt <= now) { b = { count: 0, resetAt: now + RL_WINDOW_MS }; rlBuckets.set(key, b); }
-    b.count++;
-    if (b.count > RL_MAX) {
-      const retry = Math.ceil((b.resetAt - now) / 1000);
-      return c.json({ error: 'rate limit exceeded' }, 429, { 'Retry-After': String(retry) });
-    }
-    await next();
-  });
-}
+// Use the same validated, transport-peer-aware limiter as every supported
+// wrapper. application_routes.mjs loads this module with an explicit zero
+// limit, so the public wrapper remains the sole limiter for that request path.
+app.use('*', createRateLimitMiddleware());
 
 app.post('/api/auth/signup', async (c) => {
   const { email, password, name } = await c.req.json().catch(() => ({}));

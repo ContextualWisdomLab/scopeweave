@@ -21,11 +21,10 @@ import {
 const configuredRateLimitMax = process.env.SCOPEWEAVE_RATE_LIMIT_MAX;
 let coreRoutes;
 try {
-  // application_routes_core.mjs retains the historical header-keyed limiter
-  // only as an internal compatibility detail. Every supported entrypoint loads
-  // that implementation with the legacy limiter disabled, then applies the
-  // transport-peer-aware policy below before any route-specific guard or DB
-  // lookup. Restoring the operator value before request handling keeps the
+  // application_routes_core.mjs uses the same shared limiter as this boundary.
+  // Load the nested instance with an explicit zero limit, then apply the
+  // transport-peer-aware policy below once before any route-specific guard or
+  // DB lookup. Restoring the operator value before request handling keeps the
   // process environment truthful for diagnostics and child integrations.
   process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '0';
   ({ app: coreRoutes } = await import('./application_routes_core.mjs'));

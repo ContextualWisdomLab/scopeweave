@@ -14,11 +14,10 @@ import {
 const configuredRateLimitMax = process.env.SCOPEWEAVE_RATE_LIMIT_MAX;
 
 // app_routes.mjs is a compatibility re-export of application_routes.mjs. That
-// boundary imports application_routes_core.mjs, whose historical header-keyed
-// limiter reads SCOPEWEAVE_RATE_LIMIT_MAX only at module initialization. Load
-// the nested graph with limiting disabled, then restore the operator value
-// before constructing the public transport-peer-aware limiter below. Restoring
-// the environment does not reactivate the already-initialized core limiter.
+// boundary imports application_routes_core.mjs, which uses the same shared
+// limiter. Load the nested graph with limiting disabled, then restore the
+// operator value before constructing the public transport-peer-aware limiter
+// below. Restoring the environment does not reactivate the nested limiter.
 let routeApp;
 try {
   process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '0';

@@ -108,6 +108,41 @@ assert.equal(
   `Equivalent-IPv6 trusted-proxy regression failed:\n${equivalentIpv6PeerProbe.stderr}`,
 );
 
+const directCoreProbe = spawnSync(
+  process.execPath,
+  [
+    '--input-type=module',
+    '--eval',
+    `import assert from 'node:assert/strict';
+     process.env.SCOPEWEAVE_DB = ':memory:';
+     process.env.SCOPEWEAVE_JWT_SECRET = '${validJwtSecret}';
+     process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '3';
+     process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS = '60000';
+     process.env.SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX = '20';
+     process.env.SCOPEWEAVE_TRUSTED_PROXY_IPS = '127.0.0.1';
+     const { app } = await import('./server/application_routes_core.mjs?direct-core-rate-limit=1');
+     const nodeEnv = { incoming: { socket: { remoteAddress: '127.0.0.1' } } };
+     const requestFrom = (client) => app.request('/api/health', { headers: { 'x-forwarded-for': client } }, nodeEnv);
+     for (let i = 0; i < 3; i++) assert.equal((await requestFrom('203.0.113.72')).status, 200);
+     assert.equal(
+       (await requestFrom('203.0.113.72')).status,
+       429,
+       'direct core consumers use the shared bounded rate-limit policy',
+     );
+     assert.equal(
+       (await requestFrom('198.51.100.72')).status,
+       200,
+       'direct core consumers honor trusted proxy client separation',
+     );`,
+  ],
+  { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env } },
+);
+assert.equal(
+  directCoreProbe.status,
+  0,
+  `Direct application core rate-limit regression failed:\n${directCoreProbe.stderr}`,
+);
+
 const observabilityProbe = spawnSync(
   process.execPath,
   [
