@@ -196,11 +196,9 @@ export function createSqliteAccessGrantRepository(database) {
      * none of them do.
      */
     async insertGrant(record) {
-      withSavepoint(db, INSERT_SAVEPOINT, () => {
+      return withSavepoint(db, INSERT_SAVEPOINT, () => {
         const membership = membershipAtMint.get(record.project_id, record.subject_id);
-        if (!membership?.membership_version) {
-          throw new Error('access_grant_membership_inactive');
-        }
+        if (!membership?.membership_version) return null;
         insert.run(
           record.grant_id,
           record.token_hash,

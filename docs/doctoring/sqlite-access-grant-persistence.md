@@ -43,7 +43,7 @@ SQLite foreign-key enforcement is explicitly enabled by the existing data bootst
 
 ## Atomic one-time consumption
 
-The mint savepoint reads the current membership row identity and user `token_version` immediately before inserting the usable grant. If no active membership exists at that point, no grant row or mint audit event is committed. If membership state changes after this snapshot, the resulting grant can remain stored but cannot be redeemed against the new revocation epoch.
+The mint savepoint reads the current membership row identity and user `token_version` immediately before inserting the usable grant. If no active membership exists at that point—including a membership that disappears between the domain authorization check and the persistence boundary—the adapter returns a rejected transition, and the domain maps it to the same opaque not-authorized response; no grant row or mint audit event is committed. If membership state changes after this snapshot, the resulting grant can remain stored but cannot be redeemed against the new revocation epoch.
 
 The consume operation is a single conditional `UPDATE access_grants SET used_at_ms = ? ...` statement. A row can move from unused to used only when all conditions hold together:
 

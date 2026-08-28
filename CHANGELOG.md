@@ -74,6 +74,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Made membership identities non-reusing for access-grant revocation: new
   SQLite databases use `AUTOINCREMENT`, while bootstrap upgrades the legacy
   membership table transactionally without changing existing row IDs.
+- Mapped a membership loss between grant authorization and SQLite persistence
+  through the existing opaque not-authorized mint boundary instead of exposing
+  a raw persistence error.
 - Coupled each successful SQLite grant mint/consume transition to secret-free
   durable audit evidence under the same savepoint; an audit-outbox failure now
   rolls back the corresponding usable-grant transition instead of creating an

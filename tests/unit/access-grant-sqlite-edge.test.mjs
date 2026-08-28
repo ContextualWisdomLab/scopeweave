@@ -180,6 +180,47 @@ test('backward clock rejects a grant without leaking a SQLite constraint error o
   db.close();
 });
 
+test('membership disappearing between authorization and persistence stays in the opaque mint boundary', async () => {
+  const db = fixture();
+  const authorization = createSqliteAccessGrantAuthorizationPort(db);
+  const service = createAccessGrantService({
+    repository: createSqliteAccessGrantRepository(db),
+    clock: { nowMs: () => 5_000 },
+    randomSource: deterministicRandom(),
+    auditSink: { record: async () => {} },
+    projectAuthorization: {
+      async assertCanIssue(input) {
+        await authorization.assertCanIssue(input);
+        db.prepare('DELETE FROM memberships WHERE org_id = ? AND user_id = ?').run(10, 1);
+      },
+    },
+    membershipRevocation: createSqliteAccessGrantMembershipPort(db),
+  });
+
+  await assert.rejects(
+    service.mint({
+      subjectId: '1',
+      projectId: '1000',
+      purpose: ACCESS_GRANT_PURPOSES.STREAM,
+      audience: ACCESS_GRANT_AUDIENCES.STREAM,
+      ttlSeconds: 15,
+    }),
+    (error) => error?.code === 'access_grant_not_authorized' && error?.status === 404,
+    'a lost membership maps to the same nondisclosing mint response as an authorization miss',
+  );
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS count FROM access_grants').get().count,
+    0,
+    'a rejected persistence race leaves no usable grant',
+  );
+  assert.equal(
+    db.prepare('SELECT COUNT(*) AS count FROM access_grant_audit_outbox').get().count,
+    0,
+    'a rejected persistence race leaves no mint evidence',
+  );
+  db.close();
+});
+
 test('stream grants exercise null-resource persistence and project-only authorization', async () => {
   const db = fixture();
   const service = createService(db);

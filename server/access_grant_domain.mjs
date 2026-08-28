@@ -285,7 +285,8 @@ export function createAccessGrantService({
       used_at_ms: null,
       revoked_at_ms: null,
     };
-    await repository.insertGrant(record);
+    const persisted = await repository.insertGrant(record);
+    if (persisted === null) throw new AccessGrantError('access_grant_not_authorized', 404);
     await recordAuditBestEffort(auditSink, {
       event: 'access_grant.minted',
       grant_id: grantId,
