@@ -121,6 +121,21 @@ assert.equal(inviteLogLines.length, 1, 'invite acceptance emits one structured r
 assert.doesNotMatch(inviteLogLines[0], new RegExp(adminInvite.token), 'access log must never contain the live invite token');
 assert.equal(JSON.parse(inviteLogLines[0]).path, '/api/invites/:token/accept', 'secret path segment is represented by its route name');
 
+// Redaction must follow the secret-bearing path boundary, not only an exact
+// successful route match. A typo/trailing segment must not turn an otherwise
+// valid bearer token into durable log data on the resulting 404/405 path.
+for (const secretPath of [
+  `/api/invites/${adminInvite.token}/accept/`,
+  `/api/invites/${adminInvite.token}/accept/extra`,
+]) {
+  observedLogs.length = 0;
+  response = await req(secretPath, { method: 'POST' });
+  assert.ok(response.status >= 400, 'malformed invite path is rejected');
+  const malformedInviteLog = observedLogs.at(-1);
+  assert.doesNotMatch(malformedInviteLog, new RegExp(adminInvite.token), 'malformed invite path must not leak its bearer token');
+  assert.match(JSON.parse(malformedInviteLog).path, /^\/api\/invites\/:token\//, 'malformed invite path keeps a redacted route prefix');
+}
+
 // Public-share bearer secrets live in a path segment too. Even a missing share
 // token is treated as secret-shaped input so operational logs cannot become a
 // durable disclosure channel for valid share links.
@@ -131,6 +146,13 @@ assert.equal(response.status, 404);
 const shareLogLine = observedLogs.at(-1);
 assert.doesNotMatch(shareLogLine, new RegExp(shareTokenSentinel), 'access log must never contain a share bearer token');
 assert.equal(JSON.parse(shareLogLine).path, '/api/shared/:token', 'share secret path segment is represented by its route name');
+
+observedLogs.length = 0;
+response = await req(`/api/shared/${shareTokenSentinel}/extra`);
+assert.equal(response.status, 404);
+const malformedShareLogLine = observedLogs.at(-1);
+assert.doesNotMatch(malformedShareLogLine, new RegExp(shareTokenSentinel), 'malformed share path must not leak its bearer token');
+assert.equal(JSON.parse(malformedShareLogLine).path, '/api/shared/:token/extra', 'malformed share path keeps a redacted route prefix');
 
 observedLogs.length = 0;
 response = await req('/api/me');
