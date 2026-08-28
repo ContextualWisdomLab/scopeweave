@@ -20,3 +20,7 @@
 - Reconciled newly observed PRs: retained #588 as the single outbound-webhook
   SSRF lane, recorded #628's accessibility result and pre-existing modulepreload
   E2E gap, and closed duplicate #626/#627 lanes.
+- Repaired #608's current-head accessibility defects: synchronized the persistent
+  empty-state help element's DOM `hidden` state and updated the legacy empty-state
+  E2E assertion to the native-disabled/`aria-describedby` contract; replacement
+  focused E2E and unit checks passed locally.

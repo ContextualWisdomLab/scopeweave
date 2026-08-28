@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `4c8d09d`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | 미해결 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #495/#621/#625/#628 OpenCode current verdict 부재; #588 Strix provider 실패; #610 `3bb2bd9` Checks 재실행 중; qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #495/#621/#625/#628 OpenCode current verdict 부재; #588 Strix provider 실패; #608 `83b8949`·#610 `3bb2bd9` Checks 재실행 중; qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -103,6 +103,11 @@ HEAD가 바뀌면 다시 확인해야 한다.
   `predecessors`/`sprint`의 `0`·`false`를 보존하는 결함을 검출했고, 이를
   `task.predecessors || ''` 및 `task.sprint || ''`로 수정했다. 현재 head의
   replacement Checks는 재실행 중이며, qualifying approval은 없다.
+- #608: `83b8949157e0bb6cd9a8b967c807e9238ddac943` (base
+  `develop@2c328875`). 빈 상태 도움말의 DOM `hidden` 상태를 `renderAll()`의
+  작업 존재 여부와 동기화하고, 제거된 tooltip을 기대하던 기존 E2E를
+  `disabled`·`aria-describedby`·지속 설명 계약으로 갱신했다. focused E2E와
+  unit은 통과했으며, 현재 head의 hosted Checks는 재실행 중이고 승인은 없다.
 - #601: `98f4354733c68c9f361e516f86ba2d95e97af20e`. 날짜 formatter benchmark는
   protected base 대비 46.79% 개선과 checksum `118184592`를 기록했으나 Strix
   provider/backend 실패와 승인 부재로 병합하지 않았다.
