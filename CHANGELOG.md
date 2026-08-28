@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recovery action.
 - Added browser JSON download for portable WBS backups, including extended
   planning fields, alongside CSV export.
+- Added first-visit sample WBS onboarding with persistent dismissal and a
+  confirmed clear-to-empty-plan action.
 - Added search-mode guardrails that keep hierarchy edits and drag reordering
   out of the filtered view while an inline editor is open.
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS

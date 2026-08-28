@@ -76,8 +76,10 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.locator('link[rel="modulepreload"][href="cloud-sync.js"]')).toHaveCount(1);
     await expect(page.locator('link[rel="modulepreload"][href="analytics.js"]')).toHaveCount(1);
     await expect(page.locator('link[rel="modulepreload"][href="app.js"]')).toHaveCount(1);
-    await expect(page.getByRole('button', { name: '최상위 작업 추가' })).toBeVisible();
+    await expect(page.locator('#add-root-task')).toBeVisible();
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+    await expect(page.locator('#seed-onboarding')).toBeVisible();
+    await expect(page.locator('#seed-onboarding')).toContainText('샘플 WBS가 준비되어 있습니다');
     await expect(page.getByTestId('project-name-input')).toHaveValue(/ScopeWeave/i);
     await expect(page.getByTestId('summary-total-days')).not.toHaveText('0일');
     await expect(page.getByTestId('summary-planned-progress')).toContainText('%');
@@ -88,6 +90,40 @@ test.describe('ScopeWeave Planner', () => {
 
     await page.getByTestId('project-name-input').fill('My New Project');
     await expect(page).toHaveTitle('My New Project - ScopeWeave Planner');
+  });
+
+  test('remembers hiding the first-run sample onboarding notice', async ({ page }) => {
+    const onboarding = page.locator('#seed-onboarding');
+
+    await expect(onboarding).toBeVisible();
+    await expect(onboarding).toHaveAttribute('aria-labelledby', 'seed-onboarding-title');
+    await expect(onboarding).toHaveAttribute('aria-describedby', 'seed-onboarding-description');
+    await onboarding.getByRole('button', { name: '안내 숨기기' }).click();
+    await expect(onboarding).toBeHidden();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+
+    await page.reload();
+    await expect(onboarding).toBeHidden();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+  });
+
+  test('clears the first-run sample into an empty plan', async ({ page }) => {
+    page.once('dialog', dialog => dialog.dismiss());
+    await page.locator('#clear-seed-data').click();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+    await expect(page.locator('#seed-onboarding')).toBeVisible();
+
+    page.once('dialog', dialog => dialog.accept());
+
+    await page.locator('#clear-seed-data').click();
+
+    await expect(page.locator('#seed-onboarding')).toBeHidden();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(0);
+    await expect(page.locator('.table-empty')).toContainText('등록된 작업이 없습니다');
+    await expect(page.locator('#toast')).toContainText('샘플 데이터를 삭제했습니다.');
+    await expect(page.locator('#add-root-task')).toBeVisible();
+    const savedTasks = await page.evaluate(() => JSON.parse(localStorage.getItem('scopeweave:planner-state:v1')).tasks);
+    expect(savedTasks).toEqual([]);
   });
 
   test('filters WBS rows while preserving matching task hierarchy context', async ({ page }) => {

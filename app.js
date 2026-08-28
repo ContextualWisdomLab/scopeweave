@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'scopeweave:planner-state:v1';
+const ONBOARDING_DISMISSED_KEY = 'scopeweave:onboarding-dismissed:v1';
 const DEFAULT_PROJECT_NAME = 'ScopeWeave Planner';
 const MAX_PROJECT_NAME_LENGTH = 120;
 const MAX_BASE_DATE_LENGTH = 10;
@@ -179,6 +180,7 @@ const state = {
   baseDate: formatLocalDateInput(new Date()),
   tasks: [],
   taskQuery: '',
+  showSeedOnboarding: false,
   editor: { ...DEFAULT_EDITOR_STATE, errors: [] },
   jsonSyncHandle: null,
   dragTaskId: null,
@@ -215,6 +217,9 @@ const elements = {
   plannedProgress: document.getElementById('summary-planned-progress'),
   actualProgress: document.getElementById('summary-actual-progress'),
   tableBody: document.getElementById('task-table-body'),
+  seedOnboarding: document.getElementById('seed-onboarding'),
+  dismissSeedOnboardingButton: document.getElementById('dismiss-seed-onboarding'),
+  clearSeedDataButton: document.getElementById('clear-seed-data'),
   addRootButton: document.getElementById('add-root-task'),
   exportCsvButton: document.getElementById('export-csv'),
   exportJsonButton: document.getElementById('export-json'),
@@ -250,16 +255,19 @@ async function bootstrap() {
 
   const cloudState = cloudApi ? await cloudApi.boot() : null;
   if (cloudState) {
+    state.showSeedOnboarding = false;
     hydrateState(cloudState);
     persistState({ syncCloud: false });
   } else {
     const savedState = loadLocalState();
     if (savedState) {
+      state.showSeedOnboarding = false;
       hydrateState(savedState);
       persistState();
     } else {
       const seedData = await loadSeedTasks();
       state.tasks = normalizeImportedTasks(seedData);
+      state.showSeedOnboarding = state.tasks.length > 0 && !isSeedOnboardingDismissed();
       invalidateTaskIndexCache();
     }
   }
@@ -369,6 +377,8 @@ function bindHeaderEvents(persistAndRenderMetadata) {
     renderAll();
     elements.taskFilterInput.focus();
   });
+  elements.dismissSeedOnboardingButton.addEventListener('click', dismissSeedOnboarding);
+  elements.clearSeedDataButton.addEventListener('click', clearSeedData);
 }
 
 function bindModalEvents() {
@@ -586,6 +596,7 @@ function renderAll() {
 
   const visibleTasks = getVisibleTasks();
   const rows = [];
+  elements.seedOnboarding.hidden = !state.showSeedOnboarding;
   elements.clearTaskFilterButton.hidden = !filterActive;
   elements.taskFilterStatus.textContent = filterActive
     ? `${visibleTasks.length}개 작업 표시 중 (전체 ${state.tasks.length}개)`
@@ -1768,6 +1779,7 @@ function findTask(taskId) {
 }
 
 function persistState({ syncCloud = true } = {}) {
+  state.showSeedOnboarding = false;
   const payload = {
     projectName: state.projectName,
     baseDate: state.baseDate,
@@ -1789,6 +1801,37 @@ function persistState({ syncCloud = true } = {}) {
   if (syncCloud && typeof window !== 'undefined') {
     window.ScopeWeaveCloud?.push?.(payload);
   }
+}
+
+function isSeedOnboardingDismissed() {
+  try {
+    return localStorage.getItem(ONBOARDING_DISMISSED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function dismissSeedOnboarding() {
+  try {
+    localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true');
+  } catch {
+    // The notice is still dismissible for the current session if storage is unavailable.
+  }
+  state.showSeedOnboarding = false;
+  renderAll();
+}
+
+function clearSeedData() {
+  if (!state.showSeedOnboarding || !window.confirm('샘플 데이터를 지우고 빈 계획으로 시작하시겠습니까?')) {
+    return;
+  }
+  state.tasks = [];
+  state.showSeedOnboarding = false;
+  invalidateTaskIndexCache();
+  persistState();
+  renderAll();
+  showToast('샘플 데이터를 삭제했습니다. 첫 단계를 추가해 계획을 시작하세요.');
+  requestAnimationFrame(() => elements.addRootButton.focus());
 }
 
 function loadLocalState() {
