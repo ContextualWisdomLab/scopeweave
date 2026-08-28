@@ -1029,6 +1029,59 @@ test.describe('ScopeWeave Planner', () => {
     expect(exported[0]).not.toHaveProperty('id');
   });
 
+  test('preserves extended planning fields in JSON download', async ({ page }, testInfo) => {
+    await page.evaluate(() => {
+      localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
+        projectName: 'Extended JSON',
+        baseDate: '2026-05-01',
+        tasks: [{
+          id: 'extended-1',
+          parentId: null,
+          depth: 1,
+          expanded: true,
+          isSynthetic: false,
+          phase: 'P1000.계획',
+          activity: '',
+          task: '',
+          categoryLarge: '',
+          categoryMedium: '',
+          documentName: '',
+          owner: '',
+          supportTeam: '',
+          plannedStartDate: '2026-05-01',
+          plannedEndDate: '2026-05-05',
+          actualProgressStatus: '미착수(0%)',
+          actualStartDate: '',
+          actualEndDate: '',
+          predecessors: 'P2000',
+          budget: '1000',
+          actualCost: '200',
+          sprint: 'S1',
+          storyPoints: '5'
+        }]
+      }));
+    });
+    await page.reload();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(1);
+
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'JSON 내보내기' }).click();
+    const download = await downloadPromise;
+    const downloadPath = await download.path();
+    const jsonPath = downloadPath || testInfo.outputPath(download.suggestedFilename());
+    if (!downloadPath) {
+      await download.saveAs(jsonPath);
+    }
+    const [exported] = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    expect(exported).toMatchObject({
+      predecessors: 'P2000',
+      budget: '1000',
+      actualCost: '200',
+      sprint: 'S1',
+      storyPoints: '5'
+    });
+  });
+
   test('can trigger CSV import file chooser', async ({ page }) => {
     const fileChooserPromise = page.waitForEvent('filechooser');
     await page.getByRole('button', { name: 'CSV 가져오기' }).click();

@@ -13,6 +13,9 @@ ScopeWeave Planner는 프로젝트용 WBS를 순수 HTML/CSS/JavaScript만으로
 5. **JSON 내보내기** / **CSV 내보내기** / **CSV 가져오기** / **간트차트보기**로
    산출물을 활용합니다.
 
+- **JSON 내보내기**는 선행작업, 예산, 실투입비, 스프린트, 스토리포인트를
+  포함한 휴대용 백업 파일(`wbs_export_YYYYMMDD.json`)을 다운로드합니다.
+
 ## WBS 검색
 
 - WBS 표 위의 **WBS 작업 검색**은 단계, 작업, 산출물, 담당자, 일정 등 입력된
@@ -42,6 +45,7 @@ ScopeWeave Planner는 프로젝트용 WBS를 순수 HTML/CSS/JavaScript만으로
 - Chromium 계열 브라우저에서 **wbs.json 자동저장 연결** 버튼을 누르면 쓰기 가능한 `wbs.json` 파일을 연결할 수 있습니다.
 - 연결이 끝나면 변경할 때마다 같은 JSON 스키마로 자동 저장됩니다.
 - 외부 저장 JSON에는 내부 계층 관리용 synthetic row / internal id 필드가 포함되지 않습니다.
+- 자동저장 연결은 seed 호환 스키마를 유지하며, 브라우저 다운로드는 추가 계획 필드까지 보존합니다.
 
 ## CSV 사용
 

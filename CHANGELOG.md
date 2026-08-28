@@ -11,7 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added accessible WBS field search with hierarchy context and an empty-result
   recovery action.
-- Added browser JSON download for portable WBS backups alongside CSV export.
+- Added browser JSON download for portable WBS backups, including extended
+  planning fields, alongside CSV export.
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS
   estimation coverage, dependency risk, and procurement package section checks.
 - Preserved PM-analysis research papers, NASA WBS handbook, BCP 14, and JSON

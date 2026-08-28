@@ -2052,7 +2052,7 @@ function exportCsv() {
 }
 
 function exportJson() {
-  const jsonText = JSON.stringify(exportJsonArray(), null, 2);
+  const jsonText = JSON.stringify(exportJsonArray({ includeExtendedFields: true }), null, 2);
   downloadFile(jsonText, `wbs_export_${formatCompactDate(new Date())}.json`, 'application/json;charset=utf-8');
 }
 
@@ -2272,23 +2272,35 @@ async function writeJsonSyncFile() {
   await writable.close();
 }
 
-function exportJsonArray() {
-  return state.tasks.filter((task) => !task.isSynthetic).map((task) => ({
-    phase: task.phase,
-    activity: task.activity,
-    task: task.task,
-    categoryLarge: task.categoryLarge,
-    categoryMedium: task.categoryMedium,
-    documentName: task.documentName,
-    owner: task.owner,
-    supportTeam: task.supportTeam,
-    plannedStartDate: task.plannedStartDate,
-    plannedEndDate: task.plannedEndDate,
-    [LEGACY_PLANNED_END_FIELD]: task.plannedEndDate,
-    actualProgressStatus: task.actualProgressStatus,
-    actualStartDate: task.actualStartDate,
-    actualEndDate: task.actualEndDate
-  }));
+function exportJsonArray({ includeExtendedFields = false } = {}) {
+  return state.tasks.filter((task) => !task.isSynthetic).map((task) => {
+    const record = {
+      phase: task.phase,
+      activity: task.activity,
+      task: task.task,
+      categoryLarge: task.categoryLarge,
+      categoryMedium: task.categoryMedium,
+      documentName: task.documentName,
+      owner: task.owner,
+      supportTeam: task.supportTeam,
+      plannedStartDate: task.plannedStartDate,
+      plannedEndDate: task.plannedEndDate,
+      [LEGACY_PLANNED_END_FIELD]: task.plannedEndDate,
+      actualProgressStatus: task.actualProgressStatus,
+      actualStartDate: task.actualStartDate,
+      actualEndDate: task.actualEndDate
+    };
+    if (includeExtendedFields) {
+      Object.assign(record, {
+        predecessors: task.predecessors ?? '',
+        budget: task.budget ?? '',
+        actualCost: task.actualCost ?? '',
+        sprint: task.sprint ?? '',
+        storyPoints: task.storyPoints ?? ''
+      });
+    }
+    return record;
+  });
 }
 
 function openGanttModal() {
