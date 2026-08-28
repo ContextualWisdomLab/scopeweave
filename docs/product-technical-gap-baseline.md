@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `4c8d09d`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | 미해결 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #495/#621/#625/#628 OpenCode current verdict 부재; #576 Strix가 현재 webhook 경로의 SSRF를 보고; #578/#588 Strix provider 실패; #608 `83b8949`·#610 `3bb2bd9`·#587 `1f93371` Checks 재실행 중; #498 `9408588`·#505 `b8435c7` 수정 후 Checks 재실행 중; #602 `78e8037` Hono 보안 패치 후 Checks 재실행 중; #515 `36c11dd`는 Checks/Strix 통과지만 승인 없음; #550은 Checks 통과지만 승인 없음; #596은 Checks 통과지만 승인 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #495/#621/#625/#628 OpenCode current verdict 부재; #576 Strix가 현재 webhook 경로의 SSRF를 보고; #578/#588 Strix provider 실패; #608 `83b8949`·#610 `3bb2bd9`·#587 `1f93371` Checks 재실행 중; #498 `9408588`·#505 `b8435c7` 수정 후 Checks 재실행 중; #602 `78e8037` Hono 보안 패치 후 Checks 재실행 중; #531 `b6842e7`·#601 `98f4354` Strix provider 실패; #515 `36c11dd`는 Checks/Strix 통과지만 승인 없음; #550은 Checks 통과지만 승인 없음; #596은 Checks 통과지만 승인 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -180,6 +180,20 @@ HEAD가 바뀌면 다시 확인해야 한다.
   `sourceIndex`를 nested `record` 안에서 보존하는지 current CodeGraph와
   CodeRabbit 지적을 대조 검토했다. hierarchy unit 10개와 전체 unit·API·coverage가
   통과했고 hosted Checks와 Strix도 통과했지만 qualifying approval은 없다.
+- #531: `develop@2c328875` 대상
+  `b6842e7cf60f77b1d5cee04e1c020e411afc9a6f`. SQLite backup의 read-only
+  source/WAL 처리, bounded schema streaming, destination race 방지,
+  source replacement guard와 recovery 문서 포인터를 current CodeGraph·테스트·리뷰
+  지적과 대조했고 focused recovery/output/schema/source/temp 테스트는 통과했다.
+  Strix artifact는 `invalid_tools` 400으로 중단되어 authoritative clean verdict가
+  없고, qualifying approval도 없어 병합하지 않았다.
+- #601: `develop@2c328875` 대상
+  `98f4354733c68c9f361e516f86ba2d95e97af20`. 날짜 formatter의 native-compatible
+  zero-padding과 benchmark checksum fail-closed 수정을 current CodeGraph·리뷰와
+  대조했다. unit·API·coverage는 통과했고 전체 E2E는 78/79 통과(유일한 실패는
+  기존 `modulepreload` 기대)했으며, Strix는 NVIDIA 429/OpenAI 404 provider
+  실패로 authoritative clean verdict가 없다. qualifying approval도 없어 병합하지
+  않았다.
 - #576: `develop@2c328875` 대상 `62484c2dbeb755fd80fbc123d34e55df7755bda8`.
   Strix exact-head report가 기존 webhook 등록 경로에서 인증 사용자가
   내부 주소로 outbound 요청을 유도할 수 있는 MEDIUM SSRF를 보고했다.
