@@ -40,6 +40,11 @@ assert.match(
   'the short-lived access-grant domain is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/access_grant_sqlite\.mjs/,
+  'the durable SQLite access-grant adapter is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/access-grant-domain\.test\.mjs/,
   'the access-grant behavior contract executes under c8',
@@ -48,6 +53,21 @@ assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/access-grant-domain-edge\.test\.mjs/,
   'the access-grant edge cases execute under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/access-grant-sqlite\.test\.mjs/,
+  'the SQLite access-grant persistence contract executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/access-grant-sqlite-edge\.test\.mjs/,
+  'the SQLite access-grant failure boundaries execute under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/access-grant-audit-outbox\.test\.mjs/,
+  'the transactional access-grant audit evidence contract executes under c8',
 );
 assert.match(
   scripts['test:coverage:cases'],
