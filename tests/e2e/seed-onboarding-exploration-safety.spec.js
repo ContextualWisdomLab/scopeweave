@@ -31,6 +31,29 @@ test('exploring the sample hierarchy does not adopt or persist the sample plan',
   await expect(rows).toHaveCount(4);
 });
 
+test('hiding the onboarding notice keeps the sample in exploration-only mode', async ({ page }) => {
+  await resetToFirstVisitSeed(page);
+
+  const onboarding = page.locator('#seed-onboarding');
+  const rows = page.locator('tbody tr[data-task-id]');
+
+  await expect(onboarding).toBeVisible();
+  await page.locator('#dismiss-seed-onboarding').click();
+  await expect(onboarding).toBeHidden();
+  expect(await page.evaluate((key) => localStorage.getItem(key), PLANNER_STORAGE_KEY)).toBeNull();
+
+  await rows.first().locator('button[data-action="toggle"]').click();
+
+  await expect(rows).toHaveCount(1);
+  expect(await page.evaluate((key) => localStorage.getItem(key), PLANNER_STORAGE_KEY)).toBeNull();
+
+  await page.reload();
+
+  await expect(onboarding).toBeHidden();
+  await expect(rows).toHaveCount(4);
+  expect(await page.evaluate((key) => localStorage.getItem(key), PLANNER_STORAGE_KEY)).toBeNull();
+});
+
 test('exploring sample progress does not adopt or persist the sample plan', async ({ page }) => {
   await resetToFirstVisitSeed(page);
 
