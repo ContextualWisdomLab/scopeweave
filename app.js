@@ -620,7 +620,7 @@ function renderAll() {
   }
   elements.exportCsvButton.title = hasTasks ? '' : '내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.';
   elements.exportJsonButton.title = elements.exportCsvButton.title;
-  elements.openGanttButton.title = hasTasks ? '' : '간트 차트로 표시할 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.';
+  elements.openGanttButton.title = hasTasks ? '' : '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.';
   elements.addRootButton.setAttribute('aria-disabled', String(filterActive));
   elements.addRootButton.title = filterActive ? '검색 중에는 작업을 추가할 수 없습니다. 검색을 먼저 지워주세요.' : '';
 
@@ -734,7 +734,9 @@ function createTableCell(className, content) {
   return cell;
 }
 
-// ⚡ Bolt: Cache static DOM structures to avoid JS-to-C++ instantiation overhead in hot rendering paths.
+// ⚡ Bolt: Cache unattached DOM elements as templates to eliminate repetitive
+// document.createElement() JS-to-C++ allocation overhead during O(N) table rendering loops.
+// Using cloneNode() is measurably faster when creating thousands of rows.
 let taskRowTemplate = null;
 let actionCellTemplate = null;
 let actionStackTemplate = null;
