@@ -130,6 +130,38 @@ test('caller cancellation remains composed with the provider request budget', as
   );
 });
 
+test('status body timeout remains a timeout for refresh categorization', async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  globalThis.setTimeout = (callback) => {
+    callback();
+    return { unref() {} };
+  };
+  globalThis.clearTimeout = () => {};
+  responder = async () => new Response(
+    new ReadableStream({
+      start(controller) {
+        controller.error(new DOMException('body aborted', 'AbortError'));
+      },
+    }),
+    { headers: { 'content-type': 'application/json' } },
+  );
+
+  try {
+    await assert.rejects(
+      () => jobStatus(1, 2, 'job-1'),
+      (error) => {
+        assert.equal(error.name, 'TimeoutError');
+        assert.equal(error.message, 'clearfolio status unavailable');
+        return true;
+      },
+    );
+  } finally {
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
+});
+
 test('document validation fails before Blob, FormData, or provider transport', async () => {
   const before = calls.length;
   const invalidDocuments = [

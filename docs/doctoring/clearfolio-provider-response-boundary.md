@@ -15,7 +15,8 @@ Hosted provider requests:
 3. use Fetch `redirect: "error"` so a redirect is a transport failure rather than a credential-forwarding opportunity;
 4. carry a hard 15,000 ms total-request `AbortSignal`;
 5. compose a caller cancellation signal with that hard budget for status refreshes; and
-6. collapse network, redirect, timeout, and cancellation details into fixed operation-level errors before they can reach browser or diagnostic payloads.
+6. collapse network, redirect, timeout, and cancellation details into fixed operation-level errors before they can reach browser or diagnostic payloads; and
+7. preserve the timeout category when the hard budget aborts an in-progress status response body, so refresh metrics distinguish timeouts from malformed responses.
 
 ScopeWeave does not retry provider calls in this slice. Retry eligibility, idempotency keys, backoff, cancellation recovery, and persisted operation lifecycle remain explicit follow-up work rather than being guessed at the transport layer.
 
