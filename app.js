@@ -517,7 +517,7 @@ function renderAll() {
   const visibleTasks = getVisibleTasks();
   const rows = [];
 
-      const hasTasks = state.tasks.length > 0;
+  const hasTasks = state.tasks.length > 0;
   const taskDependentActionsStatus = hasTasks ? '' : TASK_DEPENDENT_ACTIONS_UNAVAILABLE_MESSAGE;
   if (elements.taskDependentActionsStatus.textContent !== taskDependentActionsStatus) {
     elements.taskDependentActionsStatus.textContent = taskDependentActionsStatus;
