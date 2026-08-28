@@ -218,3 +218,111 @@ test('canonical rename does not roll back a caller-owned transaction when BEGIN 
 
   database.close();
 });
+
+test('canonical rename fails closed when foreign-key pragma evidence is absent', () => {
+  const database = createPopulatedLegacyDatabase();
+  const adapter = {
+    exec(sql) {
+      return database.exec(sql);
+    },
+    prepare(sql) {
+      if (sql === 'PRAGMA foreign_keys') {
+        return { get: () => undefined };
+      }
+      return database.prepare(sql);
+    },
+  };
+
+  assert.throws(
+    () => runCanonicalSchemaRename(adapter),
+    (error) => error instanceof SchemaMigrationStateError && /foreign_keys/.test(error.message),
+  );
+  database.close();
+});
+
+test('canonical rename refuses cutover when legacy ALTER TABLE mode cannot be disabled', () => {
+  const database = createPopulatedLegacyDatabase();
+  database.exec('PRAGMA legacy_alter_table = ON');
+  const adapter = {
+    exec(sql) {
+      if (sql === 'PRAGMA legacy_alter_table = OFF') return undefined;
+      return database.exec(sql);
+    },
+    prepare(sql) {
+      return database.prepare(sql);
+    },
+  };
+
+  assert.throws(
+    () => runCanonicalSchemaRename(adapter),
+    (error) => error instanceof SchemaMigrationStateError && /legacy_alter_table/.test(error.message),
+  );
+  assert.equal(database.prepare('PRAGMA legacy_alter_table').get().legacy_alter_table, 1);
+  database.close();
+});
+
+test('canonical rename rejects a canonical database with foreign-key violations', () => {
+  const database = createPopulatedLegacyDatabase();
+  assert.equal(runCanonicalSchemaRename(database), 'canonical_ready');
+  const adapter = {
+    exec(sql) {
+      return database.exec(sql);
+    },
+    prepare(sql) {
+      if (sql === 'PRAGMA foreign_key_check') {
+        return { all: () => [{ table: 'project_records', rowid: 1 }] };
+      }
+      return database.prepare(sql);
+    },
+  };
+
+  assert.throws(
+    () => runCanonicalSchemaRename(adapter),
+    (error) => error instanceof SchemaMigrationStateError && /foreign-key integrity/.test(error.message),
+  );
+  database.close();
+});
+
+test('canonical rename rejects a canonical database when integrity evidence is not ok', () => {
+  const database = createPopulatedLegacyDatabase();
+  assert.equal(runCanonicalSchemaRename(database), 'canonical_ready');
+  const adapter = {
+    exec(sql) {
+      return database.exec(sql);
+    },
+    prepare(sql) {
+      if (sql === 'PRAGMA integrity_check') {
+        return { get: () => ({ integrity_check: 'malformed' }) };
+      }
+      return database.prepare(sql);
+    },
+  };
+
+  assert.throws(
+    () => runCanonicalSchemaRename(adapter),
+    (error) => error instanceof SchemaMigrationStateError && /database integrity/.test(error.message),
+  );
+  database.close();
+});
+
+test('canonical rename preserves the causal cutover error when rollback itself fails', () => {
+  const database = createPopulatedLegacyDatabase();
+  const causalError = new Error('injected causal rename failure');
+  const adapter = {
+    exec(sql) {
+      if (/ALTER TABLE projects RENAME TO project_records/.test(sql)) throw causalError;
+      if (sql === 'ROLLBACK') throw new Error('injected rollback failure');
+      return database.exec(sql);
+    },
+    prepare(sql) {
+      return database.prepare(sql);
+    },
+  };
+
+  assert.throws(() => runCanonicalSchemaRename(adapter), (error) => error === causalError);
+  database.exec('ROLLBACK');
+  const names = tableNames(database);
+  for (const legacyName of LEGACY_SCHEMA_OBJECTS) assert.equal(names.has(legacyName), true);
+  for (const canonicalName of CANONICAL_SCHEMA_OBJECTS) assert.equal(names.has(canonicalName), false);
+  database.close();
+});
