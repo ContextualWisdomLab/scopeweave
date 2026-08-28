@@ -3,6 +3,17 @@ import { isIP } from 'node:net';
 export const RATE_LIMIT_APPLIED_CONTEXT_KEY = 'scopeweaveRateLimitApplied';
 
 /**
+ * Replace bearer-token path segments before they reach operational logs.
+ * @param {unknown} path Request path.
+ * @returns {string} Safe path retaining the route shape.
+ */
+export function redactRequestLogPath(path) {
+  return String(path)
+    .replace(/^\/api\/invites\/[^/]+(?=\/|$)/u, '/api/invites/:token')
+    .replace(/^\/api\/shared\/[^/]+(?=\/|$)/u, '/api/shared/:token');
+}
+
+/**
  * Parse one explicit rate-limit setting without silently weakening protection.
  *
  * Empty or absent values use the documented fallback. Configured values must be
@@ -94,7 +105,7 @@ export function createRateLimitObservability() {
         console.log(JSON.stringify({
           ts: new Date().toISOString(),
           method: c.req.method,
-          path: c.req.path,
+          path: redactRequestLogPath(c.req.path),
           status: 429,
           ms: Date.now() - startedAt,
         }));

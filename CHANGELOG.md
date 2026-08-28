@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Redacted invite and public-share bearer-token path segments in both ordinary
+  request logs and rate-limit rejection logs, including malformed trailing
+  paths, so access-log retention cannot become a credential disclosure channel.
 - Replaced the unsigned `POST /api/stripe/webhook` plan-upgrade stub with a
   fail-closed raw-body HMAC-SHA-256 signature boundary. Signed deliveries are
   acknowledged only; webhook JSON is not entitlement authority until durable

@@ -4,8 +4,13 @@ import assert from 'node:assert';
 import { spawnSync } from 'node:child_process';
 import { once } from 'node:events';
 import { serve } from '@hono/node-server';
+import { randomUUID } from 'node:crypto';
+import { rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 const validJwtSecret = '0123456789abcdef0123456789abcdef';
+const redactionDbPath = join(tmpdir(), `scopeweave-rate-limit-redaction-${randomUUID()}.sqlite`);
 const importRateLimitApp = (overrides) => spawnSync(
   process.execPath,
   ['--input-type=module', '--eval', "await import('./server/app.mjs')"],
@@ -176,6 +181,51 @@ assert.equal(
   0,
   `Rate-limit observability regression failed:\n${observabilityProbe.stderr}`,
 );
+
+const redactionProbe = spawnSync(
+  process.execPath,
+  [
+    '--input-type=module',
+    '--eval',
+    `process.env.SCOPEWEAVE_DB = ${JSON.stringify(redactionDbPath)};
+     process.env.SCOPEWEAVE_JWT_SECRET = '${validJwtSecret}';
+     process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '1';
+     process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS = '60000';
+     const { app } = await import('./server/app.mjs?rate-limit-log-redaction=1');
+     const path = '/api/invites/live-invite-secret-sentinel/accept';
+     await app.request(path, { method: 'POST' });
+     await app.request(path, { method: 'POST' });
+     const { app: shareApp } = await import('./server/app.mjs?rate-limit-share-log-redaction=1');
+     const sharePath = '/api/shared/live-share-secret-sentinel/extra';
+     await shareApp.request(sharePath);
+     await shareApp.request(sharePath);
+     process.stdout.write('RATE_LIMIT_REDACTION_DONE\\n');`,
+  ],
+  { cwd: process.cwd(), encoding: 'utf8', env: { ...process.env } },
+);
+assert.equal(redactionProbe.status, 0, `Rate-limit log redaction regression failed:\n${redactionProbe.stderr}`);
+const redactionLogs = redactionProbe.stdout
+  .split('\n')
+  .filter((line) => line.startsWith('{'))
+  .map((line) => JSON.parse(line));
+assert.deepEqual(
+  redactionLogs.map((entry) => entry.path),
+  [
+    '/api/invites/:token/accept',
+    '/api/invites/:token/accept',
+    '/api/shared/:token/extra',
+    '/api/shared/:token/extra',
+  ],
+  'allowed and blocked invite/share requests redact every secret path segment',
+);
+for (const entry of redactionLogs) assert.equal(
+  /live-(?:invite|share)-secret-sentinel/u.test(entry.path),
+  false,
+  'request logs never contain bearer tokens',
+);
+rmSync(redactionDbPath, { force: true });
+rmSync(`${redactionDbPath}-shm`, { force: true });
+rmSync(`${redactionDbPath}-wal`, { force: true });
 
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '3';
