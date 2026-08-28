@@ -117,13 +117,12 @@ HEAD가 바뀌면 다시 확인해야 한다.
   empty-cell과 공통 activity-subtree helper에 대기를 추가해 로컬 targeted E2E가
   통과했고, hosted cloud/unit/API/OSV/dependency Checks도 통과했다. hosted
   unit/API·OSV·dependency review는 통과했으며 qualifying approval은 없다.
-- #625: `develop@2c328875` 대상. 직전 docs-only 기준선 제출본
-  `4654627719b5a139fa99f7baec7337c746fae482`의 exact-head functional/security/
-  coverage/unit Checks는 terminal success이고 Scorecard·Trivy·OSV scanner는
-  neutral이다. OpenCode run `33210481457`/job `98982461472`는 current-head
-  verdict 부재로 fail-closed 되었고, Strix run `33210481495`는 cancelled되어
-  job·artifact가 없으며 authoritative clean evidence가 없다. qualifying
-  approval도 없어 병합하지 않았다.
+- #625: `develop@2c328875` 대상 `c0c2b8489567a4c0f09dde2aef4dd6be4610b5f2`.
+  기준선 문서에 #587의 exact-head 보안·운영 수정과 현재 승인/게이트 상태를
+  반영했다. exact-head functional/security/coverage/unit Checks는 terminal
+  success이고 Scorecard·Trivy·OSV scanner는 neutral이다. OpenCode는 현재
+  head verdict 부재로 fail-closed 되었고 qualifying approval이 없어 병합하지
+  않았다.
 - #616: `develop@2c328875` 대상
   `b427cd455f41e7c09ae20fbbf400d42c4f61d4bf`. deterministic release-artifact
   manifest의 regular-file/no-symlink, bounded manifest read, SHA-256 및
@@ -181,7 +180,8 @@ HEAD가 바뀌면 다시 확인해야 한다.
   hydration 중 빈 CSV export와 빈 Gantt 진입 race를 fail-closed로 막았다.
   focused accessibility E2E 4개, 관련 unit 6개, 전체 unit 및 config 3개가
   통과했으며, 기존 modulepreload baseline 실패는 #490 범위로 섞지 않았다.
-  push 후 exact-head hosted Checks는 재실행 중이고 qualifying approval은 없다.
+  exact-head hosted functional/security Checks는 통과했지만 OpenCode는 현재
+  head verdict 부재로 fail-closed 되었고 qualifying approval은 없다.
 - #587: `c542615f3746ca365a51711e91ffec3477a5025e` (base
   `develop@2c328875`). 직접 소비 가능한
   `application_routes_core.mjs`가 오래된 첫 `x-forwarded-for` 기반 limiter를
@@ -191,8 +191,9 @@ HEAD가 바뀌면 다시 확인해야 한다.
   accounting probe와 대소문자 비구분 기존 계정 재사용을 보강했다. 배포 문서의
   `ORCHESTRATOR_TOKEN`과 contextual-orchestrator 설정 키 관계도 명확히 했다.
   direct-core rate-limit, OIDC production boundary, 전체 API/unit 및 config 3개가
-  로컬 통과했으며, 문서 push 후 exact-head hosted Checks는 재실행 중이고
-  qualifying approval은 없다.
+  로컬 통과했으며, exact-head hosted functional/security Checks는 통과했지만
+  OpenCode는 current-head verdict 부재로 fail-closed 되었고 qualifying approval은
+  없다.
 - #596: `develop@2c328875` 대상 `50f0c2d18e4361e5f11507ca194c94fc7caabbdc`.
   provider diagnostic sanitization과 bounded/cancelled response handling을
   current CodeGraph·resolved 리뷰와 대조했고 orchestrator unit·coverage·
@@ -263,12 +264,15 @@ HEAD가 바뀌면 다시 확인해야 한다.
   security·cloud E2E Checks가 통과했지만 qualifying approval이 없어 병합하지
   않았다.
 - #498: `fix/clearfolio-production-configuration@78f8b557` 대상
-  `940858859b27060241864e633659f656907616b1`. 이전 hosted unit-and-api가
-  persistence `TimeoutError` 회귀 테스트의 잘못된 `READY` fixture를
-  `invalid_status`로 분류해 실패했다. 공유 분류 함수는 provider lookup
-  단계에서만 native `TimeoutError`를 timeout으로 매핑하고, fixture는 유효한
-  `SUCCEEDED`로 고쳤다. local coverage/unit/API는 통과했으며 replacement
-  Checks는 queued이고 qualifying approval은 없다.
+  `d7fae634706d4af8d94ae0b5201d0b539f81df84`. Clearfolio provider 응답의
+  redirect·HMAC·JSON media type·UTF-8·256 KiB streamed byte ceiling과
+  document/job-id validation, caller abort 조합, attachment timeout 분류를
+  current CodeGraph와 대조했다. exact-head hosted unit-and-api·cloud-e2e·
+  dependency/OSV Checks와 local unit·API·coverage·config는 통과했다. local
+  전체 E2E는 75 passed, 기존 develop modulepreload 기대치 1건 실패였으며
+  #490 범위와 중복하지 않았다. Devin의 현재 unresolved 정보성 thread 7개가
+  있고 malformed persisted job ID의 분류 경계가 남아 있지만, qualifying
+  approval은 없다.
 - #505: `develop@2c328875` 대상
   `b8435c719baf4ee9eaa2907e2c93c6d959711d66`. provider가 반환한 Checkout
   redirect가 임의 HTTPS 호스트로 향하지 않도록 정확한
