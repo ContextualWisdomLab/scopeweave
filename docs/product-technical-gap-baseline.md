@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `4c8d09d`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | 미해결 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #495/#621/#625/#628 OpenCode current verdict 부재; #576 Strix가 현재 webhook 경로의 SSRF를 보고; #578/#588 Strix provider 실패; #608 `83b8949`·#610 `3bb2bd9`·#587 `1f93371` Checks 재실행 중; #498 `9408588`·#505 `b8435c7` 수정 후 Checks 재실행 중; #550은 Checks 통과지만 승인 없음; #596은 Checks 통과지만 승인 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #495/#621/#625/#628 OpenCode current verdict 부재; #576 Strix가 현재 webhook 경로의 SSRF를 보고; #578/#588 Strix provider 실패; #608 `83b8949`·#610 `3bb2bd9`·#587 `1f93371` Checks 재실행 중; #498 `9408588`·#505 `b8435c7` 수정 후 Checks 재실행 중; #602 `78e8037` Hono 보안 패치 후 Checks 재실행 중; #550은 Checks 통과지만 승인 없음; #596은 Checks 통과지만 승인 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -168,6 +168,13 @@ HEAD가 바뀌면 다시 확인해야 한다.
   추가한 제출본으로 local readiness·unit·API는 통과했다. 전체 E2E의 1개
   modulepreload 실패는 이 stack 이전의 #628/#495 경로이며, stacked hosted
   Checks는 통과했지만 protected develop 승인 근거는 없다.
+- #602: `develop@2c328875` 대상 `78e803718d1c90a09c7827cc98c980e99e231454`.
+  Hono를 registry 최신 보안 패치 4.13.5로 갱신하고 package/lockfile을 함께
+  재생성했다. `npm ci`, production `npm audit`(취약점 0), unit·API·coverage는
+  통과했다. 전체 E2E는 75/76 통과했으며 유일한 실패는 기존
+  `modulepreload` 링크 기대다. 이전 4.13.4 head의 OpenCode verdict 부재와
+  Strix LLM HTTP 500은 current-head 보안 판정이 아니며, 새 head replacement
+  Checks는 queued/in-progress이고 qualifying approval은 없다.
 - #576: `develop@2c328875` 대상 `62484c2dbeb755fd80fbc123d34e55df7755bda8`.
   Strix exact-head report가 기존 webhook 등록 경로에서 인증 사용자가
   내부 주소로 outbound 요청을 유도할 수 있는 MEDIUM SSRF를 보고했다.
