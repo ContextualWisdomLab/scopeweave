@@ -95,8 +95,8 @@ classDiagram
   reduced motion을 최소 기준으로 삼는다.
 - 검증 명령은 `npm run test:unit`, `npm run test:api`,
   `npm run test:e2e`, `python3 -m pytest tests/config`, `npm run fuzz`다.
-  이번 G-01/G-02의 직접 증거는 `npm run test:e2e` 83개 통과와 검색·JSON 회귀 테스트의
-  통과다.
+  이번 G-01/G-02의 직접 증거는 `npm run test:e2e` 86개 통과와 검색·JSON 회귀
+  테스트의 통과다.
 
 ## 6. 표준·연구 근거
 
