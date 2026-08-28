@@ -281,9 +281,10 @@ export async function refreshAttachmentStatuses(rows, options) {
         }
       } catch (error) {
         counts.failed += 1;
-        const category = error?.name === ATTACHMENT_STATUS_TIMEOUT_ERROR
-          ? 'timeout'
-          : failureCategory;
+        const category = (
+          error?.name === ATTACHMENT_STATUS_TIMEOUT_ERROR
+          || (failureCategory === 'downstream_lookup' && error?.name === 'TimeoutError')
+        ) ? 'timeout' : failureCategory;
         failureCounts[category] += 1;
         reportRefreshFailure(options.onError, category);
       }

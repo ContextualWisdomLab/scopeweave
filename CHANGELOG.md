@@ -29,6 +29,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   and rejected cross-origin, credential-bearing, or fragmented artifact links
   until an explicit reviewed artifact-origin allowlist is configured by a later
   slice.
+- Bounded hosted Clearfolio calls to non-redirecting 15-second requests and
+  256 KiB streamed JSON responses, composed caller cancellation with the
+  provider budget, and validated document metadata/bytes and provider job IDs
+  before allocation, persistence, or URL construction.
+- Preserved Clearfolio provider timeouts that occur while streaming a status
+  response so attachment-refresh timeout metrics remain accurate.
 - Made `SCOPEWEAVE_JWT_SECRET` mandatory at startup and rejected weak or
   unexpanded placeholder values so production deployments fail closed.
 - Neutralized audit-log CSV formulas even when executable prefixes are hidden
