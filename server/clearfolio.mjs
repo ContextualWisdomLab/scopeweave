@@ -267,7 +267,7 @@ function providerSignal(callerSignal) {
   );
   timeoutId.unref();
 
-  const abortFromCaller = controller.abort.bind(controller);
+  const abortFromCaller = () => controller.abort(callerSignal.reason);
   if (callerSignal !== undefined) {
     if (callerSignal.aborted) controller.abort(callerSignal.reason);
     else callerSignal.addEventListener('abort', abortFromCaller, { once: true });
