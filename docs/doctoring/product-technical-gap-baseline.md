@@ -24,3 +24,7 @@
   empty-state help element's DOM `hidden` state and updated the legacy empty-state
   E2E assertion to the native-disabled/`aria-describedby` contract; replacement
   focused E2E and unit checks passed locally.
+- Repaired #587's direct `application_routes_core.mjs` rate-limit boundary by
+  reusing the validated trusted-proxy middleware and adding a direct-core probe;
+  full coverage/API validation passed locally, while replacement hosted Checks
+  remained queued and qualifying approval was absent.
