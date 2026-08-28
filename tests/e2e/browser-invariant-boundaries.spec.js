@@ -12,10 +12,22 @@ if (APP_BOOTSTRAP_LINE < 0) {
 
 test.describe('browser invariant boundaries', () => {
   test('validates a prospective editor registration through the real input path', async ({ page }) => {
+    const coverageAlreadyActive = process.env.SCOPEWEAVE_BROWSER_COVERAGE === '1';
     const cdp = await page.context().newCDPSession(page);
     let breakpointId;
+    let localCoverageActive = false;
 
     try {
+      // The coverage fixture already establishes V8's script-tracking path for
+      // coverage runs. The required non-coverage browser gate must establish
+      // the same pre-navigation runtime condition explicitly; otherwise the
+      // pending URL breakpoint can race app.js script registration and the
+      // probe is never installed even though the production page loads.
+      if (!coverageAlreadyActive) {
+        await page.coverage.startJSCoverage({ resetOnNavigation: false });
+        localCoverageActive = true;
+      }
+
       await cdp.send('Debugger.enable');
       const breakpoint = await cdp.send('Debugger.setBreakpointByUrl', {
         urlRegex: '/app\\.js$',
@@ -90,6 +102,9 @@ test.describe('browser invariant boundaries', () => {
         delete globalThis.__scopeweaveInvariantProbe;
       }).catch(() => {});
       await cdp.detach().catch(() => {});
+      if (localCoverageActive) {
+        await page.coverage.stopJSCoverage().catch(() => {});
+      }
     }
   });
 });
