@@ -28,6 +28,7 @@ test('standalone mobile seed view keeps WCAG-sized named controls and visual evi
     });
     const login = document.querySelector('#cloud-auth button');
     const loginBox = login?.getBoundingClientRect();
+    const cloudAuth = document.querySelector('#cloud-auth');
     return {
       unnamed: unnamed.map((element) => element.outerHTML.slice(0, 180)),
       undersized: undersized.map((element) => ({
@@ -42,6 +43,7 @@ test('standalone mobile seed view keeps WCAG-sized named controls and visual evi
         whiteSpace: getComputedStyle(login).whiteSpace,
         fits: login.scrollWidth <= login.clientWidth && login.scrollHeight <= login.clientHeight,
       },
+      cloudAuthJustifyContent: cloudAuth && getComputedStyle(cloudAuth).justifyContent,
       landmarks: ['header', 'main#main-content', 'footer'].every((selector) => document.querySelector(selector)),
       skipTarget: document.querySelector('.skip-link')?.getAttribute('href'),
       horizontalOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
@@ -51,10 +53,12 @@ test('standalone mobile seed view keeps WCAG-sized named controls and visual evi
   expect(audit.unnamed).toEqual([]);
   expect(audit.undersized).toEqual([]);
   expect(audit.selectHeights.every((height) => height >= 24)).toBe(true);
+  expect(audit.login).not.toBeNull();
   expect(audit.login.width).toBeGreaterThanOrEqual(120);
   expect(audit.login.height).toBeGreaterThanOrEqual(44);
   expect(audit.login.whiteSpace).toBe('nowrap');
   expect(audit.login.fits).toBe(true);
+  expect(audit.cloudAuthJustifyContent).toBe('flex-start');
   expect(audit.landmarks).toBe(true);
   expect(audit.skipTarget).toBe('#main-content');
   expect(audit.horizontalOverflow).toBeLessThanOrEqual(1);

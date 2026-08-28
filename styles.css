@@ -930,7 +930,7 @@ select[data-inline-progress]:focus {
     flex-wrap: wrap;
   }
 
-  .cloud-auth {
+  .title-row .cloud-auth {
     flex: 1 1 100%;
     justify-content: flex-start;
   }
