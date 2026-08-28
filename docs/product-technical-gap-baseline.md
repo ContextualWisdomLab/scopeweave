@@ -261,6 +261,15 @@ HEAD가 바뀌면 다시 확인해야 한다.
   reason-event unit 13+1개와 coverage contract가 통과했다. hosted listed
   unit/API·cloud E2E·OSV·dependency 및 Devin Checks는 통과했지만 current
   OpenCode/Strix check entry와 qualifying approval은 없어 병합하지 않았다.
+- #541: stacked base
+  `cursor/bc-4522f1d4-ae7e-434e-b612-d250afa4d097-5645@e2f560078d3e2862c5dc6c395c159d12dfe1e6fa`
+  대상 `1e491bac2fc42b1f17c93666223ce1da78c6ba61`. calendar subscription SQLite
+  adapter의 `calendar_read` purpose 기본값, membership/issuance epoch 경계,
+  expiry·revoke·race·retention 및 secret-hash 저장을 current CodeGraph·resolved
+  리뷰와 대조했고 calendar unit 26개가 통과했다. hosted listed unit/API·cloud
+  E2E·OSV·dependency 및 Devin Checks는 통과했지만 schema installer는 후속
+  route integration 범위로 의도적으로 unwired이고 current OpenCode/Strix
+  check entry와 qualifying approval이 없어 병합하지 않았다.
 - #531: `develop@2c328875` 대상
   `b6842e7cf60f77b1d5cee04e1c020e411afc9a6f`. SQLite backup의 read-only
   source/WAL 처리, bounded schema streaming, destination race 방지,
