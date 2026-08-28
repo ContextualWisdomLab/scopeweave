@@ -217,6 +217,7 @@ const elements = {
   tableBody: document.getElementById('task-table-body'),
   addRootButton: document.getElementById('add-root-task'),
   exportCsvButton: document.getElementById('export-csv'),
+  exportJsonButton: document.getElementById('export-json'),
   importCsvButton: document.getElementById('import-csv'),
   csvFileInput: document.getElementById('csv-file-input'),
   ganttModal: document.getElementById('gantt-modal'),
@@ -314,6 +315,14 @@ function bindHeaderEvents(persistAndRenderMetadata) {
       return;
     }
     exportCsv();
+  });
+  elements.exportJsonButton.addEventListener('click', (e) => {
+    if (elements.exportJsonButton.getAttribute('aria-disabled') === 'true') {
+      e.preventDefault();
+      showToast('내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.');
+      return;
+    }
+    exportJson();
   });
   elements.importCsvButton.addEventListener('click', () => elements.csvFileInput.click());
   elements.csvFileInput.addEventListener('change', handleCsvImport);
@@ -554,12 +563,15 @@ function renderAll() {
   const hasTasks = state.tasks.length > 0;
   if (!hasTasks) {
     elements.exportCsvButton.setAttribute('aria-disabled', 'true');
+    elements.exportJsonButton.setAttribute('aria-disabled', 'true');
     elements.openGanttButton.setAttribute('aria-disabled', 'true');
   } else {
     elements.exportCsvButton.removeAttribute('aria-disabled');
+    elements.exportJsonButton.removeAttribute('aria-disabled');
     elements.openGanttButton.removeAttribute('aria-disabled');
   }
   elements.exportCsvButton.title = hasTasks ? '' : '내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.';
+  elements.exportJsonButton.title = elements.exportCsvButton.title;
   elements.openGanttButton.title = hasTasks ? '' : '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.';
 
   // ⚡ Bolt: Cache parent IDs to convert O(N^2) render loop to O(N)
@@ -2030,6 +2042,11 @@ function exportCsv() {
     .map((row) => row.map((cell) => csvEscape(cell)).join(','))
     .join('\r\n');
   downloadFile(csvText, `wbs_export_${formatCompactDate(new Date())}.csv`, 'text/csv;charset=utf-8');
+}
+
+function exportJson() {
+  const jsonText = JSON.stringify(exportJsonArray(), null, 2);
+  downloadFile(jsonText, `wbs_export_${formatCompactDate(new Date())}.json`, 'application/json;charset=utf-8');
 }
 
 async function handleCsvImport(event) {
