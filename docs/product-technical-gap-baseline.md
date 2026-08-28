@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `5c6c2530`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, 현재 #621 `5c6c2530`, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `89fff38b`이 #621 `5c6c2530` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 직전 exact `46546277`은 기능·보안 Checks 통과에도 OpenCode current-head verdict 부재와 Strix 취소·artifact 부재; #629 `89fff38b`는 cloud/unit/API/OSV/dependency hosted Checks 통과; 모든 대상에 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 `e8c75a55`는 기능·보안 Checks 통과에도 OpenCode current-head verdict 부재와 Strix 실행 중; #629 `89fff38b`는 cloud/unit/API/OSV/dependency hosted Checks 통과; 모든 대상에 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -115,14 +115,15 @@ HEAD가 바뀌면 다시 확인해야 한다.
   cloud-E2E의 seed 비동기 경쟁 조건을 `.empty-cell` 렌더 대기로 수정하고, Devin이
   지적한 모바일 정렬·로그인 폭 floor도 보완했다. 현재 HEAD의 seed-load race는
   empty-cell과 공통 activity-subtree helper에 대기를 추가해 로컬 targeted E2E가
-  통과했고, hosted cloud/unit/API/OSV/dependency Checks도 통과했다. hosted
-  unit/API·OSV·dependency review는 통과했으며 qualifying approval은 없다.
-- #625: `develop@2c328875` 대상 `c0c2b8489567a4c0f09dde2aef4dd6be4610b5f2`.
+  통과했고, hosted cloud/unit/API/OSV/dependency Checks도 통과했다. 전체
+  Playwright 100개도 통과했으며 모든 Devin thread는 해결됐지만 qualifying
+  approval은 없다.
+- #625: `develop@2c328875` 대상 `e8c75a557e090fdfb943e1346888df00681151c8`.
   기준선 문서에 #587의 exact-head 보안·운영 수정과 현재 승인/게이트 상태를
   반영했다. exact-head functional/security/coverage/unit Checks는 terminal
   success이고 Scorecard·Trivy·OSV scanner는 neutral이다. OpenCode는 현재
-  head verdict 부재로 fail-closed 되었고 qualifying approval이 없어 병합하지
-  않았다.
+  head verdict 부재로 fail-closed 되었고 Strix는 현재 실행 중이며 qualifying
+  approval이 없어 병합하지 않았다.
 - #616: `develop@2c328875` 대상
   `b427cd455f41e7c09ae20fbbf400d42c4f61d4bf`. deterministic release-artifact
   manifest의 regular-file/no-symlink, bounded manifest read, SHA-256 및
@@ -315,9 +316,12 @@ HEAD가 바뀌면 다시 확인해야 한다.
   대상 current head `98fd12d145292ed198fde111bd02690c3e18ecbf`. SQLite access-grant
   schema·membership epoch·one-time consume/audit 경계를 current CodeGraph와
   대조했고, attachment 삭제와 mint가 경합할 때 FK extended code 787을
-  nondisclosing `null` transition으로 변환하는 최소 수정과 회귀를 추가했다.
-  full unit·API·fuzz 및 access-grant focused 5+10+4+domain tests가 통과했으며,
-  replacement hosted Checks는 queued이고 qualifying approval은 없다.
+  nondisclosing `null` transition으로 변환하는 최소 수정과 회귀를 확인했다.
+  access-grant focused 21개, 전체 unit·API·docstring·config 3개, fuzz 14개,
+  coverage가 통과했다. 전체 Playwright는 75 passed와 부모 develop의 기존
+  modulepreload 1건 실패였고, exact-head hosted cloud-e2e·unit/API·OSV·dependency
+  Checks는 통과했다. 부모 #506이 아직 보호 병합되지 않았고 qualifying approval도
+  없어 병합하지 않았다.
 - #511: stacked base
   `fix/stripe-checkout-provider-boundary-488@5d1bf1b023d4152610d9bc247c02da27429d33cd` 대상
   `01be3a5d59979e4c52d17bfaa4428c177dec0237`. Checkout attempt idempotency와
