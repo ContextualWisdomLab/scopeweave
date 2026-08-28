@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `5c6c2530`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, 현재 #621 `5c6c2530`, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `89fff38b`이 #621 `5c6c2530` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 기준선 PR의 최신 제출본은 hosted Checks 재실행 중; #629 `89fff38b`는 cloud/unit/API/OSV/dependency hosted Checks 통과; 모든 대상에 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 직전 exact `46546277`은 기능·보안 Checks 통과에도 OpenCode current-head verdict 부재와 Strix 취소·artifact 부재; #629 `89fff38b`는 cloud/unit/API/OSV/dependency hosted Checks 통과; 모든 대상에 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -118,8 +118,12 @@ HEAD가 바뀌면 다시 확인해야 한다.
   통과했고, hosted cloud/unit/API/OSV/dependency Checks도 통과했다. hosted
   unit/API·OSV·dependency review는 통과했으며 qualifying approval은 없다.
 - #625: `develop@2c328875` 대상. 직전 docs-only 기준선 제출본
-  `63548a8c456881658a90728c79188c0fa63bab8b`에서 주요 hosted Checks가 재실행
-  중이며, qualifying approval은 없다.
+  `4654627719b5a139fa99f7baec7337c746fae482`의 exact-head functional/security/
+  coverage/unit Checks는 terminal success이고 Scorecard·Trivy·OSV scanner는
+  neutral이다. OpenCode run `33210481457`/job `98982461472`는 current-head
+  verdict 부재로 fail-closed 되었고, Strix run `33210481495`는 cancelled되어
+  job·artifact가 없으며 authoritative clean evidence가 없다. qualifying
+  approval도 없어 병합하지 않았다.
 - #616: `develop@2c328875` 대상
   `b427cd455f41e7c09ae20fbbf400d42c4f61d4bf`. deterministic release-artifact
   manifest의 regular-file/no-symlink, bounded manifest read, SHA-256 및
