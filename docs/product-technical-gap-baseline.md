@@ -245,6 +245,22 @@ HEAD가 바뀌면 다시 확인해야 한다.
   `sourceIndex`를 nested `record` 안에서 보존하는지 current CodeGraph와
   CodeRabbit 지적을 대조 검토했다. hierarchy unit 10개와 전체 unit·API·coverage가
   통과했고 hosted Checks와 Strix도 통과했지만 qualifying approval은 없다.
+- #517: stacked base
+  `feat/work-item-hierarchy-domain-287@36c11dd0bf907569184d7d73172b675d21bd0ff1`
+  대상 `73ce4227d761c79a9fcad39b0455fec4b35b6274`. schedule outcome의 UTC
+  explicit-offset timestamp, blocker lifecycle, terminal-reason precedence와
+  immutable explanation을 current CodeGraph·resolved 리뷰와 대조했고 domain
+  unit 12+8개가 통과했다. hosted listed unit/API·cloud E2E·OSV·dependency 및
+  Devin Checks는 통과했지만 current OpenCode/Strix check entry와 qualifying
+  approval은 없어 병합하지 않았다.
+- #518: stacked base
+  `feat/schedule-outcome-domain-287@73ce4227d761c79a9fcad39b0455fec4b35b6274`
+  대상 `95982819c49cf08ed92b18795a80234882676d53`. terminal reason의 action
+  authorization, cancellation의 독립 approval·self-approval 방지, exact resource
+  version과 atomic commit receipt를 current CodeGraph·resolved 리뷰와 대조했고
+  reason-event unit 13+1개와 coverage contract가 통과했다. hosted listed
+  unit/API·cloud E2E·OSV·dependency 및 Devin Checks는 통과했지만 current
+  OpenCode/Strix check entry와 qualifying approval은 없어 병합하지 않았다.
 - #531: `develop@2c328875` 대상
   `b6842e7cf60f77b1d5cee04e1c020e411afc9a6f`. SQLite backup의 read-only
   source/WAL 처리, bounded schema streaming, destination race 방지,
