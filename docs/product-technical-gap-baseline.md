@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `4c8d09d`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | 미해결 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #495/#621/#625/#628 OpenCode current verdict 부재; #588 Strix provider 실패; #608 `83b8949`·#610 `3bb2bd9`·#587 `1f93371` Checks 재실행 중; #550은 Checks 통과지만 승인 없음; #596은 Checks 통과지만 승인 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #495/#621/#625/#628 OpenCode current verdict 부재; #576 Strix가 현재 webhook 경로의 SSRF를 보고; #588 Strix provider 실패; #608 `83b8949`·#610 `3bb2bd9`·#587 `1f93371` Checks 재실행 중; #550은 Checks 통과지만 승인 없음; #596은 Checks 통과지만 승인 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -139,6 +139,11 @@ HEAD가 바뀌면 다시 확인해야 한다.
   주소, DNS rebinding, pinned connection, legacy destination migration을 다룬다.
   일반 hosted 게이트는 통과했지만 Strix provider 실패와 qualifying approval
   부재로 병합하지 않았다.
+- #576: `develop@2c328875` 대상 `62484c2dbeb755fd80fbc123d34e55df7755bda8`.
+  Strix exact-head report가 기존 webhook 등록 경로에서 인증 사용자가
+  내부 주소로 outbound 요청을 유도할 수 있는 MEDIUM SSRF를 보고했다.
+  이 경로의 canonical 수정은 #588에 단일화했으므로 #576에는 중복 패치를
+  넣지 않고, #576은 해당 보안 근거와 승인 부재로 병합하지 않았다.
 - #628: `develop@2c328875` 대상 `7d27ff23a3eac6548b904f91f2282f0efcc5c5a5`.
   비상호작용 tooltip의 keyboard focus, semantic role, focus-visible 표시를
   추가했고 단독 E2E 75개가 통과했다. 현재 base의 modulepreload 누락으로
