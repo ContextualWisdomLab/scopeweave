@@ -256,6 +256,15 @@ HEAD가 바뀌면 다시 확인해야 한다.
   주소, DNS rebinding, pinned connection, legacy destination migration을 다룬다.
   일반 hosted 게이트는 통과했지만 Strix provider 실패와 qualifying approval
   부재로 병합하지 않았다.
+- #593: `develop@2c328875` 대상
+  `a7bc39d16fe5240832ef08f0ee80e9c64dea7181`. pending invite roster에서 bearer
+  token을 제거하고, canonical email이 유일하며 인증 subject와 일치할 때만
+  초대를 수락하도록 했다. malformed invite/share path도 structured request
+  log에서 token segment를 redaction한다. 전용 invite identity 보안 회귀,
+  전체 unit/API, config 3개가 로컬 통과했고, hosted 기능·보안·fuzz·coverage·
+  cloud·SAST·dependency/OSV Checks는 통과했다. Scorecard·Trivy·OSV scanner는
+  neutral이고 OpenCode는 current-head verdict 부재로 fail-closed 되었으며,
+  review threads는 0이지만 qualifying approval은 없다.
 - #493: `develop@2c328875` 대상
   `78f8b557cd2b9cab238af72304f0ed42e1557759`. Clearfolio production 설정의
   fail-closed 경계, tenant HMAC 헤더의 redirect 재전송 방지, artifact link의
