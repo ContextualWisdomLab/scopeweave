@@ -232,6 +232,13 @@ assert.equal(getOwnerBadgeTemplate(), ownerShell, 'owner rendering reuses one im
 const numericOwnerCell = createOwnerCellContent(123);
 assert.equal(numericOwnerCell.text, '123', 'owner values are stringified before hashing and rendering');
 assert.match(numericOwnerCell.className, /^owner-badge owner-badge--color-\d+$/);
+const minimumSignedHashOwner = String.fromCharCode(2, 13, 0, 9, 30, 12, 2);
+const minimumSignedHashCell = createOwnerCellContent(minimumSignedHashOwner);
+assert.match(
+  minimumSignedHashCell.className,
+  /^owner-badge owner-badge--color-(?:[0-9]|1[0-9])$/,
+  'owner hash overflow still selects a defined palette class',
+);
 
 const createElementCallsBeforeOwners = getCreateElementCalls();
 for (let index = 0; index < 300; index += 1) {

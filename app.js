@@ -987,7 +987,7 @@ function getOwnerColorIndex(owner) {
   for (let index = 0; index < owner.length; index += 1) {
     hash = ((hash << 5) - hash + owner.charCodeAt(index)) | 0;
   }
-  return Math.abs(hash) % OWNER_COLOR_CLASS_COUNT;
+  return (hash >>> 0) % OWNER_COLOR_CLASS_COUNT;
 }
 
 function createOwnerCellContent(owner) {
