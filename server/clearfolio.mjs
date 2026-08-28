@@ -123,6 +123,60 @@ function clearfolioConfiguration() {
 }
 
 /**
+ * Build the exact set of origins trusted to host Clearfolio artifacts.
+ *
+ * The configured Clearfolio origin is always trusted. Additional origins are
+ * optional and must be comma-separated HTTPS origins with no credentials,
+ * path, query, or fragment. Canonical URL origins preserve exact scheme, host,
+ * and effective port identity while preventing string-prefix allowlist bypasses.
+ *
+ * @param {string} baseUrl - Validated Clearfolio provider origin.
+ * @returns {Set<string>} Canonical origins accepted for artifact redirects.
+ * @throws {ClearfolioConfigurationError} If the optional allowlist is malformed or unsafe.
+ */
+function clearfolioArtifactOrigins(baseUrl) {
+  const trustedOrigins = new Set([new URL(baseUrl).origin]);
+  const configuredOrigins = process.env.CLEARFOLIO_ARTIFACT_ORIGINS;
+  if (configuredOrigins === undefined) return trustedOrigins;
+
+  const entries = String(configuredOrigins).split(',');
+  if (entries.some((entry) => entry.trim().length === 0)) {
+    throw new ClearfolioConfigurationError(
+      'clearfolio_artifact_origins_invalid',
+      'CLEARFOLIO_ARTIFACT_ORIGINS must contain only comma-separated HTTPS origins.',
+    );
+  }
+
+  for (const entry of entries) {
+    const canonical = entry.trim();
+    let url;
+    try {
+      url = new URL(canonical);
+    } catch {
+      throw new ClearfolioConfigurationError(
+        'clearfolio_artifact_origins_invalid',
+        'CLEARFOLIO_ARTIFACT_ORIGINS must contain only comma-separated HTTPS origins.',
+      );
+    }
+    if (
+      url.protocol !== 'https:'
+      || Boolean(url.username + url.password)
+      || url.pathname !== '/'
+      || Boolean(url.search)
+      || Boolean(url.hash)
+      || (canonical !== url.origin && canonical !== `${url.origin}/`)
+    ) {
+      throw new ClearfolioConfigurationError(
+        'clearfolio_artifact_origins_invalid',
+        'CLEARFOLIO_ARTIFACT_ORIGINS must contain only comma-separated HTTPS origins.',
+      );
+    }
+    trustedOrigins.add(url.origin);
+  }
+  return trustedOrigins;
+}
+
+/**
  * Sign tenant claims using the Clearfolio HMAC interoperability contract.
  *
  * The payload is the newline-delimited tenant ID, subject ID, permissions, and
@@ -518,12 +572,9 @@ export async function jobStatus(orgId, userId, jobId, { signal } = {}) {
 /**
  * Issue a viewable artifact URL for a completed Clearfolio job.
  *
- * All browser redirect authority remains bound to the configured Clearfolio
- * origin in this transport slice. Cross-origin artifact hosts stay fail-closed
- * until the separately reviewed artifact-origin allowlist lands. Credentials
- * and fragments are rejected for both token-bearing and tokenless links.
- * Same-origin `artifactToken` values may be translated into the trusted viewer
- * route without exposing the token to an unreviewed host.
+ * Same-origin `artifactToken` values may be translated into the local viewer
+ * route. A token returned on another origin remains bound to that origin and is
+ * never transplanted into the trusted Clearfolio viewer URL.
  *
  * @param {string|number} orgId - ScopeWeave organization identifier.
  * @param {string|number} userId - Requesting ScopeWeave user identifier.
@@ -535,6 +586,7 @@ export async function artifactUrl(orgId, userId, jobId) {
   const canonicalJobId = validateJobId(jobId);
   const configuration = clearfolioConfiguration();
   if (configuration.mock) return `/api/mock-clearfolio/${encodeURIComponent(canonicalJobId)}`;
+  const trustedArtifactOrigins = clearfolioArtifactOrigins(configuration.baseUrl);
   const request = providerSignal();
   try {
     let res;
@@ -569,16 +621,15 @@ export async function artifactUrl(orgId, userId, jobId) {
       throw new Error('clearfolio artifact-link response invalid');
     }
     if (
-      url.origin !== clearfolioUrl.origin
-      || url.username
-      || url.password
-      || url.hash
+      Boolean(url.username + url.password)
+      || Boolean(url.hash)
+      || !trustedArtifactOrigins.has(url.origin)
     ) {
       throw new Error('clearfolio artifact-link response invalid');
     }
 
     const token = url.searchParams.get('artifactToken');
-    if (token) {
+    if (token && url.origin === clearfolioUrl.origin) {
       return `${configuration.baseUrl}/viewer/${encodeURIComponent(canonicalJobId)}?artifactToken=${encodeURIComponent(token)}`;
     }
     return url.href;

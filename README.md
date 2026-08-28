@@ -101,7 +101,10 @@ Docker: set a **persistent** `SCOPEWEAVE_JWT_SECRET` first, then run `docker com
 | `OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI` | Real SSO IdP (mock when unset) |
 | `STRIPE_SECRET_KEY` | Real checkout (mock URL when unset) |
 | `SCOPEWEAVE_RATE_LIMIT_MAX` (+`_WINDOW_MS`) | Opt-in per-IP rate limiting |
-| `SCOPEWEAVE_DEV=1` | Dev-only endpoints (activate-pro) |
+| `SCOPEWEAVE_DEV=1` | Dev-only endpoints (activate-pro, loopback Clearfolio HTTP, in-memory Clearfolio adapter when no provider URL exists). Never set in production. |
+| `CLEARFOLIO_URL` | Production 산출물 viewer origin (HTTPS). Unset fails closed unless `SCOPEWEAVE_DEV=1`. |
+| `CLEARFOLIO_HMAC_SECRET` | Tenant-claim HMAC secret (at least 32 non-whitespace characters) when a provider URL is set. |
+| `CLEARFOLIO_ARTIFACT_ORIGINS` | Optional comma-separated exact HTTPS artifact origins. Unset trusts only `CLEARFOLIO_URL`. Empty or malformed values fail closed. |
 
 ## Verification
 

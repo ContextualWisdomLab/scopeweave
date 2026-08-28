@@ -54,6 +54,7 @@ test.after(() => {
   globalThis.fetch = originalFetch;
   delete process.env.CLEARFOLIO_URL;
   delete process.env.CLEARFOLIO_HMAC_SECRET;
+  delete process.env.CLEARFOLIO_ARTIFACT_ORIGINS;
   delete process.env.SCOPEWEAVE_DEV;
 });
 
@@ -257,6 +258,28 @@ test('artifactUrl validates links and never exposes transport or response text',
     () => artifactUrl(4, 5, 'job-1'),
     'clearfolio artifact-link response invalid',
   );
+
+  process.env.CLEARFOLIO_ARTIFACT_ORIGINS = 'https://cdn.example';
+  try {
+    setResponse({ json: async () => ({ url: 'https://cdn.example/file.pdf' }) });
+    assert.equal(
+      await artifactUrl(4, 5, 'job-1'),
+      'https://cdn.example/file.pdf',
+    );
+
+    setResponse({
+      json: async () => ({
+        signedUrl: 'https://cdn.example/file.pdf?artifactToken=token%20value',
+      }),
+    });
+    assert.equal(
+      await artifactUrl(4, 5, 'job-1'),
+      'https://cdn.example/file.pdf?artifactToken=token%20value',
+      'an explicitly trusted cross-origin token remains bound to its artifact origin',
+    );
+  } finally {
+    delete process.env.CLEARFOLIO_ARTIFACT_ORIGINS;
+  }
 });
 
 test('artifactUrl permits HTTP only for explicit loopback development', async () => {
@@ -274,6 +297,7 @@ test('artifactUrl permits HTTP only for explicit loopback development', async ()
     );
   } finally {
     process.env.CLEARFOLIO_URL = 'https://clearfolio.example';
+    delete process.env.CLEARFOLIO_ARTIFACT_ORIGINS;
     delete process.env.SCOPEWEAVE_DEV;
   }
 });

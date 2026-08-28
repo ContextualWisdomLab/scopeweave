@@ -12,9 +12,11 @@ This boundary prevents configuration text from becoming an arbitrary downstream 
 
 Every tenant-signed submit, status, and artifact-link fetch uses `redirect: "error"`. A provider redirect therefore becomes the existing sanitized transport failure instead of allowing the runtime to replay tenant HMAC headers onto an untrusted `Location` target.
 
-Artifact links returned by this root configuration slice must resolve to the configured Clearfolio origin, must contain no URL credentials, and must contain no fragment. Protocol-relative or absolute foreign-host links fail closed, including token-free links that would otherwise become the browser's attachment-view redirect target. If a same-origin link contains an `artifactToken`, ScopeWeave rewrites that token into the trusted Clearfolio viewer route. A token is never transplanted into another origin.
+Artifact links are default-deny outside the configured Clearfolio origin. They must contain no URL credentials or fragment. Protocol-relative or absolute foreign-host links therefore fail closed unless the foreign origin has been explicitly admitted by the reviewed `CLEARFOLIO_ARTIFACT_ORIGINS` policy described in `docs/doctoring/clearfolio-artifact-origin-trust.md`. Allowlist entries themselves must be canonical origin values so ambiguous path, credential, fragment, and serialization variants cannot silently broaden authority.
 
-This root slice deliberately does not invent a cross-origin artifact-host allowlist. A later reviewed policy may admit explicitly configured canonical origins, but until that policy is present the secure default is same-origin only. Issue #489 remains open after this slice. Subsequent bounded work must still add the reviewed artifact-origin allowlist if cross-origin delivery is required, streaming response-size/media-type limits, a provider-wide request budget, and the remaining resource/lifecycle acceptance criteria before the Clearfolio adapter can be described as fully production-complete.
+If a same-origin link contains an `artifactToken`, ScopeWeave rewrites that token into the trusted Clearfolio viewer route. A token is never transplanted from one origin into another. When a reviewed cross-origin artifact origin is explicitly allowed, its token-bearing URL remains bound to that issuing origin rather than being rewritten into the Clearfolio viewer.
+
+Issue #489 remains open after this stack. The provider-response parent owns bounded request time, response media type/size, streamed JSON parsing, and response-body cleanup. Remaining work includes capability readiness, broader persistence/lifecycle and incident/recovery evidence, plus destination DNS/IP authorization and any stronger signed-artifact URL-shape restrictions required for allowlisted origins.
 
 ## Executable evidence
 
@@ -26,21 +28,21 @@ This root slice deliberately does not invent a cross-origin artifact-host allowl
 - loopback HTTP is accepted only under explicit development mode; and
 - signed tenant headers retain the documented canonical HMAC contract.
 
-`tests/unit/clearfolio-status-signal.test.mjs` exercises sanitized transport/HTTP/JSON/status/artifact failures and now requires all three tenant-signed fetch paths to disable redirects. It rejects token-free CDN links, protocol-relative foreign links, credential-bearing same-origin links, fragmented same-origin links, and cross-origin token-bearing links while retaining same-origin relative links and the trusted viewer rewrite. `tests/api/attachment-status.test.mjs` makes its test-only in-memory provider explicit instead of relying on an unset production URL.
+`tests/unit/clearfolio-status-signal.test.mjs` preserves the parent transport/HTTP/JSON/status/artifact regressions and requires all three tenant-signed fetch paths to disable redirects. With no artifact-origin allowlist it rejects token-free foreign HTTPS links, protocol-relative foreign links, credential-bearing same-origin links, fragmented same-origin links, and cross-origin token-bearing links while retaining same-origin relative links and the trusted viewer rewrite. With an explicit canonical `CLEARFOLIO_ARTIFACT_ORIGINS` entry it permits that exact foreign origin and leaves a foreign-origin token bound to its issuing URL. `tests/api/attachment-status.test.mjs` keeps its test-only in-memory provider explicit instead of relying on an unset production URL.
 
-The shipped `server/clearfolio.mjs` remains in the canonical c8 production coverage target, so the new configuration branches execute under the repository coverage gate rather than a documentation-only path.
+The shipped `server/clearfolio.mjs` remains in the canonical c8 production coverage target, so the configuration, provider-response, and allowlist branches execute under the repository coverage gate rather than a documentation-only path.
 
 ## Standards and threat rationale
 
-The WHATWG URL Standard defines URL components, including credentials, queries, and fragments, and provides the common parsing model used by the JavaScript `URL` API. ScopeWeave parses first and then applies component-level policy instead of relying on string-prefix validation.
+The WHATWG URL Standard defines URL components, credentials, origins, queries, fragments, and serialization behavior used by the JavaScript `URL` API. ScopeWeave parses first and then applies component-level and canonical-origin policy instead of relying on string-prefix validation.
 
-OWASP's SSRF Prevention guidance recommends strict allowlisting and warns that redirects and attacker-controlled complete URLs can bypass URL validation. This slice narrows operator configuration to a provider origin, disables redirect following for tenant-signed calls, and keeps browser redirect authority same-origin until an explicit reviewed allowlist exists.
+OWASP's SSRF Prevention guidance recommends strict allowlisting and warns that redirects and attacker-controlled complete URLs can bypass URL validation. ScopeWeave narrows operator configuration to a provider origin, disables redirect following for tenant-signed calls, defaults artifact redirects to the provider origin, and admits a foreign artifact origin only through explicit canonical allowlisting. DNS/IP destination authorization remains a separately tracked defense-in-depth boundary rather than being implied by hostname allowlisting.
 
 NIST SSDF 1.1 recommends identifying and maintaining software security requirements and producing well-secured software through repeatable verification. The fail-closed configuration contract, executable negative tests, and explicit remaining-gap statement provide acquisition-review evidence without claiming certification.
 
 ## Rollback
 
-Rollback reverts the Clearfolio configuration parser, explicit development-mode tests, redirect prohibition, same-origin artifact rule, deployment text, this doctoring record, and the corresponding CHANGELOG entry together. No database schema or persisted attachment representation changes in this slice.
+Rolling back the artifact-origin child removes its allowlist parsing, allowlist-specific tests/docs/deployment text, and child CHANGELOG entries while retaining the parent provider-configuration, redirect prohibition, same-origin default, bounded-response, and request-budget controls. No database schema or persisted attachment representation changes in this slice.
 
 ## References
 
