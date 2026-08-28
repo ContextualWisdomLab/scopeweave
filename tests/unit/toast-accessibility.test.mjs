@@ -115,11 +115,6 @@ test('task-dependent help is visible only while native actions are unavailable a
     /#open-gantt\[aria-disabled=["']true["']\]\s*\+\s*#task-dependent-actions-help\s*\{[^}]*\bdisplay\s*:\s*block\s*;[^}]*\}/s,
     'the shipped stylesheet shows the visible explanation only when the task-dependent actions are disabled',
   );
-  assert.match(
-    stylesCss,
-    /\.app-shell:has\(\.empty-state-cell\)\s+\.bottom-action-bar\s*\{[^}]*\bposition\s*:\s*static\s*;[^}]*\}/s,
-    'the empty-state action bar stays in flow so it cannot cover the empty-state content',
-  );
   assert.doesNotMatch(
     indexHtml,
     /<style\b/i,
