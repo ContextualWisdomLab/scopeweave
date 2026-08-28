@@ -148,9 +148,12 @@ HEAD가 바뀌면 다시 확인해야 한다.
   `server/rate_limit.mjs`의 설정 검증·trusted transport peer·bucket 상한을
   공유하도록 했다. direct-core rate-limit, 전체 coverage/API는 로컬 통과했으며,
   replacement hosted Checks는 queued이고 qualifying approval은 없다.
-- #596: `50f0c2d18e4361e5f11507ca194c94fc7caabbdc`. 공급자 진단을 고객에게
-  노출하지 않는 502 envelope이며 hosted 보안·테스트·OpenCode·Strix·Devin
-  Checks는 통과했지만 qualifying approval이 없어 병합하지 않았다.
+- #596: `develop@2c328875` 대상 `50f0c2d18e4361e5f11507ca194c94fc7caabbdc`.
+  provider diagnostic sanitization과 bounded/cancelled response handling을
+  current CodeGraph·resolved 리뷰와 대조했고 orchestrator unit·coverage·
+  attribution focused tests가 통과했다. hosted 보안·테스트·OpenCode·Strix·
+  Devin Checks는 통과했지만 `REVIEW_REQUIRED`이고 qualifying approval이 없어
+  병합하지 않았다.
 - #550: `9267d2d7686ea7891591a600187ebc21428b13ba` (base
   `develop@2c328875`). 로컬 CSV와 cloud 조직·캘린더·감사 로그 다운로드가
   공유된 안전한 임시 앵커 경로를 사용하고, 설정·click·cleanup·URL revoke
