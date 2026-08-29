@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `5c6c2530`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, 현재 #621 `5c6c2530`, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `89fff38b`이 #621 `5c6c2530` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #587 `f36eb24a`는 trusted-proxy limiter와 guard 순서의 current-head 회귀, NFC mailbox canonicalization, OIDC form-body 전송을 검증했고 required Checks 5개·Noema는 통과했지만 Strix run `33238662633`은 `orchestrator/free` provider HTTP 500과 권위 있는 report 부재로 fail-closed되었고, OpenCode formal current-head verdict과 qualifying approval도 없음; #593 current HEAD `6afb53e0`는 revoke-token smoke fixture와 Cherokee case-folding regression을 보완했고 exact-head 기능·보안·coverage·fuzz·Noema는 통과했지만 Strix run `33242746503`은 세 번의 `orchestrator/free` provider HTTP 500과 artifact `9711990990`의 report 부재로 fail-closed되었고 OpenCode formal current-head verdict 및 qualifying approval도 없음; #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625의 마지막 검증 predecessor는 `a49a879a`이며 required Checks 5개·Noema·Strix가 통과했지만 OpenCode current-head verdict과 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #596 `86210691`, #602 `97721a98`, #608 `f705a958`, #610 `4c965cb0`는 기능·보안 Checks가 수렴했지만 OpenCode current-head verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #587 `f36eb24a`는 trusted-proxy limiter와 guard 순서의 current-head 회귀, NFC mailbox canonicalization, OIDC form-body 전송을 검증했고 required Checks 5개·Noema는 통과했지만 Strix run `33238662633`은 `orchestrator/free` provider HTTP 500과 권위 있는 report 부재로 fail-closed되었고, OpenCode formal current-head verdict과 qualifying approval도 없음; #593 current HEAD `6afb53e0`는 revoke-token smoke fixture와 Cherokee case-folding regression을 보완했고 exact-head 기능·보안·coverage·fuzz·Noema는 통과했지만 Strix run `33242746503`은 세 번의 `orchestrator/free` provider HTTP 500과 artifact `9711990990`의 report 부재로 fail-closed되었고 OpenCode formal current-head verdict 및 qualifying approval도 없음; #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625의 마지막 검증 predecessor는 `a49a879a`이며 required Checks 5개·Noema·Strix가 통과했지만 OpenCode current-head verdict과 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #596 current HEAD `86210691`의 Strix rerun `33226164926` attempt 2도 provider HTTP 500 세 번과 artifact `9712365533`의 권위 있는 report 부재로 fail-closed되었고 OpenCode 실패 및 qualifying approval 없음; #602 `97721a98`, #608 `f705a958`, #610 `4c965cb0`는 기능·보안 Checks가 수렴했지만 OpenCode current-head verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 2026-08-29 live-gate follow-up: #593의 current-head Strix run `33235086478`은
 `openai/orchestrator/free` 연결 HTTP 500을 세 번 기록했고 권위 있는 취약점
@@ -326,8 +326,11 @@ artifact `9710489491`에는 권위 있는 취약점 보고서가 없었다. 워�
   current CodeGraph·resolved 리뷰와 대조했고 orchestrator attribution focused
   tests, API/unit/coverage 및 전체 Playwright 76개가 통과했다. hosted 일반
   required Checks는 success 또는 expected neutral/skipped이고, OpenCode는
-  current-head verdict 부재로 fail-closed 되었으며 qualifying approval이
-  없어 병합하지 않았다.
+  current-head verdict 부재로 fail-closed 되었다. 취소된 최초 Strix run을
+  exact HEAD에서 rerun한 `33226164926` attempt 2도 세 번의
+  `openai/orchestrator/free` HTTP 500과 artifact `9712365533`의 권위 있는
+  report 부재로 `STRIX_PROVIDER_UNAVAILABLE` fail-closed 되었다. current-head
+  REST review에는 qualifying approval이 없어 병합하지 않았다.
 - #550: `9267d2d7686ea7891591a600187ebc21428b13ba` (base
   `develop@2c328875`). 로컬 CSV와 cloud 조직·캘린더·감사 로그 다운로드가
   공유된 안전한 임시 앵커 경로를 사용하고, 설정·click·cleanup·URL revoke
