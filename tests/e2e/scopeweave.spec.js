@@ -163,6 +163,8 @@ test.describe('ScopeWeave Planner', () => {
     await expect(contextToggle).toHaveAttribute('aria-disabled', 'true');
     await expect(contextToggle).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('#task-filter-status')).toHaveText('3개 작업 표시 중 (전체 4개)');
+    await contextToggle.dispatchEvent('click');
+    await expect(page.locator('#toast')).toContainText('검색 중 계층 맥락 고정');
     await search.fill('');
     await expect(page.locator('#seed-onboarding')).toBeVisible();
 
@@ -272,6 +274,33 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.getByRole('button', { name: 'JSON 내보내기' })).toHaveAttribute('aria-disabled', 'true');
     await expect(page.getByRole('button', { name: '간트차트보기' })).toHaveAttribute('aria-disabled', 'true');
     await expect(page.getByRole('button', { name: '간트차트보기' })).toHaveAttribute('title', '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.');
+
+    await page.getByRole('button', { name: 'CSV 내보내기' }).dispatchEvent('click');
+    await expect(page.locator('#toast')).toContainText('내보낼 작업이 없습니다');
+    await page.getByRole('button', { name: 'JSON 내보내기' }).dispatchEvent('click');
+    await expect(page.locator('#toast')).toContainText('내보낼 작업이 없습니다');
+    await page.getByRole('button', { name: '간트차트보기' }).dispatchEvent('click');
+    await expect(page.locator('#toast')).toContainText('간트 차트로 표시할 작업이 없습니다');
+
+    const chooserPromise = page.waitForEvent('filechooser');
+    await page.locator('.table-empty').getByRole('button', { name: 'CSV 가져오기' }).click();
+    await chooserPromise;
+
+    await page.locator('.table-empty').getByRole('button', { name: '최상위 작업 추가' }).click();
+    await expect(page.locator('.editor-panel')).toBeVisible();
+    await page.locator('.editor-panel').getByRole('button', { name: '취소' }).click();
+    await expect(page.locator('.table-empty')).toBeVisible();
+  });
+
+  test('reports the native file-sync fallback when the picker is unavailable', async ({ page }) => {
+    await page.addInitScript(() => { delete window.showSaveFilePicker; });
+    await page.reload();
+
+    const syncButton = page.locator('#connect-json-sync');
+    await expect(syncButton).toHaveAttribute('aria-disabled', 'true');
+    await expect(syncButton).toHaveAttribute('title', '이 브라우저는 wbs.json 직접 저장 연결을 지원하지 않습니다.');
+    await syncButton.dispatchEvent('click');
+    await expect(page.locator('#toast')).toContainText('이 브라우저는 wbs.json 직접 저장 연결을 지원하지 않습니다.');
   });
 
   test('keeps the empty WBS state inside the mobile table viewport', async ({ page }) => {
@@ -332,6 +361,11 @@ test.describe('ScopeWeave Planner', () => {
     const parentToggle = page.locator('tbody tr[data-task-id]').first().locator('button[data-action="toggle"]');
     await expect(parentToggle).toHaveAttribute('aria-label', '접기 - P0000.준비단계');
     await expect(parentToggle).toHaveAttribute('title', '접기 - P0000.준비단계');
+
+    await parentToggle.click();
+    await expect(childRow).toHaveCount(0);
+    await parentToggle.click();
+    await expect(childRow).toHaveCount(1);
 
     await childRow.getByRole('button', { name: '하위 추가' }).click();
     await page.locator('[data-testid="editor-task"]').fill('세부업무');
@@ -966,6 +1000,13 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.locator('#toast')).toContainText('Task 컬럼은 1000자 이하로 입력해야 합니다');
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
     await expect(page.locator('#task-table-body')).not.toContainText(overlongTaskName.substring(0, 1000));
+  });
+
+  test('rejects CSV files larger than the browser import limit', async ({ page }) => {
+    await importCsv(page, Buffer.alloc(5 * 1024 * 1024 + 1, 65).toString('utf8'));
+
+    await expect(page.locator('#toast')).toContainText('파일 크기는 5MB를 초과할 수 없습니다.');
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
   });
 
   test('normalizes imported task rows into a full phase-activity-task hierarchy', async ({ page }) => {
