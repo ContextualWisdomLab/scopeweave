@@ -474,7 +474,7 @@ app.delete('/api/orgs/:id/invites/:inviteId', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// Invite by email (owner/admin only). Returns the token (prod: email a link).
+// Invite an existing account by email (owner/admin only). Returns the token (prod: email a link).
 app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -486,6 +486,12 @@ app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
   const inviteRole = body.role || 'member';
   if (!email) return c.json({ error: 'email required' }, 400);
   if (!['admin', 'member', 'viewer'].includes(inviteRole)) return c.json({ error: 'invalid role' }, 400);
+  const registeredInvitee = db.prepare(
+    'SELECT id FROM users WHERE scopeweave_canonical_email(email) = ? ORDER BY id LIMIT 1'
+  ).get(email);
+  if (!registeredInvitee) {
+    return c.json({ error: 'invitee must already have a ScopeWeave account' }, 409);
+  }
   const token = randomBytes(24).toString('base64url');
   db.prepare('INSERT INTO invites(org_id,email,role,token,invited_by) VALUES(?,?,?,?,?)')
     .run(orgId, email, inviteRole, token, uid);
