@@ -18,6 +18,10 @@ import {
   createRateLimitMiddleware,
   createRateLimitObservability,
 } from './rate_limit.mjs';
+import {
+  fetchPublicHttps,
+  validatePublicHttpsUrl,
+} from './public_https_transport.mjs';
 
 const configuredRateLimitMax = process.env.SCOPEWEAVE_RATE_LIMIT_MAX;
 let coreRoutes;
@@ -44,6 +48,7 @@ const OIDC_CLIENT_SECRET = String(process.env.OIDC_CLIENT_SECRET || '');
 const OIDC_REDIRECT_URI = String(process.env.OIDC_REDIRECT_URI || '');
 const productionOidcConfigured = Boolean(OIDC_ISSUER && OIDC_CLIENT_ID && OIDC_CLIENT_SECRET);
 const productionOidcStates = createExpiringAuthStateStore();
+const OIDC_RESPONSE_MAX_BYTES = 256 * 1024;
 
 function normalizeIdentityEmail(value) {
   return String(value ?? '').trim().toLowerCase();
@@ -74,26 +79,13 @@ function authenticatedIdentityHint(c) {
 }
 
 async function guardRejectionThroughCoreAbuseControls(c, errorBody) {
-  // The shared rate limiter has already accepted this request before any guard
-  // runs. A non-mutating OPTIONS probe at the same path lets the internal core
-  // request logger and counters account for a guard rejection without reaching
-  // a mutating route. The core limiter is disabled for this supported boundary,
-  // so forwarded-address data and credentials do not need to enter the probe.
   const accountingEnvironment = Object.assign(Object.create(null), c.env || {});
   accountingEnvironment[GUARD_ACCOUNTING_METHOD] = c.req.method;
-  await coreRoutes.request(
-    c.req.url,
-    { method: 'OPTIONS' },
-    accountingEnvironment,
-  );
+  await coreRoutes.request(c.req.url, { method: 'OPTIONS' }, accountingEnvironment);
   return c.json(errorBody, 404);
 }
 
 async function bindInviteToAuthenticatedIdentity(c, next) {
-  // This guard only narrows access after confirming that the presented
-  // credential is still live. The core requireAuth middleware remains the
-  // authoritative authentication/RBAC boundary and repeats that validation
-  // before any invite mutation.
   const identity = authenticatedIdentityHint(c);
   if (!identity) return next();
 
@@ -147,8 +139,10 @@ function parseJwtJson(segment) {
 }
 
 async function loadOidcProviderMetadata() {
-  const response = await fetch(`${OIDC_ISSUER}/.well-known/openid-configuration`, {
+  const discoveryUrl = validatePublicHttpsUrl(`${OIDC_ISSUER}/.well-known/openid-configuration`);
+  const response = await fetchPublicHttps(discoveryUrl, {
     signal: AbortSignal.timeout(5000),
+    maxResponseBytes: OIDC_RESPONSE_MAX_BYTES,
   });
   if (!response.ok) throw new Error('oidc_discovery_failed');
   const metadata = await response.json();
@@ -156,16 +150,11 @@ async function loadOidcProviderMetadata() {
     throw new Error('oidc_discovery_mismatch');
   }
 
-  const endpoints = {
-    authorization: metadata.authorization_endpoint || `${OIDC_ISSUER}/authorize`,
-    token: metadata.token_endpoint || `${OIDC_ISSUER}/token`,
-    jwks: metadata.jwks_uri,
+  return {
+    authorization: validatePublicHttpsUrl(metadata.authorization_endpoint || `${OIDC_ISSUER}/authorize`),
+    token: validatePublicHttpsUrl(metadata.token_endpoint || `${OIDC_ISSUER}/token`),
+    jwks: validatePublicHttpsUrl(metadata.jwks_uri),
   };
-  for (const endpoint of Object.values(endpoints)) {
-    const url = new URL(endpoint);
-    if (url.protocol !== 'https:') throw new Error('oidc_endpoint_requires_https');
-  }
-  return endpoints;
 }
 
 async function verifyProductionOidcIdentity(idToken, expectedNonce, metadata) {
@@ -179,7 +168,10 @@ async function verifyProductionOidcIdentity(idToken, expectedNonce, metadata) {
   }
 
   const provider = metadata || await loadOidcProviderMetadata();
-  const jwksResponse = await fetch(provider.jwks, { signal: AbortSignal.timeout(5000) });
+  const jwksResponse = await fetchPublicHttps(provider.jwks, {
+    signal: AbortSignal.timeout(5000),
+    maxResponseBytes: OIDC_RESPONSE_MAX_BYTES,
+  });
   if (!jwksResponse.ok) throw new Error('oidc_jwks_failed');
   const jwks = await jwksResponse.json();
   const jwk = Array.isArray(jwks?.keys)
@@ -258,10 +250,11 @@ async function productionOidcStart(c, next) {
   const verifier = randomBytes(32).toString('base64url');
   const nonce = randomBytes(24).toString('base64url');
   const challenge = createHash('sha256').update(verifier).digest('base64url');
-  const reserved = productionOidcStates.reserve(
-    state,
-    { verifier, nonce, exp: Date.now() + 5 * 60 * 1000 },
-  );
+  const reserved = productionOidcStates.reserve(state, {
+    verifier,
+    nonce,
+    exp: Date.now() + 5 * 60 * 1000,
+  });
   if (!reserved) {
     return c.json(
       { error: 'sso temporarily unavailable' },
@@ -293,7 +286,7 @@ async function productionOidcCallback(c, next) {
 
   try {
     const provider = await loadOidcProviderMetadata();
-    const tokenResponse = await fetch(provider.token, {
+    const tokenResponse = await fetchPublicHttps(provider.token, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -305,6 +298,7 @@ async function productionOidcCallback(c, next) {
         code_verifier: pending.verifier,
       }),
       signal: AbortSignal.timeout(5000),
+      maxResponseBytes: OIDC_RESPONSE_MAX_BYTES,
     });
     if (!tokenResponse.ok) throw new Error('oidc_token_exchange_failed');
     const tokens = await tokenResponse.json();
@@ -320,15 +314,11 @@ async function productionOidcCallback(c, next) {
 /**
  * Shared ScopeWeave application and transport-security boundary.
  *
- * Every supported consumer, including the public Node server and tests that
- * mount this route graph directly, enters the same trusted-proxy-aware bounded
- * rate limiter before authentication hints, invitation lookups, OIDC guards, or
- * the internal implementation graph. Production OIDC authorization-code
- * callbacks terminate here only after RS256/JWKS signature validation and
- * issuer, audience, expiry, nonce, subject, and verified-email checks. Guard
- * rejections are still accounted by the core request logger/counters, while
- * limiter rejections use the matching bounded observability hooks without
- * exposing client identity.
+ * Every supported consumer enters the same trusted-proxy-aware bounded rate
+ * limiter before authentication hints, invitation lookups, or OIDC guards.
+ * Production OIDC outbound discovery, token, and JWKS traffic uses the pinned
+ * public-HTTPS transport so HTTPS scheme checks cannot be bypassed with private
+ * literals, mixed DNS answers, DNS rebinding, or redirects into local networks.
  */
 export const app = new Hono();
 
