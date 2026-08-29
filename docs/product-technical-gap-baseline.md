@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `5c6c2530`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, 현재 #621 `5c6c2530`, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `89fff38b`이 #621 `5c6c2530` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #587 `7430bb2b`는 일반 Checks가 수렴 중이고 OpenCode가 current-head verdict 부재로 fail-closed, Strix 실행 중이며 qualifying approval 없음; #593 `2ce9f1da`는 Unicode case-fold와 indexed invite identity 회귀를 보강한 뒤 hosted Checks 진행 중·qualifying approval 없음; #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625의 마지막 검증 predecessor는 `a5646043`이며 현재 PR의 live HEAD/Checks도 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #596 `86210691`, #602 `d9aa1af2`, #608 `f52d0930`, #610 `4c965cb0`는 기능·보안 Checks가 수렴했지만 OpenCode current-head verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #587 `7430bb2b`는 일반 Checks가 수렴 중이고 OpenCode가 current-head verdict 부재로 fail-closed, Strix 실행 중이며 qualifying approval 없음; #593 `2ce9f1da`는 Unicode case-fold와 indexed invite identity 회귀를 보강한 뒤 hosted Checks 진행 중·qualifying approval 없음; #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625의 마지막 검증 predecessor는 `a5646043`이며 현재 PR의 live HEAD/Checks도 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #596 `86210691`, #602 `d9aa1af2`, #608 `f705a958`, #610 `4c965cb0`는 기능·보안 Checks가 수렴했지만 OpenCode current-head verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -129,7 +129,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
   manifest-pattern-coverage 스킵이 있었고, central OpenCode/Strix run은 이
   stacked head에 붙지 않았다. 전체 Devin thread는 해결됐지만 qualifying
   approval은 없다.
-- #608: `develop@2c328875` 대상 `f52d093069490c15eb525690774786d4fabb267d`.
+- #608: `develop@2c328875` 대상 `f705a9589e64ddf4919157ebccce9d897f8ac744`.
   네이티브 `disabled`로 전환한 빈 상태 CSV/Gantt 동작을 CodeGraph의
   `renderAll()` 경로와 대조했다. 기존 저장소 E2E가 요구하는
   `cloud-sync.js`·`analytics.js` modulepreload 누락과, 제거된 title tooltip을
@@ -140,10 +140,11 @@ HEAD가 바뀌면 다시 확인해야 한다.
   lines 44.60%/functions 33.76%/branches 81.84%였다. 새 HEAD hosted
   functional/security/coverage/unit/API/cloud-E2E/fuzz/Noema Checks는
   terminal success 또는 expected neutral/skipped였고, OpenCode check
-  `99027046238`은 current-head verdict 부재로 실패했다. Strix run
-  `33225073972`는 취소됐고 artifact가 없어 authoritative clean report가
-  없다. GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, current-head
-  APPROVED 0, unresolved thread 0이다.
+  `99041832603`은 current-head verdict 부재로 fail-closed 되었다. Strix check
+  `99041995720`도 provider/backend 불가로 authoritative vulnerability analysis를
+  완료하지 못해 fail-closed 되었고 clean report를 증거로 승격하지 않았다.
+  GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, current-head APPROVED 0,
+  unresolved thread 0이다.
 - #610: `develop@2c328875` 대상 `4c965cb04a9ae5d970b7d61afcbb8caf32197d06`.
   CodeGraph로 `ZERO_VALID_FIELDS`와 편집/저장·외부 `wbs.json`·JSON sync·CSV
   export 호출 경로를 대조해 numeric zero 보존 구현에는 추가 결함이 없음을
@@ -249,14 +250,15 @@ HEAD가 바뀌면 다시 확인해야 한다.
   functional/security/fuzz/coverage Checks는 통과했지만 OpenCode job
   `98995709958`은 current-head verdict 부재로 fail-closed 되었고 qualifying
   approval도 없어 병합하지 않았다.
-- #608: `f52d093069490c15eb525690774786d4fabb267d` (base
+- #608: `f705a9589e64ddf4919157ebccce9d897f8ac744` (base
   `develop@2c328875`). 빈 상태 task-dependent action의 정적 초기 markup에도
   native `disabled`, `aria-disabled`, `aria-describedby`를 설정해 seed/cloud
   hydration 중 빈 CSV export와 빈 Gantt 진입 race를 fail-closed로 막았다.
   focused accessibility E2E 4개, 관련 unit 6개, 전체 unit 및 config 3개가
   통과했으며, 기존 modulepreload baseline 실패는 #490 범위로 섞지 않았다.
-  exact-head hosted functional/security Checks는 통과했지만 OpenCode는 현재
-  head verdict 부재로 fail-closed 되었고 qualifying approval은 없다.
+  exact-head hosted functional/security Checks는 통과했지만 OpenCode check
+  `99041832603`은 current-head verdict 부재로, Strix check `99041995720`은
+  provider/backend 불가로 fail-closed 되었고 qualifying approval은 없다.
 - #587: `7430bb2b64e442f6b218d09c5bfa894ea3f2ceb9` (base
   `develop@2c328875`). `application_routes_core.mjs`의 오래된 첫
   `x-forwarded-for` limiter 경계를 제거하고 `server/rate_limit.mjs`의
