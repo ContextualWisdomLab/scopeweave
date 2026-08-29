@@ -1,7 +1,7 @@
 // Cloud (SaaS) UI e2e — self-contained: spawns the Node API server itself, so
 // the static python webServer from playwright.config is untouched.
 // Run: npx playwright test tests/e2e/cloud.spec.js
-import { test, expect } from '@playwright/test';
+import { test, expect } from './coverage-fixtures.js';
 import { spawn } from 'node:child_process';
 
 const PORT = 8830;

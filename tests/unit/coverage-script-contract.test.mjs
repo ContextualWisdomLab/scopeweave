@@ -16,23 +16,33 @@ assert.equal(
 );
 assert.match(
   scripts['test:coverage'],
+  /test:coverage:node.*run-browser-coverage.*merge-browser-coverage/,
+  'test:coverage runs Node and browser coverage before merging reports',
+);
+assert.match(
+  scripts['test:coverage:node'],
   /\bc8\b.*--reporter=json(?![-\w]).*npm run test:coverage:cases/,
-  'test:coverage creates Istanbul JSON before executing coverage cases',
+  'the Node coverage producer creates Istanbul JSON before executing cases',
 );
 assert.match(
-  scripts['test:coverage'],
+  scripts['test:coverage:node'],
   /--reporter=json-summary\b/,
-  'test:coverage also creates the Istanbul JSON summary',
+  'the Node coverage producer also creates the Istanbul JSON summary',
 );
 assert.match(
-  scripts['test:coverage'],
+  scripts['test:coverage:node'],
   /--include=server\/attachment_status\.mjs/,
   'the bounded refresh module is instrumented',
 );
 assert.match(
-  scripts['test:coverage'],
+  scripts['test:coverage:node'],
   /--include=server\/clearfolio\.mjs/,
   'the abortable Clearfolio adapter is instrumented',
+);
+assert.equal(
+  scripts['test:coverage:strict'],
+  'npm run test:coverage && node scripts/ci/check-coverage.mjs',
+  'the strict command checks the merged coverage summary',
 );
 assert.match(
   scripts['test:coverage:cases'],

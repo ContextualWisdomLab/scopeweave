@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './coverage-fixtures.js';
 
 import fs from 'node:fs';
 
@@ -1228,6 +1228,7 @@ test.describe('ScopeWeave Planner', () => {
   });
 
   test('renders empty cells as independent DOM clones', async ({ page }) => {
+    await expect(page.locator('.empty-cell').nth(1)).toBeAttached();
     const result = await page.evaluate(() => {
       const emptyCells = Array.from(document.querySelectorAll('.empty-cell'));
       const [first, second] = emptyCells;

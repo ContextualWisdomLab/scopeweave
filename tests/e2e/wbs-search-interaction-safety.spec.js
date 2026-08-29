@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './coverage-fixtures.js';
 
 test.describe('WBS search interaction safety', () => {
   test.beforeEach(async ({ page }) => {
