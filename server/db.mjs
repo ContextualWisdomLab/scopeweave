@@ -4,10 +4,12 @@
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import { canonicalizeMailbox } from './email_identity.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.SCOPEWEAVE_DB || join(__dirname, '..', 'data.db');
 export const db = new DatabaseSync(dbPath);
+db.function('scopeweave_canonical_email', { deterministic: true }, canonicalizeMailbox);
 db.exec("PRAGMA journal_mode = WAL");
 db.exec("PRAGMA foreign_keys = ON");
 
@@ -171,6 +173,7 @@ CREATE INDEX IF NOT EXISTS idx_memberships_user ON memberships(user_id);
 CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(org_id);
 CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);
 `);
+db.exec('CREATE INDEX IF NOT EXISTS idx_users_canonical_email ON users(scopeweave_canonical_email(email))');
 
 // Migration for pre-existing DBs: add token_version if missing (idempotent).
 try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }

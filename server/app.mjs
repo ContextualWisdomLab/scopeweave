@@ -10,6 +10,7 @@ import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
+import { canonicalizeMailbox } from './email_identity.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
@@ -481,7 +482,7 @@ app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
   if (!role) return c.json({ error: 'not found' }, 404);
   if (!canManage(role)) return c.json({ error: 'forbidden' }, 403);
   const body = await c.req.json().catch(() => ({}));
-  const email = String(body.email || '').trim().toLowerCase();
+  const email = canonicalizeMailbox(body.email);
   const inviteRole = body.role || 'member';
   if (!email) return c.json({ error: 'email required' }, 400);
   if (!['admin', 'member', 'viewer'].includes(inviteRole)) return c.json({ error: 'invalid role' }, 400);
@@ -497,12 +498,10 @@ app.post('/api/invites/:token/accept', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const inv = db.prepare('SELECT * FROM invites WHERE token = ?').get(c.req.param('token'));
   if (!inv || inv.accepted_at) return c.json({ error: 'invalid or used invite' }, 404);
-  const canonicalInviteEmail = inv.email.trim().toLowerCase();
-  // SQLite's built-in lower() is ASCII-only; canonicalize in JavaScript so
-  // Unicode mailbox casing cannot reject the intended account.
-  const identityMatches = db.prepare('SELECT id, email FROM users ORDER BY id').all()
-    .filter((user) => String(user.email ?? '').trim().toLowerCase() === canonicalInviteEmail)
-    .slice(0, 2);
+  const canonicalInviteEmail = canonicalizeMailbox(inv.email);
+  const identityMatches = db.prepare(
+    'SELECT id FROM users WHERE scopeweave_canonical_email(email) = ? ORDER BY id LIMIT 2'
+  ).all(canonicalInviteEmail);
   if (identityMatches.length !== 1 || identityMatches[0].id !== uid) {
     return c.json({ error: 'invalid or used invite' }, 404);
   }
