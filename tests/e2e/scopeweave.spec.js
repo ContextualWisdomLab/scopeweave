@@ -1294,13 +1294,13 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
     await page.goto('./');
 
     // Verify progress card tooltips
-    await expect(page.locator('.meta-value-card').first()).toHaveAttribute('title', '프로젝트의 작업 기간(일수) 합계입니다.');
+    await expect(page.locator('.meta-value-card[title*="작업 기간(일수)"]').first()).toHaveAttribute('title', '프로젝트의 작업 기간(일수) 합계입니다.');
     await expect(page.locator('.plan-card')).toHaveAttribute('title', '기간(일수) 가중치가 반영된 프로젝트 전체 계획 진척률입니다.');
     await expect(page.locator('.actual-card')).toHaveAttribute('title', '기간(일수) 가중치가 반영된 프로젝트 전체 실적 진척률입니다.');
 
     // Verify progress card accessibility attributes
-    await expect(page.locator('.meta-value-card').first()).toHaveAttribute('tabindex', '0');
-    await expect(page.locator('.meta-value-card').first()).toHaveAttribute('role', 'note');
+    await expect(page.locator('.meta-value-card[title*="작업 기간(일수)"]').first()).toHaveAttribute('tabindex', '0');
+    await expect(page.locator('.meta-value-card[title*="작업 기간(일수)"]').first()).toHaveAttribute('role', 'note');
     await expect(page.locator('.plan-card')).toHaveAttribute('tabindex', '0');
     await expect(page.locator('.plan-card')).toHaveAttribute('role', 'note');
     await expect(page.locator('.actual-card')).toHaveAttribute('tabindex', '0');
