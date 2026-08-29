@@ -36,6 +36,11 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage'],
+  /--include=server\/db\.mjs/,
+  'the database schema and function registration module is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
   /--include=server\/email_identity\.mjs/,
   'the invite identity canonicalization module is instrumented',
 );

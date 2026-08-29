@@ -59,6 +59,15 @@ assert.equal(response.status, 200);
 const ownerMe = await response.json();
 const orgId = ownerMe.orgs[0].id;
 
+// Missing input must exercise the canonicalizer's empty-value branch before
+// the invite is rejected at the request boundary.
+response = await req(`/api/orgs/${orgId}/invites`, {
+  method: 'POST',
+  headers: ownerAuth,
+  body: body({ role: 'viewer' }),
+});
+assert.equal(response.status, 400, 'missing invite email is rejected');
+
 // Give the low-privilege account legitimate roster visibility.
 response = await req(`/api/orgs/${orgId}/invites`, {
   method: 'POST',
