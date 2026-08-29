@@ -99,15 +99,20 @@ HEAD가 바뀌면 다시 확인해야 한다.
   초기화하고, 첫 방문 seed 탐색 중 progress/order 변경이 sample을 영속화하지 않으며,
   빠른 검색 입력의 전체 재렌더를 디바운스한다. 프로젝트 선택 후 인라인 변경이
   autosave되도록 cloud cache adapter를 서버 정적 허용목록에도 등록했다. 현재 HEAD의
-  local 전체 E2E 99개, unit, API, fuzz, workflow 설정 테스트가 통과했다. 저장소
+  `npm ci`는 취약점 0건이었고, unit, API, fuzz 14개, workflow 설정 3개,
+  Python docstring, coverage, `git diff --check`, 전체 Playwright 99개가 통과했다.
+  coverage는 total lines 43.95%, functions 33.05%, branches 81.09%
+  (app lines 22.36%, cloud-sync lines 10.49%)였다. 저장소
   snapshot이 사라져도 interactive 저장이 cloud/file sync까지 계속되도록 메모리 adoption
   flag와 회귀 테스트를 추가했고, sample cloud onboarding도 프로젝트 생성 즉시 같은
   hydrate 경로로 adoption되도록 보강했다. hosted
   unit/API·coverage·cloud-E2E·Noema·CodeQL·Semgrep·OSV·Trivy-FS·property fuzz는
   통과했고 Scorecard/OSV scanner는 neutral이다. Strix run `33201343269`는
-  contextual-orchestrator HTTP 500 provider failure를 세 차례 재시도한 뒤 report 없이
-  fail-closed되었고, OpenCode는 current-head verdict 부재로 실패했다. 현재 HEAD
-  qualifying approval은 없다.
+  `openai/orchestrator/free` 요청이 HTTP 500 및 `invalid_stream_options` 400으로
+  실패해 SARIF 결과 0건인 failed artifact만 남겼고, authoritative 분석 없이
+  fail-closed되었다. OpenCode check `99016686511`도 current-head verdict 부재로
+  실패했다. 현재 HEAD의 Devin/Coderabbit thread는 모두 해결됐지만 qualifying
+  approval은 없다.
 - #629: stacked base `feat/wbs-search-context@5c6c2530` 대상
   `89fff38b54169d0582af43aee2deea13da6684bb`. 모바일에서 cloud 로그인 영역이
   줄바꿈되고 select가 24px 이상 유지되도록 보완했으며, named controls·landmark·
