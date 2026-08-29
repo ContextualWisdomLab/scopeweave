@@ -6,7 +6,7 @@ import {
   randomBytes,
   verify as verifySignature,
 } from 'node:crypto';
-import { db, rowid } from './db.mjs';
+import { canonicalEmail, db, rowid } from './db.mjs';
 import {
   createExpiringAuthStateStore,
   hashApiToken,
@@ -50,10 +50,6 @@ const productionOidcConfigured = Boolean(OIDC_ISSUER && OIDC_CLIENT_ID && OIDC_C
 const productionOidcStates = createExpiringAuthStateStore();
 const OIDC_RESPONSE_MAX_BYTES = 256 * 1024;
 
-function normalizeIdentityEmail(value) {
-  return String(value ?? '').trim().toLowerCase();
-}
-
 function authenticatedIdentityHint(c) {
   const header = c.req.header('authorization') || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : '';
@@ -65,14 +61,14 @@ function authenticatedIdentityHint(c) {
        JOIN users u ON u.id = t.user_id
        WHERE t.token_hash = ?`,
     ).get(hashApiToken(token));
-    return user ? { id: user.id, email: normalizeIdentityEmail(user.email) } : null;
+    return user ? { id: user.id, email: canonicalEmail(user.email) } : null;
   }
 
   try {
     const payload = verifyToken(token);
     const user = db.prepare('SELECT id, email, token_version FROM users WHERE id = ?').get(payload.sub);
     if (!user || Number(payload.tv ?? 0) !== Number(user.token_version ?? 0)) return null;
-    return { id: user.id, email: normalizeIdentityEmail(user.email) };
+    return { id: user.id, email: canonicalEmail(user.email) };
   } catch {
     return null;
   }
@@ -93,7 +89,7 @@ async function bindInviteToAuthenticatedIdentity(c, next) {
     .get(c.req.param('token'));
   if (!invite || invite.accepted_at) return next();
 
-  const invitedEmail = normalizeIdentityEmail(invite.email);
+  const invitedEmail = canonicalEmail(invite.email);
   if (!invitedEmail || !identity.email || invitedEmail !== identity.email) {
     return guardRejectionThroughCoreAbuseControls(c, { error: 'invalid or used invite' });
   }
@@ -208,10 +204,10 @@ async function verifyProductionOidcIdentity(idToken, expectedNonce, metadata) {
     && claims.sub.length > 0
     && claims.email_verified === true
     && typeof claims.email === 'string'
-    && normalizeIdentityEmail(claims.email).length > 0;
+    && canonicalEmail(claims.email).length > 0;
   if (!identityClaimsValid) throw new Error('oidc_claims_invalid');
 
-  return normalizeIdentityEmail(claims.email);
+  return canonicalEmail(claims.email);
 }
 
 function upsertProductionSsoUser(email) {

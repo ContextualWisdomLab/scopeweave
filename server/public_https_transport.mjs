@@ -226,6 +226,7 @@ async function fetchFromCandidate(destination, candidate, options, request) {
       req.once?.('error', fail);
       if (body === undefined || body === null) req.end();
       else if (typeof body === 'string' || Buffer.isBuffer(body) || body instanceof Uint8Array) req.end(body);
+      else if (body instanceof URLSearchParams) req.end(Buffer.from(body.toString(), 'utf8'));
       else if (body instanceof ArrayBuffer) req.end(new Uint8Array(body));
       else fail();
     }), signal);

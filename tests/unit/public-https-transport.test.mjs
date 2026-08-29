@@ -81,6 +81,33 @@ const noContent = createPublicHttpsTransport({
 });
 assert.equal(await (await noContent.fetch('https://idp.example.test/empty')).text(), '');
 
+let encodedBody;
+const formBodyTransport = createPublicHttpsTransport({
+  lookup: async () => [PUBLIC_A],
+  request: (_url, _options, callback) => {
+    const req = new EventEmitter();
+    req.end = (body) => {
+      encodedBody = body;
+      const upstream = new EventEmitter();
+      upstream.statusCode = 200;
+      upstream.headers = {};
+      callback(upstream);
+      queueMicrotask(() => upstream.emit('end'));
+    };
+    return req;
+  },
+});
+await formBodyTransport.fetch('https://idp.example.test/token', {
+  method: 'POST',
+  body: new URLSearchParams({ code: 'one-time', redirect_uri: 'https://scopeweave.example/callback' }),
+});
+assert.ok(Buffer.isBuffer(encodedBody));
+assert.equal(
+  encodedBody.toString('utf8'),
+  'code=one-time&redirect_uri=https%3A%2F%2Fscopeweave.example%2Fcallback',
+  'URLSearchParams bodies are serialized as UTF-8 bytes before transport',
+);
+
 const oversized = createPublicHttpsTransport({
   lookup: async () => [PUBLIC_A],
   request: (_url, _options, callback) => {
@@ -132,6 +159,7 @@ const controller = new AbortController();
 controller.abort();
 await assert.rejects(transport.fetch('https://idp.example.test/jwks', { signal: controller.signal }), PublicHttpsTransportError);
 
+delete process.env.NODE_ENV;
 assert.throws(
   () => configurePublicHttpsTransportForTests({ fetch() {} }),
   /test-only/,

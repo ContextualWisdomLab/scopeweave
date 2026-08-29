@@ -25,6 +25,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Redacted invite and public-share bearer-token path segments in both ordinary
   request logs and rate-limit rejection logs, including malformed trailing
   paths, so access-log retention cannot become a credential disclosure channel.
+- Unified server mailbox canonicalization across password, invitation, OIDC,
+  and legacy-migration boundaries with trim, NFC normalization, lowercase
+  conversion, and canonical unique-index enforcement.
+- Made the public HTTPS transport serialize URLSearchParams as UTF-8 bytes so
+  production OIDC token exchanges reach the provider instead of failing at the
+  request boundary.
 - Replaced the unsigned `POST /api/stripe/webhook` plan-upgrade stub with a
   fail-closed raw-body HMAC-SHA-256 signature boundary. Signed deliveries are
   acknowledged only; webhook JSON is not entitlement authority until durable

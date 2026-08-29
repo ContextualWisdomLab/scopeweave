@@ -38,7 +38,7 @@ function migrate(databasePath) {
 }
 
 {
-  const { directory, databasePath } = seed([{ id: 1, email: ' ÄLICE@Example.COM ', name: 'Legacy' }]);
+  const { directory, databasePath } = seed([{ id: 1, email: ' A\u0308LICE@Example.COM ', name: 'Legacy' }]);
   try {
     const result = migrate(databasePath);
     assert.equal(result.status, 0, `unicode legacy migration succeeds: ${result.stderr}`);
@@ -52,7 +52,7 @@ function migrate(databasePath) {
 
 {
   const { directory, databasePath } = seed([
-    { id: 1, email: 'Älice@example.com', name: 'First' },
+    { id: 1, email: 'A\u0308lice@example.com', name: 'First' },
     { id: 2, email: 'älice@example.com', name: 'Second' },
   ]);
   try {

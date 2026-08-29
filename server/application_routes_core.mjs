@@ -1,5 +1,6 @@
 import { Hono } from 'hono';
 import { app as implementationRoutes } from './application_routes_implementation.mjs';
+import { canonicalEmail } from './db.mjs';
 
 /**
  * Low-level ScopeWeave route graph with a fail-closed production OIDC boundary.
@@ -23,9 +24,9 @@ const coreOidcMockEnabled =
  * normalization contract. Canonicalizing at this low-level shared boundary
  * guarantees that signup duplicate checks, stored identities, login lookups,
  * workspace labels, and signed session claims all receive the same trimmed
- * lowercase email. `db.mjs` separately migrates legacy rows and enforces a
- * canonical unique index, so direct database writes cannot recreate a split
- * identity.
+ * NFC-normalized lowercase email. `db.mjs` separately migrates legacy rows and
+ * enforces a canonical unique index, so direct database writes cannot recreate
+ * a split identity.
  *
  * @param {import('hono').Context} c Current Hono request context.
  * @returns {Promise<Response>} Response from the implementation route graph.
@@ -35,7 +36,7 @@ async function forwardCanonicalPasswordAuth(c) {
   const payload = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
     ? parsed
     : {};
-  const email = String(payload.email ?? '').trim().toLowerCase();
+  const email = canonicalEmail(payload.email);
   const headers = new Headers(c.req.raw.headers);
   headers.set('content-type', 'application/json');
   headers.delete('content-length');

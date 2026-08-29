@@ -15,6 +15,7 @@ const publicJwk = { ...publicKey.export({ format: 'jwk' }), kid: 'metadata-key',
 const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
 let issuedIdToken = '';
 let discoveryMode = 'valid';
+const tokenBodies = [];
 
 function signedIdentity(nonce, email = 'sso.user@example.com') {
   const now = Math.floor(Date.now() / 1000);
@@ -33,7 +34,7 @@ function signedIdentity(nonce, email = 'sso.user@example.com') {
   return `${input}.${sign('RSA-SHA256', Buffer.from(input), privateKey).toString('base64url')}`;
 }
 
-const oidcFetch = async (url) => {
+const oidcFetch = async (url, options = {}) => {
   const target = String(url);
   if (target === 'https://issuer.example/tenant/.well-known/openid-configuration') {
     if (discoveryMode === 'private-endpoints') {
@@ -51,7 +52,10 @@ const oidcFetch = async (url) => {
       jwks_uri: 'https://keys.example/oidc/jwks.json',
     });
   }
-  if (target === 'https://tokens.example/oauth2/v2/token') return Response.json({ id_token: issuedIdToken });
+  if (target === 'https://tokens.example/oauth2/v2/token') {
+    tokenBodies.push(options.body);
+    return Response.json({ id_token: issuedIdToken });
+  }
   if (target === 'https://keys.example/oidc/jwks.json') return Response.json({ keys: [publicJwk] });
   throw new Error(`unexpected OIDC fetch: ${target}`);
 };
@@ -59,6 +63,7 @@ const oidcFetch = async (url) => {
 const { configurePublicHttpsTransportForTests } = await import('../../server/public_https_transport.mjs');
 configurePublicHttpsTransportForTests({ fetch: oidcFetch });
 const { app } = await import('../../server/application_routes.mjs?provider-metadata=1');
+const { db } = await import('../../server/db.mjs');
 
 async function begin() {
   const response = await app.request('https://scopeweave.example/api/auth/oidc/start');
@@ -82,15 +87,22 @@ assert.equal(response.status, 404, 'discovery metadata cannot authorize server-s
 discoveryMode = 'valid';
 
 let flow = await begin();
-issuedIdToken = signedIdentity(flow.nonce);
+issuedIdToken = signedIdentity(flow.nonce, 'e\u0301xample@example.com');
 response = await app.request(`https://scopeweave.example/api/auth/oidc/callback?state=${encodeURIComponent(flow.state)}&code=first-code`);
 assert.equal(response.status, 302, 'token exchange uses the discovered token endpoint and accepts the signed identity');
+assert.ok(tokenBodies[0] instanceof URLSearchParams, 'production OIDC sends a URLSearchParams token body');
+assert.match(tokenBodies[0].toString(), /grant_type=authorization_code/);
 assert.equal((await metrics()).signups, 1, 'creating an OIDC-backed account increments the same signup metric as password signup');
 
 flow = await begin();
-issuedIdToken = signedIdentity(flow.nonce);
+issuedIdToken = signedIdentity(flow.nonce, 'éxample@example.com');
 response = await app.request(`https://scopeweave.example/api/auth/oidc/callback?state=${encodeURIComponent(flow.state)}&code=second-code`);
 assert.equal(response.status, 302);
+assert.equal(
+  db.prepare('SELECT email FROM users WHERE email = ?').get('éxample@example.com')?.email,
+  'éxample@example.com',
+  'decomposed OIDC mailbox is stored in NFC form',
+);
 assert.equal((await metrics()).signups, 1, 'reusing an existing OIDC account does not double-count signup');
 
 console.log('OIDC provider metadata and signup accounting contract passed');

@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.SCOPEWEAVE_DB || join(__dirname, '..', 'data.db');
 export const db = new DatabaseSync(dbPath);
-const canonicalEmail = (value) => String(value ?? '').trim().toLowerCase();
+export const canonicalEmail = (value) => String(value ?? '').trim().normalize('NFC').toLowerCase().normalize('NFC');
 db.function('scopeweave_canonical_email', { deterministic: true }, canonicalEmail);
 db.exec("PRAGMA journal_mode = WAL");
 db.exec("PRAGMA foreign_keys = ON");

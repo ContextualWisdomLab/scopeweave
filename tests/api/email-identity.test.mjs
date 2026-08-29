@@ -59,6 +59,22 @@ response = await request('/api/auth/signup', {
 });
 assert.equal(response.status, 409, 'canonical-equivalent signup cannot create a second identity');
 
+response = await request('/api/auth/signup', {
+  method: 'POST',
+  body: jsonBody({ email: 'é@example.com', password: 'password123' }),
+});
+assert.equal(response.status, 200, 'composed Unicode mailbox signup succeeds');
+response = await request('/api/auth/signup', {
+  method: 'POST',
+  body: jsonBody({ email: 'e\u0301@example.com', password: 'password123' }),
+});
+assert.equal(response.status, 409, 'decomposed Unicode mailbox cannot create a duplicate identity');
+response = await request('/api/auth/login', {
+  method: 'POST',
+  body: jsonBody({ email: 'e\u0301@example.com', password: 'password123' }),
+});
+assert.equal(response.status, 200, 'decomposed Unicode mailbox resolves the composed identity');
+
 function seedLegacyUsers(rows) {
   const directory = mkdtempSync(join(tmpdir(), 'scopeweave-email-identity-'));
   const databasePath = join(directory, 'legacy.sqlite');

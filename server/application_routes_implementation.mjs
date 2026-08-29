@@ -5,7 +5,7 @@ import { StripeWebhookError, verifyStripeWebhookRequest } from './stripe_webhook
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
-import { db, rowid } from './db.mjs';
+import { canonicalEmail, db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
@@ -154,7 +154,8 @@ app.use('*', async (c, next) => {
 app.use('*', createRateLimitMiddleware());
 
 app.post('/api/auth/signup', async (c) => {
-  const { email, password, name } = await c.req.json().catch(() => ({}));
+  const { email: rawEmail, password, name } = await c.req.json().catch(() => ({}));
+  const email = canonicalEmail(rawEmail);
   if (!email || typeof password !== 'string' || password.length < 8) {
     return c.json({ error: 'email and password (min 8 chars) required' }, 400);
   }
@@ -177,8 +178,9 @@ app.post('/api/auth/signup', async (c) => {
 });
 
 app.post('/api/auth/login', async (c) => {
-  const { email, password } = await c.req.json().catch(() => ({}));
-  const u = db.prepare('SELECT * FROM users WHERE email = ?').get(email || '');
+  const { email: rawEmail, password } = await c.req.json().catch(() => ({}));
+  const email = canonicalEmail(rawEmail);
+  const u = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
   // Pass password through only when it is a string — verifyPassword rejects
   // non-strings (objects/arrays) so they never match an empty-password hash.
   if (!u || typeof password !== 'string' || !verifyPassword(password, u.password_hash)) {
@@ -463,7 +465,7 @@ app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
   if (!role) return c.json({ error: 'not found' }, 404);
   if (!canManage(role)) return c.json({ error: 'forbidden' }, 403);
   const body = await c.req.json().catch(() => ({}));
-  const email = String(body.email || '').trim().toLowerCase();
+  const email = canonicalEmail(body.email);
   const inviteRole = body.role || 'member';
   if (!email) return c.json({ error: 'email required' }, 400);
   if (!['admin', 'member', 'viewer'].includes(inviteRole)) return c.json({ error: 'invalid role' }, 400);
@@ -480,10 +482,7 @@ app.post('/api/invites/:token/accept', requireAuth, (c) => {
   const inv = db.prepare('SELECT * FROM invites WHERE token = ?').get(c.req.param('token'));
   if (!inv || inv.accepted_at) return c.json({ error: 'invalid or used invite' }, 404);
   const identity = db.prepare('SELECT email FROM users WHERE id = ?').get(uid);
-  if (
-    String(inv.email || '').trim().toLowerCase()
-      !== String(identity?.email || '').trim().toLowerCase()
-  ) {
+  if (canonicalEmail(inv.email) !== canonicalEmail(identity?.email)) {
     return c.json({ error: 'invalid or used invite' }, 404);
   }
   const existing = orgRole(uid, inv.org_id);
@@ -807,6 +806,7 @@ const oidcStates = new Map(); // state -> { verifier, exp }
 const oidcCodes = new Map();  // mock only: code -> email
 
 function upsertSsoUser(email) {
+  email = canonicalEmail(email);
   let user = db.prepare('SELECT id, email, token_version FROM users WHERE email = ?').get(email);
   if (user) return user;
   db.exec('BEGIN');
