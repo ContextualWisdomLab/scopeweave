@@ -11,6 +11,7 @@ import {
 function createDatabase() {
   const database = new DatabaseSync(':memory:');
   database.exec('PRAGMA foreign_keys = ON');
+  database.exec('CREATE TABLE users (id INTEGER PRIMARY KEY)');
   database.exec('CREATE TABLE orgs (id INTEGER PRIMARY KEY)');
   database.prepare('INSERT INTO orgs(id) VALUES(?)').run(7);
   database.prepare('INSERT INTO orgs(id) VALUES(?)').run(8);
