@@ -1784,7 +1784,6 @@ function findTask(taskId) {
 }
 
 function persistState({ syncCloud = true } = {}) {
-  state.showSeedOnboarding = false;
   const payload = {
     projectName: state.projectName,
     baseDate: state.baseDate,
@@ -1792,6 +1791,7 @@ function persistState({ syncCloud = true } = {}) {
   };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    state.showSeedOnboarding = false;
   } catch (error) {
     console.error('State persistence failed:', error);
     showToast('로컬 스토리지 용량이 초과되어 저장하지 못했습니다.');

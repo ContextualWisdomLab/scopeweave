@@ -107,6 +107,22 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
   });
 
+  test('keeps seed onboarding visible when persistence fails', async ({ page }) => {
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function setItem(key, value) {
+        if (key === 'scopeweave:planner-state:v1') {
+          throw new DOMException('quota exceeded', 'QuotaExceededError');
+        }
+        return originalSetItem.call(this, key, value);
+      };
+    });
+
+    await page.getByTestId('project-name-input').fill('Unsaved sample edit');
+    await expect(page.locator('#toast')).toContainText('로컬 스토리지 용량이 초과되어 저장하지 못했습니다.');
+    await expect(page.locator('#seed-onboarding')).toBeVisible();
+  });
+
   test('clears the first-run sample into an empty plan', async ({ page }) => {
     page.once('dialog', dialog => dialog.dismiss());
     await page.locator('#clear-seed-data').click();
