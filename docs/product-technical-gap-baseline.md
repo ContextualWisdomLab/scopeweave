@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `5c6c2530`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, 현재 #621 `5c6c2530`, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `89fff38b`이 #621 `5c6c2530` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #587 `a154cf1d`는 일반 Checks가 수렴 중이고 OpenCode가 current-head verdict 부재로 fail-closed, Strix 실행 중이며 qualifying approval 없음; #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 `afbdeab8`는 기준선 갱신 push 뒤 Checks가 수렴했지만 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #596 `86210691`, #602 `d9aa1af2`, #608 `f52d0930`, #610 `4c965cb0`는 기능·보안 Checks가 수렴했지만 OpenCode current-head verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #587 `7430bb2b`는 일반 Checks가 수렴 중이고 OpenCode가 current-head verdict 부재로 fail-closed, Strix 실행 중이며 qualifying approval 없음; #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 `afbdeab8`는 기준선 갱신 push 뒤 Checks가 수렴했지만 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #596 `86210691`, #602 `d9aa1af2`, #608 `f52d0930`, #610 `4c965cb0`는 기능·보안 Checks가 수렴했지만 OpenCode current-head verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -256,7 +256,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
   통과했으며, 기존 modulepreload baseline 실패는 #490 범위로 섞지 않았다.
   exact-head hosted functional/security Checks는 통과했지만 OpenCode는 현재
   head verdict 부재로 fail-closed 되었고 qualifying approval은 없다.
-- #587: `a154cf1d6943766f7332de3af93b394ff1a31721` (base
+- #587: `7430bb2b64e442f6b218d09c5bfa894ea3f2ceb9` (base
   `develop@2c328875`). `application_routes_core.mjs`의 오래된 첫
   `x-forwarded-for` limiter 경계를 제거하고 `server/rate_limit.mjs`의
   trusted transport peer·bucket 상한을 공유한 뒤, current-head 재검토에서
@@ -264,10 +264,12 @@ HEAD가 바뀌면 다시 확인해야 한다.
   development-mode production SSO, OIDC signup accounting, dependency-review
   merge-base 결함을 최소 수정했다. 마지막으로 signup metric을 의존성 없는
   `server/signup_metrics.mjs`로 분리해 inner limiter가 비활성화 구간에서
-  평가되도록 했다. exact head에서 API, unit, coverage, config 3개, docstring,
-  fuzz 14개, 전체 Playwright 76개가 로컬 통과했다. hosted 일반 Checks는
-  수렴 중이며 OpenCode는 current-head verdict 부재로 fail-closed, Strix는
-  실행 중이고 qualifying approval은 없다.
+  평가되도록 하고, legacy development mock SSO도 동일한 signup hook을
+  사용하도록 보강했다. exact head에서 security-guard, smoke, OIDC 회귀가
+  통과했으며, API, unit, coverage, config 3개, docstring, fuzz 14개, 전체
+  Playwright 76개는 직전 shared-metric 수정 HEAD에서 로컬 통과했다. hosted
+  일반 Checks는 수렴 중이며 OpenCode는 current-head verdict 부재로
+  fail-closed, Strix는 실행 중이고 qualifying approval은 없다.
 - #596: `develop@2c328875` 대상 `86210691e4be647426766ea6aea838cafecb69e7`.
   provider diagnostic sanitization과 bounded/cancelled response handling을
   current CodeGraph·resolved 리뷰와 대조했고 orchestrator attribution focused
