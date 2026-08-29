@@ -167,10 +167,18 @@ HEAD가 바뀌면 다시 확인해야 한다.
 - #468: `develop@2c328875` 대상
   `815af8138df2454cea99ba1a4a384de4f55d6199`. editor validation의 submit 경계,
   키보드·포인터 저장 재검증, `aria-disabled`/오류 설명 연결과 CSV formula
-  compatibility 문자를 current CodeGraph·resolved 리뷰와 대조했다. local
-  unit·coverage/API와 전체 E2E 81개, screenshot 검수 및 hosted OpenCode·보안·
-  테스트 게이트는 통과했다. Strix artifact는 0 findings를 기록했지만 후속
-  provider 장애로 gate가 fail-closed 되었고 qualifying approval도 없다.
+  compatibility 문자를 current CodeGraph·resolved 리뷰와 대조했다. `npm ci`는
+  0 vulnerabilities였고 editor unit, 전체 unit/API, fuzz 14개, config 3개,
+  Python docstring, coverage, `git diff --check`가 통과했다. 전체 Playwright
+  81개도 통과했으며 coverage는 `app.js` lines 23.93%/functions 13.33%/
+  branches 67.18%, 전체 lines 45.02%다. exact-head hosted cloud-e2e,
+  unit/API, security, CodeQL, Semgrep, dependency/OSV, property fuzz,
+  coverage, Noema는 성공 또는 expected neutral/skipped로 terminal 수렴했고,
+  OpenCode check는 성공했지만 current-head review verdict는 남기지 않았다.
+  Strix run `32670139864`는 `STRIX_PROVIDER_UNAVAILABLE`로 종료됐고
+  `strix-reports` artifact는 expired라 authoritative report를 확인할 수 없다.
+  `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, unresolved thread 0,
+  qualifying approval 0건이므로 병합하지 않았다.
 - #490: `develop@2c328875` 대상
   `2888a5ba776c6c8943278bb7e35f070aebf964da`. editor invoker의 stable ID/action/
   task identity 기록, rerender 이후 allowlisted control 복원과 selector-hostile
