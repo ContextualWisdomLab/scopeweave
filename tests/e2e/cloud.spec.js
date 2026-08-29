@@ -64,15 +64,17 @@ test('opening a cloud project clears standalone seed onboarding', async ({ page 
   await page.goto(`${BASE}/`);
   await expect(page.locator('#seed-onboarding')).toBeVisible();
 
-  await page.evaluate(([t]) => {
-    localStorage.setItem('scopeweave:token', t);
-    localStorage.setItem('scopeweave:project', '1');
-  }, [token]);
-  await page.reload();
+  await page.getByRole('button', { name: /클라우드 로그인/ }).click();
+  await page.fill('#cloud-email', 'e2e@cloud.com');
+  await page.fill('#cloud-password', 'password123');
+  await page.click('#cloud-submit');
   await page.waitForSelector('#cloud-auth select');
+  await page.getByRole('searchbox', { name: 'WBS 작업 검색' }).fill('사업수행계획');
+  await page.locator('#cloud-auth select').selectOption('1');
 
   await expect(page.locator('#seed-onboarding')).toBeHidden();
   await expect(page.locator('#clear-seed-data')).toBeHidden();
+  await expect(page.getByRole('searchbox', { name: 'WBS 작업 검색' })).toHaveValue('');
   const project = await api('/api/projects/1', { tok: token });
   expect(project.tasks.length).toBeGreaterThan(0);
 });
@@ -154,6 +156,8 @@ test('share link: anonymous visitor gets a read-only view; revoke kills it', asy
 
 test('MSP import: XML file populates the tree and saves to the cloud', async ({ page }) => {
   await loginAndOpen(page);
+  const search = page.getByRole('searchbox', { name: 'WBS 작업 검색' });
+  await search.fill('설계');
   page.on('dialog', (d) => d.accept());
   await page.click('#cloud-auth button:has-text("MSP 가져오기")');
   const xml = `<?xml version="1.0"?><Project><Tasks>
@@ -161,6 +165,7 @@ test('MSP import: XML file populates the tree and saves to the cloud', async ({ 
     <Task><UID>2</UID><Name>MSP액티비티</Name><OutlineLevel>2</OutlineLevel><Start>2026-03-02T08:00:00</Start><Finish>2026-03-06T17:00:00</Finish></Task>
   </Tasks></Project>`;
   await page.setInputFiles('#msp-file-input', { name: 'plan.xml', mimeType: 'text/xml', buffer: Buffer.from(xml) });
+  await expect(search).toHaveValue('');
   await page.waitForFunction(() => document.querySelector('#task-table-body')?.textContent.includes('MSP단계'));
   // wait for the debounced cloud push, then confirm server state
   await page.waitForTimeout(1200);
