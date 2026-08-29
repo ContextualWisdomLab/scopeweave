@@ -2,37 +2,37 @@
 
 ## Exact-head measurement
 
-On 2026-08-29, the working head `88f31d42616eb86180ceddb64e9bcd2d156c81e4`
-ran `npm run test:coverage` successfully. The generated c8 summary was:
+On 2026-08-29, exact head `5ae5fef2b84ecae96f64f95b1485e5232d15c7ae`
+ran `npm run test:coverage` successfully. The merged Node/Chromium summary
+contained 267 source entries:
 
 | Metric | Covered | Total | Result |
 | --- | ---: | ---: | ---: |
-| Lines/statements | 3,399 | 7,722 | 44.01% |
-| Functions | 78 | 236 | 33.05% |
-| Branches | 798 | 984 | 81.09% |
+| Lines/statements | 7,184 | 8,675 | 82.81% |
+| Functions | 264 | 290 | 91.03% |
+| Branches | 2,032 | 2,199 | 92.40% |
 
-The command's successful exit means the listed test cases completed; it does
-not mean the 100% quality target was met.
+The command's successful exit means the listed test cases completed and the
+Node plus browser reports were merged; it does not mean the 100% quality
+target was met. `node scripts/ci/check-coverage.mjs` fails with all four
+thresholded metrics below 100%.
 
 ## Scope boundary
 
-The current c8 command includes `app.js`, `cloud-sync.js`, the CI helper, and
-the Node server modules. Its coverage process runs Node test cases only.
-Playwright launches the browser in a separate process, so the 89 passing E2E
-tests are user-flow evidence but are not included in this c8 summary. The
-repository therefore has no current single report proving 100% frontend,
-backend, and edge-case coverage.
+The Node phase uses c8 with `--all` for `app.js`, `cloud-sync.js`,
+`analytics.js`, the CI helper, and every `server/*.mjs` module. The browser
+phase collects Chromium V8 JavaScript coverage during all 89 passing E2E
+tests, converts the shipped client scripts, and merges both reports into one
+Istanbul summary. Uncovered production lines remain in the report.
 
 ## Required remediation
 
-1. Collect browser-side coverage for the shipped client scripts and merge it
-   with the Node report without excluding uncovered production files.
-2. Add tests for every remaining server branch and client error/empty-state
+1. Add tests for every remaining server branch and client error/empty-state
    path, including the current `app.js` and `cloud-sync.js` uncovered regions.
-3. Make the exact-head coverage command fail below 100% lines, functions, and
-   branches after the merged report exists.
+2. Keep the merged exact-head report and make the strict command pass 100%
+   lines, statements, functions, and branches.
 
-Until those three conditions are true, G-06 remains **측정됨, 진행 중** and no
+Until those conditions are true, G-06 remains **측정됨, 진행 중** and no
 release note may describe the repository as having 100% coverage.
 
 ## References

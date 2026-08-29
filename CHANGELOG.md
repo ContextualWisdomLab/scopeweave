@@ -29,8 +29,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added workflow ownership regression coverage so central review
   workflows stay inherited from `ContextualWisdomLab/.github`, not copied
   into this repository.
-- Added an exact-head coverage audit documenting the current c8 scope and the
-  remaining work required before claiming 100% frontend/backend coverage.
+- Added exact-head Node/Chromium coverage collection and report merging; the
+  remaining uncovered paths still block a 100% frontend/backend claim.
 
 ### Security
 

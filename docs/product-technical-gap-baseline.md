@@ -83,7 +83,7 @@ classDiagram
 | G-03 | 첫 방문자가 seed 데이터와 실제 계획을 구분하기 어려움 | 첫 seed 방문에 샘플 WBS 안내를 표시하고, 안내 숨김과 확인 가능한 샘플 삭제 후 빈 계획 시작 경로를 제공 | **완료** |
 | G-04 | 키보드·스크린리더 회귀는 E2E 일부로 보호되지만 시각 회귀 자동 검사는 없음 | `Visual Accessibility Evidence`가 exact-head Chromium에서 핵심 상태 PNG와 WCAG 2.2 기준선 검사를 실행하고 artifact를 3일 보존 | **완료** |
 | G-05 | 보호 PR 큐는 소스와 무관한 Strix 공급자 429/Invalid URL 및 승인 부재로 차단될 수 있음 | 게이트를 약화하지 않고 원인 로그·artifact·현재 HEAD를 재검증한 뒤 재실행/중앙 수정 | 외부 상태 대기 |
-| G-06 | 현재 coverage 명령은 Node 계층만 c8로 계측하고 브라우저 E2E를 합산하지 않아 저장소 전체 100%를 증명하지 못함 | 서버·클라이언트·edge-case를 같은 exact-head coverage 보고서로 합산하고 100% threshold를 활성화한 뒤에만 완료 처리 | **측정됨, 진행 중** |
+| G-06 | 현재 합산 coverage가 저장소 전체 100%에 미달해 모든 클라이언트·서버 경로를 증명하지 못함 | Node c8과 Chromium V8 결과를 같은 exact-head 보고서로 합산하고 남은 경로를 보강한 뒤 100% threshold 통과 시에만 완료 처리 | **측정됨, 진행 중** |
 
 ## 5. 품질·보안 기준선
 
@@ -96,10 +96,11 @@ classDiagram
   reduced motion을 최소 기준으로 삼는다.
 - 검증 명령은 `npm run test:unit`, `npm run test:api`,
   `npm run test:e2e`, `python3 -m pytest tests/config`, `npm run fuzz`다.
-  `npm run test:coverage`의 2026-08-29 exact-head 측정치는 lines 44.01%,
-  functions 33.05%, branches 81.09%이며, 현재는 threshold를 통과시키는
-  명령이 아니다. 이 결과는 `docs/doctoring/coverage-evidence.md`에
-  기록하고 100% 품질 기준의 미충족 증거로 취급한다.
+  `npm run test:coverage`의 2026-08-29 exact-head 측정치는 Node·Chromium
+  합산 기준 lines/statements 82.81%, functions 91.03%, branches 92.40%이며,
+  `node scripts/ci/check-coverage.mjs`는 아직 threshold 미달로 실패한다.
+  이 결과는 `docs/doctoring/coverage-evidence.md`에 기록하고 100% 품질
+  기준의 미충족 증거로 취급한다.
   G-01/G-02/G-03의 직접 증거는 검색·JSON·온보딩 회귀 테스트이며, G-04는
   `tests/e2e/visual-accessibility-evidence.spec.js`와 `Visual Accessibility Evidence`
   artifact가 exact-head 브라우저 상태를 증명한다.
