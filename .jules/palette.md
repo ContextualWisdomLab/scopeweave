@@ -115,3 +115,7 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+
+## $(date +%Y-%m-%d) - 진행률 카드 툴팁 키보드 접근성 개선
+**Learning:** `title` 속성(툴팁)이 있는 비상호작용 요소(`div`, `span` 등)는 키보드 초점을 받을 수 없어 시각장애인이나 키보드 사용자가 툴팁 내용을 확인할 수 없는 접근성 문제가 발생함. `tabindex="0"`만 추가하는 것은 안티패턴이며, 스크린 리더에게 요소의 의미를 전달하기 위해 적절한 ARIA 역할(예: `role="note"`, `role="region"`)을 반드시 함께 부여해야 함.
+**Action:** 툴팁을 제공하는 비상호작용 요소를 구현할 때는 항상 `tabindex="0"`, 명확한 `role`, 그리고 `:focus-visible` 상태의 시각적 피드백을 함께 적용하여 모든 사용자가 정보에 접근할 수 있도록 보장해야 함.

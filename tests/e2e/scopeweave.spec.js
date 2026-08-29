@@ -1298,6 +1298,14 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
     await expect(page.locator('.plan-card')).toHaveAttribute('title', '기간(일수) 가중치가 반영된 프로젝트 전체 계획 진척률입니다.');
     await expect(page.locator('.actual-card')).toHaveAttribute('title', '기간(일수) 가중치가 반영된 프로젝트 전체 실적 진척률입니다.');
 
+    // Verify progress card accessibility attributes
+    await expect(page.locator('.meta-value-card').first()).toHaveAttribute('tabindex', '0');
+    await expect(page.locator('.meta-value-card').first()).toHaveAttribute('role', 'note');
+    await expect(page.locator('.plan-card')).toHaveAttribute('tabindex', '0');
+    await expect(page.locator('.plan-card')).toHaveAttribute('role', 'note');
+    await expect(page.locator('.actual-card')).toHaveAttribute('tabindex', '0');
+    await expect(page.locator('.actual-card')).toHaveAttribute('role', 'note');
+
     // Verify sync status ARIA attributes
     const syncStatus = page.locator('#sync-status');
     await expect(syncStatus).toHaveAttribute('role', 'status');
