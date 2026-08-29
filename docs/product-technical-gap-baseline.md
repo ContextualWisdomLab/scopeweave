@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `5c6c2530`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, 현재 #621 `5c6c2530`, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `89fff38b`이 #621 `5c6c2530` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 `b0fc6660`은 기준선 갱신 push 뒤 Checks 재실행 중이며 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #608 `f52d0930`과 #610 `bd538f05`도 새 HEAD Checks 재실행 중이며 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 `aa6aa2dd`는 기준선 갱신 push 뒤 Checks 재실행 중이며 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #602 `d9aa1af2`, #608 `f52d0930`, #610 `bd538f05`는 기능·보안 Checks가 수렴했거나 수렴 중이나 OpenCode verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -138,11 +138,12 @@ HEAD가 바뀌면 다시 확인해야 한다.
   취약점 0건이었고 unit, config 3개, docstring, fuzz 14개, 전체 Playwright
   79개, coverage, `git diff --check`가 로컬에서 통과했다. coverage는 total
   lines 44.60%/functions 33.76%/branches 81.84%였다. 새 HEAD hosted
-  inventory는 bootstrap·close-empty·manifest/취소 계열만 terminal이고
-  coverage-source-tree, OSV, Trivy-FS, dependency-review, unit/API,
-  Scorecard, cloud-E2E, property fuzz, Semgrep, CodeQL 분석, Noema가
-  queued/in progress다. GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`,
-  current-head APPROVED 0, unresolved thread 0이다.
+  functional/security/coverage/unit/API/cloud-E2E/fuzz/Noema Checks는
+  terminal success 또는 expected neutral/skipped였고, OpenCode check
+  `99027046238`은 current-head verdict 부재로 실패했다. Strix run
+  `33225073972`는 취소됐고 artifact가 없어 authoritative clean report가
+  없다. GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, current-head
+  APPROVED 0, unresolved thread 0이다.
 - #610: `develop@2c328875` 대상 `bd538f05df8203577a980bd7f56af1fab4040018`.
   CodeGraph로 `ZERO_VALID_FIELDS`와 편집/저장·외부 `wbs.json`·JSON sync·CSV
   export 호출 경로를 대조해 numeric zero 보존 구현에는 추가 결함이 없음을
@@ -151,10 +152,23 @@ HEAD가 바뀌면 다시 확인해야 한다.
   zero 회귀 E2E 12개, unit, config 3개, docstring, fuzz 14개, 전체
   Playwright 88개, API/coverage, `git diff --check`가 통과했다. coverage는
   total lines 44.44%/functions 33.76%/branches 81.76%였다. 새 HEAD
-  hosted Checks는 dependency-review와 close-empty를 제외한 required
-  workflow들이 queued/in progress이며, GraphQL은
-  `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, current-head APPROVED 0,
-  unresolved thread 0이다.
+  functional/security/coverage/unit/API/cloud-E2E/fuzz/Noema Checks는
+  terminal success 또는 expected neutral/skipped였고, OpenCode check
+  `99027884603`은 current-head verdict 부재로 실패했다. Strix run
+  `33225351531`은 취소됐고 artifact가 없어 authoritative clean report가
+  없다. GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, current-head
+  APPROVED 0, unresolved thread 0이다.
+- #602: `develop@2c328875` 대상 `d9aa1af26dc860894ad39f8383b5a545e0e7eb40`.
+  CodeGraph에서 Hono 소비 경로를 확인했으며 변경은 `package.json`과
+  lockfile의 4.13.0→4.13.5 갱신뿐이다. exact HEAD에서 기존 preload E2E
+  실패를 재현해 `index.html`에 `cloud-sync.js`·`analytics.js` preload 두 줄을
+  추가했다. `npm ci`는 취약점 0건, unit, config 3개, docstring, fuzz 14개,
+  전체 Playwright 76개, API/coverage, `git diff --check`가 통과했다.
+  coverage는 total lines 44.47%/functions 33.76%/branches 81.76%였다.
+  새 HEAD의 OSV Scanner는 success, Scorecard/OSV scanner는 neutral이고
+  나머지 required workflow는 queued/in progress이며 Strix workflow는
+  pending이다. GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`,
+  current-head APPROVED 0, unresolved thread 0이다.
 - #625: `develop@2c328875` 대상 `b0fc6660a51441e738a7beaff81f0822aade4d06`.
   기준선 문서에 #587의 exact-head 보안·운영 수정과 현재 승인/게이트 상태를
   반영했다. 이 HEAD에서는 coverage-source-tree, OSV, Trivy-FS,
