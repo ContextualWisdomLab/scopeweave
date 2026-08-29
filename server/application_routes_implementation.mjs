@@ -816,7 +816,7 @@ function upsertSsoUser(email) {
     const oid = rowid(db.prepare('INSERT INTO orgs(name,owner_id) VALUES(?,?)').run(`${email}'s workspace`, uid));
     db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)').run(oid, uid, 'owner');
     db.exec('COMMIT');
-    metrics.signups++;
+    recordSignup();
     return { id: uid, email };
   } catch (e) { db.exec('ROLLBACK'); throw e; }
 }
