@@ -97,9 +97,9 @@ classDiagram
 - 검증 명령은 `npm run test:unit`, `npm run test:api`,
   `npm run test:e2e`, `python3 -m pytest tests/config`, `npm run fuzz`다.
   `BASE_URL=http://127.0.0.1:4174 npm run test:coverage`의 2026-08-29 PR #632
-  source/test working head `711232340075f0d53f5c755624d1ef6e998c61c1` 측정치는 전용
+  source/test working head `bce21b4eb53bf22ea454fd8bce0450b4f49bced5` 측정치는 전용
   ScopeWeave 정적 서버에서 Node·Chromium 결과를 합산한 lines/statements
-  94.46%, functions 97.65%, branches 93.20%이며,
+  94.98%, functions 97.65%, branches 93.27%이며,
   `node scripts/ci/check-coverage.mjs`는 아직 threshold 미달로 실패한다.
   이 결과는 `docs/doctoring/coverage-evidence.md`에 기록하고 100% 품질
   기준의 미충족 증거로 취급한다.

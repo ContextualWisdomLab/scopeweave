@@ -34,6 +34,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   remaining uncovered paths still block a 100% frontend/backend claim.
 - Made the canonical coverage run execute the complete unit and API suites so
   existing pure-logic and server regression evidence is included in the merged report.
+- Added browser regression coverage for empty-plan actions, unsupported file sync,
+  filtered hierarchy protection, collapse/expand, and oversized CSV rejection.
 - Added browser coverage for cloud sharing, sprint burndown, attachments,
   search, team administration, project creation, and sample onboarding flows.
 
