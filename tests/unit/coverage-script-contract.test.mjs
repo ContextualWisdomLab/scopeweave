@@ -1,6 +1,6 @@
-// This contract prevents a subtle CI regression: the central review gate may
-// invoke `test:coverage` directly, so that script itself must create Istanbul
-// JSON rather than merely execute tests without instrumentation.
+// These contracts prevent CI from producing a false-green coverage signal:
+// the canonical script must emit Istanbul evidence and the required Server Tests
+// workflow must actually execute that script on every pull request.
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
@@ -8,6 +8,10 @@ const packageJson = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 );
 const scripts = packageJson.scripts;
+const serverTestsWorkflow = readFileSync(
+  new URL('../../.github/workflows/server-tests.yml', import.meta.url),
+  'utf8',
+);
 
 assert.equal(
   scripts.coverage,
@@ -53,6 +57,11 @@ assert.doesNotMatch(
   scripts['test:coverage:cases'],
   /npm run (?:coverage|test:coverage)(?:\s|$)/,
   'coverage cases never recursively invoke a coverage wrapper',
+);
+assert.match(
+  serverTestsWorkflow,
+  /name:\s+Owned production coverage[\s\S]*?run:\s+npm run test:coverage\b/,
+  'the required Server Tests workflow executes owned production coverage',
 );
 
 console.log('✓ coverage script contract tests passed');
