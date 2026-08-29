@@ -8,8 +8,13 @@ const dependencyWorkflow = readFileSync(
 
 assert.match(
   dependencyWorkflow,
+  /compare\/\$\{LIVE_BASE_SHA\}\.\.\.\$\{HEAD_SHA\}/,
+  'dependency review pins merge-base resolution to the independently resolved live base SHA and exact contributor head',
+);
+assert.doesNotMatch(
+  dependencyWorkflow,
   /compare\/\$\{base_ref_encoded\}\.\.\.\$\{HEAD_SHA\}/,
-  'dependency review resolves the PR merge base from the named base ref and exact contributor head',
+  'dependency review never re-resolves a moving base branch after capturing its live SHA',
 );
 assert.match(
   dependencyWorkflow,
