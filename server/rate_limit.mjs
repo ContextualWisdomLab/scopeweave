@@ -115,23 +115,29 @@ export function createRateLimitObservability() {
     async afterNext(c) {
       if (c.req.path !== '/api/metrics' || c.res.status !== 200 || rateLimitedRequests === 0) return;
 
-      const headers = new Headers(c.res.headers);
-      headers.delete('content-length');
-      if (c.req.query('format') === 'prometheus') {
-        const text = await c.res.text();
-        const adjusted = text.split('\n').map((line) => {
-          const match = /^(scopeweave_(?:requests|s4xx))\s+(-?\d+(?:\.\d+)?)$/u.exec(line);
-          if (!match) return line;
-          return `${match[1]} ${Number(match[2]) + rateLimitedRequests}`;
-        }).join('\n');
-        c.res = new Response(adjusted, { status: 200, headers });
-        return;
-      }
+      const originalResponse = c.res;
+      try {
+        const headers = new Headers(originalResponse.headers);
+        headers.delete('content-length');
+        if (c.req.query('format') === 'prometheus') {
+          const text = await originalResponse.clone().text();
+          const adjusted = text.split('\n').map((line) => {
+            const match = /^(scopeweave_(?:requests|s4xx))\s+(-?\d+(?:\.\d+)?)$/u.exec(line);
+            if (!match) return line;
+            return `${match[1]} ${Number(match[2]) + rateLimitedRequests}`;
+          }).join('\n');
+          c.res = new Response(adjusted, { status: 200, headers });
+          return;
+        }
 
-      const snapshot = await c.res.json();
-      if (typeof snapshot?.requests === 'number') snapshot.requests += rateLimitedRequests;
-      if (typeof snapshot?.s4xx === 'number') snapshot.s4xx += rateLimitedRequests;
-      c.res = new Response(JSON.stringify(snapshot), { status: 200, headers });
+        const snapshot = await originalResponse.clone().json();
+        if (typeof snapshot?.requests === 'number') snapshot.requests += rateLimitedRequests;
+        if (typeof snapshot?.s4xx === 'number') snapshot.s4xx += rateLimitedRequests;
+        c.res = new Response(JSON.stringify(snapshot), { status: 200, headers });
+      } catch {
+        // Observability folding must never break or consume a successful response.
+        c.res = originalResponse;
+      }
     },
   });
 }
