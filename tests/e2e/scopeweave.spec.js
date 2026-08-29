@@ -121,6 +121,23 @@ test.describe('ScopeWeave Planner', () => {
       'all-zero': { budget: 0, actualCost: 0, storyPoints: 0 },
       'missing-values': { budget: '', actualCost: '', storyPoints: '' }
     });
+
+    for (const [id, values] of Object.entries(valuesById).filter(([taskId]) => taskId !== 'missing-values')) {
+      await page.locator(`tr[data-task-id="${id}"]`).getByRole('button', { name: /편집/ }).click();
+      await expect(page.getByTestId('editor-budget')).toHaveValue(String(values.budget));
+      await expect(page.getByTestId('editor-actual-cost')).toHaveValue(String(values.actualCost));
+      await expect(page.getByTestId('editor-story-points')).toHaveValue(String(values.storyPoints));
+      await page.getByRole('button', { name: '취소', exact: true }).click();
+    }
+
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'CSV 내보내기' }).click();
+    const csvPath = await (await downloadPromise).path();
+    const csvRows = fs.readFileSync(csvPath, 'utf8').split('\r\n');
+    expect(csvRows.find((row) => row.includes('"Zero budget"'))).toMatch(/,"","0","100","","1"$/);
+    expect(csvRows.find((row) => row.includes('"Zero cost"'))).toMatch(/,"","100","0","","1"$/);
+    expect(csvRows.find((row) => row.includes('"Zero points"'))).toMatch(/,"","100","100","","0"$/);
+    expect(csvRows.find((row) => row.includes('"All zero"'))).toMatch(/,"","0","0","","0"$/);
   });
 
   [

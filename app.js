@@ -870,7 +870,7 @@ function renderEditorField(label, field, value, type = 'text', required = false,
   if (type === 'text') {
     input.maxLength = 1000;
   }
-  input.value = value || '';
+  input.value = value === 0 ? '0' : value || '';
   if (required) {
     input.required = true;
     input.setAttribute('aria-required', 'true');
