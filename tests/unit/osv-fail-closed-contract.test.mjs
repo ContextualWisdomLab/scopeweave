@@ -27,22 +27,20 @@ assert.doesNotMatch(
 
 const osvEvidenceArtifactPin =
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1';
-const osvSarifUploadPin =
-  'github/codeql-action/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8';
-assert.equal(
-  osvWorkflow.split(osvSarifUploadPin).length - 1,
-  1,
-  'OSV must restore the protected code-scanning analysis with the reviewed immutable upload action revision',
-);
-assert.equal(
-  osvWorkflow.split('security-events: write').length - 1,
-  1,
-  'only the OSV analysis job must receive code-scanning publication authority',
-);
-assert.match(
+assert.doesNotMatch(
   osvWorkflow,
-  /- name: Publish exact-head OSV SARIF to code scanning\r?\n\s+if: \$\{\{ !cancelled\(\) \}\}\r?\n\s+uses: github\/codeql-action\/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4\.37\.8\r?\n\s+with:\r?\n\s+sarif_file: results\.sarif\r?\n\s+checkout_path: osv-scan-source\r?\n\s+ref: refs\/pull\/\$\{\{ github\.event\.pull_request\.number \}\}\/head\r?\n\s+sha: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/,
-  'OSV must publish differential SARIF even after a vulnerability reporter failure while binding the analysis to the submitted head',
+  /github\/codeql-action\/upload-sarif@/,
+  'OSV must not publish a second code-scanning analysis because organization code scanning is intentionally CodeQL-only',
+);
+assert.doesNotMatch(
+  osvWorkflow,
+  /^\s+security-events:\s+write\s*$/m,
+  'OSV must remain read-only with respect to code scanning and retain SARIF as workflow evidence instead',
+);
+assert.doesNotMatch(
+  osvWorkflow,
+  /- name: Publish exact-head OSV SARIF to code scanning/,
+  'OSV must not add a repository-local code-scanning publication path that competes with the CodeQL analysis identity',
 );
 assert.equal(
   osvWorkflow.split(osvEvidenceArtifactPin).length - 1,
@@ -53,11 +51,6 @@ assert.match(
   osvWorkflow,
   /- name: Preserve exact-head OSV SARIF\r?\n\s+if: \$\{\{ !cancelled\(\) \}\}\r?\n\s+uses: actions\/upload-artifact@[\s\S]*?name: scopeweave-osv-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}[\s\S]*?path: results\.sarif[\s\S]*?if-no-files-found: error[\s\S]*?retention-days: 3/,
   'OSV must retain exact-head SARIF as bounded workflow evidence even when introduced vulnerabilities fail the reporter',
-);
-assert.doesNotMatch(
-  osvWorkflow,
-  /^\s+category:\s*/m,
-  'OSV must not invent a new SARIF category that breaks the protected workflow/job analysis identity',
 );
 
 const isolatedCheckoutPath = 'path: osv-scan-source';
@@ -175,4 +168,4 @@ for (const [index, guardSource] of completionGuards.entries()) {
   }
 }
 
-console.log('✓ OSV introduced-vulnerability, exact-head SARIF publication, checkout-isolation, evidence-ownership, and structured scan-completion gates fail closed');
+console.log('✓ OSV introduced-vulnerability, CodeQL-only code-scanning ownership, checkout-isolation, evidence-ownership, and structured scan-completion gates fail closed');
