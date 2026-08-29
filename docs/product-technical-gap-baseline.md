@@ -243,6 +243,13 @@ artifact `9710489491`에는 권위 있는 취약점 보고서가 없었다. 워�
   `33240091749`, OpenCode `33240091721`은 새 HEAD에서 queued/pending이며
   terminal 결론이 없다. `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, qualifying
   approval 0건이므로 병합하지 않았다.
+- #495 current-head follow-up: 같은 `03901604a894b459ca00f3aa9b0de4686bc55c60`의
+  Strix run `33240091749` attempt 3은 2026-08-29T07:37:20Z에 실패했다. 세 번의
+  `openai/orchestrator/free` HTTP 500 provider 오류 뒤 권위 있는 취약점
+  보고서 없이 `STRIX_PROVIDER_UNAVAILABLE`로 fail-closed되었고,
+  `strix-reports` artifact는 `9711421475`이다. OpenCode run `33240091721`도
+  current-head verdict 부재로 실패했으며, GraphQL은 unresolved thread 0,
+  qualifying approval 0, `REVIEW_REQUIRED/BLOCKED`를 유지한다.
 - #468: `develop@2c328875` 대상
   `815af8138df2454cea99ba1a4a384de4f55d6199`. editor validation의 submit 경계,
   키보드·포인터 저장 재검증, `aria-disabled`/오류 설명 연결과 CSV formula
