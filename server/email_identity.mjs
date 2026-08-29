@@ -219,6 +219,11 @@ const UNICODE_CASE_FOLD_OVERRIDES = new Map([
   [0xfb17, "\u{574}\u{56d}"],
 ]);
 
+const isCherokeeUppercase = (codePoint) => (
+  (codePoint >= 0x13a0 && codePoint <= 0x13ef)
+  || (codePoint >= 0x13f0 && codePoint <= 0x13f5)
+);
+
 /**
  * Canonicalize an email mailbox for the identity comparisons used by invites.
  * NFKC plus Unicode's full default case-fold mapping keeps equivalent mailbox
@@ -229,7 +234,9 @@ const UNICODE_CASE_FOLD_OVERRIDES = new Map([
  */
 export function canonicalizeMailbox(value) {
   const normalized = String(value ?? '').trim().normalize('NFKC');
-  return Array.from(normalized, (character) => (
-    UNICODE_CASE_FOLD_OVERRIDES.get(character.codePointAt(0)) ?? character.toLowerCase()
-  )).join('').normalize('NFKC');
+  return Array.from(normalized, (character) => {
+    const codePoint = character.codePointAt(0);
+    return UNICODE_CASE_FOLD_OVERRIDES.get(codePoint)
+      ?? (isCherokeeUppercase(codePoint) ? character : character.toLowerCase());
+  }).join('').normalize('NFKC');
 }

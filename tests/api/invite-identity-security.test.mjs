@@ -15,7 +15,16 @@ const observedLogs = [];
 const originalConsoleLog = console.log;
 console.log = (...args) => observedLogs.push(args.join(' '));
 
+const { canonicalizeMailbox } = await import('../../server/email_identity.mjs');
 const { app } = await import('../../server/app.mjs');
+
+for (const [upperCodePoint, lowerCodePoint] of [[0x13a0, 0xab70], [0x13ef, 0xabbf], [0x13f0, 0x13f8], [0x13f5, 0x13fd]]) {
+  assert.equal(
+    canonicalizeMailbox(`${String.fromCodePoint(upperCodePoint)}@example.com`),
+    canonicalizeMailbox(`${String.fromCodePoint(lowerCodePoint)}@example.com`),
+    'Cherokee uppercase and lowercase spellings share one identity key',
+  );
+}
 
 const body = (value) => JSON.stringify(value);
 const req = (path, options = {}) => app.request(path, {
