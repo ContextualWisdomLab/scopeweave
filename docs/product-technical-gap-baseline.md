@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `5c6c2530`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, 현재 #621 `5c6c2530`, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `89fff38b`이 #621 `5c6c2530` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 `aa6aa2dd`는 기준선 갱신 push 뒤 Checks 재실행 중이며 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #602 `d9aa1af2`, #608 `f52d0930`, #610 `bd538f05`는 기능·보안 Checks가 수렴했거나 수렴 중이나 OpenCode verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #587 `a154cf1d`는 일반 Checks가 수렴 중이고 OpenCode가 current-head verdict 부재로 fail-closed, Strix 실행 중이며 qualifying approval 없음; #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 `afbdeab8`는 기준선 갱신 push 뒤 Checks가 수렴했지만 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #596 `86210691`, #602 `d9aa1af2`, #608 `f52d0930`, #610 `4c965cb0`는 기능·보안 Checks가 수렴했지만 OpenCode current-head verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -144,7 +144,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
   `33225073972`는 취소됐고 artifact가 없어 authoritative clean report가
   없다. GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, current-head
   APPROVED 0, unresolved thread 0이다.
-- #610: `develop@2c328875` 대상 `bd538f05df8203577a980bd7f56af1fab4040018`.
+- #610: `develop@2c328875` 대상 `4c965cb04a9ae5d970b7d61afcbb8caf32197d06`.
   CodeGraph로 `ZERO_VALID_FIELDS`와 편집/저장·외부 `wbs.json`·JSON sync·CSV
   export 호출 경로를 대조해 numeric zero 보존 구현에는 추가 결함이 없음을
   확인했다. 기존 develop의 modulepreload 계약 누락이 전체 E2E에서 재현되어
@@ -169,14 +169,12 @@ HEAD가 바뀌면 다시 확인해야 한다.
   나머지 required workflow는 queued/in progress이며 Strix workflow는
   pending이다. GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`,
   current-head APPROVED 0, unresolved thread 0이다.
-- #625: `develop@2c328875` 대상 `b0fc6660a51441e738a7beaff81f0822aade4d06`.
+- #625: `develop@2c328875` 대상 `afbdeab866b7447f19ed87703773be5da65dd1c3`.
   기준선 문서에 #587의 exact-head 보안·운영 수정과 현재 승인/게이트 상태를
-  반영했다. 이 HEAD에서는 coverage-source-tree, OSV, Trivy-FS,
-  dependency-review, unit/API, Scorecard, cloud-E2E, property fuzz,
-  Semgrep, CodeQL 분석, Noema가 queued/in progress이고 bootstrap과
-  manifest-pattern-coverage는 각각 success/skipped였다. GraphQL은
-  `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, unresolved thread 0,
-  qualifying approval 0이며 병합하지 않았다.
+  반영했다. 이 HEAD의 일반 required Checks는 success 또는 expected
+  neutral/skipped로 수렴했고, OpenCode는 current-head verdict 부재로
+  fail-closed 되었다. GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`,
+  unresolved thread 0, qualifying approval 0이며 병합하지 않았다.
 - #616: `develop@2c328875` 대상
   `b427cd455f41e7c09ae20fbbf400d42c4f61d4bf`. deterministic release-artifact
   manifest의 regular-file/no-symlink, bounded manifest read, SHA-256 및
@@ -258,24 +256,25 @@ HEAD가 바뀌면 다시 확인해야 한다.
   통과했으며, 기존 modulepreload baseline 실패는 #490 범위로 섞지 않았다.
   exact-head hosted functional/security Checks는 통과했지만 OpenCode는 현재
   head verdict 부재로 fail-closed 되었고 qualifying approval은 없다.
-- #587: `c542615f3746ca365a51711e91ffec3477a5025e` (base
-  `develop@2c328875`). 직접 소비 가능한
-  `application_routes_core.mjs`가 오래된 첫 `x-forwarded-for` 기반 limiter를
-  사용하던 경계를 제거하고, `server/rate_limit.mjs`의 설정 검증·trusted
-  transport peer·bucket 상한을 공유하도록 했다. ordinary/429 request logger의
-  invite/share bearer path leak은 공통 redaction으로 차단했고, OIDC guard
-  accounting probe와 대소문자 비구분 기존 계정 재사용을 보강했다. 배포 문서의
-  `ORCHESTRATOR_TOKEN`과 contextual-orchestrator 설정 키 관계도 명확히 했다.
-  direct-core rate-limit, OIDC production boundary, 전체 API/unit 및 config 3개가
-  로컬 통과했으며, exact-head hosted functional/security Checks는 통과했지만
-  OpenCode는 current-head verdict 부재로 fail-closed 되었고 qualifying approval은
-  없다.
-- #596: `develop@2c328875` 대상 `50f0c2d18e4361e5f11507ca194c94fc7caabbdc`.
+- #587: `a154cf1d6943766f7332de3af93b394ff1a31721` (base
+  `develop@2c328875`). `application_routes_core.mjs`의 오래된 첫
+  `x-forwarded-for` limiter 경계를 제거하고 `server/rate_limit.mjs`의
+  trusted transport peer·bucket 상한을 공유한 뒤, current-head 재검토에서
+  발견된 Unicode 이메일 migration, scoped IPv6, OIDC discovery endpoint,
+  development-mode production SSO, OIDC signup accounting, dependency-review
+  merge-base 결함을 최소 수정했다. 마지막으로 signup metric을 의존성 없는
+  `server/signup_metrics.mjs`로 분리해 inner limiter가 비활성화 구간에서
+  평가되도록 했다. exact head에서 API, unit, coverage, config 3개, docstring,
+  fuzz 14개, 전체 Playwright 76개가 로컬 통과했다. hosted 일반 Checks는
+  수렴 중이며 OpenCode는 current-head verdict 부재로 fail-closed, Strix는
+  실행 중이고 qualifying approval은 없다.
+- #596: `develop@2c328875` 대상 `86210691e4be647426766ea6aea838cafecb69e7`.
   provider diagnostic sanitization과 bounded/cancelled response handling을
-  current CodeGraph·resolved 리뷰와 대조했고 orchestrator unit·coverage·
-  attribution focused tests가 통과했다. hosted 보안·테스트·OpenCode·Strix·
-  Devin Checks는 통과했지만 `REVIEW_REQUIRED`이고 qualifying approval이 없어
-  병합하지 않았다.
+  current CodeGraph·resolved 리뷰와 대조했고 orchestrator attribution focused
+  tests, API/unit/coverage 및 전체 Playwright 76개가 통과했다. hosted 일반
+  required Checks는 success 또는 expected neutral/skipped이고, OpenCode는
+  current-head verdict 부재로 fail-closed 되었으며 qualifying approval이
+  없어 병합하지 않았다.
 - #550: `9267d2d7686ea7891591a600187ebc21428b13ba` (base
   `develop@2c328875`). 로컬 CSV와 cloud 조직·캘린더·감사 로그 다운로드가
   공유된 안전한 임시 앵커 경로를 사용하고, 설정·click·cleanup·URL revoke
