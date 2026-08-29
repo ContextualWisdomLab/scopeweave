@@ -13,7 +13,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  scan:
+  osv-scan:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
