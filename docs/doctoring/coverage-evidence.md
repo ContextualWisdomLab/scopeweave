@@ -2,15 +2,16 @@
 
 ## Exact-head measurement
 
-On 2026-08-29, PR #632 working head `87ed563b204ee8771b3b0dfc46eb4ee1cb625cdf`
-ran `npm run test:coverage` successfully. The merged Node/Chromium summary
-contained 270 source entries:
+On 2026-08-29, PR #632 working head `33ea978fd422a7928118ff33ca4a6e41c4b943bb`
+ran `BASE_URL=http://127.0.0.1:4174 npm run test:coverage` successfully with
+a dedicated ScopeWeave static server. The merged Node/Chromium summary
+contained 282 source entries:
 
 | Metric | Covered | Total | Result |
 | --- | ---: | ---: | ---: |
-| Lines/statements | 7,183 | 8,675 | 82.80% |
-| Functions | 264 | 290 | 91.03% |
-| Branches | 2,031 | 2,198 | 92.40% |
+| Lines/statements | 8,164 | 8,675 | 94.10% |
+| Functions | 291 | 298 | 97.65% |
+| Branches | 2,292 | 2,459 | 93.20% |
 
 The command's successful exit means the listed test cases completed and the
 Node plus browser reports were merged; it does not mean the 100% quality
@@ -21,7 +22,7 @@ thresholded metrics below 100%.
 
 The Node phase uses c8 with `--all` for `app.js`, `cloud-sync.js`,
 `analytics.js`, the CI helper, and every `server/*.mjs` module. The browser
-phase collects Chromium V8 JavaScript coverage during all 90 passing E2E
+phase collects Chromium V8 JavaScript coverage during all 94 passing E2E
 tests, converts the shipped client scripts, and merges both reports into one
 Istanbul summary. Uncovered production lines remain in the report.
 

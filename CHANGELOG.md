@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   into this repository.
 - Added exact-head Node/Chromium coverage collection and report merging; the
   remaining uncovered paths still block a 100% frontend/backend claim.
+- Added browser coverage for cloud sharing, sprint burndown, attachments,
+  search, team administration, project creation, and sample onboarding flows.
 
 ### Security
 
@@ -43,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replaced dynamic and lazy-regex MS Project XML block extraction with bounded
   linear scans to prevent pathological backtracking on malformed imports.
 - Rejected non-string password candidates at the authentication boundary.
+- Fixed cloud login and team modal close controls when their nested icon is
+  clicked.
 - Added regression coverage that prevents array-valued passwords from being
   coerced into valid credentials.
 - Updated Hono runtime dependencies to patched supported releases.
