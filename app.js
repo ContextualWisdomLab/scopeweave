@@ -384,12 +384,20 @@ function bindGlobalEvents() {
 
 function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
   elements.tableBody.addEventListener('click', (event) => {
+    const submitBtn = event.target.closest('button[type="submit"]');
+    if (submitBtn && submitBtn.getAttribute('aria-disabled') === 'true') {
+      event.preventDefault();
+      showToast(submitBtn.title || '입력값을 올바르게 수정해야 저장할 수 있습니다.');
+      return;
+    }
+
     const row = event.target.closest('tr[data-task-id]');
     if (!row) {
       return;
     }
 
     const taskId = row.dataset.taskId;
+
     const actionButton = event.target.closest('[data-action]');
     if (actionButton) {
       if (actionButton.getAttribute('aria-disabled') === 'true') {
@@ -426,6 +434,12 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
   elements.tableBody.addEventListener('submit', (event) => {
     const form = event.target.closest('form[data-editor-form="true"]');
     if (!form) {
+      return;
+    }
+    const saveButton = form.querySelector('button[type="submit"]');
+    if (saveButton && saveButton.getAttribute('aria-disabled') === 'true') {
+      event.preventDefault();
+      showToast(saveButton.title || '입력값을 올바르게 수정해야 저장할 수 있습니다.');
       return;
     }
     event.preventDefault();
@@ -1068,7 +1082,13 @@ function renderEditorValidation() {
 
   const saveButton = form.querySelector('button[type="submit"]');
   if (saveButton) {
-    saveButton.disabled = errors.length > 0;
+    if (errors.length > 0) {
+      saveButton.setAttribute('aria-disabled', 'true');
+      saveButton.removeAttribute('disabled');
+    } else {
+      saveButton.removeAttribute('aria-disabled');
+      saveButton.removeAttribute('disabled');
+    }
     saveButton.title = errors.length > 0 ? '입력값을 올바르게 수정해야 저장할 수 있습니다.' : '저장 (Enter)';
   }
 
