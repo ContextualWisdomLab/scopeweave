@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `5c6c2530`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, 현재 #621 `5c6c2530`, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `89fff38b`이 #621 `5c6c2530` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #587 `7430bb2b`는 일반 Checks가 수렴 중이고 OpenCode가 current-head verdict 부재로 fail-closed, Strix 실행 중이며 qualifying approval 없음; #593 `f8baae8b`는 Unicode invite identity 회귀를 수정한 뒤 Checks 재실행 대기·qualifying approval 없음; #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 `afbdeab8`는 기준선 갱신 push 뒤 Checks가 수렴했지만 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #596 `86210691`, #602 `d9aa1af2`, #608 `f52d0930`, #610 `4c965cb0`는 기능·보안 Checks가 수렴했지만 OpenCode current-head verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #587 `7430bb2b`는 일반 Checks가 수렴 중이고 OpenCode가 current-head verdict 부재로 fail-closed, Strix 실행 중이며 qualifying approval 없음; #593 `2ce9f1da`는 Unicode case-fold와 indexed invite identity 회귀를 보강한 뒤 hosted Checks 진행 중·qualifying approval 없음; #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 `a5646043`는 기준선 갱신 push 뒤 Checks가 수렴했지만 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #596 `86210691`, #602 `d9aa1af2`, #608 `f52d0930`, #610 `4c965cb0`는 기능·보안 Checks가 수렴했지만 OpenCode current-head verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -169,7 +169,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
   나머지 required workflow는 queued/in progress이며 Strix workflow는
   pending이다. GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`,
   current-head APPROVED 0, unresolved thread 0이다.
-- #625: `develop@2c328875` 대상 `afbdeab866b7447f19ed87703773be5da65dd1c3`.
+- #625: `develop@2c328875` 대상 `a5646043dbcceed7ce3778da81385afca2ae0222`.
   기준선 문서에 #587의 exact-head 보안·운영 수정과 현재 승인/게이트 상태를
   반영했다. 이 HEAD의 일반 required Checks는 success 또는 expected
   neutral/skipped로 수렴했고, OpenCode는 current-head verdict 부재로
@@ -248,7 +248,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
   functional/security/fuzz/coverage Checks는 통과했지만 OpenCode job
   `98995709958`은 current-head verdict 부재로 fail-closed 되었고 qualifying
   approval도 없어 병합하지 않았다.
-- #608: `28a217891bba7c515b93755ba6593f476b6a9adc` (base
+- #608: `f52d093069490c15eb525690774786d4fabb267d` (base
   `develop@2c328875`). 빈 상태 task-dependent action의 정적 초기 markup에도
   native `disabled`, `aria-disabled`, `aria-describedby`를 설정해 seed/cloud
   hydration 중 빈 CSV export와 빈 Gantt 진입 race를 fail-closed로 막았다.
@@ -352,14 +352,16 @@ HEAD가 바뀌면 다시 확인해야 한다.
   `98670001775`는 OpenRouter unavailable 및 OpenAI 429 quota exhaustion으로
   structured report 없이 fail-closed 되었고, qualifying approval도 없다.
 - #593: `develop@2c328875` 대상
-  `f8baae8b9c3a453bd5796401ad95c1601227127e`. pending invite roster에서 bearer
+  `2ce9f1dab362ef208d1fc68e8c7b6df815f1b3b7`. pending invite roster에서 bearer
   token을 제거하고, canonical email이 유일하며 인증 subject와 일치할 때만
   초대를 수락하도록 했다. malformed invite/share path도 structured request
   log에서 token segment를 redaction한다. SQLite ASCII-only `lower()` 때문에
-  Unicode mailbox가 정상 계정과 매칭되지 않던 결함을 JavaScript canonicalization과
-  회귀 테스트로 수정했다. 전용 invite identity 보안 회귀, 전체 unit/API, config
-  3개가 로컬 통과했고, 이 push 뒤 hosted 기능·보안·fuzz·coverage·cloud·SAST·
-  dependency/OSV Checks는 재실행 대기 중이다. qualifying approval은 없다.
+  Unicode mailbox가 정상 계정과 매칭되지 않던 결함을 NFKC·Unicode case-fold
+  canonicalization과 SQLite deterministic expression index로 수정했다. Greek
+  sigma 양방향 회귀를 포함한 전용 invite identity 보안 회귀, 전체 unit/API,
+  coverage, config 3개, docstring check가 로컬 통과했고, 이 push 뒤 hosted
+  기능·보안·fuzz·coverage·cloud·SAST·dependency/OSV Checks는 진행 중이다.
+  리뷰 스레드는 0개지만 qualifying approval은 없다.
 - #493: `develop@2c328875` 대상
   `78f8b557cd2b9cab238af72304f0ed42e1557759`. CodeGraph로 Clearfolio
   production 설정의 fail-closed 경계, tenant HMAC 헤더의 redirect 재전송
