@@ -365,10 +365,12 @@ HEAD가 바뀌면 다시 확인해야 한다.
   acceptance 회귀를 추가했다. Greek 및 combining-iota invite 회귀, 전체
   unit/API, coverage, config 3개, docstring check는 로컬 통과했다. 전체
   Playwright는 75/76 통과했으며 유일한 실패는 develop 기준선의
-  `modulepreload` 기대다. 이 exact HEAD의 hosted inventory는 9개 run이
-  진행 중이고 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, current-head qualifying
-  approval 0, unresolved thread 0이다. Strix는 진행 중이며 OpenCode current
-  verdict는 아직 inventory에 없다.
+  `modulepreload` 기대다. 이 exact HEAD의 hosted functional/security/coverage
+  inventory는 terminal success 또는 expected neutral/skipped로 수렴했고,
+  OpenCode check `99046080277`은 current-head verdict 부재로 fail-closed되었다.
+  Strix check `99046034698`은 아직 진행 중이며 authoritative report가 없다.
+  GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, current-head qualifying
+  approval 0, unresolved thread 0이다.
 - #493: `develop@2c328875` 대상
   `78f8b557cd2b9cab238af72304f0ed42e1557759`. CodeGraph로 Clearfolio
   production 설정의 fail-closed 경계, tenant HMAC 헤더의 redirect 재전송
