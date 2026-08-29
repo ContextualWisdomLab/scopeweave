@@ -51,8 +51,13 @@ assert.equal(
 );
 assert.match(
   scripts['test:coverage:cases'],
+  /npm run test:unit.*npm run test:api/,
+  'the complete unit and API suites execute under c8',
+);
+assert.match(
+  scripts['test:unit'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
-  'the Clearfolio signal and HTTP failure regression executes under c8',
+  'the Clearfolio signal and HTTP failure regression remains in the unit suite',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],

@@ -17,7 +17,7 @@
     "test:coverage": "npm run test:coverage:node && node scripts/ci/run-browser-coverage.mjs && node scripts/ci/merge-browser-coverage.mjs",
     "test:coverage:node": "c8 --all --include=app.js --include=cloud-sync.js --include=analytics.js --include=scripts/ci/static_coverage_evidence.mjs --include=\"server/*.mjs\" --reports-dir=coverage/node --temp-directory=coverage/node/tmp --reporter=json --reporter=json-summary npm run test:coverage:cases",
     "test:coverage:strict": "npm run test:coverage && node scripts/ci/check-coverage.mjs",
-    "test:coverage:cases": "node tests/unit/coverage-script-contract.test.mjs && node tests/unit/attachment-status.test.mjs && node tests/unit/clearfolio-status-signal.test.mjs && node tests/unit/clearfolio-adapter-mock-hmac.test.mjs && node tests/unit/orchestrator.test.mjs && node tests/unit/orchestrator-coverage.test.mjs && node tests/unit/orchestrator-attribution.test.mjs && node tests/unit/msproject.test.mjs && node tests/unit/auth-password.test.mjs && node tests/unit/editor-unsaved.test.mjs && node tests/unit/static-coverage-evidence.test.mjs && node tests/unit/cloud-sync-metrics.test.mjs && npm run test:api",
+    "test:coverage:cases": "npm run test:unit && npm run test:api",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
     "test:e2e:cloud": "playwright install chromium && playwright test tests/e2e/cloud.spec.js tests/e2e/toast-accessibility.spec.js",

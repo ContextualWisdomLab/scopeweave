@@ -32,6 +32,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   into this repository.
 - Added exact-head Node/Chromium coverage collection and report merging; the
   remaining uncovered paths still block a 100% frontend/backend claim.
+- Made the canonical coverage run execute the complete unit and API suites so
+  existing pure-logic and server regression evidence is included in the merged report.
 - Added browser coverage for cloud sharing, sprint burndown, attachments,
   search, team administration, project creation, and sample onboarding flows.
 
