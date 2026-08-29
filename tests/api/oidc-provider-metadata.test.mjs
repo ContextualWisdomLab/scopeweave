@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { generateKeyPairSync, sign } from 'node:crypto';
 
+process.env.NODE_ENV = 'test';
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_DEV = '1';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
@@ -32,7 +33,7 @@ function signedIdentity(nonce, email = 'sso.user@example.com') {
   return `${input}.${sign('RSA-SHA256', Buffer.from(input), privateKey).toString('base64url')}`;
 }
 
-globalThis.fetch = async (url) => {
+const oidcFetch = async (url) => {
   const target = String(url);
   if (target === 'https://issuer.example/tenant/.well-known/openid-configuration') {
     if (discoveryMode === 'private-endpoints') {
@@ -50,13 +51,13 @@ globalThis.fetch = async (url) => {
       jwks_uri: 'https://keys.example/oidc/jwks.json',
     });
   }
-  if (target === 'https://tokens.example/oauth2/v2/token') {
-    return Response.json({ id_token: issuedIdToken });
-  }
+  if (target === 'https://tokens.example/oauth2/v2/token') return Response.json({ id_token: issuedIdToken });
   if (target === 'https://keys.example/oidc/jwks.json') return Response.json({ keys: [publicJwk] });
   throw new Error(`unexpected OIDC fetch: ${target}`);
 };
 
+const { configurePublicHttpsTransportForTests } = await import('../../server/public_https_transport.mjs');
+configurePublicHttpsTransportForTests({ fetch: oidcFetch });
 const { app } = await import('../../server/application_routes.mjs?provider-metadata=1');
 
 async function begin() {
@@ -77,11 +78,7 @@ async function metrics() {
 assert.equal((await metrics()).signups, 0);
 discoveryMode = 'private-endpoints';
 let response = await app.request('https://scopeweave.example/api/auth/oidc/start');
-assert.equal(
-  response.status,
-  404,
-  'discovery metadata cannot authorize server-side token or JWKS requests to private HTTPS destinations',
-);
+assert.equal(response.status, 404, 'discovery metadata cannot authorize server-side token or JWKS requests to private HTTPS destinations');
 discoveryMode = 'valid';
 
 let flow = await begin();
