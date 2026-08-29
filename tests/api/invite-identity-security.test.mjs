@@ -39,6 +39,7 @@ const intendedToken = await signup('Invitee@Example.com', 'Invitee');
 const unicodeToken = await signup('ÄDMIN@EXAMPLE.COM', 'Unicode invitee');
 const greekUpperToken = await signup('ΟΣ@UPPER.EXAMPLE.COM', 'Greek uppercase');
 const greekLowerToken = await signup('οσ@LOWER.EXAMPLE.COM', 'Greek lowercase');
+const combiningIotaToken = await signup('a\u0345@example.com', 'Combining iota');
 const attackerToken = await signup('attacker@example.com', 'Attacker');
 const ambiguousPrimaryToken = await signup('CaseVictim@example.com', 'Case victim');
 const ambiguousCollisionToken = await signup('casevictim@example.com', 'Case collision');
@@ -48,6 +49,7 @@ const intendedAuth = authFor(intendedToken);
 const unicodeAuth = authFor(unicodeToken);
 const greekUpperAuth = authFor(greekUpperToken);
 const greekLowerAuth = authFor(greekLowerToken);
+const combiningIotaAuth = authFor(combiningIotaToken);
 const attackerAuth = authFor(attackerToken);
 const ambiguousPrimaryAuth = authFor(ambiguousPrimaryToken);
 const ambiguousCollisionAuth = authFor(ambiguousCollisionToken);
@@ -236,6 +238,27 @@ for (const [accountAuth, invitedEmail, workspaceName] of [
   });
   assert.equal(response.status, 200, 'Unicode case-folded identity can accept its invite');
 }
+
+response = await req('/api/orgs', {
+  method: 'POST',
+  headers: ownerAuth,
+  body: body({ name: 'Combining iota workspace' }),
+});
+assert.equal(response.status, 200);
+const combiningIotaOrgId = (await response.json()).id;
+response = await req(`/api/orgs/${combiningIotaOrgId}/invites`, {
+  method: 'POST',
+  headers: ownerAuth,
+  body: body({ email: 'a\u03b9@example.com', role: 'member' }),
+});
+assert.equal(response.status, 200);
+const combiningIotaInvite = await response.json();
+response = await req(`/api/invites/${combiningIotaInvite.token}/accept`, {
+  method: 'POST',
+  headers: combiningIotaAuth,
+});
+assert.equal(response.status, 200, 'Unicode full case-folded identity can accept its invite');
+assert.equal((await response.json()).role, 'member');
 
 response = await req(`/api/invites/${adminInvite.token}/accept`, {
   method: 'POST',
