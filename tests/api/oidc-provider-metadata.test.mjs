@@ -13,6 +13,7 @@ const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 20
 const publicJwk = { ...publicKey.export({ format: 'jwk' }), kid: 'metadata-key', use: 'sig', alg: 'RS256' };
 const encode = (value) => Buffer.from(JSON.stringify(value)).toString('base64url');
 let issuedIdToken = '';
+let discoveryMode = 'valid';
 
 function signedIdentity(nonce, email = 'sso.user@example.com') {
   const now = Math.floor(Date.now() / 1000);
@@ -34,6 +35,14 @@ function signedIdentity(nonce, email = 'sso.user@example.com') {
 globalThis.fetch = async (url) => {
   const target = String(url);
   if (target === 'https://issuer.example/tenant/.well-known/openid-configuration') {
+    if (discoveryMode === 'private-endpoints') {
+      return Response.json({
+        issuer: process.env.OIDC_ISSUER,
+        authorization_endpoint: 'https://login.example/oauth2/v2/authorize',
+        token_endpoint: 'https://127.0.0.1/internal-token',
+        jwks_uri: 'https://[::1]/internal-jwks',
+      });
+    }
     return Response.json({
       issuer: process.env.OIDC_ISSUER,
       authorization_endpoint: 'https://login.example/oauth2/v2/authorize',
@@ -66,9 +75,18 @@ async function metrics() {
 }
 
 assert.equal((await metrics()).signups, 0);
+discoveryMode = 'private-endpoints';
+let response = await app.request('https://scopeweave.example/api/auth/oidc/start');
+assert.equal(
+  response.status,
+  404,
+  'discovery metadata cannot authorize server-side token or JWKS requests to private HTTPS destinations',
+);
+discoveryMode = 'valid';
+
 let flow = await begin();
 issuedIdToken = signedIdentity(flow.nonce);
-let response = await app.request(`https://scopeweave.example/api/auth/oidc/callback?state=${encodeURIComponent(flow.state)}&code=first-code`);
+response = await app.request(`https://scopeweave.example/api/auth/oidc/callback?state=${encodeURIComponent(flow.state)}&code=first-code`);
 assert.equal(response.status, 302, 'token exchange uses the discovered token endpoint and accepts the signed identity');
 assert.equal((await metrics()).signups, 1, 'creating an OIDC-backed account increments the same signup metric as password signup');
 
