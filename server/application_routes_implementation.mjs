@@ -13,6 +13,7 @@ import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 import { createRateLimitMiddleware, redactRequestLogPath } from './rate_limit.mjs';
+import { getSignupCount, recordSignup } from './signup_metrics.mjs';
 
 const GUARD_ACCOUNTING_METHOD = Symbol.for('scopeweave.guard_accounting.original_method');
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
@@ -83,7 +84,6 @@ const metrics = {
   s2xx: 0,
   s4xx: 0,
   s5xx: 0,
-  signups: 0,
   projectsCreated: 0,
   webhookDeliveries: 0,
   attachmentStatusRefreshAttempted: 0,
@@ -91,10 +91,6 @@ const metrics = {
   attachmentStatusRefreshFailed: 0,
   attachmentStatusRefreshDeferred: 0,
 };
-
-export function recordSignup() {
-  metrics.signups++;
-}
 
 // Outbound webhooks: POST signed JSON to each active hook subscribed to `event`.
 // Fire-and-forget with a timeout, one retry on failure, and a recorded outcome
@@ -721,7 +717,7 @@ app.get('/api/orgs/:id/export', requireAuth, (c) => {
 // behind an internal token before prod if scraped externally.
 app.get('/api/metrics', (c) => {
   const sseActive = [...streams.values()].reduce((n, s) => n + s.size, 0);
-  const all = { ...metrics, sseActive, uptimeSec: Math.round(process.uptime()) };
+  const all = { ...metrics, signups: getSignupCount(), sseActive, uptimeSec: Math.round(process.uptime()) };
   if (c.req.query('format') !== 'prometheus') return c.json(all);
   // Prometheus text exposition format (0.0.4) — scrape-ready for Grafana/Alerting.
   const gauge = new Set(['sseActive', 'uptimeSec']);

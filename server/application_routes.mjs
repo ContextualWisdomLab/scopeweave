@@ -1,5 +1,5 @@
 import { Hono } from 'hono';
-import { recordSignup } from './application_routes_implementation.mjs';
+import { recordSignup } from './signup_metrics.mjs';
 import {
   createHash,
   createPublicKey,
