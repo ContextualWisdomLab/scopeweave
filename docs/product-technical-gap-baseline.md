@@ -222,20 +222,17 @@ artifact `9710489491`에는 권위 있는 취약점 보고서가 없었다. 워�
   통과했지만 OpenCode는 current-head verdict 부재로, Strix는 provider HTTP 500와
   report 부재로 fail-closed 되었으며, `REVIEW_REQUIRED`/qualifying approval
   부재로 병합하지 않았다.
-- #495: `develop@2c328875` 대상
-  `9cc7ecc204dafe3dafcb78b605455beb07bbce3b`. CodeGraph로 metadata-only
-  render 경계, owner/status DOM shell 재사용, row identity 보존과 badge
-  contrast 회귀를 대조했고 current review thread는 모두 resolved다. `npm ci`
-  후 전체 unit, fuzz 14개, config 3개, docstring check, coverage/API cases와
-  `git diff --check`가 통과했다. `app.js` coverage는 lines 25.69%/
-  functions 15.57%/branches 70.14%, 전체 lines는 45.63%다. exact-head hosted
-  cloud-e2e report는 5,000-row protected-base median 5,815.2ms 대비 optimized
-  median 114.2ms, 98.04% 개선과 편집·progress·drag 회귀 통과를 기록했다.
-  local macOS benchmark는 같은 시나리오가 3분 timeout으로 종료되어 hosted
-  report를 성능 증거로 사용했다. OpenCode는 current-head verdict 부재로,
-  Strix run `33179685657`은 provider HTTP 500과 report artifact 부재로
-  fail-closed되었다. `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, qualifying approval
-  0건이므로 병합하지 않았다.
+- #495: `develop@2c328875` 대상 current HEAD
+  `9c2cc0b9acf1d3ef234612088ab0fbdf108252f5`. 이전 `9cc7ecc2`의 hosted
+  5,000-row benchmark는 predecessor evidence로만 보존한다. current HEAD는
+  metadata-only render와 immutable badge shell을 유지하고, 분리된
+  `test:e2e:performance`를 `server-tests.yml`에서 호출하도록 보완했다.
+  `node tests/unit/render-performance-base.test.mjs`는 7개가 통과했고,
+  current review thread는 모두 resolved다. current hosted unit-and-api와
+  coverage-evidence는 통과했지만 cloud-e2e `99066880322`, Noema
+  `99066875444`, Strix `99066868349`는 아직 실행 중이며 OpenCode
+  `99066887261`은 실패했다. `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, qualifying
+  approval 0건이므로 병합하지 않았다.
 - #468: `develop@2c328875` 대상
   `815af8138df2454cea99ba1a4a384de4f55d6199`. editor validation의 submit 경계,
   키보드·포인터 저장 재검증, `aria-disabled`/오류 설명 연결과 CSV formula
