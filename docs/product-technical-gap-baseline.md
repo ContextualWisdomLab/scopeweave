@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `5c6c2530`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, 현재 #621 `5c6c2530`, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `89fff38b`이 #621 `5c6c2530` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #587 `7430bb2b`는 일반 Checks가 수렴 중이고 OpenCode가 current-head verdict 부재로 fail-closed, Strix 실행 중이며 qualifying approval 없음; #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 `afbdeab8`는 기준선 갱신 push 뒤 Checks가 수렴했지만 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #596 `86210691`, #602 `d9aa1af2`, #608 `f52d0930`, #610 `4c965cb0`는 기능·보안 Checks가 수렴했지만 OpenCode current-head verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #587 `7430bb2b`는 일반 Checks가 수렴 중이고 OpenCode가 current-head verdict 부재로 fail-closed, Strix 실행 중이며 qualifying approval 없음; #593 `f8baae8b`는 Unicode invite identity 회귀를 수정한 뒤 Checks 재실행 대기·qualifying approval 없음; #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 `afbdeab8`는 기준선 갱신 push 뒤 Checks가 수렴했지만 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #596 `86210691`, #602 `d9aa1af2`, #608 `f52d0930`, #610 `4c965cb0`는 기능·보안 Checks가 수렴했지만 OpenCode current-head verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -352,14 +352,14 @@ HEAD가 바뀌면 다시 확인해야 한다.
   `98670001775`는 OpenRouter unavailable 및 OpenAI 429 quota exhaustion으로
   structured report 없이 fail-closed 되었고, qualifying approval도 없다.
 - #593: `develop@2c328875` 대상
-  `a7bc39d16fe5240832ef08f0ee80e9c64dea7181`. pending invite roster에서 bearer
+  `f8baae8b9c3a453bd5796401ad95c1601227127e`. pending invite roster에서 bearer
   token을 제거하고, canonical email이 유일하며 인증 subject와 일치할 때만
   초대를 수락하도록 했다. malformed invite/share path도 structured request
-  log에서 token segment를 redaction한다. 전용 invite identity 보안 회귀,
-  전체 unit/API, config 3개가 로컬 통과했고, hosted 기능·보안·fuzz·coverage·
-  cloud·SAST·dependency/OSV Checks는 통과했다. Scorecard·Trivy·OSV scanner는
-  neutral이고 OpenCode는 current-head verdict 부재로 fail-closed 되었으며,
-  review threads는 0이지만 qualifying approval은 없다.
+  log에서 token segment를 redaction한다. SQLite ASCII-only `lower()` 때문에
+  Unicode mailbox가 정상 계정과 매칭되지 않던 결함을 JavaScript canonicalization과
+  회귀 테스트로 수정했다. 전용 invite identity 보안 회귀, 전체 unit/API, config
+  3개가 로컬 통과했고, 이 push 뒤 hosted 기능·보안·fuzz·coverage·cloud·SAST·
+  dependency/OSV Checks는 재실행 대기 중이다. qualifying approval은 없다.
 - #493: `develop@2c328875` 대상
   `78f8b557cd2b9cab238af72304f0ed42e1557759`. CodeGraph로 Clearfolio
   production 설정의 fail-closed 경계, tenant HMAC 헤더의 redirect 재전송
