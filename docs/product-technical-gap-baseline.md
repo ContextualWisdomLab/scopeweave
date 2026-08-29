@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `5c6c2530`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, 현재 #621 `5c6c2530`, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `89fff38b`이 #621 `5c6c2530` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 `cffeae34`는 기능·보안 Checks와 Strix가 통과했지만 OpenCode current-head verdict가 없어 실패했고 qualifying approval도 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 `b0fc6660`은 기준선 갱신 push 뒤 Checks 재실행 중이며 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #608 `f52d0930`과 #610 `bd538f05`도 새 HEAD Checks 재실행 중이며 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -129,13 +129,39 @@ HEAD가 바뀌면 다시 확인해야 한다.
   manifest-pattern-coverage 스킵이 있었고, central OpenCode/Strix run은 이
   stacked head에 붙지 않았다. 전체 Devin thread는 해결됐지만 qualifying
   approval은 없다.
-- #625: `develop@2c328875` 대상 `cffeae34d2ac1715118f4f79e1bbb6e6d53bac7c`.
+- #608: `develop@2c328875` 대상 `f52d093069490c15eb525690774786d4fabb267d`.
+  네이티브 `disabled`로 전환한 빈 상태 CSV/Gantt 동작을 CodeGraph의
+  `renderAll()` 경로와 대조했다. 기존 저장소 E2E가 요구하는
+  `cloud-sync.js`·`analytics.js` modulepreload 누락과, 제거된 title tooltip을
+  계속 기대하던 stale assertion을 확인해 각각 preload 두 줄과 native
+  disabled/`aria-describedby` 계약 assertion으로 최소 수정했다. `npm ci`는
+  취약점 0건이었고 unit, config 3개, docstring, fuzz 14개, 전체 Playwright
+  79개, coverage, `git diff --check`가 로컬에서 통과했다. coverage는 total
+  lines 44.60%/functions 33.76%/branches 81.84%였다. 새 HEAD hosted
+  inventory는 bootstrap·close-empty·manifest/취소 계열만 terminal이고
+  coverage-source-tree, OSV, Trivy-FS, dependency-review, unit/API,
+  Scorecard, cloud-E2E, property fuzz, Semgrep, CodeQL 분석, Noema가
+  queued/in progress다. GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`,
+  current-head APPROVED 0, unresolved thread 0이다.
+- #610: `develop@2c328875` 대상 `bd538f05df8203577a980bd7f56af1fab4040018`.
+  CodeGraph로 `ZERO_VALID_FIELDS`와 편집/저장·외부 `wbs.json`·JSON sync·CSV
+  export 호출 경로를 대조해 numeric zero 보존 구현에는 추가 결함이 없음을
+  확인했다. 기존 develop의 modulepreload 계약 누락이 전체 E2E에서 재현되어
+  `index.html`에 동일한 preload 두 줄만 추가했다. `npm ci`는 취약점 0건,
+  zero 회귀 E2E 12개, unit, config 3개, docstring, fuzz 14개, 전체
+  Playwright 88개, API/coverage, `git diff --check`가 통과했다. coverage는
+  total lines 44.44%/functions 33.76%/branches 81.76%였다. 새 HEAD
+  hosted Checks는 dependency-review와 close-empty를 제외한 required
+  workflow들이 queued/in progress이며, GraphQL은
+  `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, current-head APPROVED 0,
+  unresolved thread 0이다.
+- #625: `develop@2c328875` 대상 `b0fc6660a51441e738a7beaff81f0822aade4d06`.
   기준선 문서에 #587의 exact-head 보안·운영 수정과 현재 승인/게이트 상태를
-  반영했다. exact-head functional/security/coverage/unit/Strix Checks는
-  terminal success이고 Scorecard·Trivy·OSV scanner는 neutral이다. Strix
-  `99023490175`는 annotations 0으로 성공했지만, OpenCode `99023534922`는
-  현재 head의 APPROVED/CHANGES_REQUESTED verdict 부재로 fail-closed 되었다.
-  GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, unresolved thread 0,
+  반영했다. 이 HEAD에서는 coverage-source-tree, OSV, Trivy-FS,
+  dependency-review, unit/API, Scorecard, cloud-E2E, property fuzz,
+  Semgrep, CodeQL 분석, Noema가 queued/in progress이고 bootstrap과
+  manifest-pattern-coverage는 각각 success/skipped였다. GraphQL은
+  `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, unresolved thread 0,
   qualifying approval 0이며 병합하지 않았다.
 - #616: `develop@2c328875` 대상
   `b427cd455f41e7c09ae20fbbf400d42c4f61d4bf`. deterministic release-artifact
