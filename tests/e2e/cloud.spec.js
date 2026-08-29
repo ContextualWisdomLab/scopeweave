@@ -60,6 +60,23 @@ async function loginAndOpen(page) {
   await page.waitForSelector('#cloud-auth select');
 }
 
+test('opening a cloud project clears standalone seed onboarding', async ({ page }) => {
+  await page.goto(`${BASE}/`);
+  await expect(page.locator('#seed-onboarding')).toBeVisible();
+
+  await page.evaluate(([t]) => {
+    localStorage.setItem('scopeweave:token', t);
+    localStorage.setItem('scopeweave:project', '1');
+  }, [token]);
+  await page.reload();
+  await page.waitForSelector('#cloud-auth select');
+
+  await expect(page.locator('#seed-onboarding')).toBeHidden();
+  await expect(page.locator('#clear-seed-data')).toBeHidden();
+  const project = await api('/api/projects/1', { tok: token });
+  expect(project.tasks.length).toBeGreaterThan(0);
+});
+
 test('cloud bar renders the full toolset when logged in', async ({ page }) => {
   await loginAndOpen(page);
   const labels = await page.$$eval('#cloud-auth button', (bs) => bs.map((b) => b.textContent));

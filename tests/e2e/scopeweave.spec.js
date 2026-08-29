@@ -139,7 +139,7 @@ test.describe('ScopeWeave Planner', () => {
     await expect(rows).toContainText(['P0000.준비단계', '프로젝트준비', '단계작업계획']);
     await expect(rows.filter({ hasText: '사업수행계획' })).toHaveCount(0);
     const contextToggle = rows.first().locator('button[data-action="toggle"]');
-    await expect(contextToggle).toBeDisabled();
+    await expect(contextToggle).toHaveAttribute('aria-disabled', 'true');
     await expect(contextToggle).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('#task-filter-status')).toHaveText('3개 작업 표시 중 (전체 4개)');
     await search.fill('');

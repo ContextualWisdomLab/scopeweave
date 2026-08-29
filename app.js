@@ -776,7 +776,11 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
     toggleButton.setAttribute('aria-label', `${toggleLabel} - ${rowEntityName}`);
     toggleButton.setAttribute('aria-expanded', String(expanded));
     toggleButton.title = `${toggleLabel} - ${rowEntityName}`;
-    toggleButton.disabled = filterActive || searchExpanded;
+    if (filterActive || searchExpanded) {
+      toggleButton.setAttribute('aria-disabled', 'true');
+    } else {
+      toggleButton.removeAttribute('aria-disabled');
+    }
     const toggleIcon = toggleIconTemplate.cloneNode(false);
     toggleIcon.textContent = expanded ? '▼' : '▶';
     toggleButton.appendChild(toggleIcon);
@@ -1609,7 +1613,8 @@ const cachedSearchExpandedParentIds = new Set();
 const TASK_SEARCH_FIELDS = [
   'phase', 'activity', 'task', 'categoryLarge', 'categoryMedium', 'documentName',
   'owner', 'supportTeam', 'actualProgressStatus', 'plannedStartDate',
-  'plannedEndDate', 'actualStartDate', 'actualEndDate', 'predecessors', 'sprint'
+  'plannedEndDate', 'actualStartDate', 'actualEndDate', 'predecessors', 'budget',
+  'actualCost', 'sprint', 'storyPoints'
 ];
 
 function taskSearchText(task) {
@@ -1849,6 +1854,8 @@ function hydrateState(savedState) {
   state.tasks = Array.isArray(savedState.tasks)
     ? savedState.tasks.filter(isTaskRecord).map(normalizeStoredTask)
     : [];
+  state.taskQuery = '';
+  state.showSeedOnboarding = false;
   invalidateTaskIndexCache();
 }
 
@@ -2175,8 +2182,8 @@ async function handleCsvImport(event) {
   try {
     const text = await file.text();
     const imported = parseCsv(text);
-    state.tasks = validateImportedTasks(normalizeImportedTasks(imported));
-    invalidateTaskIndexCache();
+    const importedTasks = validateImportedTasks(normalizeImportedTasks(imported));
+    hydrateState({ projectName: state.projectName, baseDate: state.baseDate, tasks: importedTasks });
     closeEditor(true);
     persistState();
     renderAll();

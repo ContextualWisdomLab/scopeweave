@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added accessible WBS field search with hierarchy context and an empty-result
   recovery action.
+- Added planning-field search coverage and safe state reset when Cloud or file
+  imports replace the current plan.
 - Added browser JSON download for portable WBS backups, including extended
   planning fields, alongside CSV export.
 - Added first-visit sample WBS onboarding with persistent dismissal and a

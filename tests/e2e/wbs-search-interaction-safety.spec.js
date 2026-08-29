@@ -26,7 +26,12 @@ test.describe('WBS search interaction safety', () => {
     const deleteButton = rows.first().getByRole('button', { name: /삭제 -/ });
 
     await expect(addRoot).toHaveAttribute('aria-disabled', 'true');
-    await expect(rows.first().locator('button[data-action="toggle"]')).toBeDisabled();
+    const toggle = rows.first().locator('button[data-action="toggle"]');
+    await expect(toggle).toHaveAttribute('aria-disabled', 'true');
+    await toggle.focus();
+    await expect(toggle).toBeFocused();
+    await toggle.dispatchEvent('click');
+    await expect(page.locator('#toast')).toContainText('검색 중 계층 맥락 고정');
     await expect(addChild).toHaveAttribute('aria-disabled', 'true');
     await expect(deleteButton).toHaveAttribute('aria-disabled', 'true');
 
@@ -41,6 +46,48 @@ test.describe('WBS search interaction safety', () => {
     await deleteButton.dispatchEvent('click');
     await expect(page.locator('#toast')).toContainText('검색 중에는 작업을 삭제할 수 없습니다.');
     await expect(rows).toHaveCount(3);
+  });
+
+  test('searches planning values and clears the query when CSV replaces the plan', async ({ page }) => {
+    await page.evaluate(() => {
+      localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
+        projectName: 'Planning search',
+        baseDate: '2026-08-29',
+        tasks: [{
+          id: 'planning-search-task',
+          parentId: null,
+          depth: 3,
+          expanded: true,
+          phase: '계획',
+          activity: '검색',
+          task: '계획 값',
+          budget: '125000',
+          actualCost: '90000',
+          storyPoints: '13'
+        }]
+      }));
+    });
+    await page.reload();
+
+    const search = page.getByRole('searchbox', { name: 'WBS 작업 검색' });
+    const rows = page.locator('tbody tr[data-task-id]');
+    for (const query of ['125000', '90000', '13']) {
+      await search.fill(query);
+      await expect(rows).toHaveCount(1);
+    }
+
+    page.once('dialog', dialog => dialog.accept());
+    await page.locator('#csv-file-input').setInputFiles({
+      name: 'replacement.csv',
+      mimeType: 'text/csv',
+      buffer: Buffer.from([
+        '단계,Activity,Task,대분류,중분류,산출물,담당자,지원팀,진행상태,계획시작일,계획종료일,일수,계획진척률,가중치,가중치진척률,실적진척상태,실적진척률,실적시작일,실적종료일,가중치실적진척률,__id,__parentId,__depth,선행작업,예산,실투입비,스프린트,스토리포인트',
+        '교체 단계,,,,,,,,,,,,,,미착수(0%),,,,,replacement-task,,,3,,,,,'
+      ].join('\n'))
+    });
+    await expect(search).toHaveValue('');
+    await expect(rows).toHaveCount(1);
+    await expect(rows).toContainText('교체 단계');
   });
 
   test('keeps an open editor visible by pausing search changes until editing finishes', async ({ page }) => {
