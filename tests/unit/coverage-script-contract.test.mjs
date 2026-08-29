@@ -35,9 +35,19 @@ assert.match(
   'the abortable Clearfolio adapter is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=json-sync-bootstrap-guard\.js/,
+  'the JSON sync bootstrap guard is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/json-sync-bootstrap-guard\.test\.mjs/,
+  'the JSON sync bootstrap guard behavior executes under c8',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],

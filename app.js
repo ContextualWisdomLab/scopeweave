@@ -56,6 +56,7 @@ const EDITABLE_FIELDS = [
   'sprint',
   'storyPoints'
 ];
+const ZERO_VALID_FIELDS = new Set(['budget', 'actualCost', 'storyPoints']);
 
 const CSV_HEADERS = [
   '단계',
@@ -870,7 +871,7 @@ function renderEditorField(label, field, value, type = 'text', required = false,
   if (type === 'text') {
     input.maxLength = 1000;
   }
-  input.value = value || '';
+  input.value = value === 0 && ZERO_VALID_FIELDS.has(field) ? '0' : (value || '');
   if (required) {
     input.required = true;
     input.setAttribute('aria-required', 'true');
@@ -1310,7 +1311,9 @@ function sanitizeDraft(draft) {
   const sanitized = {};
   EDITABLE_FIELDS.forEach((field) => {
     // 🛡️ Sentinel: Enforce string coercion before trim() to prevent DoS via type confusion
-    sanitized[field] = String(draft?.[field] || '').trim().slice(0, 1000);
+    const val = draft?.[field];
+    const normalizedValue = val === 0 && ZERO_VALID_FIELDS.has(field) ? '0' : (val || '');
+    sanitized[field] = String(normalizedValue).trim().slice(0, 1000);
   });
   // 🛡️ Sentinel: Strictly validate against allowed options to prevent injection
   if (!sanitized.actualProgressStatus || !ACTUAL_PROGRESS_OPTIONS.includes(sanitized.actualProgressStatus)) {
@@ -1496,7 +1499,6 @@ function getDateRangeWarning(startDate, endDate, message) {
 }
 
 const cachedHiddenParentIds = new Set();
-
 function getVisibleTasks() {
   const visible = [];
   cachedHiddenParentIds.clear();
@@ -1813,10 +1815,10 @@ const createNormalizedExternalRecord = (task, defaults = {}) => ({
   actualStartDate: task.actualStartDate || '',
   actualEndDate: task.actualEndDate || '',
   predecessors: task.predecessors || defaults.predecessors || '',
-  budget: task.budget || defaults.budget || '',
-  actualCost: task.actualCost || defaults.actualCost || '',
+  budget: task.budget === 0 ? 0 : (task.budget || (defaults.budget === 0 ? 0 : (defaults.budget || ''))),
+  actualCost: task.actualCost === 0 ? 0 : (task.actualCost || (defaults.actualCost === 0 ? 0 : (defaults.actualCost || ''))),
   sprint: task.sprint || defaults.sprint || '',
-  storyPoints: task.storyPoints || defaults.storyPoints || ''
+  storyPoints: task.storyPoints === 0 ? 0 : (task.storyPoints || (defaults.storyPoints === 0 ? 0 : (defaults.storyPoints || '')))
 });
 
 function getPhaseKey(task, index) {
@@ -1962,10 +1964,10 @@ function exportCsv() {
       task.parentId || '',
       task.depth,
       task.predecessors || '',
-      task.budget || '',
-      task.actualCost || '',
+      task.budget === 0 ? 0 : (task.budget || ''),
+      task.actualCost === 0 ? 0 : (task.actualCost || ''),
       task.sprint || '',
-      task.storyPoints || ''
+      task.storyPoints === 0 ? 0 : (task.storyPoints || '')
     ];
   });
 
@@ -2206,7 +2208,12 @@ function exportJsonArray() {
     [LEGACY_PLANNED_END_FIELD]: task.plannedEndDate,
     actualProgressStatus: task.actualProgressStatus,
     actualStartDate: task.actualStartDate,
-    actualEndDate: task.actualEndDate
+    actualEndDate: task.actualEndDate,
+    predecessors: task.predecessors || '',
+    budget: task.budget === 0 ? 0 : (task.budget || ''),
+    actualCost: task.actualCost === 0 ? 0 : (task.actualCost || ''),
+    sprint: task.sprint || '',
+    storyPoints: task.storyPoints === 0 ? 0 : (task.storyPoints || '')
   }));
 }
 
@@ -2246,7 +2253,6 @@ function trapGanttModalFocus(event) {
     event.preventDefault();
     return;
   }
-
   const firstElement = focusableElements[0];
   const lastElement = focusableElements[focusableElements.length - 1];
   const activeElement = document.activeElement;

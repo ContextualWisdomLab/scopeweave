@@ -1302,7 +1302,7 @@ app.get('/api/projects/:id/baselines', requireAuth, (c) => {
   const baselines = db.prepare(
     'SELECT id, name, base_date AS baseDate, created_at AS createdAt FROM baselines WHERE project_id = ? ORDER BY id DESC'
   ).all(p.id);
-  return c.json({ baselines });
+  return c.json({ baselines, methodology: p.methodology || 'waterfall' });
 });
 
 app.get('/api/projects/:id/baselines/:bid', requireAuth, (c) => {
@@ -1392,6 +1392,7 @@ const STATIC = {
   '/sitemap.xml': ['sitemap.xml', 'application/xml; charset=utf-8'],
   '/pricing': ['landing.html', 'text/html; charset=utf-8'],
   '/app.js': ['app.js', 'text/javascript; charset=utf-8'],
+  '/json-sync-bootstrap-guard.js': ['json-sync-bootstrap-guard.js', 'text/javascript; charset=utf-8'],
   '/cloud-sync.js': ['cloud-sync.js', 'text/javascript; charset=utf-8'],
   '/analytics.js': ['analytics.js', 'text/javascript; charset=utf-8'],
   '/styles.css': ['styles.css', 'text/css; charset=utf-8'],

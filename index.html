@@ -6,6 +6,9 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'self';" />
     <title>ScopeWeave Planner</title>
     <link rel="preload" href="styles.css" as="style" />
+    <link rel="modulepreload" href="json-sync-bootstrap-guard.js" />
+    <link rel="modulepreload" href="cloud-sync.js" />
+    <link rel="modulepreload" href="analytics.js" />
     <link rel="modulepreload" href="app.js" />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="toast-state.css" />
@@ -46,7 +49,7 @@
           </div>
           <div class="sync-panel">
             <span id="sync-status" role="status" aria-live="polite" aria-atomic="true">브라우저 로컬 자동저장 사용 중</span>
-            <button id="connect-json-sync" type="button" class="secondary-button">wbs.json 자동저장 연결</button>
+            <button id="connect-json-sync" type="button" class="secondary-button" disabled aria-disabled="true" title="프로젝트 데이터를 불러오는 중입니다.">wbs.json 자동저장 연결</button>
           </div>
         </div>
       </header>
@@ -112,6 +115,7 @@
       </div>
     </div>
 
+    <script type="module" src="json-sync-bootstrap-guard.js"></script>
     <script type="module" src="cloud-sync.js"></script>
     <script type="module" src="analytics.js"></script>
     <script type="module" src="app.js"></script>
