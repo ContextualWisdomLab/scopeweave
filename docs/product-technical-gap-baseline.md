@@ -149,13 +149,14 @@ HEAD가 바뀌면 다시 확인해야 한다.
   export 호출 경로를 대조해 numeric zero 보존 구현에는 추가 결함이 없음을
   확인했다. 기존 develop의 modulepreload 계약 누락이 전체 E2E에서 재현되어
   `index.html`에 동일한 preload 두 줄만 추가했다. `npm ci`는 취약점 0건,
-  zero 회귀 E2E 12개, unit, config 3개, docstring, fuzz 14개, 전체
+  zero 회귀 E2E 13개, unit, config 3개, docstring, fuzz 14개, 전체
   Playwright 88개, API/coverage, `git diff --check`가 통과했다. coverage는
   total lines 44.44%/functions 33.76%/branches 81.76%였다. 새 HEAD
   functional/security/coverage/unit/API/cloud-E2E/fuzz/Noema Checks는
-  terminal success 또는 expected neutral/skipped였고, OpenCode check
-  `99027884603`은 current-head verdict 부재로 실패했다. Strix run
-  `33225351531`은 취소됐고 artifact가 없어 authoritative clean report가
+  terminal success 또는 expected neutral/skipped로 수렴했다. OpenCode run
+  `33226611815`의 check `99031566352`는 current-head verdict 부재로
+  fail-closed되었다. Strix run `33226611816`은 취소됐고 artifact가 없어
+  authoritative clean report가
   없다. GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, current-head
   APPROVED 0, unresolved thread 0이다.
 - #602: `develop@2c328875` 대상 `d9aa1af26dc860894ad39f8383b5a545e0e7eb40`.
