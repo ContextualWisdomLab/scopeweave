@@ -78,6 +78,69 @@ const parseFirstCsvDataRow = (csvText) => {
   return dataRow.split(',').map((cell) => cell.slice(1, -1).replace(/""/g, '"'));
 };
 
+test('blocks wbs.json sync until cloud hydration finishes', async ({ page }) => {
+  let releaseProjectHydration;
+  const projectHydration = new Promise((resolve) => {
+    releaseProjectHydration = resolve;
+  });
+
+  await page.route('**/api/projects', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ projects: [{ id: 123, name: 'Hydration Project', archived: false }] }),
+    });
+  });
+  await page.route('**/api/notifications', async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ notifications: [] }),
+    });
+  });
+  await page.route('**/api/projects/123', async (route) => {
+    await projectHydration;
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 123,
+        orgId: 1,
+        name: 'Hydration Project',
+        baseDate: '2026-08-26',
+        version: 1,
+        tasks: [createTask({ budget: 0 })],
+      }),
+    });
+  });
+  await page.addInitScript(() => {
+    localStorage.setItem('scopeweave:token', 'test-token');
+    localStorage.setItem('scopeweave:project', '123');
+    window.__pickerCalls = 0;
+    window.showSaveFilePicker = async () => {
+      window.__pickerCalls += 1;
+      return {
+        async createWritable() {
+          return {
+            async write() {},
+            async close() {},
+          };
+        },
+      };
+    };
+  });
+
+  await page.goto('./');
+  const syncButton = page.getByRole('button', { name: 'wbs.json 자동저장 연결' });
+  await expect(syncButton).toBeDisabled();
+  await syncButton.evaluate((button) => button.click());
+  expect(await page.evaluate(() => window.__pickerCalls)).toBe(0);
+
+  releaseProjectHydration();
+  await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(1);
+  await expect(syncButton).toBeEnabled();
+});
+
 for (const { field, testId } of [
   { field: 'budget', testId: 'editor-budget' },
   { field: 'actualCost', testId: 'editor-actual-cost' },
