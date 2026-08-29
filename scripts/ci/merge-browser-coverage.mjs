@@ -1,11 +1,12 @@
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import v8ToIstanbul from 'v8-to-istanbul';
 import coverageLib from 'istanbul-lib-coverage';
 
 const { createCoverageMap } = coverageLib;
 
-const root = path.resolve(new URL('../..', import.meta.url).pathname);
+const root = fileURLToPath(new URL('../..', import.meta.url));
 const nodeReportPath = path.join(root, 'coverage/node/coverage-final.json');
 const browserDirectory = path.join(root, 'coverage/browser');
 const outputDirectory = path.join(root, 'coverage');

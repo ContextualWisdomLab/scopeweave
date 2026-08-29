@@ -1,8 +1,9 @@
 import { spawn } from 'node:child_process';
 import { mkdir, rm } from 'node:fs/promises';
+import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 
-const root = path.resolve(new URL('../..', import.meta.url).pathname);
+const root = fileURLToPath(new URL('../..', import.meta.url));
 const coverageDirectory = path.join(root, 'coverage/browser');
 
 await rm(coverageDirectory, { recursive: true, force: true });

@@ -8,6 +8,14 @@ const packageJson = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 );
 const scripts = packageJson.scripts;
+const runBrowserCoverage = readFileSync(
+  new URL('../../scripts/ci/run-browser-coverage.mjs', import.meta.url),
+  'utf8',
+);
+const mergeBrowserCoverage = readFileSync(
+  new URL('../../scripts/ci/merge-browser-coverage.mjs', import.meta.url),
+  'utf8',
+);
 
 assert.equal(
   scripts.coverage,
@@ -31,9 +39,11 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage:node'],
-  /--include=['"]?server\/\*\.mjs/,
+  /--include=["']server\/\*\.mjs["']/,
   'all server modules are instrumented',
 );
+assert.match(runBrowserCoverage, /fileURLToPath\(new URL\(/, 'browser coverage resolves file URLs safely');
+assert.match(mergeBrowserCoverage, /fileURLToPath\(new URL\(/, 'merged coverage resolves file URLs safely');
 assert.equal(
   scripts['test:coverage:strict'],
   'npm run test:coverage && node scripts/ci/check-coverage.mjs',
