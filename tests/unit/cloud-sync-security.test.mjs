@@ -403,3 +403,213 @@ function loadLocalDownloadFile({ clickError = null, cleanupError = null, revokeE
   assert.equal(observedError, cleanupError, 'local CSV export must surface the first cleanup failure');
   assert.deepEqual(events, expectedLifecycle, 'local CSV export attempts object-url revocation after cleanup failure');
 }
+
+{
+  const revokeError = new Error('local object-url revoke failed');
+  const { downloadFile, events } = loadLocalDownloadFile({ revokeError });
+  let observedError = null;
+
+  try {
+    downloadFile('buyer csv', 'wbs.csv', 'text/csv');
+  } catch (error) {
+    observedError = error;
+  }
+
+  assert.equal(observedError, revokeError, 'local CSV export must surface a revoke-only failure');
+  assert.deepEqual(events, expectedLifecycle, 'local CSV export attempts revocation after a successful click');
+}
+
+class CloudElementStub {
+  constructor(tagName) {
+    this.tagName = tagName;
+    this.children = [];
+    this.childNodes = this.children;
+    this.listeners = new Map();
+    this.classList = {
+      add: (...names) => names.forEach((name) => this.classList._names.add(name)),
+      remove: (...names) => names.forEach((name) => this.classList._names.delete(name)),
+      contains: (name) => this.classList._names.has(name),
+      _names: new Set(),
+    };
+    this.style = {};
+    this.dataset = {};
+    this.parentNode = null;
+    this.textContent = '';
+    this.innerHTML = '';
+  }
+
+  appendChild(child) {
+    this.children.push(child);
+    child.parentNode = this;
+    return child;
+  }
+
+  append(...children) {
+    children.forEach((child) => this.appendChild(child));
+  }
+
+  addEventListener(type, handler) {
+    const handlers = this.listeners.get(type) || [];
+    handlers.push(handler);
+    this.listeners.set(type, handlers);
+  }
+
+  setAttribute(name, value) {
+    this[name] = String(value);
+  }
+
+  querySelector(selector) {
+    if (selector.startsWith('#') && this.id === selector.slice(1)) return this;
+    for (const child of this.children) {
+      const match = child.querySelector?.(selector);
+      if (match) return match;
+    }
+    return null;
+  }
+}
+
+function loadCloudDownloadCallers() {
+  const cloudSyncPath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'cloud-sync.js');
+  let source = fs.readFileSync(cloudSyncPath, 'utf8')
+    .replaceAll(/^export (?=function|const)/gm, '       ');
+  source += '\n;globalThis.__cloudDownloadCoverage = { exportOrg, openBaselineModal, renderAudit, setOrgId: (id) => { currentOrgId = id; } };\n';
+
+  const storage = new Map([
+    ['scopeweave:token', 'test-token'],
+    ['scopeweave:project', '7'],
+  ]);
+  const calls = [];
+  const downloads = [];
+  const body = new CloudElementStub('body');
+  const toastElement = new CloudElementStub('output');
+  toastElement.id = 'toast';
+  body.appendChild(toastElement);
+
+  const response = ({ json = {}, blob = new Blob(['download']), status = 200 } = {}) => ({
+    ok: status >= 200 && status < 300,
+    status,
+    statusText: status === 200 ? 'OK' : 'Error',
+    json: async () => json,
+    blob: async () => blob,
+  });
+
+  const fetchRef = async (requestPath) => {
+    const url = String(requestPath);
+    calls.push(url);
+    if (url === '/api/orgs/42/export') return response({ blob: new Blob(['org export']) });
+    if (url === '/api/projects/7/revisions') return response({ json: { revisions: [] } });
+    if (url === '/api/projects/7/baselines') return response({ json: { baselines: [] } });
+    if (url === '/api/projects/7/calendar.ics') return response({ blob: new Blob(['calendar']) });
+    if (url === '/api/orgs/42/audit?limit=12') {
+      return response({ json: { events: [{ action: 'project.create', actorEmail: 'owner@example.test', createdAt: '2026-08-29T12:34:56Z' }] } });
+    }
+    if (url === '/api/orgs/42/audit?format=csv&limit=500') return response({ blob: new Blob(['audit']) });
+    throw new Error(`unexpected cloud download request: ${url}`);
+  };
+
+  const anchorPrototype = {
+    remove() {
+      this.parentNode = null;
+    },
+  };
+  const documentRef = {
+    body,
+    createElement(tagName) {
+      if (tagName !== 'a') return new CloudElementStub(tagName);
+      const anchor = Object.create(anchorPrototype);
+      anchor.parentNode = null;
+      anchor.click = () => undefined;
+      downloads.push(anchor);
+      return anchor;
+    },
+    getElementById(id) {
+      if (id === 'toast') return toastElement;
+      return body.querySelector(`#${id}`);
+    },
+    querySelector: () => null,
+  };
+  class SandboxURL extends URL {}
+  SandboxURL.createObjectURL = () => 'blob:scopeweave-cloud-test';
+  SandboxURL.revokeObjectURL = () => undefined;
+  const windowStub = {
+    addEventListener() {},
+    removeEventListener() {},
+    setTimeout: () => 0,
+    clearTimeout: () => undefined,
+  };
+  const locationStub = {
+    origin: 'http://scopeweave.test',
+    pathname: '/',
+    search: '',
+    hash: '',
+  };
+  const sandbox = {
+    window: windowStub,
+    self: windowStub,
+    document: documentRef,
+    location: locationStub,
+    history: { replaceState() {} },
+    localStorage: {
+      getItem: (key) => storage.get(key) || null,
+      setItem: (key, value) => storage.set(key, String(value)),
+      removeItem: (key) => storage.delete(key),
+    },
+    fetch: fetchRef,
+    Blob,
+    URL: SandboxURL,
+    URLSearchParams,
+    EventSource: class {},
+    navigator: { clipboard: { writeText: async () => undefined } },
+    prompt: () => null,
+    confirm: () => true,
+    setTimeout: () => 0,
+    clearTimeout: () => undefined,
+    Date,
+    Math,
+    JSON,
+    Object,
+    Array,
+    Set,
+    Map,
+    WeakMap,
+    Symbol,
+    String,
+    Number,
+    Boolean,
+    RegExp,
+    Error,
+    TypeError,
+    Promise,
+    encodeURIComponent,
+    decodeURIComponent,
+    console,
+  };
+  sandbox.globalThis = sandbox;
+  windowStub.window = windowStub;
+  vm.runInContext(source, vm.createContext(sandbox), { filename: cloudSyncPath });
+  return { body, calls, downloads, functions: sandbox.__cloudDownloadCoverage };
+}
+
+{
+  const { body, calls, downloads, functions } = loadCloudDownloadCallers();
+  functions.setOrgId(42);
+
+  await functions.exportOrg();
+  assert.ok(calls.includes('/api/orgs/42/export'));
+  assert.equal(downloads.at(-1).download, 'scopeweave-org-42.json');
+
+  await functions.openBaselineModal();
+  const calendarButton = body.querySelector('#baseline-panel').children.find((child) => child.textContent === '캘린더 내보내기 (.ics)');
+  assert.ok(calendarButton);
+  await calendarButton.listeners.get('click')[0]();
+  assert.ok(calls.includes('/api/projects/7/calendar.ics'));
+  assert.equal(downloads.at(-1).download, 'scopeweave-7.ics');
+
+  const auditBody = new CloudElementStub('section');
+  await functions.renderAudit(auditBody);
+  const csvButton = auditBody.children[0]?.children.find((child) => child.textContent === 'CSV 다운로드');
+  assert.ok(csvButton);
+  await csvButton.listeners.get('click')[0]();
+  assert.ok(calls.includes('/api/orgs/42/audit?format=csv&limit=500'));
+  assert.equal(downloads.at(-1).download, 'scopeweave-audit-42.csv');
+}
