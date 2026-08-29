@@ -17,6 +17,41 @@ const coreOidcMockEnabled =
   process.env.SCOPEWEAVE_DEV === '1' && !process.env.OIDC_ISSUER;
 
 /**
+ * Forward password-auth requests with one canonical mailbox identity.
+ *
+ * The implementation graph predates the invitation and production OIDC email
+ * normalization contract. Canonicalizing at this low-level shared boundary
+ * guarantees that signup duplicate checks, stored identities, login lookups,
+ * workspace labels, and signed session claims all receive the same trimmed
+ * lowercase email. `db.mjs` separately migrates legacy rows and enforces a
+ * canonical unique index, so direct database writes cannot recreate a split
+ * identity.
+ *
+ * @param {import('hono').Context} c Current Hono request context.
+ * @returns {Promise<Response>} Response from the implementation route graph.
+ */
+async function forwardCanonicalPasswordAuth(c) {
+  const parsed = await c.req.json().catch(() => ({}));
+  const payload = parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+    ? parsed
+    : {};
+  const email = String(payload.email ?? '').trim().toLowerCase();
+  const headers = new Headers(c.req.raw.headers);
+  headers.set('content-type', 'application/json');
+  headers.delete('content-length');
+
+  return implementationRoutes.request(
+    c.req.url,
+    {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ ...payload, email }),
+    },
+    c.env,
+  );
+}
+
+/**
  * Reject direct production OIDC start/callback requests before legacy handlers.
  *
  * The supported wrapper uses a non-mutating OPTIONS probe carrying a private
@@ -42,6 +77,8 @@ async function requireVerifiedOidcBoundary(c, next) {
   return next();
 }
 
+app.post('/api/auth/signup', forwardCanonicalPasswordAuth);
+app.post('/api/auth/login', forwardCanonicalPasswordAuth);
 app.use('/api/auth/oidc/start', requireVerifiedOidcBoundary);
 app.use('/api/auth/oidc/callback', requireVerifiedOidcBoundary);
 app.route('/', implementationRoutes);
