@@ -196,6 +196,15 @@ artifact `9710489491`에는 권위 있는 취약점 보고서가 없었다. 워�
   마지막으로 검증한 predecessor에 대한 immutable evidence다.
   현재 #625 PR HEAD와 새로 실행된 Checks·리뷰 상태는 문서 commit에 자기
   SHA를 삽입하지 않고 GitHub live PR metadata에서 재확인해야 한다.
+- #625 current HEAD follow-up: `d37ca6ce4b0cfaddd63a0f8ee50a200443c96cbc`.
+  Strix run `33240137244`는 2026-08-29T07:18:54Z에 success로 끝났고
+  `strix-reports` artifact `9711210448`은 변경 파일 중 scannable 대상이 없음을
+  기록했다. 같은 HEAD의 OpenCode dispatch run `33240769121`은
+  `MODEL_OUTPUT_UNAVAILABLE`로 fail-closed되었으며, model pool이
+  `contextual-orchestrator/orchestrator/free` 결과를 내지 못해 current-head
+  formal verdict를 게시하지 않았다. 이후 GraphQL은
+  `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, unresolved thread 0, qualifying approval
+  0이고, 자동 병합 없이 targeted scheduler가 재평가했다.
 - #616: `develop@2c328875` 대상
   `b427cd455f41e7c09ae20fbbf400d42c4f61d4bf`. deterministic release-artifact
   manifest의 regular-file/no-symlink, bounded manifest read, SHA-256 및
