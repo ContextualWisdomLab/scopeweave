@@ -68,33 +68,77 @@ assert.equal(
 
 const inviteOrderingProbe = runProbe(`
   import assert from 'node:assert/strict';
-  process.env.SCOPEWEAVE_DB = ':memory:';
+  import { randomUUID } from 'node:crypto';
+  import { rmSync } from 'node:fs';
+  import { tmpdir } from 'node:os';
+  import { join } from 'node:path';
+  const dbPath = join(tmpdir(), 'scopeweave-rate-limit-guard-' + randomUUID() + '.sqlite');
+  process.env.SCOPEWEAVE_DB = dbPath;
   process.env.SCOPEWEAVE_JWT_SECRET = '${validJwtSecret}';
   process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '1';
   process.env.SCOPEWEAVE_RATE_LIMIT_WINDOW_MS = '60000';
   process.env.SCOPEWEAVE_RATE_LIMIT_BUCKETS_MAX = '8';
-  delete process.env.SCOPEWEAVE_TRUSTED_PROXY_IPS;
-  const [{ app }, { db }] = await Promise.all([
-    import('./server/application_routes.mjs'),
-    import('./server/db.mjs'),
-  ]);
-  const signup = await app.request('/api/auth/signup', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'rate-limit-owner@example.com', password: 'correct-horse-battery-staple' }),
-  });
-  assert.equal(signup.status, 200);
-  const { token } = await signup.json();
-  db.exec('DROP TABLE invites');
-  const blocked = await app.request('/api/invites/attacker-controlled-token/accept', {
-    method: 'POST',
-    headers: { authorization: 'Bearer ' + token },
-  });
-  assert.equal(
-    blocked.status,
-    429,
-    'the supported shared-boundary limiter must reject an over-limit invite request before identity/invite database work',
-  );
+  process.env.SCOPEWEAVE_TRUSTED_PROXY_IPS = '127.0.0.1';
+  const nodeEnv = { incoming: { socket: { remoteAddress: '127.0.0.1' } } };
+  let app;
+  const requestFrom = (client, path, options = {}) => app.request(path, {
+    ...options,
+    headers: { 'content-type': 'application/json', ...(options.headers || {}), 'x-forwarded-for': client },
+  }, nodeEnv);
+  const originalLog = console.log;
+  const requestLogs = [];
+  let db;
+  console.log = (line) => requestLogs.push(String(line));
+  try {
+    const [{ app: loadedApp }, { db: loadedDb }, { signToken }] = await Promise.all([
+      import('./server/application_routes.mjs'),
+      import('./server/db.mjs'),
+      import('./server/auth.mjs'),
+    ]);
+    app = loadedApp;
+    db = loadedDb;
+    db.prepare('INSERT INTO users(id,email,password_hash,name) VALUES(?,?,?,?)')
+      .run(1, 'rate-limit-owner@example.com', '', '');
+    db.prepare('INSERT INTO users(id,email,password_hash,name) VALUES(?,?,?,?)')
+      .run(2, 'wrong-identity@example.com', '', '');
+    db.prepare('INSERT INTO orgs(id,name,owner_id) VALUES(?,?,?)').run(1, 'rate-limit-org', 1);
+    db.prepare('INSERT INTO invites(id,org_id,email,role,token,invited_by) VALUES(?,?,?,?,?,?)')
+      .run(1, 1, 'intended-invitee@example.com', 'viewer', 'invite-ordering-sentinel', 1);
+    const attackerToken = signToken({ sub: 2, email: 'wrong-identity@example.com', tv: 0 });
+    const inviteToken = 'invite-ordering-sentinel';
+
+    const first = await requestFrom('198.51.100.77', '/api/invites/' + inviteToken + '/accept', {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + attackerToken },
+    });
+    assert.equal(first.status, 404, 'the first wrong-identity invite request reaches the guard');
+
+    db.exec('DROP TABLE invites');
+    const second = await requestFrom('198.51.100.77', '/api/invites/' + inviteToken + '/accept', {
+      method: 'POST',
+      headers: { authorization: 'Bearer ' + attackerToken },
+    });
+    assert.equal(
+      second.status,
+      429,
+      'the exhausted shared-boundary limiter rejects before invite identity-row lookup',
+    );
+
+    const inviteLogs = requestLogs
+      .map((line) => {
+        try { return JSON.parse(line); } catch { return null; }
+      })
+      .filter((entry) => entry?.path === '/api/invites/:token/accept');
+    assert.deepEqual(
+      inviteLogs.map(({ method, status }) => ({ method, status })),
+      [{ method: 'POST', status: 404 }, { method: 'POST', status: 429 }],
+      'guard accounting and blocked observability retain the original POST method',
+    );
+  } finally {
+    console.log = originalLog;
+    db?.close();
+    for (const suffix of ['', '-shm', '-wal']) rmSync(dbPath + suffix, { force: true });
+  }
 `);
 assert.equal(
   inviteOrderingProbe.status,
