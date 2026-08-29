@@ -35,6 +35,16 @@ assert.match(
   'the abortable Clearfolio adapter is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/db\.mjs/,
+  'the database schema and function registration module is instrumented',
+);
+assert.match(
+  scripts['test:coverage'],
+  /--include=server\/email_identity\.mjs/,
+  'the invite identity canonicalization module is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',

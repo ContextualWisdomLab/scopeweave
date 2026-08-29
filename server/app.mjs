@@ -10,6 +10,7 @@ import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
+import { canonicalizeMailbox } from './email_identity.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
@@ -131,6 +132,11 @@ function deliver(orgId, event, payload) {
   }
 }
 const quietLogs = String(process.env.SCOPEWEAVE_DB || '').includes(':memory:'); // silence during tests
+// Bearer secrets that are part of a route path must never be persisted in logs.
+// Keep the route shape for incident triage while replacing only secret segments.
+const redactRequestLogPath = (path) => String(path)
+  .replace(/^\/api\/invites\/[^/]+(?=\/|$)/, '/api/invites/:token')
+  .replace(/^\/api\/shared\/[^/]+(?=\/|$)/, '/api/shared/:token');
 app.use('*', async (c, next) => {
   const t = Date.now();
   await next();
@@ -140,7 +146,7 @@ app.use('*', async (c, next) => {
     if (s >= 500) metrics.s5xx++; else if (s >= 400) metrics.s4xx++; else if (s >= 200) metrics.s2xx++;
     if (!quietLogs) {
       // structured; never logs bodies, tokens, or secrets
-      console.log(JSON.stringify({ ts: new Date().toISOString(), method: c.req.method, path: c.req.path, status: s, ms: Date.now() - t }));
+      console.log(JSON.stringify({ ts: new Date().toISOString(), method: c.req.method, path: redactRequestLogPath(c.req.path), status: s, ms: Date.now() - t }));
     }
   } catch { /* metrics/logging must never break a request */ }
 });
@@ -450,7 +456,7 @@ app.get('/api/orgs/:id/members', requireAuth, (c) => {
      JOIN users u ON u.id = m.user_id WHERE m.org_id = ? ORDER BY m.id`
   ).all(orgId);
   const invites = db.prepare(
-    `SELECT id, email, role, token, created_at AS createdAt FROM invites
+    `SELECT id, email, role, created_at AS createdAt FROM invites
      WHERE org_id = ? AND accepted_at IS NULL ORDER BY id DESC`
   ).all(orgId);
   return c.json({ members, invites });
@@ -468,7 +474,7 @@ app.delete('/api/orgs/:id/invites/:inviteId', requireAuth, (c) => {
   return c.json({ ok: true });
 });
 
-// Invite by email (owner/admin only). Returns the token (prod: email a link).
+// Invite an existing account by email (owner/admin only). Returns the token (prod: email a link).
 app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
@@ -476,10 +482,16 @@ app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
   if (!role) return c.json({ error: 'not found' }, 404);
   if (!canManage(role)) return c.json({ error: 'forbidden' }, 403);
   const body = await c.req.json().catch(() => ({}));
-  const email = String(body.email || '').trim().toLowerCase();
+  const email = canonicalizeMailbox(body.email);
   const inviteRole = body.role || 'member';
   if (!email) return c.json({ error: 'email required' }, 400);
   if (!['admin', 'member', 'viewer'].includes(inviteRole)) return c.json({ error: 'invalid role' }, 400);
+  const registeredInvitee = db.prepare(
+    'SELECT id FROM users WHERE scopeweave_canonical_email(email) = ? ORDER BY id LIMIT 1'
+  ).get(email);
+  if (!registeredInvitee) {
+    return c.json({ error: 'invitee must already have a ScopeWeave account' }, 409);
+  }
   const token = randomBytes(24).toString('base64url');
   db.prepare('INSERT INTO invites(org_id,email,role,token,invited_by) VALUES(?,?,?,?,?)')
     .run(orgId, email, inviteRole, token, uid);
@@ -487,11 +499,18 @@ app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
   return c.json({ token, email, role: inviteRole });
 });
 
-// Accept an invite (any authenticated user holding the token). Idempotent.
+// Accept an invite only for the authenticated identity named by the invite.
 app.post('/api/invites/:token/accept', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const inv = db.prepare('SELECT * FROM invites WHERE token = ?').get(c.req.param('token'));
   if (!inv || inv.accepted_at) return c.json({ error: 'invalid or used invite' }, 404);
+  const canonicalInviteEmail = canonicalizeMailbox(inv.email);
+  const identityMatches = db.prepare(
+    'SELECT id FROM users WHERE scopeweave_canonical_email(email) = ? ORDER BY id LIMIT 2'
+  ).all(canonicalInviteEmail);
+  if (identityMatches.length !== 1 || identityMatches[0].id !== uid) {
+    return c.json({ error: 'invalid or used invite' }, 404);
+  }
   const existing = orgRole(uid, inv.org_id);
   if (!existing) {
     if (wouldExceed(db, getOrg(inv.org_id), 'members')) {
