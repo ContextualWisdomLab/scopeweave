@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './coverage-fixtures.js';
 
 import fs from 'node:fs';
 
@@ -76,8 +76,10 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.locator('link[rel="modulepreload"][href="cloud-sync.js"]')).toHaveCount(1);
     await expect(page.locator('link[rel="modulepreload"][href="analytics.js"]')).toHaveCount(1);
     await expect(page.locator('link[rel="modulepreload"][href="app.js"]')).toHaveCount(1);
-    await expect(page.getByRole('button', { name: '최상위 작업 추가' })).toBeVisible();
+    await expect(page.locator('#add-root-task')).toBeVisible();
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+    await expect(page.locator('#seed-onboarding')).toBeVisible();
+    await expect(page.locator('#seed-onboarding')).toContainText('샘플 WBS가 준비되어 있습니다');
     await expect(page.getByTestId('project-name-input')).toHaveValue(/ScopeWeave/i);
     await expect(page.getByTestId('summary-total-days')).not.toHaveText('0일');
     await expect(page.getByTestId('summary-planned-progress')).toContainText('%');
@@ -88,6 +90,90 @@ test.describe('ScopeWeave Planner', () => {
 
     await page.getByTestId('project-name-input').fill('My New Project');
     await expect(page).toHaveTitle('My New Project - ScopeWeave Planner');
+  });
+
+  test('remembers hiding the first-run sample onboarding notice', async ({ page }) => {
+    const onboarding = page.locator('#seed-onboarding');
+
+    await expect(onboarding).toBeVisible();
+    await expect(onboarding).toHaveAttribute('aria-labelledby', 'seed-onboarding-title');
+    await expect(onboarding).toHaveAttribute('aria-describedby', 'seed-onboarding-description');
+    await onboarding.getByRole('button', { name: '안내 숨기기' }).click();
+    await expect(onboarding).toBeHidden();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+
+    await page.reload();
+    await expect(onboarding).toBeHidden();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+  });
+
+  test('keeps seed onboarding visible when persistence fails', async ({ page }) => {
+    await page.evaluate(() => {
+      const originalSetItem = Storage.prototype.setItem;
+      Storage.prototype.setItem = function setItem(key, value) {
+        if (key === 'scopeweave:planner-state:v1') {
+          throw new DOMException('quota exceeded', 'QuotaExceededError');
+        }
+        return originalSetItem.call(this, key, value);
+      };
+    });
+
+    await page.getByTestId('project-name-input').fill('Unsaved sample edit');
+    await expect(page.locator('#toast')).toContainText('로컬 스토리지 용량이 초과되어 저장하지 못했습니다.');
+    await expect(page.locator('#seed-onboarding')).toBeVisible();
+
+    page.once('dialog', dialog => dialog.accept());
+    await page.locator('#clear-seed-data').click();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+    await expect(page.locator('#seed-onboarding')).toBeVisible();
+  });
+
+  test('clears the first-run sample into an empty plan', async ({ page }) => {
+    page.once('dialog', dialog => dialog.dismiss());
+    await page.locator('#clear-seed-data').click();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+    await expect(page.locator('#seed-onboarding')).toBeVisible();
+
+    page.once('dialog', dialog => dialog.accept());
+
+    await page.locator('#clear-seed-data').click();
+
+    await expect(page.locator('#seed-onboarding')).toBeHidden();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(0);
+    await expect(page.locator('.table-empty')).toContainText('등록된 작업이 없습니다');
+    await expect(page.locator('#toast')).toContainText('샘플 데이터를 삭제했습니다.');
+    await expect(page.locator('#add-root-task')).toBeVisible();
+    const savedTasks = await page.evaluate(() => JSON.parse(localStorage.getItem('scopeweave:planner-state:v1')).tasks);
+    expect(savedTasks).toEqual([]);
+  });
+
+  test('filters WBS rows while preserving matching task hierarchy context', async ({ page }) => {
+    const rows = page.locator('tbody tr[data-task-id]');
+    const search = page.getByRole('searchbox', { name: 'WBS 작업 검색' });
+
+    await expect(rows).toHaveCount(4);
+    await expect(page.locator('#seed-onboarding')).toBeVisible();
+    await search.fill('단계작업계획');
+
+    await expect(rows).toHaveCount(3);
+    await expect(page.locator('#seed-onboarding')).toBeHidden();
+    await expect(rows).toContainText(['P0000.준비단계', '프로젝트준비', '단계작업계획']);
+    await expect(rows.filter({ hasText: '사업수행계획' })).toHaveCount(0);
+    const contextToggle = rows.first().locator('button[data-action="toggle"]');
+    await expect(contextToggle).toHaveAttribute('aria-disabled', 'true');
+    await expect(contextToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('#task-filter-status')).toHaveText('3개 작업 표시 중 (전체 4개)');
+    await contextToggle.dispatchEvent('click');
+    await expect(page.locator('#toast')).toContainText('검색 중 계층 맥락 고정');
+    await search.fill('');
+    await expect(page.locator('#seed-onboarding')).toBeVisible();
+
+    await search.fill('없는작업');
+    await expect(rows).toHaveCount(0);
+    await expect(page.locator('.table-empty')).toContainText('검색 결과가 없습니다');
+
+    await page.getByRole('button', { name: '검색 지우기' }).click();
+    await expect(rows).toHaveCount(4);
   });
 
   [
@@ -185,8 +271,36 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.locator('.table-empty').getByRole('button', { name: 'CSV 가져오기' })).toBeVisible();
     await expect(page.getByRole('button', { name: 'CSV 내보내기' })).toHaveAttribute('aria-disabled', 'true');
     await expect(page.getByRole('button', { name: 'CSV 내보내기' })).toHaveAttribute('title', '내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.');
+    await expect(page.getByRole('button', { name: 'JSON 내보내기' })).toHaveAttribute('aria-disabled', 'true');
     await expect(page.getByRole('button', { name: '간트차트보기' })).toHaveAttribute('aria-disabled', 'true');
     await expect(page.getByRole('button', { name: '간트차트보기' })).toHaveAttribute('title', '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.');
+
+    await page.getByRole('button', { name: 'CSV 내보내기' }).dispatchEvent('click');
+    await expect(page.locator('#toast')).toContainText('내보낼 작업이 없습니다');
+    await page.getByRole('button', { name: 'JSON 내보내기' }).dispatchEvent('click');
+    await expect(page.locator('#toast')).toContainText('내보낼 작업이 없습니다');
+    await page.getByRole('button', { name: '간트차트보기' }).dispatchEvent('click');
+    await expect(page.locator('#toast')).toContainText('간트 차트로 표시할 작업이 없습니다');
+
+    const chooserPromise = page.waitForEvent('filechooser');
+    await page.locator('.table-empty').getByRole('button', { name: 'CSV 가져오기' }).click();
+    await chooserPromise;
+
+    await page.locator('.table-empty').getByRole('button', { name: '최상위 작업 추가' }).click();
+    await expect(page.locator('.editor-panel')).toBeVisible();
+    await page.locator('.editor-panel').getByRole('button', { name: '취소' }).click();
+    await expect(page.locator('.table-empty')).toBeVisible();
+  });
+
+  test('reports the native file-sync fallback when the picker is unavailable', async ({ page }) => {
+    await page.addInitScript(() => { delete window.showSaveFilePicker; });
+    await page.reload();
+
+    const syncButton = page.locator('#connect-json-sync');
+    await expect(syncButton).toHaveAttribute('aria-disabled', 'true');
+    await expect(syncButton).toHaveAttribute('title', '이 브라우저는 wbs.json 직접 저장 연결을 지원하지 않습니다.');
+    await syncButton.dispatchEvent('click');
+    await expect(page.locator('#toast')).toContainText('이 브라우저는 wbs.json 직접 저장 연결을 지원하지 않습니다.');
   });
 
   test('keeps the empty WBS state inside the mobile table viewport', async ({ page }) => {
@@ -247,6 +361,11 @@ test.describe('ScopeWeave Planner', () => {
     const parentToggle = page.locator('tbody tr[data-task-id]').first().locator('button[data-action="toggle"]');
     await expect(parentToggle).toHaveAttribute('aria-label', '접기 - P0000.준비단계');
     await expect(parentToggle).toHaveAttribute('title', '접기 - P0000.준비단계');
+
+    await parentToggle.click();
+    await expect(childRow).toHaveCount(0);
+    await parentToggle.click();
+    await expect(childRow).toHaveCount(1);
 
     await childRow.getByRole('button', { name: '하위 추가' }).click();
     await page.locator('[data-testid="editor-task"]').fill('세부업무');
@@ -883,6 +1002,13 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page.locator('#task-table-body')).not.toContainText(overlongTaskName.substring(0, 1000));
   });
 
+  test('rejects CSV files larger than the browser import limit', async ({ page }) => {
+    await importCsv(page, Buffer.alloc(5 * 1024 * 1024 + 1, 65).toString('utf8'));
+
+    await expect(page.locator('#toast')).toContainText('파일 크기는 5MB를 초과할 수 없습니다.');
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+  });
+
   test('normalizes imported task rows into a full phase-activity-task hierarchy', async ({ page }) => {
     await importCsv(page, ['단계,Activity,Task,대분류,중분류,산출물,담당자,지원팀,진행상태,계획시작일,계획종료일,일수,계획진척률,가중치,가중치진척률,실적진척상태,실적진척률,실적시작일,실적종료일,가중치실적진척률', 'P4000.이행단계,,고아Task,이행,,,담당자A,,,2026-06-01,2026-06-03,,,미착수(0%),,,'].join('\n'));
 
@@ -979,6 +1105,79 @@ test.describe('ScopeWeave Planner', () => {
     expect(csvText).toContain(`"'=HYPERLINK(""http://evil.test"",""Click"")"`);
     expect(csvText).toContain(`"'@SUM(1,1)"`);
     expect(csvText).toContain(`"'|'cmd' /C calc'!A0"`);
+  });
+
+  test('can trigger JSON export download in the seed contract', async ({ page }, testInfo) => {
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'JSON 내보내기' }).click();
+    const download = await downloadPromise;
+    expect(download.suggestedFilename()).toMatch(/^wbs_export_\d{8}\.json$/);
+    const downloadPath = await download.path();
+    const jsonPath = downloadPath || testInfo.outputPath(download.suggestedFilename());
+    if (!downloadPath) {
+      await download.saveAs(jsonPath);
+    }
+    const exported = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    expect(exported).toHaveLength(2);
+    expect(exported[1]).toMatchObject({
+      task: '단계작업계획',
+      plannedEndDate: '2026-05-15',
+      plannedEndDdate: '2026-05-15'
+    });
+    expect(exported[0]).not.toHaveProperty('id');
+  });
+
+  test('preserves extended planning fields in JSON download', async ({ page }, testInfo) => {
+    await page.evaluate(() => {
+      localStorage.setItem('scopeweave:planner-state:v1', JSON.stringify({
+        projectName: 'Extended JSON',
+        baseDate: '2026-05-01',
+        tasks: [{
+          id: 'extended-1',
+          parentId: null,
+          depth: 1,
+          expanded: true,
+          isSynthetic: false,
+          phase: 'P1000.계획',
+          activity: '',
+          task: '',
+          categoryLarge: '',
+          categoryMedium: '',
+          documentName: '',
+          owner: '',
+          supportTeam: '',
+          plannedStartDate: '2026-05-01',
+          plannedEndDate: '2026-05-05',
+          actualProgressStatus: '미착수(0%)',
+          actualStartDate: '',
+          actualEndDate: '',
+          predecessors: 'P2000',
+          budget: '1000',
+          actualCost: '200',
+          sprint: 'S1',
+          storyPoints: '5'
+        }]
+      }));
+    });
+    await page.reload();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(1);
+
+    const downloadPromise = page.waitForEvent('download');
+    await page.getByRole('button', { name: 'JSON 내보내기' }).click();
+    const download = await downloadPromise;
+    const downloadPath = await download.path();
+    const jsonPath = downloadPath || testInfo.outputPath(download.suggestedFilename());
+    if (!downloadPath) {
+      await download.saveAs(jsonPath);
+    }
+    const [exported] = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+    expect(exported).toMatchObject({
+      predecessors: 'P2000',
+      budget: '1000',
+      actualCost: '200',
+      sprint: 'S1',
+      storyPoints: '5'
+    });
   });
 
   test('can trigger CSV import file chooser', async ({ page }) => {
@@ -1091,6 +1290,7 @@ test.describe('ScopeWeave Planner', () => {
   });
 
   test('renders empty cells as independent DOM clones', async ({ page }) => {
+    await expect(page.locator('.empty-cell').nth(1)).toBeAttached();
     const result = await page.evaluate(() => {
       const emptyCells = Array.from(document.querySelectorAll('.empty-cell'));
       const [first, second] = emptyCells;

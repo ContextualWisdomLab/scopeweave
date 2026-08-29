@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from './coverage-fixtures.js';
 import fc from 'fast-check';
 
 test.describe('CSV formula fuzzing', () => {

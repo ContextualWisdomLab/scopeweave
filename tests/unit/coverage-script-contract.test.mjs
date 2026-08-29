@@ -8,6 +8,14 @@ const packageJson = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 );
 const scripts = packageJson.scripts;
+const runBrowserCoverage = readFileSync(
+  new URL('../../scripts/ci/run-browser-coverage.mjs', import.meta.url),
+  'utf8',
+);
+const mergeBrowserCoverage = readFileSync(
+  new URL('../../scripts/ci/merge-browser-coverage.mjs', import.meta.url),
+  'utf8',
+);
 
 assert.equal(
   scripts.coverage,
@@ -16,28 +24,40 @@ assert.equal(
 );
 assert.match(
   scripts['test:coverage'],
+  /test:coverage:node.*run-browser-coverage.*merge-browser-coverage/,
+  'test:coverage runs Node and browser coverage before merging reports',
+);
+assert.match(
+  scripts['test:coverage:node'],
   /\bc8\b.*--reporter=json(?![-\w]).*npm run test:coverage:cases/,
-  'test:coverage creates Istanbul JSON before executing coverage cases',
+  'the Node coverage producer creates Istanbul JSON before executing cases',
 );
 assert.match(
-  scripts['test:coverage'],
+  scripts['test:coverage:node'],
   /--reporter=json-summary\b/,
-  'test:coverage also creates the Istanbul JSON summary',
+  'the Node coverage producer also creates the Istanbul JSON summary',
 );
 assert.match(
-  scripts['test:coverage'],
-  /--include=server\/attachment_status\.mjs/,
-  'the bounded refresh module is instrumented',
+  scripts['test:coverage:node'],
+  /--include=["']server\/\*\.mjs["']/,
+  'all server modules are instrumented',
 );
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/clearfolio\.mjs/,
-  'the abortable Clearfolio adapter is instrumented',
+assert.match(runBrowserCoverage, /fileURLToPath\(new URL\(/, 'browser coverage resolves file URLs safely');
+assert.match(mergeBrowserCoverage, /fileURLToPath\(new URL\(/, 'merged coverage resolves file URLs safely');
+assert.equal(
+  scripts['test:coverage:strict'],
+  'npm run test:coverage && node scripts/ci/check-coverage.mjs',
+  'the strict command checks the merged coverage summary',
 );
 assert.match(
   scripts['test:coverage:cases'],
+  /npm run test:unit.*npm run test:api/,
+  'the complete unit and API suites execute under c8',
+);
+assert.match(
+  scripts['test:unit'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
-  'the Clearfolio signal and HTTP failure regression executes under c8',
+  'the Clearfolio signal and HTTP failure regression remains in the unit suite',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],

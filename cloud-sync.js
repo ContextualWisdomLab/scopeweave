@@ -203,7 +203,7 @@ function ensureAuthUI() {
   };
   $('#cloud-toggle').addEventListener('click', () => setMode(mode === 'login' ? 'signup' : 'login'));
   $('#cloud-sso').addEventListener('click', () => { window.location.href = '/api/auth/oidc/start'; });
-  modal.addEventListener('click', (e) => { if (e.target.dataset.cloudClose) modal.classList.add('hidden'); });
+  modal.addEventListener('click', (e) => { if (e.target.closest?.('[data-cloud-close]')) modal.classList.add('hidden'); });
   $('#cloud-form').addEventListener('submit', async (e) => {
     e.preventDefault();
     const email = $('#cloud-email').value.trim();
@@ -1748,7 +1748,7 @@ async function openTeamModal() {
         <p id="team-msg" class="cloud-error"></p>
       </div>`;
     document.body.appendChild(modal);
-    modal.addEventListener('click', (e) => { if (e.target.dataset.teamClose) modal.classList.add('hidden'); });
+    modal.addEventListener('click', (e) => { if (e.target.closest?.('[data-team-close]')) modal.classList.add('hidden'); });
     modal.querySelector('#team-invite').addEventListener('submit', async (e) => {
       e.preventDefault();
       const email = modal.querySelector('#team-email').value.trim();

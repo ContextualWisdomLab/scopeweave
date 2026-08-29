@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Added accessible WBS field search with hierarchy context and an empty-result
+  recovery action.
+- Added planning-field search coverage and safe state reset when Cloud or file
+  imports replace the current plan.
+- Kept first-visit sample guidance visible when local persistence fails.
+- Added browser JSON download for portable WBS backups, including extended
+  planning fields, alongside CSV export.
+- Added first-visit sample WBS onboarding with persistent dismissal and a
+  confirmed clear-to-empty-plan action.
+- Added search-mode guardrails that keep hierarchy edits and drag reordering
+  out of the filtered view while an inline editor is open.
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS
   estimation coverage, dependency risk, and procurement package section checks.
 - Preserved PM-analysis research papers, NASA WBS handbook, BCP 14, and JSON
@@ -19,6 +30,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added workflow ownership regression coverage so central review
   workflows stay inherited from `ContextualWisdomLab/.github`, not copied
   into this repository.
+- Added exact-head Node/Chromium coverage collection and report merging; the
+  remaining uncovered paths still block a 100% frontend/backend claim.
+- Made the canonical coverage run execute the complete unit and API suites so
+  existing pure-logic and server regression evidence is included in the merged report.
+- Added browser regression coverage for empty-plan actions, unsupported file sync,
+  filtered hierarchy protection, collapse/expand, and oversized CSV rejection.
+- Added browser coverage for cloud sharing, sprint burndown, attachments,
+  search, team administration, project creation, and sample onboarding flows.
 
 ### Security
 
@@ -30,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Replaced dynamic and lazy-regex MS Project XML block extraction with bounded
   linear scans to prevent pathological backtracking on malformed imports.
 - Rejected non-string password candidates at the authentication boundary.
+- Fixed cloud login and team modal close controls when their nested icon is
+  clicked.
 - Added regression coverage that prevents array-valued passwords from being
   coerced into valid credentials.
 - Updated Hono runtime dependencies to patched supported releases.

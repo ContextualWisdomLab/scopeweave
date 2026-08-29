@@ -1,4 +1,5 @@
 const STORAGE_KEY = 'scopeweave:planner-state:v1';
+const ONBOARDING_DISMISSED_KEY = 'scopeweave:onboarding-dismissed:v1';
 const DEFAULT_PROJECT_NAME = 'ScopeWeave Planner';
 const MAX_PROJECT_NAME_LENGTH = 120;
 const MAX_BASE_DATE_LENGTH = 10;
@@ -178,6 +179,8 @@ const state = {
   projectName: DEFAULT_PROJECT_NAME,
   baseDate: formatLocalDateInput(new Date()),
   tasks: [],
+  taskQuery: '',
+  showSeedOnboarding: false,
   editor: { ...DEFAULT_EDITOR_STATE, errors: [] },
   jsonSyncHandle: null,
   dragTaskId: null,
@@ -214,8 +217,12 @@ const elements = {
   plannedProgress: document.getElementById('summary-planned-progress'),
   actualProgress: document.getElementById('summary-actual-progress'),
   tableBody: document.getElementById('task-table-body'),
+  seedOnboarding: document.getElementById('seed-onboarding'),
+  dismissSeedOnboardingButton: document.getElementById('dismiss-seed-onboarding'),
+  clearSeedDataButton: document.getElementById('clear-seed-data'),
   addRootButton: document.getElementById('add-root-task'),
   exportCsvButton: document.getElementById('export-csv'),
+  exportJsonButton: document.getElementById('export-json'),
   importCsvButton: document.getElementById('import-csv'),
   csvFileInput: document.getElementById('csv-file-input'),
   ganttModal: document.getElementById('gantt-modal'),
@@ -224,6 +231,9 @@ const elements = {
   closeGanttButton: document.getElementById('close-gantt'),
   connectJsonSyncButton: document.getElementById('connect-json-sync'),
   syncStatus: document.getElementById('sync-status'),
+  taskFilterInput: document.getElementById('task-filter'),
+  clearTaskFilterButton: document.getElementById('clear-task-filter'),
+  taskFilterStatus: document.getElementById('task-filter-status'),
   toast: document.getElementById('toast')
 };
 
@@ -245,16 +255,19 @@ async function bootstrap() {
 
   const cloudState = cloudApi ? await cloudApi.boot() : null;
   if (cloudState) {
+    state.showSeedOnboarding = false;
     hydrateState(cloudState);
     persistState({ syncCloud: false });
   } else {
     const savedState = loadLocalState();
     if (savedState) {
+      state.showSeedOnboarding = false;
       hydrateState(savedState);
       persistState();
     } else {
       const seedData = await loadSeedTasks();
       state.tasks = normalizeImportedTasks(seedData);
+      state.showSeedOnboarding = state.tasks.length > 0 && !isSeedOnboardingDismissed();
       invalidateTaskIndexCache();
     }
   }
@@ -302,7 +315,14 @@ function bindHeaderEvents(persistAndRenderMetadata) {
   });
   elements.baseDateInput.addEventListener('blur', persistAndRenderMetadata.flush);
 
-  elements.addRootButton.addEventListener('click', () => openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() }));
+  elements.addRootButton.addEventListener('click', (event) => {
+    if (elements.addRootButton.getAttribute('aria-disabled') === 'true') {
+      event.preventDefault();
+      showToast('검색 중에는 작업을 추가할 수 없습니다. 검색을 먼저 지워주세요.');
+      return;
+    }
+    openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() });
+  });
   elements.exportCsvButton.addEventListener('click', (e) => {
     if (elements.exportCsvButton.getAttribute('aria-disabled') === 'true') {
       e.preventDefault();
@@ -310,6 +330,14 @@ function bindHeaderEvents(persistAndRenderMetadata) {
       return;
     }
     exportCsv();
+  });
+  elements.exportJsonButton.addEventListener('click', (e) => {
+    if (elements.exportJsonButton.getAttribute('aria-disabled') === 'true') {
+      e.preventDefault();
+      showToast('내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.');
+      return;
+    }
+    exportJson();
   });
   elements.importCsvButton.addEventListener('click', () => elements.csvFileInput.click());
   elements.csvFileInput.addEventListener('change', handleCsvImport);
@@ -336,6 +364,21 @@ function bindHeaderEvents(persistAndRenderMetadata) {
     }
     await connectJsonSync();
   });
+
+  elements.taskFilterInput.addEventListener('input', (event) => {
+    if (state.editor.mode) {
+      return;
+    }
+    state.taskQuery = String(event.target.value).slice(0, 120);
+    renderAll();
+  });
+  elements.clearTaskFilterButton.addEventListener('click', () => {
+    state.taskQuery = '';
+    renderAll();
+    elements.taskFilterInput.focus();
+  });
+  elements.dismissSeedOnboardingButton.addEventListener('click', dismissSeedOnboarding);
+  elements.clearSeedDataButton.addEventListener('click', clearSeedData);
 }
 
 function bindModalEvents() {
@@ -434,6 +477,10 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
   });
 
   elements.tableBody.addEventListener('dragstart', (event) => {
+    if (state.taskQuery.trim()) {
+      event.preventDefault();
+      return;
+    }
     const row = event.target.closest('tr[data-task-id]');
     if (!row) {
       return;
@@ -453,6 +500,9 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
   });
 
   elements.tableBody.addEventListener('dragover', (event) => {
+    if (state.taskQuery.trim()) {
+      return;
+    }
     const row = event.target.closest('tr[data-task-id]');
     if (!row || !state.dragTaskId || row.dataset.taskId === state.dragTaskId) {
       return;
@@ -482,6 +532,11 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
   });
 
   elements.tableBody.addEventListener('drop', (event) => {
+    if (state.taskQuery.trim()) {
+      event.preventDefault();
+      clearDragState();
+      return;
+    }
     const row = event.target.closest('tr[data-task-id]');
     if (!row || !state.dragTaskId) {
       return;
@@ -505,6 +560,8 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
 const cachedHasChildrenSet = new Set();
 function renderAll() {
   const metrics = computeTaskMetrics();
+  const filterActive = Boolean(state.taskQuery.trim());
+  const editorOpen = Boolean(state.editor.mode);
 
   elements.projectNameInput.value = state.projectName;
   document.title = state.projectName === DEFAULT_PROJECT_NAME ? DEFAULT_PROJECT_NAME : `${state.projectName} - ${DEFAULT_PROJECT_NAME}`;
@@ -513,6 +570,17 @@ function renderAll() {
   elements.plannedProgress.textContent = formatPercent(metrics.totalWeightedPlannedRatio * 100, 2);
   elements.actualProgress.textContent = formatPercent(metrics.totalWeightedActualRatio * 100, 2);
   elements.syncStatus.textContent = state.jsonSyncHandle ? '연결된 wbs.json 파일에 자동저장 중' : '브라우저 로컬 자동저장 사용 중';
+  if (elements.taskFilterInput.value !== state.taskQuery) {
+    elements.taskFilterInput.value = state.taskQuery;
+  }
+  elements.taskFilterInput.disabled = editorOpen;
+  if (editorOpen) {
+    elements.taskFilterInput.setAttribute('aria-disabled', 'true');
+    elements.taskFilterInput.title = '편집을 완료하거나 취소한 후 검색할 수 있습니다.';
+  } else {
+    elements.taskFilterInput.removeAttribute('aria-disabled');
+    elements.taskFilterInput.removeAttribute('title');
+  }
 
   if (typeof window !== 'undefined') {
     window.ScopeWeaveAnalytics?.render?.({
@@ -528,17 +596,27 @@ function renderAll() {
 
   const visibleTasks = getVisibleTasks();
   const rows = [];
+  elements.seedOnboarding.hidden = !state.showSeedOnboarding || filterActive;
+  elements.clearTaskFilterButton.hidden = !filterActive;
+  elements.taskFilterStatus.textContent = filterActive
+    ? `${visibleTasks.length}개 작업 표시 중 (전체 ${state.tasks.length}개)`
+    : `전체 ${state.tasks.length}개 작업`;
 
   const hasTasks = state.tasks.length > 0;
   if (!hasTasks) {
     elements.exportCsvButton.setAttribute('aria-disabled', 'true');
+    elements.exportJsonButton.setAttribute('aria-disabled', 'true');
     elements.openGanttButton.setAttribute('aria-disabled', 'true');
   } else {
     elements.exportCsvButton.removeAttribute('aria-disabled');
+    elements.exportJsonButton.removeAttribute('aria-disabled');
     elements.openGanttButton.removeAttribute('aria-disabled');
   }
   elements.exportCsvButton.title = hasTasks ? '' : '내보낼 작업이 없습니다. 하단의 버튼을 통해 작업을 추가해주세요.';
+  elements.exportJsonButton.title = elements.exportCsvButton.title;
   elements.openGanttButton.title = hasTasks ? '' : '간트 차트로 표시할 작업이 없습니다. 작업을 먼저 추가해주세요.';
+  elements.addRootButton.setAttribute('aria-disabled', String(filterActive));
+  elements.addRootButton.title = filterActive ? '검색 중에는 작업을 추가할 수 없습니다. 검색을 먼저 지워주세요.' : '';
 
   // ⚡ Bolt: Cache parent IDs to convert O(N^2) render loop to O(N)
   cachedHasChildrenSet.clear();
@@ -586,40 +664,47 @@ function createEmptyStateRow() {
   const icon = document.createElement('div');
   icon.className = 'empty-icon';
   icon.setAttribute('aria-hidden', 'true');
-  icon.textContent = '📋';
+  const filtered = Boolean(state.taskQuery.trim());
+  icon.textContent = filtered ? '🔎' : '📋';
 
   const title = document.createElement('h3');
   title.className = 'empty-title';
-  title.textContent = '등록된 작업이 없습니다';
+  title.textContent = filtered ? '검색 결과가 없습니다' : '등록된 작업이 없습니다';
 
   const description = document.createElement('p');
   description.className = 'empty-desc';
-  description.append(
-    "하단의 '최상위 작업 추가' 버튼을 눌러 프로젝트를 시작하거나,",
-    document.createElement('br'),
-    "'CSV 가져오기'를 통해 기존 데이터를 불러오세요."
-  );
+  if (filtered) {
+    description.textContent = `‘${state.taskQuery}’에 일치하는 작업이 없습니다.`;
+  } else {
+    description.append(
+      "하단의 '최상위 작업 추가' 버튼을 눌러 프로젝트를 시작하거나,",
+      document.createElement('br'),
+      "'CSV 가져오기'를 통해 기존 데이터를 불러오세요."
+    );
+  }
 
   const actions = document.createElement('div');
   actions.className = 'empty-actions editor-actions';
 
-  const addRootBtn = document.createElement('button');
-  addRootBtn.type = 'button';
-  addRootBtn.className = 'primary-button';
-  addRootBtn.textContent = '최상위 작업 추가';
-  addRootBtn.addEventListener('click', () => {
-    openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() });
-  });
+  if (!filtered) {
+    const addRootBtn = document.createElement('button');
+    addRootBtn.type = 'button';
+    addRootBtn.className = 'primary-button';
+    addRootBtn.textContent = '최상위 작업 추가';
+    addRootBtn.addEventListener('click', () => {
+      openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() });
+    });
 
-  const importCsvBtn = document.createElement('button');
-  importCsvBtn.type = 'button';
-  importCsvBtn.className = 'secondary-button';
-  importCsvBtn.textContent = 'CSV 가져오기';
-  importCsvBtn.addEventListener('click', () => {
-    document.getElementById('csv-file-input').click();
-  });
+    const importCsvBtn = document.createElement('button');
+    importCsvBtn.type = 'button';
+    importCsvBtn.className = 'secondary-button';
+    importCsvBtn.textContent = 'CSV 가져오기';
+    importCsvBtn.addEventListener('click', () => {
+      document.getElementById('csv-file-input').click();
+    });
 
-  actions.append(addRootBtn, importCsvBtn);
+    actions.append(addRootBtn, importCsvBtn);
+  }
 
   emptyState.append(icon, title, description, actions);
   cell.appendChild(emptyState);
@@ -673,6 +758,8 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
   const row = taskRowTemplate.cloneNode(false);
   row.className = `task-row depth-${task.depth} ${index % 2 === 1 ? 'striped-even' : ''}`;
   row.dataset.taskId = task.id;
+  const filterActive = Boolean(state.taskQuery.trim());
+  row.draggable = !filterActive;
 
   const actionCell = actionCellTemplate.cloneNode(false);
   const actionStack = actionStackTemplate.cloneNode(false);
@@ -681,12 +768,21 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
 
   if (hasChildren) {
     const toggleButton = toggleButtonTemplate.cloneNode(false);
-    const toggleLabel = task.expanded ? '접기' : '펼치기';
+    const searchExpanded = cachedSearchExpandedParentIds.has(task.id);
+    const expanded = searchExpanded || task.expanded;
+    const toggleLabel = searchExpanded
+      ? '검색 중 계층 맥락 고정'
+      : (filterActive ? '검색 중 비활성화' : (task.expanded ? '접기' : '펼치기'));
     toggleButton.setAttribute('aria-label', `${toggleLabel} - ${rowEntityName}`);
-    toggleButton.setAttribute('aria-expanded', String(task.expanded));
+    toggleButton.setAttribute('aria-expanded', String(expanded));
     toggleButton.title = `${toggleLabel} - ${rowEntityName}`;
+    if (filterActive || searchExpanded) {
+      toggleButton.setAttribute('aria-disabled', 'true');
+    } else {
+      toggleButton.removeAttribute('aria-disabled');
+    }
     const toggleIcon = toggleIconTemplate.cloneNode(false);
-    toggleIcon.textContent = task.expanded ? '▼' : '▶';
+    toggleIcon.textContent = expanded ? '▼' : '▶';
     toggleButton.appendChild(toggleIcon);
     actionStack.appendChild(toggleButton);
   } else {
@@ -699,8 +795,11 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
   const isLeaf = task.depth >= 3;
   const addChildButton = createActionButton(`하위 추가 - ${rowEntityName}`, '＋', 'add-child', isLeaf ? '최대 3단계까지만 추가할 수 있습니다.' : `하위 추가 - ${rowEntityName}`);
 
-  if (isLeaf) {
+  if (isLeaf || filterActive) {
     addChildButton.setAttribute('aria-disabled', 'true');
+    if (filterActive && !isLeaf) {
+      addChildButton.title = '검색 중에는 작업을 추가할 수 없습니다. 검색을 먼저 지워주세요.';
+    }
   } else {
     addChildButton.removeAttribute('aria-disabled');
   }
@@ -708,7 +807,12 @@ function renderTaskRow(task, taskMetrics, index, hasChildren) {
   const editButton = createActionButton(`편집 - ${rowEntityName}`, '✎', 'edit', `편집 - ${rowEntityName}`);
   editButton.setAttribute('aria-haspopup', 'dialog');
 
-  const deleteButton = createActionButton(`삭제 - ${rowEntityName}`, '🗑', 'delete', `삭제 - ${rowEntityName}`);
+  const deleteButton = createActionButton(`삭제 - ${rowEntityName}`, '🗑', 'delete', filterActive
+    ? '검색 중에는 작업을 삭제할 수 없습니다. 검색을 먼저 지워주세요.'
+    : `삭제 - ${rowEntityName}`);
+  if (filterActive) {
+    deleteButton.setAttribute('aria-disabled', 'true');
+  }
 
   actionStack.append(
     dragHandle,
@@ -1113,6 +1217,11 @@ function handleRowAction(action, taskId) {
     return;
   }
 
+  if (state.taskQuery.trim() && (action === 'toggle' || action === 'add-child' || action === 'delete')) {
+    showToast('검색 중에는 계층을 변경할 수 없습니다. 검색을 먼저 지워주세요.');
+    return;
+  }
+
   if (action === 'toggle') {
     task.expanded = !task.expanded;
     persistState();
@@ -1176,6 +1285,10 @@ function handleRowAction(action, taskId) {
 }
 
 function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertAfterId = null, draft = null }) {
+  if (mode === 'create' && state.taskQuery.trim()) {
+    showToast('검색 중에는 작업을 추가할 수 없습니다. 검색을 먼저 지워주세요.');
+    return;
+  }
   state.previousFocus = document.activeElement;
   if (mode === 'edit') {
     const task = findTask(targetId);
@@ -1496,10 +1609,43 @@ function getDateRangeWarning(startDate, endDate, message) {
 }
 
 const cachedHiddenParentIds = new Set();
+const cachedSearchExpandedParentIds = new Set();
+const TASK_SEARCH_FIELDS = [
+  'name', 'phase', 'activity', 'task', 'categoryLarge', 'categoryMedium', 'documentName',
+  'owner', 'supportTeam', 'actualProgressStatus', 'plannedStartDate',
+  'plannedEndDate', 'actualStartDate', 'actualEndDate', 'predecessors', 'budget',
+  'actualCost', 'sprint', 'storyPoints'
+];
+
+function taskSearchText(task) {
+  return TASK_SEARCH_FIELDS.map((field) => String(task[field] ?? '')).join(' ').toLowerCase();
+}
 
 function getVisibleTasks() {
   const visible = [];
   cachedHiddenParentIds.clear();
+  cachedSearchExpandedParentIds.clear();
+
+  const query = state.taskQuery.trim().toLowerCase();
+  if (query) {
+    const tasksById = new Map(state.tasks.map((task) => [task.id, task]));
+    const matchingIds = new Set();
+    state.tasks.forEach((task) => {
+      if (taskSearchText(task).includes(query)) {
+        let current = task;
+        const visitedIds = new Set();
+        while (current && !visitedIds.has(current.id)) {
+          visitedIds.add(current.id);
+          matchingIds.add(current.id);
+          if (current.id !== task.id) {
+            cachedSearchExpandedParentIds.add(current.id);
+          }
+          current = tasksById.get(current.parentId);
+        }
+      }
+    });
+    return state.tasks.filter((task) => matchingIds.has(task.id));
+  }
 
   // ⚡ Bolt Optimization: Single-pass O(N) visible task filtering to avoid redundant O(N * Depth) tree traversals
   state.tasks.forEach((task) => {
@@ -1645,9 +1791,11 @@ function persistState({ syncCloud = true } = {}) {
   };
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    state.showSeedOnboarding = false;
   } catch (error) {
     console.error('State persistence failed:', error);
     showToast('로컬 스토리지 용량이 초과되어 저장하지 못했습니다.');
+    return false;
   }
 
   if (state.jsonSyncHandle) {
@@ -1659,6 +1807,46 @@ function persistState({ syncCloud = true } = {}) {
   if (syncCloud && typeof window !== 'undefined') {
     window.ScopeWeaveCloud?.push?.(payload);
   }
+  return true;
+}
+
+function isSeedOnboardingDismissed() {
+  try {
+    return localStorage.getItem(ONBOARDING_DISMISSED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function dismissSeedOnboarding() {
+  try {
+    localStorage.setItem(ONBOARDING_DISMISSED_KEY, 'true');
+  } catch {
+    // The notice is still dismissible for the current session if storage is unavailable.
+  }
+  state.showSeedOnboarding = false;
+  renderAll();
+}
+
+function clearSeedData() {
+  if (!state.showSeedOnboarding || !window.confirm('샘플 데이터를 지우고 빈 계획으로 시작하시겠습니까?')) {
+    return;
+  }
+  const previousTasks = state.tasks;
+  const previousOnboarding = state.showSeedOnboarding;
+  state.tasks = [];
+  state.showSeedOnboarding = false;
+  invalidateTaskIndexCache();
+  if (!persistState()) {
+    state.tasks = previousTasks;
+    state.showSeedOnboarding = previousOnboarding;
+    invalidateTaskIndexCache();
+    renderAll();
+    return;
+  }
+  renderAll();
+  showToast('샘플 데이터를 삭제했습니다. 첫 단계를 추가해 계획을 시작하세요.');
+  requestAnimationFrame(() => elements.addRootButton.focus());
 }
 
 function loadLocalState() {
@@ -1676,6 +1864,8 @@ function hydrateState(savedState) {
   state.tasks = Array.isArray(savedState.tasks)
     ? savedState.tasks.filter(isTaskRecord).map(normalizeStoredTask)
     : [];
+  state.taskQuery = '';
+  state.showSeedOnboarding = false;
   invalidateTaskIndexCache();
 }
 
@@ -1975,6 +2165,11 @@ function exportCsv() {
   downloadFile(csvText, `wbs_export_${formatCompactDate(new Date())}.csv`, 'text/csv;charset=utf-8');
 }
 
+function exportJson() {
+  const jsonText = JSON.stringify(exportJsonArray({ includeExtendedFields: true }), null, 2);
+  downloadFile(jsonText, `wbs_export_${formatCompactDate(new Date())}.json`, 'application/json;charset=utf-8');
+}
+
 async function handleCsvImport(event) {
   const [file] = event.target.files || [];
   if (!file) {
@@ -1997,8 +2192,8 @@ async function handleCsvImport(event) {
   try {
     const text = await file.text();
     const imported = parseCsv(text);
-    state.tasks = validateImportedTasks(normalizeImportedTasks(imported));
-    invalidateTaskIndexCache();
+    const importedTasks = validateImportedTasks(normalizeImportedTasks(imported));
+    hydrateState({ projectName: state.projectName, baseDate: state.baseDate, tasks: importedTasks });
     closeEditor(true);
     persistState();
     renderAll();
@@ -2191,23 +2386,38 @@ async function writeJsonSyncFile() {
   await writable.close();
 }
 
-function exportJsonArray() {
-  return state.tasks.filter((task) => !task.isSynthetic).map((task) => ({
-    phase: task.phase,
-    activity: task.activity,
-    task: task.task,
-    categoryLarge: task.categoryLarge,
-    categoryMedium: task.categoryMedium,
-    documentName: task.documentName,
-    owner: task.owner,
-    supportTeam: task.supportTeam,
-    plannedStartDate: task.plannedStartDate,
-    plannedEndDate: task.plannedEndDate,
-    [LEGACY_PLANNED_END_FIELD]: task.plannedEndDate,
-    actualProgressStatus: task.actualProgressStatus,
-    actualStartDate: task.actualStartDate,
-    actualEndDate: task.actualEndDate
-  }));
+function exportJsonArray({ includeExtendedFields = false } = {}) {
+  return state.tasks.filter((task) => !task.isSynthetic).map((task) => {
+    const record = {
+      phase: task.phase,
+      activity: task.activity,
+      task: task.task,
+      categoryLarge: task.categoryLarge,
+      categoryMedium: task.categoryMedium,
+      documentName: task.documentName,
+      owner: task.owner,
+      supportTeam: task.supportTeam,
+      plannedStartDate: task.plannedStartDate,
+      plannedEndDate: task.plannedEndDate,
+      [LEGACY_PLANNED_END_FIELD]: task.plannedEndDate,
+      actualProgressStatus: task.actualProgressStatus,
+      actualStartDate: task.actualStartDate,
+      actualEndDate: task.actualEndDate
+    };
+    if (includeExtendedFields) {
+      Object.assign(record, {
+        name: task.name,
+        plannedProgress: task.plannedProgress,
+        actualProgress: task.actualProgress,
+        predecessors: task.predecessors ?? '',
+        budget: task.budget ?? '',
+        actualCost: task.actualCost ?? '',
+        sprint: task.sprint ?? '',
+        storyPoints: task.storyPoints ?? ''
+      });
+    }
+    return record;
+  });
 }
 
 function openGanttModal() {
