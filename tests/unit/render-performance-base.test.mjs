@@ -61,13 +61,16 @@ test('local cloud e2e does not require benchmark authority', () => {
   const scripts = packageScripts();
 
   assert.doesNotMatch(scripts['test:e2e:cloud'], /render-performance\.spec\.js/);
-  assert.match(scripts['test:e2e:performance'], /render-performance\.spec\.js/);
+  assert.match(
+    scripts['test:e2e:performance'],
+    /(?:^|\s)tests\/e2e\/render-performance\.spec\.js(?:\s|$)/,
+  );
 });
 
 test('server CI executes the authorized performance benchmark', () => {
   assert.match(
     serverTestsWorkflow(),
-    /run:\s*npm run test:e2e:performance\b/,
+    /^\s+run:\s+npm run test:e2e:performance\s*$/m,
     'Server Tests must keep the performance benchmark in CI after it is separated from local cloud E2E',
   );
 });
