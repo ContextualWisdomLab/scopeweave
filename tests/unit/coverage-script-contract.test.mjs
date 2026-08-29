@@ -31,13 +31,8 @@ assert.match(
 );
 assert.match(
   scripts['test:coverage:node'],
-  /--include=server\/attachment_status\.mjs/,
-  'the bounded refresh module is instrumented',
-);
-assert.match(
-  scripts['test:coverage:node'],
-  /--include=server\/clearfolio\.mjs/,
-  'the abortable Clearfolio adapter is instrumented',
+  /--include=['"]?server\/\*\.mjs/,
+  'all server modules are instrumented',
 );
 assert.equal(
   scripts['test:coverage:strict'],
