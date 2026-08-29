@@ -172,10 +172,55 @@ CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(org_id);
 CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);
 `);
 
-// Migration for pre-existing DBs: add token_version if missing (idempotent).
+// Migration for pre-existing DBs: add columns introduced after the initial schema.
 try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
 try { db.exec('ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
 try { db.exec("ALTER TABLE projects ADD COLUMN methodology TEXT NOT NULL DEFAULT 'waterfall'"); } catch { /* already there */ }
+
+/**
+ * Canonicalize legacy mailbox identities without guessing how duplicate users
+ * should be merged across tenant-owned records.
+ *
+ * Existing databases may contain emails that differ only by case or surrounding
+ * whitespace because SQLite's default UNIQUE collation is case-sensitive. The
+ * migration changes unambiguous identities in one transaction and adds an
+ * expression index so direct writes cannot recreate that split. If two existing
+ * user IDs collapse to the same mailbox, startup fails before modifying either
+ * identity; an operator must reconcile the accounts explicitly.
+ */
+function migrateCanonicalUserEmails() {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const collision = db.prepare(`
+      SELECT lower(trim(email)) AS canonical_email,
+             COUNT(*) AS identity_count,
+             group_concat(id) AS user_ids
+      FROM users
+      GROUP BY lower(trim(email))
+      HAVING COUNT(*) > 1
+      LIMIT 1
+    `).get();
+    if (collision) {
+      throw new Error(
+        `canonical email collision for ${collision.canonical_email} across user ids ${collision.user_ids}; resolve duplicate identities before restart`,
+      );
+    }
+
+    db.exec(`
+      UPDATE users
+      SET email = lower(trim(email))
+      WHERE email <> lower(trim(email));
+      CREATE UNIQUE INDEX IF NOT EXISTS users_email_canonical_unique
+      ON users(lower(trim(email)));
+    `);
+    db.exec('COMMIT');
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch { /* preserve the causal migration error */ }
+    throw error;
+  }
+}
+
+migrateCanonicalUserEmails();
 
 // node:sqlite returns lastInsertRowid as number|bigint; normalize to Number.
 export const rowid = (r) => Number(r.lastInsertRowid);
