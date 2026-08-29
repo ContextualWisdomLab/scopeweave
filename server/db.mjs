@@ -8,6 +8,8 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.SCOPEWEAVE_DB || join(__dirname, '..', 'data.db');
 export const db = new DatabaseSync(dbPath);
+const canonicalEmail = (value) => String(value ?? '').trim().toLowerCase();
+db.function('scopeweave_canonical_email', { deterministic: true }, canonicalEmail);
 db.exec("PRAGMA journal_mode = WAL");
 db.exec("PRAGMA foreign_keys = ON");
 
@@ -191,28 +193,24 @@ try { db.exec("ALTER TABLE projects ADD COLUMN methodology TEXT NOT NULL DEFAULT
 function migrateCanonicalUserEmails() {
   db.exec('BEGIN IMMEDIATE');
   try {
-    const collision = db.prepare(`
-      SELECT lower(trim(email)) AS canonical_email,
-             COUNT(*) AS identity_count,
-             group_concat(id) AS user_ids
-      FROM users
-      GROUP BY lower(trim(email))
-      HAVING COUNT(*) > 1
-      LIMIT 1
-    `).get();
-    if (collision) {
-      throw new Error(
-        `canonical email collision for ${collision.canonical_email} across user ids ${collision.user_ids}; resolve duplicate identities before restart`,
-      );
+    const canonicalUsers = new Map();
+    for (const user of db.prepare('SELECT id, email FROM users ORDER BY id').all()) {
+      const email = canonicalEmail(user.email);
+      const previousId = canonicalUsers.get(email);
+      if (previousId !== undefined) {
+        throw new Error(
+          `canonical email collision for ${email} across user ids ${previousId}, ${user.id}; resolve duplicate identities before restart`,
+        );
+      }
+      canonicalUsers.set(email, user.id);
     }
 
-    db.exec(`
-      UPDATE users
-      SET email = lower(trim(email))
-      WHERE email <> lower(trim(email));
-      CREATE UNIQUE INDEX IF NOT EXISTS users_email_canonical_unique
-      ON users(lower(trim(email)));
-    `);
+    const updateEmail = db.prepare('UPDATE users SET email = ? WHERE id = ?');
+    for (const user of db.prepare('SELECT id, email FROM users ORDER BY id').all()) {
+      const email = canonicalEmail(user.email);
+      if (user.email !== email) updateEmail.run(email, user.id);
+    }
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_email_canonical_unique ON users(scopeweave_canonical_email(email))');
     db.exec('COMMIT');
   } catch (error) {
     try { db.exec('ROLLBACK'); } catch { /* preserve the causal migration error */ }

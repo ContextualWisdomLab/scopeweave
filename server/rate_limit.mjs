@@ -48,13 +48,16 @@ function parseSafeIntegerSetting(name, raw, fallback, minimum) {
  */
 function canonicalIp(value) {
   const candidate = String(value ?? '').trim();
-  const family = isIP(candidate);
+  const scoped = /^([^%]+)%([A-Za-z0-9_.~-]+)$/u.exec(candidate);
+  if (candidate.includes('%') && !scoped) return null;
+  const address = scoped?.[1] || candidate;
+  const family = isIP(address);
   if (family === 0) return null;
-  if (family === 4) return candidate;
+  if (family === 4) return address;
 
-  const normalized = new URL(`http://[${candidate}]/`).hostname.slice(1, -1).toLowerCase();
+  const normalized = new URL(`http://[${address}]/`).hostname.slice(1, -1).toLowerCase();
   const mapped = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/iu.exec(normalized);
-  if (!mapped) return normalized;
+  if (!mapped) return scoped ? `${normalized}%${scoped[2]}` : normalized;
 
   const high = Number.parseInt(mapped[1], 16);
   const low = Number.parseInt(mapped[2], 16);

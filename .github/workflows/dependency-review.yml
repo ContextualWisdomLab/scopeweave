@@ -82,12 +82,12 @@ jobs:
               -H "Accept: application/vnd.github+json" \
               -H "Authorization: Bearer ${GH_TOKEN}" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
-              "${api_url}/repos/${REPOSITORY}/compare/${base_ref_encoded}...${HEAD_SHA}" \
+              "${api_url}/repos/${REPOSITORY}/compare/${LIVE_BASE_SHA}...${HEAD_SHA}" \
               || true
           )"
 
           if [ "$compare_status" != "200" ]; then
-            echo "::error::Unable to resolve the pull-request merge base for ${BASE_REF}...${HEAD_SHA}; GitHub API returned HTTP ${compare_status}."
+            echo "::error::Unable to resolve the pull-request merge base for ${LIVE_BASE_SHA}...${HEAD_SHA}; GitHub API returned HTTP ${compare_status}."
             exit 1
           fi
 

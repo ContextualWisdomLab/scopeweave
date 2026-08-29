@@ -92,6 +92,10 @@ const metrics = {
   attachmentStatusRefreshDeferred: 0,
 };
 
+export function recordSignup() {
+  metrics.signups++;
+}
+
 // Outbound webhooks: POST signed JSON to each active hook subscribed to `event`.
 // Fire-and-forget with a timeout, one retry on failure, and a recorded outcome
 // per attempt — never blocks or fails the triggering request.
@@ -172,7 +176,7 @@ app.post('/api/auth/signup', async (c) => {
   };
   db.exec('BEGIN');
   try { tx(); db.exec('COMMIT'); } catch (e) { db.exec('ROLLBACK'); throw e; }
-  metrics.signups++;
+  recordSignup();
   return c.json({ token: signToken({ sub: uid, email, tv: 0 }) });
 });
 

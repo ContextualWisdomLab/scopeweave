@@ -116,7 +116,7 @@ function importDatabase(databasePath) {
     ).get('users_email_canonical_unique');
     assert.match(
       String(index?.sql || ''),
-      /UNIQUE\s+INDEX[\s\S]*lower\s*\(\s*trim\s*\(\s*email\s*\)\s*\)/iu,
+      /UNIQUE\s+INDEX[\s\S]*scopeweave_canonical_email\s*\(\s*email\s*\)/iu,
       'database enforces one canonical mailbox identity even for direct writes',
     );
     database.close();

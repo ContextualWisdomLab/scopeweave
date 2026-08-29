@@ -1,4 +1,5 @@
 import { Hono } from 'hono';
+import { recordSignup } from './application_routes_implementation.mjs';
 import {
   createHash,
   createPublicKey,
@@ -145,7 +146,29 @@ function parseJwtJson(segment) {
   return JSON.parse(Buffer.from(segment, 'base64url').toString('utf8'));
 }
 
-async function verifyProductionOidcIdentity(idToken, expectedNonce) {
+async function loadOidcProviderMetadata() {
+  const response = await fetch(`${OIDC_ISSUER}/.well-known/openid-configuration`, {
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!response.ok) throw new Error('oidc_discovery_failed');
+  const metadata = await response.json();
+  if (metadata?.issuer !== OIDC_ISSUER || typeof metadata?.jwks_uri !== 'string') {
+    throw new Error('oidc_discovery_mismatch');
+  }
+
+  const endpoints = {
+    authorization: metadata.authorization_endpoint || `${OIDC_ISSUER}/authorize`,
+    token: metadata.token_endpoint || `${OIDC_ISSUER}/token`,
+    jwks: metadata.jwks_uri,
+  };
+  for (const endpoint of Object.values(endpoints)) {
+    const url = new URL(endpoint);
+    if (url.protocol !== 'https:') throw new Error('oidc_endpoint_requires_https');
+  }
+  return endpoints;
+}
+
+async function verifyProductionOidcIdentity(idToken, expectedNonce, metadata) {
   const parts = String(idToken || '').split('.');
   if (parts.length !== 3) throw new Error('invalid_oidc_token_shape');
 
@@ -155,18 +178,8 @@ async function verifyProductionOidcIdentity(idToken, expectedNonce) {
     throw new Error('unsupported_oidc_signature');
   }
 
-  const discoveryResponse = await fetch(`${OIDC_ISSUER}/.well-known/openid-configuration`, {
-    signal: AbortSignal.timeout(5000),
-  });
-  if (!discoveryResponse.ok) throw new Error('oidc_discovery_failed');
-  const discovery = await discoveryResponse.json();
-  if (discovery?.issuer !== OIDC_ISSUER || typeof discovery?.jwks_uri !== 'string') {
-    throw new Error('oidc_discovery_mismatch');
-  }
-
-  const jwksUrl = new URL(discovery.jwks_uri);
-  if (jwksUrl.protocol !== 'https:') throw new Error('oidc_jwks_requires_https');
-  const jwksResponse = await fetch(jwksUrl, { signal: AbortSignal.timeout(5000) });
+  const provider = metadata || await loadOidcProviderMetadata();
+  const jwksResponse = await fetch(provider.jwks, { signal: AbortSignal.timeout(5000) });
   if (!jwksResponse.ok) throw new Error('oidc_jwks_failed');
   const jwks = await jwksResponse.json();
   const jwk = Array.isArray(jwks?.keys)
@@ -222,6 +235,7 @@ function upsertProductionSsoUser(email) {
     db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)').run(orgId, uid, 'owner');
     db.exec('COMMIT');
     user = { id: uid, email, token_version: 0 };
+    recordSignup();
   } catch (error) {
     db.exec('ROLLBACK');
     throw error;
@@ -230,12 +244,12 @@ function upsertProductionSsoUser(email) {
 }
 
 async function productionOidcStart(c, next) {
-  if (process.env.SCOPEWEAVE_DEV === '1' || !productionOidcConfigured) return next();
+  if (!productionOidcConfigured) return next();
 
   let authorizationUrl;
   try {
-    authorizationUrl = new URL(`${OIDC_ISSUER}/authorize`);
-    if (authorizationUrl.protocol !== 'https:') throw new Error('oidc_issuer_requires_https');
+    const provider = await loadOidcProviderMetadata();
+    authorizationUrl = new URL(provider.authorization);
   } catch {
     return c.json({ error: 'sso not configured' }, 404, { 'Cache-Control': 'no-store' });
   }
@@ -268,7 +282,7 @@ async function productionOidcStart(c, next) {
 }
 
 async function productionOidcCallback(c, next) {
-  if (process.env.SCOPEWEAVE_DEV === '1' || !productionOidcConfigured) return next();
+  if (!productionOidcConfigured) return next();
 
   const state = c.req.query('state');
   const code = c.req.query('code');
@@ -278,7 +292,8 @@ async function productionOidcCallback(c, next) {
   }
 
   try {
-    const tokenResponse = await fetch(`${OIDC_ISSUER}/token`, {
+    const provider = await loadOidcProviderMetadata();
+    const tokenResponse = await fetch(provider.token, {
       method: 'POST',
       headers: { 'content-type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
@@ -293,7 +308,7 @@ async function productionOidcCallback(c, next) {
     });
     if (!tokenResponse.ok) throw new Error('oidc_token_exchange_failed');
     const tokens = await tokenResponse.json();
-    const email = await verifyProductionOidcIdentity(tokens?.id_token, pending.nonce);
+    const email = await verifyProductionOidcIdentity(tokens?.id_token, pending.nonce, provider);
     const user = upsertProductionSsoUser(email);
     const token = signToken({ sub: user.id, email: user.email, tv: user.token_version || 0 });
     return c.redirect(`/#token=${token}`);
