@@ -248,11 +248,15 @@ HEAD가 바뀌면 다시 확인해야 한다.
   만들지 못해 fail-closed 되었다. `MERGEABLE/BLOCKED/REVIEW_REQUIRED`,
   qualifying approval 0건이므로 병합하지 않았다.
 - #497: `develop@2c328875` 대상
-  `9d23bbf5768f41542f3b3c5eac75d17220b0dcf0`. workflow registry의 pagination
-  완결성·immutable tree 증거, exact-SHA preflight와 identity drift 방지,
-  dry-run 기본값 및 명시적 apply 조건을 current CodeGraph·resolved 리뷰와
-  대조했고 audit/cleanup/timeout/coverage 및 API 검증은 통과했다. hosted
-  required Checks와 Strix는 통과했지만 qualifying approval이 없어 병합하지
+  `9d23bbf5768f41542f3b3c5eac75d17220b0dcf0`. CodeGraph로 workflow registry의
+  pagination 완결성·immutable tree 증거, exact-SHA preflight와 identity drift
+  방지, dry-run 기본값 및 명시적 apply 조건을 대조했고 current review thread는
+  모두 resolved다. `npm ci` 후 audit 12개, cleanup 7개, coverage 14개, 전체
+  unit, fuzz 14개, config 3개, docstring check와 `git diff --check`가 통과했다.
+  `workflow_registry_audit.mjs` coverage는 lines 99.39%/functions 94.11%/
+  branches 97.38%, cleanup은 98.70%/100%/94.70%다. hosted required Checks와
+  Strix는 exact head에서 terminal success 또는 expected neutral/skipped지만
+  `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, qualifying approval 0건이므로 병합하지
   않았다.
 - #523: `develop@2c328875` 대상
   `135117e0594939240e787a161574b6fb4e10f155`. Server Tests의 PR head 고정,
