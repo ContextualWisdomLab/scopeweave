@@ -228,11 +228,12 @@ artifact `9710489491`에는 권위 있는 취약점 보고서가 없었다. 워�
   metadata-only render와 immutable badge shell을 유지하고, 분리된
   `test:e2e:performance`를 `server-tests.yml`에서 호출하도록 보완했다.
   `node tests/unit/render-performance-base.test.mjs`는 7개가 통과했고,
-  current review thread는 모두 resolved다. current hosted unit-and-api와
-  coverage-evidence는 통과했지만 cloud-e2e `99066880322`, Noema
-  `99066875444`, Strix `99066868349`는 아직 실행 중이며 OpenCode
-  `99066887261`은 실패했다. `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, qualifying
-  approval 0건이므로 병합하지 않았다.
+  current review thread는 모두 resolved다. `2026-08-29T07:03:26Z` 재조회
+  기준 current hosted unit-and-api `99066880286`, coverage-evidence
+  `99066872980`, cloud-e2e `99066880322`(07:00:14Z), Noema
+  `99066875444`(07:00:27Z)는 성공했지만 Strix `99066868349`는 아직
+  실행 중이며 OpenCode `99066887261`은 실패했다. `MERGEABLE/BLOCKED/
+  REVIEW_REQUIRED`, qualifying approval 0건이므로 병합하지 않았다.
 - #468: `develop@2c328875` 대상
   `815af8138df2454cea99ba1a4a384de4f55d6199`. editor validation의 submit 경계,
   키보드·포인터 저장 재검증, `aria-disabled`/오류 설명 연결과 CSV formula
