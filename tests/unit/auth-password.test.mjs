@@ -22,6 +22,15 @@ for (const bad of [{}, [], null, undefined, 12, true]) {
   assert.equal(verifyPassword(bad, stored), false, 'non-string never verifies a real password');
 }
 
+// Malformed or truncated persisted representations fail closed before any
+// timing-safe equality result can be mistaken for a valid credential.
+for (const malformed of [null, undefined, '', 'salt-only', 'salt:', ':hash']) {
+  assert.equal(verifyPassword('correct-horse', malformed), false, 'missing salt/hash never verifies');
+}
+const [salt] = stored.split(':');
+assert.equal(verifyPassword('correct-horse', salt + ':00'), false, 'wrong digest length fails closed');
+assert.equal(verifyPassword('correct-horse', salt + ':not-hex'), false, 'invalid hex digest fails closed');
+
 // Empty string is a distinct string path; non-strings must not verify against it.
 const empty = hashPassword('');
 assert.equal(verifyPassword('', empty), true);

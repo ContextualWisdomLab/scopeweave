@@ -1,0 +1,56 @@
+name: CodeQL Required
+
+on:
+  # No base-branch filter: stacked PRs target feature branches, and their
+  # exact contributor heads still require CodeQL evidence before integration.
+  pull_request:
+  push:
+    branches: ["develop", "master"]
+  schedule:
+    - cron: "15 2 * * 6"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-required-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        language:
+          - javascript-typescript
+          - python
+    steps:
+      - name: Checkout exact revision
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+
+      - name: Verify exact checkout
+        env:
+          EXPECTED_CHECKOUT_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          actual_sha="$(git rev-parse HEAD)"
+          test "$actual_sha" = "$EXPECTED_CHECKOUT_SHA"
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
+        with:
+          languages: ${{ matrix.language }}
+
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4.37.8
+        with:
+          category: "/language:${{ matrix.language }}"
+          upload: never
+          upload-database: false

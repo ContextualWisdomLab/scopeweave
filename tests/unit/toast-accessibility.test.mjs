@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 const indexHtml = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+const stylesCss = readFileSync(new URL('../../styles.css', import.meta.url), 'utf8');
 const toastStateCss = readFileSync(new URL('../../toast-state.css', import.meta.url), 'utf8');
 const cloudSyncJs = readFileSync(new URL('../../cloud-sync.js', import.meta.url), 'utf8');
 
@@ -60,5 +61,22 @@ test('cloud toast state is visibly rendered by a shipped stylesheet', () => {
     toastStateCss,
     /\.toast\.visible\s*\{[^}]*\bopacity\s*:\s*1\s*;[^}]*\btransform\s*:\s*translateY\(0\)\s*;/s,
     'the shipped cloud toast state becomes visually observable',
+  );
+});
+
+test('modal overflow behavior stays with modal layout styles', () => {
+  const modalScrollRule = stylesCss.match(/\.modal-panel:not\(\.gantt-panel\)\s*\{[^}]*\}/s)?.[0] ?? '';
+  assert.notEqual(modalScrollRule, '', 'styles.css owns the non-Gantt modal scrolling rule');
+  assert.match(modalScrollRule, /\boverflow-y\s*:\s*auto\s*;/, 'non-Gantt dialogs remain vertically scrollable');
+  assert.match(modalScrollRule, /\boverscroll-behavior\s*:\s*contain\s*;/, 'non-Gantt dialogs contain scroll chaining');
+  assert.doesNotMatch(
+    modalScrollRule,
+    /-webkit-overflow-scrolling\s*:/,
+    'non-Gantt modal scrolling does not depend on the obsolete WebKit overflow extension',
+  );
+  assert.doesNotMatch(
+    toastStateCss,
+    /\.modal-panel:not\(\.gantt-panel\)/,
+    'toast-state.css remains scoped to toast presentation rather than modal layout',
   );
 });

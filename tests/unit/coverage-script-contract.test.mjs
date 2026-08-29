@@ -1,48 +1,269 @@
-// This contract prevents a subtle CI regression: the central review gate may
-// invoke `test:coverage` directly, so that script itself must create Istanbul
-// JSON rather than merely execute tests without instrumentation.
+// This contract prevents coverage evidence from silently omitting either runtime.
+// ScopeWeave owns browser code and Node/server code; each runtime must enforce
+// exact 100% Istanbul statement/branch/function/line coverage on the same PR head.
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 
 const packageJson = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
 );
+const packageLock = JSON.parse(
+  readFileSync(new URL('../../package-lock.json', import.meta.url), 'utf8'),
+);
 const scripts = packageJson.scripts;
+
+for (const [dependencyName, dependencyVersion] of [
+  ['istanbul-lib-coverage', '3.2.2'],
+  ['v8-to-istanbul', '9.3.0'],
+]) {
+  assert.equal(
+    packageJson.devDependencies?.[dependencyName],
+    dependencyVersion,
+    `browser coverage must directly declare ${dependencyName}@${dependencyVersion}`,
+  );
+  assert.equal(
+    packageLock.packages?.['']?.devDependencies?.[dependencyName],
+    dependencyVersion,
+    `the lockfile root must preserve ${dependencyName} as a direct development dependency`,
+  );
+  assert.equal(
+    packageLock.packages?.[`node_modules/${dependencyName}`]?.version,
+    dependencyVersion,
+    `the lockfile must resolve ${dependencyName} to the reviewed coverage-tooling version`,
+  );
+}
+
+function declaredStringList(source, declarationStart, declarationEnd) {
+  const startIndex = source.indexOf(declarationStart);
+  assert.notEqual(startIndex, -1, `missing coverage ownership declaration: ${declarationStart}`);
+  const valueStart = startIndex + declarationStart.length;
+  const endIndex = source.indexOf(declarationEnd, valueStart);
+  assert.notEqual(endIndex, -1, `unterminated coverage ownership declaration: ${declarationStart}`);
+  return [...source.slice(valueStart, endIndex).matchAll(/['"]([^'"]+)['"]/g)]
+    .map((match) => match[1])
+    .sort();
+}
+
+function productionBrowserModules(indexHtml) {
+  return [...indexHtml.matchAll(/<script\b[^>]*>/gi)]
+    .map((match) => match[0])
+    .flatMap((tag) => {
+      const type = tag.match(/\btype\s*=\s*['"]([^'"]+)['"]/i)?.[1];
+      const src = tag.match(/\bsrc\s*=\s*['"]([^'"]+)['"]/i)?.[1];
+      if (type !== 'module' || !src || /^(?:[a-z]+:|\/\/)/i.test(src)) return [];
+      return [src.replace(/^\.\//, '')];
+    })
+    .sort();
+}
 
 assert.equal(
   scripts.coverage,
   'npm run test:coverage',
-  'the public coverage command delegates to the canonical coverage producer',
+  'the public coverage command delegates to the canonical complete coverage producer',
+);
+assert.equal(
+  scripts['test:coverage'],
+  'npm run test:coverage:server && npm run test:coverage:browser',
+  'canonical coverage must prove both Node/server and real-browser production code',
 );
 assert.match(
-  scripts['test:coverage'],
+  scripts['test:coverage:server'],
   /\bc8\b.*--reporter=json(?![-\w]).*npm run test:coverage:cases/,
-  'test:coverage creates Istanbul JSON before executing coverage cases',
+  'server coverage creates Istanbul JSON before executing deterministic cases',
 );
 assert.match(
-  scripts['test:coverage'],
+  scripts['test:coverage:server'],
   /--reporter=json-summary\b/,
-  'test:coverage also creates the Istanbul JSON summary',
+  'server coverage also creates the Istanbul JSON summary',
 );
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/attachment_status\.mjs/,
-  'the bounded refresh module is instrumented',
+for (const requiredCoverageOption of [
+  '--all',
+  '--check-coverage',
+  '--per-file',
+  '--lines 100',
+  '--functions 100',
+  '--branches 100',
+  '--statements 100',
+]) {
+  assert.equal(
+    scripts['test:coverage:server'].includes(requiredCoverageOption),
+    true,
+    `server coverage must enforce ${requiredCoverageOption}`,
+  );
+}
+assert.equal(
+  scripts['test:coverage:server'].includes('--include=scripts/ci/static_coverage_evidence.mjs'),
+  true,
+  'the repository-owned static evidence producer remains covered by the server lane',
 );
-assert.match(
-  scripts['test:coverage'],
-  /--include=server\/clearfolio\.mjs/,
-  'the abortable Clearfolio adapter is instrumented',
+const serverProductionModules = readdirSync(new URL('../../server/', import.meta.url))
+  .filter((name) => name.endsWith('.mjs'))
+  .map((name) => `server/${name}`)
+  .sort();
+const coveredServerModules = [...scripts['test:coverage:server'].matchAll(/--include=(server\/[^\s]+)/g)]
+  .map((match) => match[1])
+  .sort();
+assert.deepEqual(
+  coveredServerModules,
+  serverProductionModules,
+  'server coverage ownership must include every production server module rather than a curated subset',
 );
-assert.match(
+assert.doesNotMatch(
+  scripts['test:coverage:server'],
+  /--include=(?:app|cloud-sync|analytics)\.js\b/,
+  'browser production must not be scored from a Node VM that cannot observe real browser execution',
+);
+assert.equal(
+  scripts['test:coverage:browser'],
+  'node scripts/ci/browser_coverage.mjs',
+  'browser coverage must use the repository-owned Chromium/Istanbul collector',
+);
+assert.equal(
   scripts['test:coverage:cases'],
+  'npm run test:unit && npm run test:api',
+  'server coverage instruments the complete deterministic unit and API suites instead of a stale curated subset',
+);
+assert.match(
+  scripts['test:api'],
+  /tests\/api\/app-branch-coverage\.mjs/,
+  'the complete API suite must retain branch-oriented production coverage cases',
+);
+assert.match(
+  scripts['test:unit'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
-  'the Clearfolio signal and HTTP failure regression executes under c8',
+  'the complete unit suite retains the Clearfolio signal and HTTP failure regression',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],
   /npm run (?:coverage|test:coverage)(?:\s|$)/,
   'coverage cases never recursively invoke a coverage wrapper',
+);
+
+const e2eDirectory = new URL('../e2e/', import.meta.url);
+const e2eSpecs = readdirSync(e2eDirectory)
+  .filter((name) => name.endsWith('.spec.js'))
+  .sort();
+assert.ok(e2eSpecs.length > 0, 'real-browser coverage requires executable Playwright specs');
+for (const specName of e2eSpecs) {
+  const specSource = readFileSync(new URL(specName, e2eDirectory), 'utf8');
+  assert.match(
+    specSource,
+    /import\s*\{\s*test\s*,\s*expect\s*\}\s*from\s*['"]\.\/coverage-test\.js['"];/,
+    `${specName} must use the coverage-aware Playwright fixture so browser coverage cannot run without raw evidence`,
+  );
+  assert.doesNotMatch(
+    specSource,
+    /from\s*['"]@playwright\/test['"]/,
+    `${specName} must not bypass the coverage-aware fixture with a direct Playwright test import`,
+  );
+  assert.doesNotMatch(
+    specSource,
+    /page\.route\(\s*['"`][^'"`]*(?:app|cloud-sync|analytics)\.js[^'"`]*['"`]/,
+    `${specName} must not replace exact production script bytes while those bytes are coverage provenance evidence`,
+  );
+}
+
+const browserFixtureSource = readFileSync(new URL('../e2e/coverage-test.js', import.meta.url), 'utf8');
+const browserCollectorSource = readFileSync(
+  new URL('../../scripts/ci/browser_coverage.mjs', import.meta.url),
+  'utf8',
+);
+const indexHtml = readFileSync(new URL('../../index.html', import.meta.url), 'utf8');
+const browserProductionModules = productionBrowserModules(indexHtml);
+const fixtureOwnedModules = declaredStringList(
+  browserFixtureSource,
+  'const expectedBrowserSources = new Set([',
+  ']);',
+).map((source) => source.replace(/^\//, '')).sort();
+const collectorOwnedModules = declaredStringList(
+  browserCollectorSource,
+  'const expectedBrowserSources = [',
+  '];',
+).sort();
+assert.deepEqual(
+  fixtureOwnedModules,
+  browserProductionModules,
+  'the Playwright coverage fixture must capture every local production module loaded by index.html',
+);
+assert.deepEqual(
+  collectorOwnedModules,
+  browserProductionModules,
+  'the browser coverage collector must score every local production module loaded by index.html',
+);
+assert.match(
+  browserFixtureSource,
+  /context:\s*async\s*\(\{\s*context\s*\},\s*use,\s*testInfo\)\s*=>/,
+  'browser coverage must own the per-test browser context so every page in that context can produce evidence',
+);
+assert.match(
+  browserFixtureSource,
+  /const originalNewPage = context\.newPage\.bind\(context\)/,
+  'browser coverage must preserve the real BrowserContext.newPage implementation before wrapping it',
+);
+assert.match(
+  browserFixtureSource,
+  /context\.newPage = async \(\.\.\.args\) => \{[\s\S]*?await startPageCoverage\(newPage\)/,
+  'browser coverage must start instrumentation before any context.newPage caller can navigate a secondary page',
+);
+assert.match(
+  browserFixtureSource,
+  /page\.close = async \(\.\.\.args\) => \{[\s\S]*?await stopPageCoverage\(page\)/,
+  'browser coverage must collect secondary-page evidence before an explicitly closed page becomes unavailable',
+);
+assert.match(
+  browserFixtureSource,
+  /context\.on\(['"]response['"],\s*responseListener\)/,
+  'browser coverage must observe production responses from every page in the test context',
+);
+assert.match(
+  browserFixtureSource,
+  /response\.body\(\)/,
+  'browser coverage must hash served response bytes rather than trusting CDP source-text normalization',
+);
+assert.match(
+  browserFixtureSource,
+  /createHash\(['"]sha256['"]\)/,
+  'browser coverage must bind served production source evidence with SHA-256',
+);
+assert.match(
+  browserFixtureSource,
+  /servedSourceSha256/,
+  'raw browser evidence must carry served-source digests alongside V8 coverage ranges',
+);
+assert.match(
+  browserCollectorSource,
+  /servedSourceSha256/,
+  'the collector must consume the served-source digest evidence',
+);
+assert.match(
+  browserCollectorSource,
+  /createHash\(['"]sha256['"]\)/,
+  'the collector must independently hash checked-out production source bytes',
+);
+assert.doesNotMatch(
+  browserCollectorSource,
+  /entry\.source\s*!=\s*null\s*&&\s*entry\.source\s*!==\s*localSource/,
+  'the collector must not reject browser-equivalent source solely because CDP normalized source text',
+);
+assert.doesNotMatch(
+  browserCollectorSource,
+  /if \(testRun\.status !== 0\) \{[\s\S]*?\}\s*else\s*\{\s*const rawFiles/,
+  'a failing Playwright suite must not skip conversion of already-emitted raw browser coverage evidence',
+);
+assert.match(
+  browserCollectorSource,
+  /if \(testRun\.status !== 0\) \{[\s\S]*?process\.exitCode = testRun\.status \?\? 1;[\s\S]*?\}\s*try\s*\{\s*const rawFiles =/,
+  'the collector must preserve a non-passing Playwright result while continuing into guarded raw coverage processing',
+);
+assert.match(
+  browserCollectorSource,
+  /catch \(coverageError\) \{\s*process\.exitCode = reportCoverageProcessingFailure\(testRun\.status, coverageError\);\s*\}/,
+  'secondary coverage-processing failures must preserve the primary Playwright failure instead of replacing it',
+);
+assert.match(
+  browserCollectorSource,
+  /if \(rawFiles\.length === 0\) \{[\s\S]*?if \(testRun\.status !== 0\)/,
+  'when tests fail before emitting raw evidence the collector must preserve that test failure rather than inventing coverage evidence',
 );
 
 console.log('✓ coverage script contract tests passed');

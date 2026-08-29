@@ -160,6 +160,15 @@ test('submitJob rejects transport details and malformed successful responses', a
     jobId: 'job-3',
     status: 'RUNNING',
   });
+
+  setResponse({ json: async () => ({ jobId: 'job-4', status: 'SUCCEEDED' }) });
+  assert.deepEqual(
+    await submitJob(7, 9, { ...document, mime: '' }),
+    { jobId: 'job-4', status: 'SUCCEEDED' },
+  );
+  const uploaded = observedOptions.body.get('file');
+  assert.ok(uploaded instanceof Blob, 'upload remains a multipart Blob/File payload');
+  assert.equal(uploaded.type, 'application/octet-stream', 'empty MIME defaults safely');
 });
 
 test('artifactUrl validates links and never exposes transport or response text', async () => {

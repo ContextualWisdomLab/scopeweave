@@ -2,7 +2,7 @@
 
 ## Status
 
-Active pull-request evidence. This record does not describe protected `develop` until the owning pull request is integrated.
+Protected `develop` shipped truth at `df0fa17bd5035af6455c889022c540b4f439e3d6`. This record describes the integrated ScopeWeave boundary; any later protected-tip movement requires fresh verification before release claims.
 
 ## Decision boundary
 

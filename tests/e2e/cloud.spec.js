@@ -1,7 +1,7 @@
 // Cloud (SaaS) UI e2e — self-contained: spawns the Node API server itself, so
 // the static python webServer from playwright.config is untouched.
 // Run: npx playwright test tests/e2e/cloud.spec.js
-import { test, expect } from '@playwright/test';
+import { test, expect } from './coverage-test.js';
 import { spawn } from 'node:child_process';
 
 const PORT = 8830;
@@ -147,8 +147,8 @@ test('MSP import: XML file populates the tree and saves to the cloud', async ({ 
   await page.waitForFunction(() => document.querySelector('#task-table-body')?.textContent.includes('MSP단계'));
   // wait for the debounced cloud push, then confirm server state
   await page.waitForTimeout(1200);
-  const server = await api('/api/projects/1', { tok: token });
-  expect(server.tasks.some((t) => t.id === 'msp-1' && t.depth === 1)).toBeTruthy();
+  const serverState = await api('/api/projects/1', { tok: token });
+  expect(serverState.tasks.some((t) => t.id === 'msp-1' && t.depth === 1)).toBeTruthy();
 });
 
 test('archive: project moves under the 보관됨 optgroup and restores', async ({ page }) => {
@@ -159,4 +159,142 @@ test('archive: project moves under the 보관됨 optgroup and restores', async (
   expect(archived.some((t) => t.includes('E2E 프로젝트'))).toBeTruthy();
   await page.click('#cloud-auth button:has-text("보관 해제")');
   await page.waitForFunction(() => !document.querySelector('#cloud-auth select optgroup[label="보관됨"]'));
+});
+
+test('login modal surfaces failed credentials, toggles signup mode, and authenticates', async ({ page }) => {
+  await page.goto(`${BASE}/`);
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.click('#cloud-auth button:has-text("클라우드 로그인")');
+  await page.click('#cloud-toggle');
+  await expect(page.locator('#cloud-modal-title')).toHaveText('계정 만들기');
+  await page.click('#cloud-toggle');
+  await expect(page.locator('#cloud-modal-title')).toHaveText('클라우드 로그인');
+
+  await page.fill('#cloud-email', 'e2e@cloud.com');
+  await page.fill('#cloud-password', 'wrong-password');
+  await page.click('#cloud-submit');
+  await expect(page.locator('#cloud-error')).not.toHaveText('');
+
+  await page.fill('#cloud-password', 'password123');
+  await page.click('#cloud-submit');
+  await page.waitForSelector('#cloud-auth select');
+  expect(await page.evaluate(() => Boolean(localStorage.getItem('scopeweave:token')))).toBeTruthy();
+});
+
+test('first-time cloud user can seed the buyer-visible sample project', async ({ page }) => {
+  const sampleToken = (await api('/api/auth/signup', {
+    method: 'POST',
+    body: { email: 'sample@cloud.com', password: 'password123', name: 'Sample User' },
+  })).token;
+  await page.goto(`${BASE}/`);
+  await page.evaluate(([t]) => {
+    localStorage.clear();
+    localStorage.setItem('scopeweave:token', t);
+  }, [sampleToken]);
+  await page.reload();
+  await page.waitForSelector('#cloud-auth button:has-text("샘플로 시작")');
+  await page.click('#cloud-auth button:has-text("샘플로 시작")');
+  await page.waitForFunction(() => [...document.querySelectorAll('#cloud-auth select option')]
+    .some((option) => option.textContent?.includes('샘플 프로젝트')));
+  expect(await page.evaluate(() => Boolean(localStorage.getItem('scopeweave:project')))).toBeTruthy();
+});
+
+test('new-project and search flows operate through the shipped cloud UI', async ({ page }) => {
+  await loginAndOpen(page);
+  page.once('dialog', (dialog) => dialog.accept('검색 가능한 프로젝트'));
+  await page.click('#cloud-auth button:has-text("+ 새 프로젝트")');
+  await page.waitForFunction(() => [...document.querySelectorAll('#cloud-auth select option')]
+    .some((option) => option.textContent?.includes('검색 가능한 프로젝트')));
+
+  await page.click('#cloud-auth button:has-text("검색")');
+  await page.fill('#search-panel input[type="search"]', '검색 가능한');
+  await page.click('#search-panel button:has-text("검색")');
+  await expect(page.locator('#search-panel')).toContainText('검색 가능한 프로젝트');
+  await page.click('#search-panel button:has-text("열기")');
+  await expect(page.locator('#toast')).toContainText('프로젝트를 열었습니다');
+});
+
+test('team administration renders governance controls and creates bounded credentials', async ({ page }) => {
+  await loginAndOpen(page);
+  await page.click('#cloud-auth button:has-text("팀")');
+  await page.waitForSelector('#team-body');
+  await expect(page.locator('#team-body')).toContainText('API 토큰');
+  await expect(page.locator('#team-body')).toContainText('웹훅');
+  await expect(page.locator('#team-body')).toContainText('계정');
+
+  const tokenSection = page.locator('#team-body .token-section').filter({ hasText: 'API 토큰' });
+  await tokenSection.locator('input[type="text"]').fill('E2E CI');
+  await tokenSection.locator('button:has-text("토큰 생성")').click();
+  await expect(tokenSection.locator('.token-secret')).toContainText('한 번만 표시됩니다');
+
+  await page.fill('#team-email', 'invitee@example.com');
+  await page.selectOption('#team-role', 'viewer');
+  await page.click('#team-invite button:has-text("초대")');
+  await expect(page.locator('#team-msg')).toContainText('초대 링크:');
+
+  const downloadPromise = page.waitForEvent('download');
+  await page.click('#team-body button:has-text("데이터 내보내기")');
+  const download = await downloadPromise;
+  expect(download.suggestedFilename()).toContain('scopeweave-org-');
+});
+
+test('sprint workflow persists methodology and renders a real burndown', async ({ page }) => {
+  const project = await api('/api/projects/1', { tok: token });
+  await api('/api/projects/1', {
+    method: 'PUT',
+    tok: token,
+    body: {
+      tasks: [
+        {
+          id: 's1', name: 'Sprint done', sprint: 'Sprint E2E', storyPoints: 5,
+          actualProgress: 100, actualEndDate: '2026-08-02', plannedStartDate: '2026-08-01', plannedEndDate: '2026-08-03',
+        },
+        {
+          id: 's2', name: 'Sprint open', sprint: 'Sprint E2E', storyPoints: 8,
+          actualProgress: 40, plannedStartDate: '2026-08-01', plannedEndDate: '2026-08-08',
+        },
+      ],
+      baseDate: project.baseDate,
+      version: project.version,
+    },
+  });
+
+  await loginAndOpen(page);
+  await page.click('#cloud-auth button:has-text("스프린트")');
+  const form = page.locator('#sprint-panel form.cloud-form');
+  await form.locator('input[type="text"]').fill('Sprint E2E');
+  await form.locator('input[type="date"]').nth(0).fill('2026-08-01');
+  await form.locator('input[type="date"]').nth(1).fill('2026-08-08');
+  await form.locator('button:has-text("추가")').click();
+  await expect(page.locator('#sprint-panel .team-list')).toContainText('Sprint E2E');
+  await expect(page.locator('#sprint-panel .cpm-summary')).toContainText('벨로시티');
+
+  await page.selectOption('#methodology-select', 'hybrid');
+  await expect(page.locator('#methodology-select')).toHaveValue('hybrid');
+  await expect.poll(async () => {
+    const saved = await api('/api/projects/1', { tok: token });
+    return saved.methodology;
+  }).toBe('hybrid');
+  await page.click('#sprint-panel button:has-text("번다운")');
+  await expect(page.locator('#burndown-holder')).toContainText('커밋 13pt');
+  await expect(page.locator('#burndown-holder svg')).toHaveCount(1);
+});
+
+test('share and attachment modals expose actionable empty states without hidden transport details', async ({ page }) => {
+  await loginAndOpen(page);
+  await page.click('#cloud-auth button:has-text("공유")');
+  await expect(page.locator('#share-panel')).toContainText('활성 공유 링크가 없습니다.');
+
+  page.once('dialog', (dialog) => dialog.accept());
+  await page.click('#share-panel button:has-text("공유 링크 만들기")');
+  await page.waitForFunction(() => document.querySelectorAll('#share-panel .team-list li').length > 0);
+  await expect(page.locator('#share-panel .team-list')).toContainText('복사');
+  await page.click('#share-panel button:has-text("철회")');
+  await expect(page.locator('#share-panel')).toContainText('활성 공유 링크가 없습니다.');
+
+  await page.click('#share-panel button[aria-label="공유 닫기"]');
+  await expect(page.locator('#share-modal')).toHaveClass(/hidden/);
+  await page.click('#cloud-auth button:has-text("산출물")');
+  await expect(page.locator('#attachments-panel')).toContainText('첨부된 산출물이 없습니다.');
 });

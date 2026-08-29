@@ -56,11 +56,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Switched the repository-local OpenCode development configuration from GitHub
   Models to an NVIDIA NIM-only candidate set while preserving organization-level
   review-workflow ownership in `ContextualWisdomLab/.github`.
+- Moved the repository-owned property-fuzz setup action to immutable
+  `actions/setup-node` v7.0.0 so its JavaScript action runtime declares Node.js
+  24 instead of relying on GitHub's compatibility override for deprecated
+  Node.js 20, while retaining Node.js 22.13.0 for ScopeWeave itself.
 - Production planning-analysis requests now combine tenant-bound, server-derived
   contextual-orchestrator cost attribution with explicit `auto` orchestration
   mode, delegating provider/model/topology policy to the shared service without
   weakening ScopeWeave's authenticated, fail-closed transport or response
   boundary controls.
+- Bound repository `Server Tests` to the exact pull-request contributor head (or
+  exact protected-`develop` push SHA) and fail closed when the runner's actual
+  checkout differs, preventing synthetic merge results from being mistaken for
+  contributor-head test evidence.
+- Restored protected `Analyze (javascript-typescript)` and `Analyze (python)`
+  contexts through one exact-head, non-publishing repository CodeQL lane for
+  `develop`-bound and stacked pull requests while GitHub default setup remains
+  the sole SARIF publication authority; retired the stale advanced publisher
+  and removed unused code-scanning write authority from the required lane.
+- Made OSV differential scanning resolve the current protected base **ref** at
+  runner execution instead of treating the pull-request base SHA snapshot as a
+  live-base authority, verify the immutable contributor head, retain the
+  baseline result across checkout, preserve the protected-base `scan` identity,
+  and pin direct scanner/reporter actions to the revision used by upstream
+  v2.5.0 instead of delegating to synthetic-merge checkout behavior.
 - Accepted XML whitespace before exact Microsoft Project element delimiters
   while preserving the linear, regex-free import scanner and rejecting
   attributes, longer names, non-XML whitespace, nested unmatched blocks, and
