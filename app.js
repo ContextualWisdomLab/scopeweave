@@ -2567,15 +2567,39 @@ function clearDropTargets() {
 function downloadFile(content, fileName, mimeType) {
   const blob = new Blob([content], { type: mimeType });
   const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = fileName;
-  // Keep generated download links isolated from any browsing context changes.
-  link.rel = 'noopener noreferrer';
-  document.body.appendChild(link);
-  link.click();
-  Element.prototype.remove.call(link);
-  URL.revokeObjectURL(url);
+  let link = null;
+  let causalError = null;
+  try {
+    link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    // Keep generated download links isolated from any browsing context changes.
+    link.rel = 'noopener noreferrer';
+    document.body.appendChild(link);
+    link.click();
+  } catch (error) {
+    causalError = error;
+  } finally {
+    try {
+      if (link) {
+        const remove = Object.getPrototypeOf(link)?.remove;
+        if (typeof remove === 'function') {
+          try {
+            remove.call(link);
+          } catch (cleanupError) {
+            if (!causalError) causalError = cleanupError;
+          }
+        }
+      }
+    } finally {
+      try {
+        URL.revokeObjectURL(url);
+      } catch (revokeError) {
+        if (!causalError) causalError = revokeError;
+      }
+    }
+  }
+  if (causalError) throw causalError;
 }
 
 function csvEscape(value) {
