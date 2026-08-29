@@ -68,6 +68,18 @@ response = await req(`/api/orgs/${orgId}/invites`, {
 });
 assert.equal(response.status, 400, 'missing invite email is rejected');
 
+// Without independent email verification, minting a bearer invitation for an
+// address that has no registered account lets whoever holds the token create
+// that address later and become the apparent invitee. Fail before creating a
+// secret so invitations are account-bound rather than registration claims.
+response = await req(`/api/orgs/${orgId}/invites`, {
+  method: 'POST',
+  headers: ownerAuth,
+  body: body({ email: 'future-member@example.com', role: 'admin' }),
+});
+assert.equal(response.status, 409, 'unregistered invite target is rejected before a bearer token is minted');
+assert.deepEqual(await response.json(), { error: 'invitee must already have a ScopeWeave account' });
+
 // Give the low-privilege account legitimate roster visibility.
 response = await req(`/api/orgs/${orgId}/invites`, {
   method: 'POST',
