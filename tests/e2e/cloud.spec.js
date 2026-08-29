@@ -3,6 +3,7 @@
 // Run: npx playwright test tests/e2e/cloud.spec.js
 import { test, expect } from './coverage-fixtures.js';
 import { spawn } from 'node:child_process';
+import { readFile } from 'node:fs/promises';
 
 const PORT = 8830;
 const BASE = `http://127.0.0.1:${PORT}`;
@@ -93,6 +94,21 @@ test('workload table aggregates per owner with behind highlight', async ({ page 
   const rows = await page.$$eval('.workload-table tbody tr', (trs) => trs.map((tr) => tr.textContent));
   expect(rows.some((r) => r.includes('김담당') && r.includes('1건'))).toBeTruthy(); // 80% plan / 40% actual → behind
   expect(rows.some((r) => r.includes('이담당'))).toBeTruthy();
+});
+
+test('cloud task names are searchable and extended JSON backups retain progress', async ({ page }) => {
+  await loginAndOpen(page);
+  const search = page.getByRole('searchbox', { name: 'WBS 작업 검색' });
+  await search.fill('설계');
+  await expect(page.locator('tbody tr[data-task-id="t1"]')).toHaveCount(1);
+
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'JSON 내보내기' }).click(),
+  ]);
+  const backup = JSON.parse(await readFile(await download.path(), 'utf8'));
+  const task = backup.find((row) => row.name === '설계');
+  expect(task?.actualProgress).toBe(40);
 });
 
 test('baseline: save then compare reports no diff', async ({ page }) => {

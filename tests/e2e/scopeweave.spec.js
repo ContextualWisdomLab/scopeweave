@@ -121,6 +121,11 @@ test.describe('ScopeWeave Planner', () => {
     await page.getByTestId('project-name-input').fill('Unsaved sample edit');
     await expect(page.locator('#toast')).toContainText('로컬 스토리지 용량이 초과되어 저장하지 못했습니다.');
     await expect(page.locator('#seed-onboarding')).toBeVisible();
+
+    page.once('dialog', dialog => dialog.accept());
+    await page.locator('#clear-seed-data').click();
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+    await expect(page.locator('#seed-onboarding')).toBeVisible();
   });
 
   test('clears the first-run sample into an empty plan', async ({ page }) => {

@@ -1611,7 +1611,7 @@ function getDateRangeWarning(startDate, endDate, message) {
 const cachedHiddenParentIds = new Set();
 const cachedSearchExpandedParentIds = new Set();
 const TASK_SEARCH_FIELDS = [
-  'phase', 'activity', 'task', 'categoryLarge', 'categoryMedium', 'documentName',
+  'name', 'phase', 'activity', 'task', 'categoryLarge', 'categoryMedium', 'documentName',
   'owner', 'supportTeam', 'actualProgressStatus', 'plannedStartDate',
   'plannedEndDate', 'actualStartDate', 'actualEndDate', 'predecessors', 'budget',
   'actualCost', 'sprint', 'storyPoints'
@@ -1795,6 +1795,7 @@ function persistState({ syncCloud = true } = {}) {
   } catch (error) {
     console.error('State persistence failed:', error);
     showToast('로컬 스토리지 용량이 초과되어 저장하지 못했습니다.');
+    return false;
   }
 
   if (state.jsonSyncHandle) {
@@ -1806,6 +1807,7 @@ function persistState({ syncCloud = true } = {}) {
   if (syncCloud && typeof window !== 'undefined') {
     window.ScopeWeaveCloud?.push?.(payload);
   }
+  return true;
 }
 
 function isSeedOnboardingDismissed() {
@@ -1830,10 +1832,18 @@ function clearSeedData() {
   if (!state.showSeedOnboarding || !window.confirm('샘플 데이터를 지우고 빈 계획으로 시작하시겠습니까?')) {
     return;
   }
+  const previousTasks = state.tasks;
+  const previousOnboarding = state.showSeedOnboarding;
   state.tasks = [];
   state.showSeedOnboarding = false;
   invalidateTaskIndexCache();
-  persistState();
+  if (!persistState()) {
+    state.tasks = previousTasks;
+    state.showSeedOnboarding = previousOnboarding;
+    invalidateTaskIndexCache();
+    renderAll();
+    return;
+  }
   renderAll();
   showToast('샘플 데이터를 삭제했습니다. 첫 단계를 추가해 계획을 시작하세요.');
   requestAnimationFrame(() => elements.addRootButton.focus());
@@ -2396,6 +2406,9 @@ function exportJsonArray({ includeExtendedFields = false } = {}) {
     };
     if (includeExtendedFields) {
       Object.assign(record, {
+        name: task.name,
+        plannedProgress: task.plannedProgress,
+        actualProgress: task.actualProgress,
         predecessors: task.predecessors ?? '',
         budget: task.budget ?? '',
         actualCost: task.actualCost ?? '',
