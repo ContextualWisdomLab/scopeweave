@@ -118,6 +118,8 @@ assert.equal((await r.json()).role, 'viewer');
 r = await req(`/api/invites/${invite.token}/accept`, { method: 'POST', headers: vauth });
 assert.equal(r.status, 404, 'used invite → 404');
 // invite revocation: pending list has ids; revoked token stops working
+r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'revoke-me@x.com', password: 'password123' }) });
+assert.equal(r.status, 200, 'revoke invitee signup');
 r = await req(`/api/orgs/${orgAId}/invites`, { method: 'POST', headers: auth, body: body({ email: 'revoke-me@x.com' }) });
 const revInvite = await r.json();
 r = await req(`/api/orgs/${orgAId}/members`, { headers: auth });
