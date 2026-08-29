@@ -151,11 +151,19 @@ HEAD가 바뀌면 다시 확인해야 한다.
   report 부재로 fail-closed 되었으며, `REVIEW_REQUIRED`/qualifying approval
   부재로 병합하지 않았다.
 - #495: `develop@2c328875` 대상
-  `9cc7ecc204dafe3dafcb78b605455beb07bbce3b`. metadata-only render 경계,
-  owner/status DOM shell 재사용, row identity 보존과 badge contrast 회귀를
-  current CodeGraph·resolved 리뷰와 대조했고 hosted unit·API·cloud E2E는
-  통과했다. OpenCode는 current-head verdict 부재로, Strix는 provider HTTP 500과
-  vulnerability report 부재로 fail-closed 되었으며 qualifying approval도 없다.
+  `9cc7ecc204dafe3dafcb78b605455beb07bbce3b`. CodeGraph로 metadata-only
+  render 경계, owner/status DOM shell 재사용, row identity 보존과 badge
+  contrast 회귀를 대조했고 current review thread는 모두 resolved다. `npm ci`
+  후 전체 unit, fuzz 14개, config 3개, docstring check, coverage/API cases와
+  `git diff --check`가 통과했다. `app.js` coverage는 lines 25.69%/
+  functions 15.57%/branches 70.14%, 전체 lines는 45.63%다. exact-head hosted
+  cloud-e2e report는 5,000-row protected-base median 5,815.2ms 대비 optimized
+  median 114.2ms, 98.04% 개선과 편집·progress·drag 회귀 통과를 기록했다.
+  local macOS benchmark는 같은 시나리오가 3분 timeout으로 종료되어 hosted
+  report를 성능 증거로 사용했다. OpenCode는 current-head verdict 부재로,
+  Strix run `33179685657`은 provider HTTP 500과 report artifact 부재로
+  fail-closed되었다. `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, qualifying approval
+  0건이므로 병합하지 않았다.
 - #468: `develop@2c328875` 대상
   `815af8138df2454cea99ba1a4a384de4f55d6199`. editor validation의 submit 경계,
   키보드·포인터 저장 재검증, `aria-disabled`/오류 설명 연결과 CSV formula
