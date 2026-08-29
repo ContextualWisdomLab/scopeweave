@@ -36,12 +36,14 @@ async function signup(email, name = email) {
 const ownerToken = await signup('owner@example.com', 'Owner');
 const viewerToken = await signup('viewer@example.com', 'Viewer');
 const intendedToken = await signup('Invitee@Example.com', 'Invitee');
+const unicodeToken = await signup('ÄDMIN@EXAMPLE.COM', 'Unicode invitee');
 const attackerToken = await signup('attacker@example.com', 'Attacker');
 const ambiguousPrimaryToken = await signup('CaseVictim@example.com', 'Case victim');
 const ambiguousCollisionToken = await signup('casevictim@example.com', 'Case collision');
 const ownerAuth = authFor(ownerToken);
 const viewerAuth = authFor(viewerToken);
 const intendedAuth = authFor(intendedToken);
+const unicodeAuth = authFor(unicodeToken);
 const attackerAuth = authFor(attackerToken);
 const ambiguousPrimaryAuth = authFor(ambiguousPrimaryToken);
 const ambiguousCollisionAuth = authFor(ambiguousCollisionToken);
@@ -179,6 +181,31 @@ response = await req(`/api/invites/${adminInvite.token}/accept`, {
 });
 assert.equal(response.status, 200, 'matching invited identity can accept');
 assert.equal((await response.json()).role, 'admin');
+
+// SQLite's built-in lower() only handles ASCII. Invitation identity matching
+// must still accept the uniquely matching account for a Unicode mailbox.
+response = await req('/api/orgs', {
+  method: 'POST',
+  headers: ownerAuth,
+  body: body({ name: 'Unicode invite workspace' }),
+});
+assert.equal(response.status, 200);
+const unicodeOrgId = (await response.json()).id;
+response = await req(`/api/orgs/${unicodeOrgId}/invites`, {
+  method: 'POST',
+  headers: ownerAuth,
+  body: body({ email: 'ÄdMiN@example.com', role: 'member' }),
+});
+assert.equal(response.status, 200);
+const unicodeInvite = await response.json();
+assert.equal(unicodeInvite.email, 'ädmin@example.com');
+response = await req(`/api/invites/${unicodeInvite.token}/accept`, {
+  method: 'POST',
+  headers: unicodeAuth,
+});
+assert.equal(response.status, 200, 'Unicode case-insensitive identity can accept its invite');
+assert.equal((await response.json()).role, 'member');
+
 response = await req(`/api/invites/${adminInvite.token}/accept`, {
   method: 'POST',
   headers: intendedAuth,

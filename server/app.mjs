@@ -498,9 +498,11 @@ app.post('/api/invites/:token/accept', requireAuth, (c) => {
   const inv = db.prepare('SELECT * FROM invites WHERE token = ?').get(c.req.param('token'));
   if (!inv || inv.accepted_at) return c.json({ error: 'invalid or used invite' }, 404);
   const canonicalInviteEmail = inv.email.trim().toLowerCase();
-  const identityMatches = db.prepare(
-    'SELECT id FROM users WHERE lower(trim(email)) = ? ORDER BY id LIMIT 2'
-  ).all(canonicalInviteEmail);
+  // SQLite's built-in lower() is ASCII-only; canonicalize in JavaScript so
+  // Unicode mailbox casing cannot reject the intended account.
+  const identityMatches = db.prepare('SELECT id, email FROM users ORDER BY id').all()
+    .filter((user) => String(user.email ?? '').trim().toLowerCase() === canonicalInviteEmail)
+    .slice(0, 2);
   if (identityMatches.length !== 1 || identityMatches[0].id !== uid) {
     return c.json({ error: 'invalid or used invite' }, 404);
   }
