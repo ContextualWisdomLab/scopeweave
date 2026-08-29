@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `5c6c2530`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, 현재 #621 `5c6c2530`, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `89fff38b`이 #621 `5c6c2530` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #587 `f36eb24a`는 trusted-proxy limiter와 guard 순서의 current-head 회귀, NFC mailbox canonicalization, OIDC form-body 전송을 검증했고 required Checks 5개·Noema는 통과했지만 Strix run `33238662633`은 아직 `in_progress`, OpenCode formal current-head verdict과 qualifying approval이 없음; #593은 coverage blocker를 수정한 새 HEAD `d3937e7d`를 푸시했으며 hosted Checks가 재실행 중이고 qualifying approval 없음; #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625의 마지막 검증 predecessor는 `a49a879a`이며 required Checks 5개·Noema·Strix가 통과했지만 OpenCode current-head verdict과 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #596 `86210691`, #602 `97721a98`, #608 `f705a958`, #610 `4c965cb0`는 기능·보안 Checks가 수렴했지만 OpenCode current-head verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #587 `f36eb24a`는 trusted-proxy limiter와 guard 순서의 current-head 회귀, NFC mailbox canonicalization, OIDC form-body 전송을 검증했고 required Checks 5개·Noema는 통과했지만 Strix run `33238662633`은 `orchestrator/free` provider HTTP 500과 권위 있는 report 부재로 fail-closed되었고, OpenCode formal current-head verdict과 qualifying approval도 없음; #593은 coverage blocker를 수정한 새 HEAD `d3937e7d`를 푸시했으며 hosted Checks가 재실행 중이고 qualifying approval 없음; #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625의 마지막 검증 predecessor는 `a49a879a`이며 required Checks 5개·Noema·Strix가 통과했지만 OpenCode current-head verdict과 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #596 `86210691`, #602 `97721a98`, #608 `f705a958`, #610 `4c965cb0`는 기능·보안 Checks가 수렴했지만 OpenCode current-head verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 2026-08-29 live-gate follow-up: #593의 current-head Strix run `33235086478`은
 `openai/orchestrator/free` 연결 HTTP 500을 세 번 기록했고 권위 있는 취약점
@@ -103,8 +103,10 @@ HEAD가 바뀌면 다시 확인해야 한다.
 artifact `9710489491`에는 권위 있는 취약점 보고서가 없었다. 워크플로는
 `STRIX_PROVIDER_UNAVAILABLE`로 fail-closed했으며, 이는 코드 취약점 발견이 아닌
 중앙 provider/backend 장애다. 이후 `f36eb24a`에서 유효한 current-head review
-지적을 수정했고, 새 exact-head Strix run `33238662633`은 이 snapshot 시점에
-아직 `in_progress`여서 성공으로 확정할 수 없다.
+지적을 수정했지만, 새 exact-head Strix run `33238662633`은
+`orchestrator/free` provider HTTP 500으로 세 차례 실패했고 권위 있는 취약점
+보고서를 만들지 못해 fail-closed되었다. `strix-reports` artifact는
+`9710851408`이다.
 
 ### Exact-head queue evidence
 
@@ -289,9 +291,10 @@ artifact `9710489491`에는 권위 있는 취약점 보고서가 없었다. 워�
   통과했으며, current head에서 wrong-identity invite의 첫 POST는 guard에서
   404로 기록되고 같은 client의 두 번째 POST는 invite identity-row lookup 전에
   429로 차단되는 회귀를 추가했다. API와 unit 전체도 통과했다. hosted required
-  Checks 5개·Noema는 통과했지만 Strix run `33238662633`은 아직 `in_progress`이고,
-  OpenCode는 current-head formal verdict 부재로 fail-closed 되었으며 qualifying
-  approval은 없다. current-head 수정은
+  Checks 5개·Noema는 통과했지만 Strix run `33238662633`은 provider HTTP 500과
+  권위 있는 report 부재로 fail-closed되었고, OpenCode는 current-head formal
+  verdict 부재로 fail-closed 되었으며 qualifying approval은 없다. current-head
+  수정은
   공유 DB canonicalizer를 통한 trim/NFC/lower/NFC mailbox identity, direct
   invite/mock OIDC 경계 재사용, production OIDC URLSearchParams UTF-8 전송과
   환경 독립 regression을 포함한다. GraphQL은
