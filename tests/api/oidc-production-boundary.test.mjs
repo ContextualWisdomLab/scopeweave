@@ -56,6 +56,7 @@ const productionIdentityRegression = String.raw`
   import assert from 'node:assert/strict';
   import { generateKeyPairSync, sign } from 'node:crypto';
 
+  process.env.NODE_ENV = 'test';
   process.env.SCOPEWEAVE_DB = ':memory:';
   delete process.env.SCOPEWEAVE_DEV;
   process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
@@ -85,7 +86,7 @@ const productionIdentityRegression = String.raw`
     return signingInput + '.' + signature;
   };
 
-  globalThis.fetch = async (url) => {
+  const oidcFetch = async (url) => {
     const target = String(url);
     if (target === 'https://issuer.example/token') {
       return new Response(JSON.stringify({ id_token: issuedIdToken }), {
@@ -108,6 +109,8 @@ const productionIdentityRegression = String.raw`
     throw new Error('unexpected OIDC fetch: ' + target);
   };
 
+  const { configurePublicHttpsTransportForTests } = await import('./server/public_https_transport.mjs');
+  configurePublicHttpsTransportForTests({ fetch: oidcFetch });
   const { app: configuredRoutes } = await import('./server/application_routes.mjs?oidc-production-token-regression=1');
   const { db, rowid } = await import('./server/db.mjs');
   const begin = async () => {
@@ -134,9 +137,7 @@ const productionIdentityRegression = String.raw`
   let controlledNow = realDateNow();
   Date.now = () => controlledNow;
   const abandonedStates = [];
-  for (let index = 0; index < 1024; index += 1) {
-    abandonedStates.push(await begin());
-  }
+  for (let index = 0; index < 1024; index += 1) abandonedStates.push(await begin());
   let result = await configuredRoutes.request('https://scopeweave.example/api/auth/oidc/start');
   assert.equal(result.status, 503, 'OIDC authorization state storage fails closed at its bounded capacity');
   assert.equal(result.headers.get('cache-control'), 'no-store', 'OIDC saturation response is never cached');
@@ -150,38 +151,19 @@ const productionIdentityRegression = String.raw`
   const forged = await begin();
   issuedIdToken = [
     encode({ alg: 'none', typ: 'JWT' }),
-    encode({
-      iss: process.env.OIDC_ISSUER,
-      aud: process.env.OIDC_CLIENT_ID,
-      exp: Math.floor(Date.now() / 1000) + 300,
-      nonce: forged.nonce,
-      sub: 'attacker-subject',
-      email_verified: true,
-      email: 'attacker-chosen@example.com',
-    }),
+    encode({ iss: process.env.OIDC_ISSUER, aud: process.env.OIDC_CLIENT_ID, exp: Math.floor(Date.now() / 1000) + 300, nonce: forged.nonce, sub: 'attacker-subject', email_verified: true, email: 'attacker-chosen@example.com' }),
     '',
   ].join('.');
   result = await callback(forged.state, 'attacker-code');
   assert.equal(result.status, 400, 'an unsigned identity token must never mint a ScopeWeave session');
   assert.equal(result.headers.get('location'), null, 'rejected identity tokens never return an application session fragment');
 
-  result = await configuredRoutes.request(
-    'https://scopeweave.example/api/auth/oidc/callback?state=unknown&code=attacker-code',
-  );
+  result = await configuredRoutes.request('https://scopeweave.example/api/auth/oidc/callback?state=unknown&code=attacker-code');
   assert.equal(result.status, 400, 'unknown authorization state fails closed before token exchange');
 
   const valid = await begin();
   const now = Math.floor(Date.now() / 1000);
-  issuedIdToken = signIdToken({
-    iss: process.env.OIDC_ISSUER,
-    aud: process.env.OIDC_CLIENT_ID,
-    exp: now + 300,
-    iat: now,
-    nonce: valid.nonce,
-    sub: 'verified-subject',
-    email_verified: true,
-    email: 'verified@example.com',
-  });
+  issuedIdToken = signIdToken({ iss: process.env.OIDC_ISSUER, aud: process.env.OIDC_CLIENT_ID, exp: now + 300, iat: now, nonce: valid.nonce, sub: 'verified-subject', email_verified: true, email: 'verified@example.com' });
   result = await callback(valid.state, 'valid-code');
   assert.equal(result.status, 302, 'a valid issuer-signed ID token completes the production OIDC flow');
   assert.match(result.headers.get('location') || '', /^\/#token=/, 'successful OIDC returns only the ScopeWeave session in a URL fragment');
@@ -189,72 +171,30 @@ const productionIdentityRegression = String.raw`
   const replay = await callback(valid.state, 'replayed-code');
   assert.equal(replay.status, 400, 'OIDC state is single-use after a successful callback');
 
-  const legacyUserId = rowid(db.prepare('INSERT INTO users(email,password_hash,name) VALUES(?,?,?)')
-    .run('Legacy.User@Example.com', 'legacy-password-hash', 'Legacy User'));
-  const legacyOrgId = rowid(db.prepare('INSERT INTO orgs(name,owner_id) VALUES(?,?)')
-    .run('Legacy workspace', legacyUserId));
-  db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)')
-    .run(legacyOrgId, legacyUserId, 'owner');
+  const legacyUserId = rowid(db.prepare('INSERT INTO users(email,password_hash,name) VALUES(?,?,?)').run('Legacy.User@Example.com', 'legacy-password-hash', 'Legacy User'));
+  const legacyOrgId = rowid(db.prepare('INSERT INTO orgs(name,owner_id) VALUES(?,?)').run('Legacy workspace', legacyUserId));
+  db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)').run(legacyOrgId, legacyUserId, 'owner');
   const usersBeforeCaseLink = db.prepare('SELECT COUNT(*) AS count FROM users').get().count;
   const orgsBeforeCaseLink = db.prepare('SELECT COUNT(*) AS count FROM orgs').get().count;
 
   const legacyCase = await begin();
-  issuedIdToken = signIdToken({
-    iss: process.env.OIDC_ISSUER,
-    aud: process.env.OIDC_CLIENT_ID,
-    exp: now + 300,
-    iat: now,
-    nonce: legacyCase.nonce,
-    sub: 'legacy-verified-subject',
-    email_verified: true,
-    email: 'legacy.user@example.com',
-  });
+  issuedIdToken = signIdToken({ iss: process.env.OIDC_ISSUER, aud: process.env.OIDC_CLIENT_ID, exp: now + 300, iat: now, nonce: legacyCase.nonce, sub: 'legacy-verified-subject', email_verified: true, email: 'legacy.user@example.com' });
   result = await callback(legacyCase.state, 'legacy-case-code');
   assert.equal(result.status, 302, 'verified OIDC email reuses an existing account regardless of stored email case');
   const sessionToken = new URL(result.headers.get('location'), 'https://scopeweave.example').hash.slice('#token='.length);
   const sessionPayload = JSON.parse(Buffer.from(sessionToken.split('.')[1], 'base64url').toString('utf8'));
   assert.equal(sessionPayload.sub, legacyUserId, 'OIDC session remains bound to the pre-existing account');
-  assert.equal(
-    db.prepare('SELECT COUNT(*) AS count FROM users').get().count,
-    usersBeforeCaseLink,
-    'case-only identity differences never create a duplicate user',
-  );
-  assert.equal(
-    db.prepare('SELECT COUNT(*) AS count FROM orgs').get().count,
-    orgsBeforeCaseLink,
-    'reusing an existing case-variant account never creates a second personal workspace',
-  );
-  assert.equal(
-    db.prepare('SELECT email FROM users WHERE id = ?').get(legacyUserId).email,
-    'Legacy.User@Example.com',
-    'account linking does not silently rewrite the stored login identifier',
-  );
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM users').get().count, usersBeforeCaseLink, 'case-only identity differences never create a duplicate user');
+  assert.equal(db.prepare('SELECT COUNT(*) AS count FROM orgs').get().count, orgsBeforeCaseLink, 'reusing an existing case-variant account never creates a second personal workspace');
+  assert.equal(db.prepare('SELECT email FROM users WHERE id = ?').get(legacyUserId).email, 'Legacy.User@Example.com', 'account linking does not silently rewrite the stored login identifier');
 
   const wrongAudience = await begin();
-  issuedIdToken = signIdToken({
-    iss: process.env.OIDC_ISSUER,
-    aud: 'different-client',
-    exp: now + 300,
-    iat: now,
-    nonce: wrongAudience.nonce,
-    sub: 'verified-subject',
-    email_verified: true,
-    email: 'verified@example.com',
-  });
+  issuedIdToken = signIdToken({ iss: process.env.OIDC_ISSUER, aud: 'different-client', exp: now + 300, iat: now, nonce: wrongAudience.nonce, sub: 'verified-subject', email_verified: true, email: 'verified@example.com' });
   result = await callback(wrongAudience.state, 'wrong-audience-code');
   assert.equal(result.status, 400, 'issuer-signed tokens for another audience are rejected');
 
   const unverifiedEmail = await begin();
-  issuedIdToken = signIdToken({
-    iss: process.env.OIDC_ISSUER,
-    aud: process.env.OIDC_CLIENT_ID,
-    exp: now + 300,
-    iat: now,
-    nonce: unverifiedEmail.nonce,
-    sub: 'verified-subject',
-    email_verified: false,
-    email: 'victim@example.com',
-  });
+  issuedIdToken = signIdToken({ iss: process.env.OIDC_ISSUER, aud: process.env.OIDC_CLIENT_ID, exp: now + 300, iat: now, nonce: unverifiedEmail.nonce, sub: 'verified-subject', email_verified: false, email: 'victim@example.com' });
   result = await callback(unverifiedEmail.state, 'unverified-email-code');
   assert.equal(result.status, 400, 'unverified email claims cannot link or create a ScopeWeave account');
 `;
