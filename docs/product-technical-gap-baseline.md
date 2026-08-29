@@ -234,12 +234,19 @@ HEAD가 바뀌면 다시 확인해야 한다.
   cloud-E2E·unit/API·OSV·Dependency Checks도 terminal success다. parent가 아직
   보호 병합되지 않았고 qualifying approval이 없어 병합하지 않았다.
 - #500: `develop@2c328875` 대상
-  `b7ef5c587aac52d03880b087af39580ff52384cc`. fail-closed schema migration
-  ledger의 unknown-object, ledger-contract, compatibility-column 및 concurrent
-  startup 경계를 current CodeGraph·resolved 리뷰와 대조했고 관련 unit/API와
-  coverage 전체 계약은 통과했다. hosted 보안·테스트 게이트는 통과했지만
-  OpenCode는 current-head 승인 verdict 부재로, Strix는 provider HTTP 500과
-  vulnerability report 부재로 fail-closed 되었으며 qualifying approval도 없다.
+  `b7ef5c587aac52d03880b087af39580ff52384cc`. CodeGraph로 fail-closed schema
+  migration ledger의 unknown-object, ledger-contract, compatibility-column,
+  atomic bootstrap 및 concurrent-startup 경계를 확인했고 current review
+  thread는 모두 resolved다. exact-head local schema focused 25개, 전체 unit,
+  fuzz 14개, config 3개, API coverage cases, docstring check와
+  `git diff --check`가 통과했다. `server/schema_migration.mjs` coverage는
+  lines 98.97%/functions 100%/branches 94.89%, `server/db.mjs`는
+  100%/100%/100%이며 전체 lines는 48.47%다. hosted functional/security
+  Checks는 exact head에서 terminal success 또는 expected neutral/skipped로
+  수렴했지만 OpenCode는 current-head 승인 verdict 부재로 실패했고, Strix
+  run `33156817758`은 `openai/orchestrator/free` HTTP 500으로 report artifact를
+  만들지 못해 fail-closed 되었다. `MERGEABLE/BLOCKED/REVIEW_REQUIRED`,
+  qualifying approval 0건이므로 병합하지 않았다.
 - #497: `develop@2c328875` 대상
   `9d23bbf5768f41542f3b3c5eac75d17220b0dcf0`. workflow registry의 pagination
   완결성·immutable tree 증거, exact-SHA preflight와 identity drift 방지,
