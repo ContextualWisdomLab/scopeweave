@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `5c6c2530`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, 현재 #621 `5c6c2530`, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `89fff38b`이 #621 `5c6c2530` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 `e8c75a55`는 기능·보안 Checks 통과에도 OpenCode current-head verdict 부재와 Strix 실행 중; #629 `89fff38b`는 cloud/unit/API/OSV/dependency hosted Checks 통과; 모든 대상에 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 `cffeae34`는 기능·보안 Checks와 Strix가 통과했지만 OpenCode current-head verdict가 없어 실패했고 qualifying approval도 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -115,15 +115,23 @@ HEAD가 바뀌면 다시 확인해야 한다.
   cloud-E2E의 seed 비동기 경쟁 조건을 `.empty-cell` 렌더 대기로 수정하고, Devin이
   지적한 모바일 정렬·로그인 폭 floor도 보완했다. 현재 HEAD의 seed-load race는
   empty-cell과 공통 activity-subtree helper에 대기를 추가해 로컬 targeted E2E가
-  통과했고, hosted cloud/unit/API/OSV/dependency Checks도 통과했다. 전체
-  Playwright 100개도 통과했으며 모든 Devin thread는 해결됐지만 qualifying
+  통과했고, `npm ci`는 취약점 0건이었다. unit/API, config 3개, fuzz 14개,
+  Python docstring, coverage, `git diff --check`, 전체 Playwright 100개가
+  통과했다. coverage는 total lines 43.95%, functions 33.05%, branches 81.09%
+  (app lines 22.36%, cloud-sync lines 10.49%)였다. exact-head hosted inventory에는
+  cloud-e2e `98954281708`, unit-and-api `98954281481`, dependency-review
+  `98954281435`, osv-scan `98954283222`, osv-scanner `98954424958` 성공과
+  manifest-pattern-coverage 스킵이 있었고, central OpenCode/Strix run은 이
+  stacked head에 붙지 않았다. 전체 Devin thread는 해결됐지만 qualifying
   approval은 없다.
-- #625: `develop@2c328875` 대상 `a41db2daaac4656f5b9f9b70bd147a1aebb63832`.
+- #625: `develop@2c328875` 대상 `cffeae34d2ac1715118f4f79e1bbb6e6d53bac7c`.
   기준선 문서에 #587의 exact-head 보안·운영 수정과 현재 승인/게이트 상태를
   반영했다. exact-head functional/security/coverage/unit/Strix Checks는
-  terminal success이고 Scorecard·Trivy·OSV scanner는 neutral이다. OpenCode
-  `98999983402`는 현재 head의 APPROVED/CHANGES_REQUESTED verdict 부재로
-  fail-closed 되었고 qualifying approval도 없어 병합하지 않았다.
+  terminal success이고 Scorecard·Trivy·OSV scanner는 neutral이다. Strix
+  `99023490175`는 annotations 0으로 성공했지만, OpenCode `99023534922`는
+  현재 head의 APPROVED/CHANGES_REQUESTED verdict 부재로 fail-closed 되었다.
+  GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, unresolved thread 0,
+  qualifying approval 0이며 병합하지 않았다.
 - #616: `develop@2c328875` 대상
   `b427cd455f41e7c09ae20fbbf400d42c4f61d4bf`. deterministic release-artifact
   manifest의 regular-file/no-symlink, bounded manifest read, SHA-256 및
