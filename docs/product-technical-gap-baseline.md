@@ -582,9 +582,11 @@ artifact `9710489491`에는 권위 있는 취약점 보고서가 없었다. 워�
 - `app.js`는 `new Function` 테스트 계약 때문에 top-level ESM import/export를
   사용하지 않는다.
 - 입력은 신뢰 경계에서 길이·날짜·CSV 수식·JSON prototype pollution을 검증한다.
-  확인된 앱 UI의 동적 텍스트 출력은 `textContent` 경로를 사용하고,
-  `innerHTML`은 cloud-sync의 상수 UI 템플릿으로 제한한다. `escapeHtml()`은
-  현재 호출 경로가 확인되지 않아 보안 근거로 세지 않는다.
+  `app.js`·`cloud-sync.js`에서 확인한 동적 UI 텍스트 출력은 `textContent`
+  경로를 사용하고, 두 개의 `innerHTML`은 사용자 값이 보간되지 않는
+  cloud-sync 정적 모달 템플릿이다. 이 파일 범위를 넘어선 전역 sink 안전성은
+  주장하지 않으며, `escapeHtml()`은 현재 호출 경로가 확인되지 않아 보안
+  근거로 세지 않는다.
 - 접근성은 레이블, landmark, keyboard focus, live status, disabled 상태,
   reduced motion을 최소 기준으로 삼는다.
 - 검증 명령은 `npm run test:unit`, `npm run test:api`, `npm run test:e2e`,
