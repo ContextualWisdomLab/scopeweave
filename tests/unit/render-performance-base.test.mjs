@@ -13,6 +13,10 @@ function packageScripts() {
   return packageJson.scripts;
 }
 
+function serverTestsWorkflow() {
+  return readFileSync(new URL('../../.github/workflows/server-tests.yml', import.meta.url), 'utf8');
+}
+
 test('render benchmark base prefers an explicit immutable override', () => {
   assert.equal(resolveBenchmarkBaseSha({
     override: OVERRIDE_SHA,
@@ -58,4 +62,12 @@ test('local cloud e2e does not require benchmark authority', () => {
 
   assert.doesNotMatch(scripts['test:e2e:cloud'], /render-performance\.spec\.js/);
   assert.match(scripts['test:e2e:performance'], /render-performance\.spec\.js/);
+});
+
+test('server CI executes the authorized performance benchmark', () => {
+  assert.match(
+    serverTestsWorkflow(),
+    /run:\s*npm run test:e2e:performance\b/,
+    'Server Tests must keep the performance benchmark in CI after it is separated from local cloud E2E',
+  );
 });
