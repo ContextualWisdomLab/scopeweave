@@ -192,11 +192,13 @@ const osvScannerV251Pin =
   'google/osv-scanner-action/osv-scanner-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1';
 const osvReporterV251Pin =
   'google/osv-scanner-action/osv-reporter-action@6e4298ebc4db23e847df9b2e2de2939d6f066c67 # v2.5.1';
+const osvSarifUploadV4378Pin =
+  `github/codeql-action/upload-sarif@${codeqlActionV4378Sha} # v4.37.8`;
 
 assert.match(
   osvWorkflow,
-  /^\s{2}osv-scan:\s*$/m,
-  'OSV must preserve the protected-base osv-scan job identity used by code-scanning comparisons',
+  /^\s{2}scan:\s*$/m,
+  'OSV must preserve the protected-base scan analysis identity used by code-scanning comparisons',
 );
 assert.equal(
   osvWorkflow.split(liveBaseRef).length - 1,
@@ -259,6 +261,26 @@ assert.doesNotMatch(
   'OSV must not regress to the superseded v2.3.8 action revision or annotation',
 );
 assert.equal(
+  osvWorkflow.split(osvSarifUploadV4378Pin).length - 1,
+  1,
+  'OSV must publish its differential SARIF with the reviewed immutable CodeQL upload action revision',
+);
+assert.equal(
+  osvWorkflow.split('security-events: write').length - 1,
+  1,
+  'only the OSV analysis job must receive the permission required for exact-head SARIF publication',
+);
+assert.match(
+  osvWorkflow,
+  /- name: Publish exact-head OSV SARIF to code scanning\r?\n\s+if: \$\{\{ !cancelled\(\) \}\}\r?\n\s+uses: github\/codeql-action\/upload-sarif@db488ddef3bf6cb639b32c2e9a7c0a7ea8271d28 # v4\.37\.8\r?\n\s+with:\r?\n\s+sarif_file: results\.sarif\r?\n\s+checkout_path: osv-scan-source\r?\n\s+ref: refs\/pull\/\$\{\{ github\.event\.pull_request\.number \}\}\/head\r?\n\s+sha: \$\{\{ github\.event\.pull_request\.head\.sha \}\}/,
+  'OSV code-scanning evidence must still publish after a reporter failure and bind to the submitted contributor head rather than a synthetic merge SHA',
+);
+assert.doesNotMatch(
+  osvWorkflow,
+  /^\s+category:\s*/m,
+  'OSV exact-head publication must preserve the protected workflow/job analysis identity instead of inventing a new category',
+);
+assert.equal(
   osvWorkflow.split(coverageArtifactPin).length - 1,
   1,
   'OSV exact-head SARIF evidence must use the reviewed immutable upload-artifact revision',
@@ -266,22 +288,7 @@ assert.equal(
 assert.match(
   osvWorkflow,
   /- name: Preserve exact-head OSV SARIF\r?\n\s+if: \$\{\{ !cancelled\(\) \}\}\r?\n\s+uses: actions\/upload-artifact@[\s\S]*?name: scopeweave-osv-\$\{\{ github\.run_id \}\}-\$\{\{ github\.run_attempt \}\}[\s\S]*?path: results\.sarif[\s\S]*?if-no-files-found: error[\s\S]*?retention-days: 3/,
-  'OSV must retain generated exact-head SARIF evidence even when the reporter fails on an introduced vulnerability, while still skipping cancelled runs',
-);
-assert.doesNotMatch(
-  osvWorkflow,
-  /github\/codeql-action\/upload-sarif@/,
-  'OSV must not publish a second code-scanning analysis while organization code scanning is CodeQL-only',
-);
-assert.doesNotMatch(
-  osvWorkflow,
-  /^\s+security-events:\s+write\s*$/m,
-  'OSV must remain read-only with respect to code scanning and retain SARIF as workflow evidence instead',
-);
-assert.doesNotMatch(
-  osvWorkflow,
-  /- name: Publish exact-head OSV SARIF to code scanning/,
-  'OSV must not add a repository-local code-scanning publication path that competes with the CodeQL analysis identity',
+  'OSV must retain generated exact-head SARIF workflow evidence even when the reporter fails on an introduced vulnerability, while still skipping cancelled runs',
 );
 assert.doesNotMatch(
   osvWorkflow,
