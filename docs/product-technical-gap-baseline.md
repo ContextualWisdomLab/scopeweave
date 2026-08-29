@@ -92,6 +92,12 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `89fff38b`이 #621 `5c6c2530` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
 | G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #587 `7430bb2b`는 일반 Checks가 수렴 중이고 OpenCode가 current-head verdict 부재로 fail-closed, Strix 실행 중이며 qualifying approval 없음; #593은 coverage blocker를 수정한 새 HEAD `d3937e7d`를 푸시했으며 hosted Checks가 재실행 중이고 qualifying approval 없음; #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625의 마지막 검증 predecessor는 `a5646043`이며 predecessor HEAD `f2a3c2cb`의 Strix `99047555382`는 scannable changed file 부재로 quick scan을 건너뛰고 success, OpenCode `99047563558`은 실패했고, 이후 기준선 갱신 HEAD에서는 Checks가 재실행 중이며 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #596 `86210691`, #602 `97721a98`, #608 `f705a958`, #610 `4c965cb0`는 기능·보안 Checks가 수렴했지만 OpenCode current-head verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
+2026-08-29 live-gate follow-up: #593의 current-head Strix run `33235086478`은
+`openai/orchestrator/free` 연결 HTTP 500을 세 번 기록했고 권위 있는 취약점
+보고서를 만들지 못해 fail-closed되었다. 후속 status publication도 대상 저장소
+권한 부족으로 실패했다. 이는 저장소 코드의 발견이 아닌 중앙 provider·권한 장애이며,
+보안 게이트를 성공으로 승격하지 않는다.
+
 ### Exact-head queue evidence
 
 - #621: `develop@2c328875` 대상
