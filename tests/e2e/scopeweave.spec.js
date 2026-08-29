@@ -90,6 +90,39 @@ test.describe('ScopeWeave Planner', () => {
     await expect(page).toHaveTitle('My New Project - ScopeWeave Planner');
   });
 
+  test('preserves numeric zero values through seed normalization and persistence', async ({ page }) => {
+    await page.route('**/wbs.json', async (route) => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        { __id: 'zero-budget', __depth: '3', phase: 'P5000', activity: 'Data', task: 'Zero budget', budget: 0, actualCost: 100, storyPoints: 1 },
+        { __id: 'zero-cost', __depth: '3', phase: 'P5000', activity: 'Data', task: 'Zero cost', budget: 100, actualCost: 0, storyPoints: 1 },
+        { __id: 'zero-points', __depth: '3', phase: 'P5000', activity: 'Data', task: 'Zero points', budget: 100, actualCost: 100, storyPoints: 0 },
+        { __id: 'all-zero', __depth: '3', phase: 'P5000', activity: 'Data', task: 'All zero', budget: 0, actualCost: 0, storyPoints: 0 },
+        { __id: 'missing-values', __depth: '3', phase: 'P5000', activity: 'Data', task: 'Missing values' }
+      ])
+    }));
+    await page.evaluate(() => localStorage.clear());
+    await page.reload();
+
+    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(5);
+    await page.getByTestId('project-name-input').fill('Zero preservation round trip');
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('scopeweave:planner-state:v1'))).not.toBeNull();
+    const savedTasks = await page.evaluate(() => JSON.parse(localStorage.getItem('scopeweave:planner-state:v1')).tasks);
+    const valuesById = Object.fromEntries(savedTasks.map((task) => [task.id, {
+      budget: task.budget,
+      actualCost: task.actualCost,
+      storyPoints: task.storyPoints
+    }]));
+    expect(valuesById).toEqual({
+      'zero-budget': { budget: 0, actualCost: 100, storyPoints: 1 },
+      'zero-cost': { budget: 100, actualCost: 0, storyPoints: 1 },
+      'zero-points': { budget: 100, actualCost: 100, storyPoints: 0 },
+      'all-zero': { budget: 0, actualCost: 0, storyPoints: 0 },
+      'missing-values': { budget: '', actualCost: '', storyPoints: '' }
+    });
+  });
+
   [
     { name: 'desktop', width: 1440, height: 1000 },
     { name: 'mobile', width: 375, height: 667 }
