@@ -96,8 +96,9 @@ classDiagram
   reduced motion을 최소 기준으로 삼는다.
 - 검증 명령은 `npm run test:unit`, `npm run test:api`,
   `npm run test:e2e`, `python3 -m pytest tests/config`, `npm run fuzz`다.
-  `npm run test:coverage`의 2026-08-29 exact-head 측정치는 Node·Chromium
-  합산 기준 lines/statements 82.81%, functions 91.03%, branches 92.40%이며,
+  `npm run test:coverage`의 2026-08-29 PR #632 working head
+  `87ed563b204ee8771b3b0dfc46eb4ee1cb625cdf` 측정치는 Node·Chromium 합산
+  기준 lines/statements 82.80%, functions 91.03%, branches 92.40%이며,
   `node scripts/ci/check-coverage.mjs`는 아직 threshold 미달로 실패한다.
   이 결과는 `docs/doctoring/coverage-evidence.md`에 기록하고 100% 품질
   기준의 미충족 증거로 취급한다.

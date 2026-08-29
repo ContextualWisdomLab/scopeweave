@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   recovery action.
 - Added planning-field search coverage and safe state reset when Cloud or file
   imports replace the current plan.
+- Kept first-visit sample guidance visible when local persistence fails.
 - Added browser JSON download for portable WBS backups, including extended
   planning fields, alongside CSV export.
 - Added first-visit sample WBS onboarding with persistent dismissal and a
