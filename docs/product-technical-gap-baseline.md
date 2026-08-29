@@ -299,12 +299,16 @@ HEAD가 바뀌면 다시 확인해야 한다.
   neutral이고 OpenCode는 current-head verdict 부재로 fail-closed 되었으며,
   review threads는 0이지만 qualifying approval은 없다.
 - #493: `develop@2c328875` 대상
-  `78f8b557cd2b9cab238af72304f0ed42e1557759`. Clearfolio production 설정의
-  fail-closed 경계, tenant HMAC 헤더의 redirect 재전송 방지, artifact link의
-  same-origin·credential·fragment 검증을 current CodeGraph·resolved 리뷰와
-  대조했다. Clearfolio 관련 unit 4개와 전체 unit·API, hosted OpenCode·Strix·
-  security·cloud E2E Checks가 통과했지만 qualifying approval이 없어 병합하지
-  않았다.
+  `78f8b557cd2b9cab238af72304f0ed42e1557759`. CodeGraph로 Clearfolio
+  production 설정의 fail-closed 경계, tenant HMAC 헤더의 redirect 재전송
+  방지, artifact link의 same-origin·credential·fragment 검증을 대조했고
+  current review thread는 모두 resolved다. `npm ci` 후 Clearfolio 관련 unit
+  4개, 전체 unit, fuzz 14개, config 3개, API, docstring check와 coverage가
+  통과했다. `server/clearfolio.mjs` coverage는 lines 100%/functions 100%/
+  branches 99.10%, 전체 lines는 45.32%다. hosted OpenCode·Strix·security·
+  cloud E2E Checks는 exact head에서 terminal success 또는 expected neutral/
+  skipped로 수렴했지만 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`, qualifying
+  approval 0건이므로 병합하지 않았다.
 - #498: `fix/clearfolio-production-configuration@78f8b557` 대상
   `d7fae634706d4af8d94ae0b5201d0b539f81df84`. Clearfolio provider 응답의
   redirect·HMAC·JSON media type·UTF-8·256 KiB streamed byte ceiling과
