@@ -195,8 +195,8 @@ const osvReporterV251Pin =
 
 assert.match(
   osvWorkflow,
-  /^\s{2}scan:\s*$/m,
-  'OSV must retain the stable scan job identity used by protected-base code-scanning comparisons',
+  /^\s{2}osv-scan:\s*$/m,
+  'OSV must preserve the protected-base osv-scan job identity used by code-scanning comparisons',
 );
 assert.equal(
   osvWorkflow.split(liveBaseRef).length - 1,
