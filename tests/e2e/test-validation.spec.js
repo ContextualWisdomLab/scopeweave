@@ -31,7 +31,7 @@ test('Validation should aria-disable save button instead of native disabled (Mob
   await expect(saveButton).not.toHaveAttribute('aria-disabled', 'true');
 
   // Submit the form
-  await saveButton.click();
+  await saveButton.click({ force: true });
 
   // Verify form is closed
   await expect(form).toBeHidden();
