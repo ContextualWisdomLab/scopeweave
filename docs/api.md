@@ -123,6 +123,13 @@ snapshot as a **new** version — history stays linear.
 
 ## Workspaces & members
 
+Invitations are **account-bound**, not registration claims. The invited email
+must already identify a ScopeWeave account; otherwise invite creation returns
+`409 { "error": "invitee must already have a ScopeWeave account" }` before a
+bearer token is minted. Possessing an invite token is not sufficient to accept
+it: the signed-in account must be the single persisted account whose
+canonicalized email matches the invitation.
+
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/orgs` | `{ name }` — create an additional workspace (creator = owner) |
@@ -132,9 +139,9 @@ snapshot as a **new** version — history stays linear.
 | `GET` | `/api/orgs/:id/members` | Roster + pending invites |
 | `PATCH` | `/api/orgs/:id/members/:userId` | `{ role }` — change a member's role (manage; owner immutable) |
 | `DELETE` | `/api/orgs/:id/members/:userId` | Remove a member (manage; owner immune) |
-| `POST` | `/api/orgs/:id/invites` | `{ email, role? }` → `{ token }` invite link token (manage) |
+| `POST` | `/api/orgs/:id/invites` | `{ email, role? }` → `{ token, email, role }` (manage; invitee account must already exist; `409` otherwise) |
 | `DELETE` | `/api/orgs/:id/invites/:inviteId` | Revoke a pending invite (manage) — the token dies immediately |
-| `POST` | `/api/invites/:token/accept` | Accept an invite (any authenticated user holding the token) |
+| `POST` | `/api/invites/:token/accept` | Accept an invite as the unique authenticated account matching the invited canonical email; other identities get generic `404` |
 
 ## Billing
 
@@ -161,8 +168,8 @@ attempt is recorded.
 **Verify a delivery** — the body is signed with HMAC-SHA256:
 
 ```
-X-Scopeweave-Event:     project.update
-X-Scopeweave-Signature: sha256=<hex hmac of the raw body with your whsec_ secret>
+X-ScopeWeave-Event:     project.update
+X-ScopeWeave-Signature: sha256=<hex hmac of the raw body with your whsec_ secret>
 ```
 
 ```js
