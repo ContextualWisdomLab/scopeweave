@@ -8,6 +8,8 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.SCOPEWEAVE_DB || join(__dirname, '..', 'data.db');
 export const db = new DatabaseSync(dbPath);
+export const canonicalEmail = (value) => String(value ?? '').trim().normalize('NFC').toLowerCase().normalize('NFC');
+db.function('scopeweave_canonical_email', { deterministic: true }, canonicalEmail);
 db.exec("PRAGMA journal_mode = WAL");
 db.exec("PRAGMA foreign_keys = ON");
 
@@ -172,10 +174,51 @@ CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(org_id);
 CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);
 `);
 
-// Migration for pre-existing DBs: add token_version if missing (idempotent).
+// Migration for pre-existing DBs: add columns introduced after the initial schema.
 try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
 try { db.exec('ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
 try { db.exec("ALTER TABLE projects ADD COLUMN methodology TEXT NOT NULL DEFAULT 'waterfall'"); } catch { /* already there */ }
+
+/**
+ * Canonicalize legacy mailbox identities without guessing how duplicate users
+ * should be merged across tenant-owned records.
+ *
+ * Existing databases may contain emails that differ only by case or surrounding
+ * whitespace because SQLite's default UNIQUE collation is case-sensitive. The
+ * migration changes unambiguous identities in one transaction and adds an
+ * expression index so direct writes cannot recreate that split. If two existing
+ * user IDs collapse to the same mailbox, startup fails before modifying either
+ * identity; an operator must reconcile the accounts explicitly.
+ */
+function migrateCanonicalUserEmails() {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const canonicalUsers = new Map();
+    for (const user of db.prepare('SELECT id, email FROM users ORDER BY id').all()) {
+      const email = canonicalEmail(user.email);
+      const previousId = canonicalUsers.get(email);
+      if (previousId !== undefined) {
+        throw new Error(
+          `canonical email collision for ${email} across user ids ${previousId}, ${user.id}; resolve duplicate identities before restart`,
+        );
+      }
+      canonicalUsers.set(email, user.id);
+    }
+
+    const updateEmail = db.prepare('UPDATE users SET email = ? WHERE id = ?');
+    for (const user of db.prepare('SELECT id, email FROM users ORDER BY id').all()) {
+      const email = canonicalEmail(user.email);
+      if (user.email !== email) updateEmail.run(email, user.id);
+    }
+    db.exec('CREATE UNIQUE INDEX IF NOT EXISTS users_email_canonical_unique ON users(scopeweave_canonical_email(email))');
+    db.exec('COMMIT');
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch { /* preserve the causal migration error */ }
+    throw error;
+  }
+}
+
+migrateCanonicalUserEmails();
 
 // node:sqlite returns lastInsertRowid as number|bigint; normalize to Number.
 export const rowid = (r) => Number(r.lastInsertRowid);

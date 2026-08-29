@@ -22,6 +22,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Redacted invite and public-share bearer-token path segments in both ordinary
+  request logs and rate-limit rejection logs, including malformed trailing
+  paths, so access-log retention cannot become a credential disclosure channel.
+- Unified server mailbox canonicalization across password, invitation, OIDC,
+  and legacy-migration boundaries with trim, NFC normalization, lowercase
+  conversion, and canonical unique-index enforcement.
+- Made the public HTTPS transport serialize URLSearchParams as UTF-8 bytes so
+  production OIDC token exchanges reach the provider instead of failing at the
+  request boundary.
+- Replaced the unsigned `POST /api/stripe/webhook` plan-upgrade stub with a
+  fail-closed raw-body HMAC-SHA-256 signature boundary. Signed deliveries are
+  acknowledged only; webhook JSON is not entitlement authority until durable
+  event reconciliation. Unsigned, stale, or body-mutated signatures fail closed,
+  and the public app copies protected logging and rate-limit middleware so abuse
+  controls still wrap the endpoint (Krawczyk et al., 1997; National Institute of
+  Standards and Technology, 2008).
 - Made contextual-orchestrator briefing requests fail closed unless an authenticated endpoint is configured. Deterministic generated text is restricted to explicit `SCOPEWEAVE_DEV=1`, message/provider responses are bounded and validated, and non-loopback HTTP transport is rejected.
 - Made `SCOPEWEAVE_JWT_SECRET` mandatory at startup and rejected weak or
   unexpanded placeholder values so production deployments fail closed.
