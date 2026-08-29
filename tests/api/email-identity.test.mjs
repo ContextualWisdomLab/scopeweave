@@ -145,7 +145,8 @@ function importDatabase(databasePath) {
 
     const database = new DatabaseSync(databasePath);
     assert.deepEqual(
-      database.prepare('SELECT id,email FROM users ORDER BY id').all(),
+      database.prepare('SELECT id,email FROM users ORDER BY id').all()
+        .map((row) => ({ id: row.id, email: row.email })),
       [
         { id: 1, email: 'Collision@Example.COM' },
         { id: 2, email: 'collision@example.com' },
