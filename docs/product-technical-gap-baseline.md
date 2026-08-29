@@ -90,7 +90,7 @@ HEAD가 바뀌면 다시 확인해야 한다.
 | G-02 | 정적 사용자가 JSON을 회수하려면 파일 API에 의존 | #621 `5c6c2530`, `develop` 병합 대기 | 브라우저 JSON 다운로드와 계획 필드 보존 |
 | G-03 | 첫 방문자가 seed와 실제 계획을 혼동 | #624 `69eff955`가 #621에 병합됨, 현재 #621 `5c6c2530`, `develop` 병합 대기 | 샘플 안내, 숨김, 확인 가능한 빈 계획 전환 |
 | G-04 | 핵심 상태의 시각 회귀 증거 부족 | #629 `89fff38b`이 #621 `5c6c2530` 위에 제출됨, `develop` 병합 대기; Devin의 current-head 지적도 해결됨 | 실제 브라우저 screenshot과 WCAG 2.2 점검을 릴리스 증거에 포함 |
-| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #587 `7430bb2b`는 일반 Checks가 수렴 중이고 OpenCode가 current-head verdict 부재로 fail-closed, Strix 실행 중이며 qualifying approval 없음; #593 `2ce9f1da`는 Unicode case-fold와 indexed invite identity 회귀를 보강한 뒤 hosted Checks 진행 중·qualifying approval 없음; #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625 `a5646043`는 기준선 갱신 push 뒤 Checks가 수렴했지만 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #596 `86210691`, #602 `d9aa1af2`, #608 `f52d0930`, #610 `4c965cb0`는 기능·보안 Checks가 수렴했지만 OpenCode current-head verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
+| G-05 | PR 큐가 provider 실패와 승인 부재로 정지 | #587 `7430bb2b`는 일반 Checks가 수렴 중이고 OpenCode가 current-head verdict 부재로 fail-closed, Strix 실행 중이며 qualifying approval 없음; #593 `2ce9f1da`는 Unicode case-fold와 indexed invite identity 회귀를 보강한 뒤 hosted Checks 진행 중·qualifying approval 없음; #621 `5c6c2530`은 Strix provider unavailable·OpenCode 실패; #625의 마지막 검증 predecessor는 `a5646043`이며 현재 PR의 live HEAD/Checks도 qualifying approval 없음; #629 `89fff38b`는 stacked 제출본으로 exact-head hosted Checks가 통과했지만 독립 병합 대상이 아니며 qualifying approval 없음; #596 `86210691`, #602 `d9aa1af2`, #608 `f52d0930`, #610 `4c965cb0`는 기능·보안 Checks가 수렴했지만 OpenCode current-head verdict/qualifying approval이 없음 | 게이트를 약화하지 않고 로그·artifact·exact HEAD 재검증 |
 
 ### Exact-head queue evidence
 
@@ -170,12 +170,12 @@ HEAD가 바뀌면 다시 확인해야 한다.
   나머지 required workflow는 queued/in progress이며 Strix workflow는
   pending이다. GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`,
   current-head APPROVED 0, unresolved thread 0이다.
-- #625: `develop@2c328875` 대상 `a5646043dbcceed7ce3778da81385afca2ae0222`.
-  기준선 문서에 #587의 exact-head 보안·운영 수정과 현재 승인/게이트 상태를
-  반영했다. 이 HEAD의 일반 required Checks는 success 또는 expected
-  neutral/skipped로 수렴했고, OpenCode는 current-head verdict 부재로
-  fail-closed 되었다. GraphQL은 `MERGEABLE/BLOCKED/REVIEW_REQUIRED`,
-  unresolved thread 0, qualifying approval 0이며 병합하지 않았다.
+- #625 predecessor evidence: `develop@2c328875` 대상
+  `a5646043dbcceed7ce3778da81385afca2ae0222`. 기준선 문서에 #587의
+  exact-head 보안·운영 수정과 당시 승인/게이트 상태를 반영했다. 이 문단은
+  문서 갱신 전 마지막으로 검증한 predecessor에 대한 immutable evidence다.
+  현재 #625 PR HEAD와 새로 실행된 Checks·리뷰 상태는 문서 commit에 자기
+  SHA를 삽입하지 않고 GitHub live PR metadata에서 재확인해야 한다.
 - #616: `develop@2c328875` 대상
   `b427cd455f41e7c09ae20fbbf400d42c4f61d4bf`. deterministic release-artifact
   manifest의 regular-file/no-symlink, bounded manifest read, SHA-256 및
