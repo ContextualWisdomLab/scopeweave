@@ -1,8 +1,24 @@
-/* ScopeWeave has two toast producers: app.js uses `.show`, while the cloud
- * overlay uses `.visible`. The base stylesheet owns `.show`; this component
- * rule keeps the cloud producer visually observable without changing either
- * producer's timing or accessibility semantics. */
+/* ScopeWeave loads this small stylesheet after `styles.css` for cross-surface
+ * component-state and accessibility overrides that must win the base cascade.
+ * Keep static-host, SaaS, and cloud behavior aligned without inline styles. */
+
+/* app.js uses `.show` while the cloud overlay uses `.visible`. */
 .toast.visible {
   opacity: 1;
   transform: translateY(0);
 }
+
+/* White 0.75rem owner labels require WCAG 2.2 normal-text contrast >= 4.5:1.
+ * These hue-preserving darker variants correct only palette entries whose base
+ * colors miss that threshold; the registered contrast regression checks all 20. */
+.owner-badge--color-3 { background: #bd5500; }
+.owner-badge--color-5 { background: #008275; }
+.owner-badge--color-6 { background: #1a76c7; }
+.owner-badge--color-8 { background: #587e2f; }
+.owner-badge--color-9 { background: #ce4419; }
+.owner-badge--color-11 { background: #73781e; }
+.owner-badge--color-12 { background: #007f8f; }
+.owner-badge--color-13 { background: #ad6000; }
+.owner-badge--color-15 { background: #37823a; }
+.owner-badge--color-16 { background: #d73632; }
+.owner-badge--color-18 { background: #027ab5; }

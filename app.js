@@ -2,12 +2,7 @@ const STORAGE_KEY = 'scopeweave:planner-state:v1';
 const DEFAULT_PROJECT_NAME = 'ScopeWeave Planner';
 const MAX_PROJECT_NAME_LENGTH = 120;
 const MAX_BASE_DATE_LENGTH = 10;
-const OWNER_COLORS = [
-  '#3f51b5', '#8e24aa', '#d81b60', '#ef6c00', '#6d4c41',
-  '#00897b', '#1e88e5', '#3949ab', '#7cb342', '#f4511e',
-  '#5e35b1', '#c0ca33', '#00acc1', '#fb8c00', '#546e7a',
-  '#43a047', '#e53935', '#6a1b9a', '#039be5', '#5d4037'
-];
+const OWNER_COLOR_CLASS_COUNT = 20;
 
 const ACTUAL_PROGRESS_OPTIONS = [
   '미착수(0%)',
@@ -263,7 +258,11 @@ async function bootstrap() {
 }
 
 function bindEvents() {
-  const persistAndRenderMetadata = debounce(() => {
+  const persistProjectMetadata = debounce(() => {
+    persistState();
+    renderAll({ metadataOnly: true });
+  }, 150);
+  const persistAndRenderPlan = debounce(() => {
     persistState();
     renderAll();
   }, 150);
@@ -277,13 +276,13 @@ function bindEvents() {
     return true;
   };
 
-  bindHeaderEvents(persistAndRenderMetadata);
+  bindHeaderEvents(persistProjectMetadata, persistAndRenderPlan);
   bindModalEvents();
   bindGlobalEvents();
   bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent);
 }
 
-function bindHeaderEvents(persistAndRenderMetadata) {
+function bindHeaderEvents(persistProjectMetadata, persistAndRenderPlan) {
   elements.projectNameInput.addEventListener('input', (event) => {
     const sanitized = String(event.target.value).slice(0, MAX_PROJECT_NAME_LENGTH);
     if (event.target.value !== sanitized) {
@@ -292,15 +291,15 @@ function bindHeaderEvents(persistAndRenderMetadata) {
       event.target.setSelectionRange(cursor, cursor);
     }
     state.projectName = sanitized.trim() || DEFAULT_PROJECT_NAME;
-    persistAndRenderMetadata();
+    persistProjectMetadata();
   });
-  elements.projectNameInput.addEventListener('blur', persistAndRenderMetadata.flush);
+  elements.projectNameInput.addEventListener('blur', persistProjectMetadata.flush);
 
   elements.baseDateInput.addEventListener('input', (event) => {
     state.baseDate = String(event.target.value).trim().slice(0, MAX_BASE_DATE_LENGTH) || formatLocalDateInput(new Date());
-    persistAndRenderMetadata();
+    persistAndRenderPlan();
   });
-  elements.baseDateInput.addEventListener('blur', persistAndRenderMetadata.flush);
+  elements.baseDateInput.addEventListener('blur', persistAndRenderPlan.flush);
 
   elements.addRootButton.addEventListener('click', () => openEditor({ mode: 'create', parentId: null, depth: 1, insertAfterId: getLastRootTaskId() }));
   elements.exportCsvButton.addEventListener('click', (e) => {
@@ -502,17 +501,24 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
   });
 }
 
-const cachedHasChildrenSet = new Set();
-function renderAll() {
-  const metrics = computeTaskMetrics();
-
+function renderProjectMetadata() {
   elements.projectNameInput.value = state.projectName;
   document.title = state.projectName === DEFAULT_PROJECT_NAME ? DEFAULT_PROJECT_NAME : `${state.projectName} - ${DEFAULT_PROJECT_NAME}`;
   elements.baseDateInput.value = state.baseDate;
+  elements.syncStatus.textContent = state.jsonSyncHandle ? '연결된 wbs.json 파일에 자동저장 중' : '브라우저 로컬 자동저장 사용 중';
+}
+
+const cachedHasChildrenSet = new Set();
+function renderAll({ metadataOnly = false } = {}) {
+  renderProjectMetadata();
+  if (metadataOnly) {
+    return;
+  }
+
+  const metrics = computeTaskMetrics();
   elements.totalDays.textContent = `${formatNumber(metrics.totalDays)}일`;
   elements.plannedProgress.textContent = formatPercent(metrics.totalWeightedPlannedRatio * 100, 2);
   elements.actualProgress.textContent = formatPercent(metrics.totalWeightedActualRatio * 100, 2);
-  elements.syncStatus.textContent = state.jsonSyncHandle ? '연결된 wbs.json 파일에 자동저장 중' : '브라우저 로컬 자동저장 사용 중';
 
   if (typeof window !== 'undefined') {
     window.ScopeWeaveAnalytics?.render?.({
@@ -971,21 +977,32 @@ function createWarningBadge(warning) {
   return badge;
 }
 
-const persistentOwnerColorMap = new Map();
+// Badge templates are immutable shells only. Customer/task text and accessible names
+// are applied to each clone after cloning so cached detached nodes never retain row data.
+let ownerBadgeTemplate = null;
+let statusBadgeTemplate = null;
+
+function getOwnerColorIndex(owner) {
+  let hash = 0;
+  for (let index = 0; index < owner.length; index += 1) {
+    hash = ((hash << 5) - hash + owner.charCodeAt(index)) | 0;
+  }
+  return (hash >>> 0) % OWNER_COLOR_CLASS_COUNT;
+}
 
 function createOwnerCellContent(owner) {
   if (!owner) {
     return createEmptyCell();
   }
+  const ownerValue = String(owner);
 
-  if (!persistentOwnerColorMap.has(owner)) {
-    persistentOwnerColorMap.set(owner, OWNER_COLORS[persistentOwnerColorMap.size % OWNER_COLORS.length]);
+  if (!ownerBadgeTemplate) {
+    ownerBadgeTemplate = document.createElement('span');
+    ownerBadgeTemplate.className = 'owner-badge';
   }
-
-  const badge = document.createElement('span');
-  badge.className = 'owner-badge';
-  badge.style.background = persistentOwnerColorMap.get(owner);
-  badge.textContent = owner;
+  const badge = ownerBadgeTemplate.cloneNode(false);
+  badge.className = `owner-badge owner-badge--color-${getOwnerColorIndex(ownerValue)}`;
+  badge.textContent = ownerValue;
   return badge;
 }
 
@@ -993,7 +1010,12 @@ function createStatusCellContent(progressState) {
   if (!progressState.label) {
     return createEmptyCell();
   }
-  const badge = document.createElement('span');
+
+  if (!statusBadgeTemplate) {
+    statusBadgeTemplate = document.createElement('span');
+    statusBadgeTemplate.className = 'status-badge';
+  }
+  const badge = statusBadgeTemplate.cloneNode(false);
   badge.className = `status-badge ${progressState.className}`;
   badge.textContent = progressState.label;
   if (progressState.description) {

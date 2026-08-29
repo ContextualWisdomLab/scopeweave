@@ -19,6 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added workflow ownership regression coverage so central review
   workflows stay inherited from `ContextualWisdomLab/.github`, not copied
   into this repository.
+- Added a reproducible 5,000-row production-browser rendering benchmark that
+  records median and p95 duration, long tasks, heap deltas, live DOM nodes,
+  element creation, and edit, drag, and inline-progress interaction evidence.
 
 ### Security
 
@@ -61,6 +64,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   mode, delegating provider/model/topology policy to the shared service without
   weakening ScopeWeave's authenticated, fail-closed transport or response
   boundary controls.
+- Reused one immutable owner-badge shell and one immutable status-badge shell in
+  the WBS table render path. Row text, accessible descriptions, and deterministic
+  owner color classes are applied only after cloning, so detached templates do
+  not retain task/user values or inline color styles.
 - Accepted XML whitespace before exact Microsoft Project element delimiters
   while preserving the linear, regex-free import scanner and rejecting
   attributes, longer names, non-XML whitespace, nested unmatched blocks, and
