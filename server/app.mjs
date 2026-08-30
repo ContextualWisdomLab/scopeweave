@@ -747,7 +747,30 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   const orgId = c.req.param('id');
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
-  if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(String(url || ''));
+  } catch (e) {
+    return c.json({ error: 'valid http(s) url required' }, 400);
+  }
+  if (!['http:', 'https:'].includes(parsedUrl.protocol)) {
+    return c.json({ error: 'valid http(s) url required' }, 400);
+  }
+  const hn = parsedUrl.hostname;
+  if (
+    hn === 'localhost' ||
+    hn === '127.0.0.1' ||
+    hn === '[::1]' ||
+    hn === '0.0.0.0' ||
+    hn === '[::]' ||
+    /^127\.\d+\.\d+\.\d+$/.test(hn) ||
+    /^10\.\d+\.\d+\.\d+$/.test(hn) ||
+    /^192\.168\.\d+\.\d+$/.test(hn) ||
+    /^172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+$/.test(hn) ||
+    /^169\.254\.\d+\.\d+$/.test(hn)
+  ) {
+    return c.json({ error: 'internal urls are not allowed' }, 400);
+  }
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
