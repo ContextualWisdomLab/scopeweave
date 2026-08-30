@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2026-08-30 - [Timing Attack Mitigation Type Safety]
+**Vulnerability:** When refactoring authentication logic to prevent timing attacks, I encountered a bug where passing a non-string object directly to `verifyPassword` would cause an exception because the short-circuiting check `typeof password !== 'string'` was placed after the function call to make sure the slow hashing always ran.
+**Learning:** Even when forcing a function to evaluate (to normalize timing), you must still protect its inputs. Cryptographic functions often expect strict string/buffer types and will crash with 500 errors if fed JSON objects.
+**Prevention:** Explicitly coerce candidate values to a safe type (e.g., `typeof password === 'string' ? password : ''`) before passing them to the timing-mitigation hashing function, ensuring type safety without sacrificing the constant-time execution constraint.
