@@ -6,6 +6,8 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'self';" />
     <title>ScopeWeave Planner</title>
     <link rel="preload" href="styles.css" as="style" />
+    <link rel="modulepreload" href="cloud-sync.js" />
+    <link rel="modulepreload" href="analytics.js" />
     <link rel="modulepreload" href="app.js" />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="toast-state.css" />
@@ -23,11 +25,11 @@
         <div class="meta-grid meta-grid-primary">
           <label class="meta-field" for="project-name">
             <span>프로젝트 이름</span>
-            <input data-testid="project-name-input" id="project-name" type="text" maxlength="120" placeholder="예: 신규 서비스 구축 프로젝트" />
+            <input aria-label="프로젝트 이름" data-testid="project-name-input" id="project-name" type="text" maxlength="120" placeholder="예: 신규 서비스 구축 프로젝트" />
           </label>
           <label class="meta-field meta-field-compact" for="base-date">
             <span>기준일</span>
-            <input data-testid="base-date-input" id="base-date" type="date" />
+            <input aria-label="기준일" data-testid="base-date-input" id="base-date" type="date" />
           </label>
           <div class="meta-value-card" title="프로젝트의 작업 기간(일수) 합계입니다.">
             <span class="meta-label">전체일수</span>
@@ -46,7 +48,7 @@
           </div>
           <div class="sync-panel">
             <span id="sync-status" role="status" aria-live="polite" aria-atomic="true">브라우저 로컬 자동저장 사용 중</span>
-            <button id="connect-json-sync" type="button" class="secondary-button">wbs.json 자동저장 연결</button>
+            <button id="connect-json-sync" type="button" class="secondary-button" aria-label="wbs.json 자동저장 연결">wbs.json 자동저장 연결</button>
           </div>
         </div>
       </header>
@@ -87,10 +89,10 @@
       </main>
 
       <footer class="bottom-action-bar">
-        <button id="add-root-task" type="button" class="primary-button">최상위 작업 추가</button>
-        <button id="export-csv" type="button" class="secondary-button">CSV 내보내기</button>
-        <button id="import-csv" type="button" class="secondary-button">CSV 가져오기</button>
-        <button id="open-gantt" type="button" class="secondary-button" aria-haspopup="dialog" aria-controls="gantt-modal">간트차트보기</button>
+        <button id="add-root-task" type="button" class="primary-button" aria-label="최상위 작업 추가">최상위 작업 추가</button>
+        <button id="export-csv" type="button" class="secondary-button" aria-label="CSV 내보내기">CSV 내보내기</button>
+        <button id="import-csv" type="button" class="secondary-button" aria-label="CSV 가져오기">CSV 가져오기</button>
+        <button id="open-gantt" type="button" class="secondary-button" aria-haspopup="dialog" aria-controls="gantt-modal" aria-label="간트차트보기">간트차트보기</button>
       </footer>
     </div>
 
