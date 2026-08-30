@@ -12,6 +12,9 @@ import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
+// A static dummy hash used to prevent timing attacks during login/auth operations.
+const DUMMY_PASSWORD_HASH = hashPassword('dummy_timing_mitigation_string');
+
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
 
 // Append-only audit trail. Never throws into the request path.
@@ -192,9 +195,12 @@ app.post('/api/auth/signup', async (c) => {
 app.post('/api/auth/login', async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}));
   const u = db.prepare('SELECT * FROM users WHERE email = ?').get(email || '');
+  // Always evaluate verifyPassword to prevent user enumeration timing attacks.
   // Pass password through only when it is a string — verifyPassword rejects
   // non-strings (objects/arrays) so they never match an empty-password hash.
-  if (!u || typeof password !== 'string' || !verifyPassword(password, u.password_hash)) {
+  const passwordStr = typeof password === 'string' ? password : '';
+  const isPasswordValid = verifyPassword(passwordStr, u ? u.password_hash : DUMMY_PASSWORD_HASH);
+  if (!u || typeof password !== 'string' || !isPasswordValid) {
     return c.json({ error: 'invalid credentials' }, 401);
   }
   return c.json({ token: signToken({ sub: u.id, email: u.email, tv: u.token_version }) });
