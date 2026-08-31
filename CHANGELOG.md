@@ -91,6 +91,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   script, and requirements copies.
 - Documented Kubernetes/IaC as follow-up work rather than a current
   blocker for this static app.
+- ⚡ Bolt: 날짜 포맷팅 함수(`formatDateInput`, `formatLocalDateInput`, `formatCompactDate`)에서 `String.prototype.padStart()` 호출을 인라인 삼항 연산자로 대체하여 메모리 할당을 최적화하고 핫루프 성능을 개선했습니다.
 
 ## [1.0.0] - 2026-04-20
 
