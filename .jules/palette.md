@@ -116,6 +116,6 @@
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
 
-## $(date +%Y-%m-%d) - 진행률 카드 툴팁 키보드 접근성 개선
-**Learning:** `title` 속성(툴팁)이 있는 비상호작용 요소(`div`, `span` 등)는 키보드 초점을 받을 수 없어 시각장애인이나 키보드 사용자가 툴팁 내용을 확인할 수 없는 접근성 문제가 발생함. `tabindex="0"`만 추가하는 것은 안티패턴이며, 스크린 리더에게 요소의 의미를 전달하기 위해 적절한 ARIA 역할(예: `role="note"`, `role="region"`)을 반드시 함께 부여해야 함.
-**Action:** 툴팁을 제공하는 비상호작용 요소를 구현할 때는 항상 `tabindex="0"`, 명확한 `role`, 그리고 `:focus-visible` 상태의 시각적 피드백을 함께 적용하여 모든 사용자가 정보에 접근할 수 있도록 보장해야 함.
+## 2026-08-31 - 진행률 카드 툴팁 키보드 접근성 개선
+**Learning:** `title` 속성(네이티브 툴팁)은 마우스 hover에만 반응하고 키보드 focus로는 노출되지 않아, `tabindex="0"`만 추가해도 키보드 사용자는 툴팁 내용을 확인할 수 없음. 스크린 리더에게 의미를 전달하려면 적절한 ARIA 역할(예: `role="note"`)도 함께 필요함.
+**Action:** 툴팁을 제공하는 비상호작용 요소는 `title` 대신 `aria-describedby`로 연결된 별도 설명 요소를 두고, 그 요소를 `:hover`·`:focus-visible` 모두에서 시각적으로 드러내는 CSS 패턴을 적용해야 함. `tabindex="0"` + `role`만으로는 불충분함.

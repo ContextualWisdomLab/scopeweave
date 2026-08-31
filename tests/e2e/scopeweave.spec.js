@@ -1293,18 +1293,26 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
   test('adds helpful tooltips and ARIA attributes for progress cards and gantt buttons', async ({ page }) => {
     await page.goto('./');
 
-    // Verify progress card tooltips
-    await expect(page.locator('.meta-value-card[title*="작업 기간(일수)"]').first()).toHaveAttribute('title', '프로젝트의 작업 기간(일수) 합계입니다.');
-    await expect(page.locator('.plan-card')).toHaveAttribute('title', '기간(일수) 가중치가 반영된 프로젝트 전체 계획 진척률입니다.');
-    await expect(page.locator('.actual-card')).toHaveAttribute('title', '기간(일수) 가중치가 반영된 프로젝트 전체 실적 진척률입니다.');
+    // Verify progress card tooltips are linked via aria-describedby, not the hover-only `title` attribute
+    const totalDaysCard = page.locator('#summary-total-days').locator('..');
+    await expect(totalDaysCard).toHaveAttribute('aria-describedby', 'desc-total-days');
+    await expect(page.locator('#desc-total-days')).toHaveText('프로젝트의 작업 기간(일수) 합계입니다.');
+    await expect(page.locator('.plan-card')).toHaveAttribute('aria-describedby', 'desc-planned-progress');
+    await expect(page.locator('#desc-planned-progress')).toHaveText('기간(일수) 가중치가 반영된 프로젝트 전체 계획 진척률입니다.');
+    await expect(page.locator('.actual-card')).toHaveAttribute('aria-describedby', 'desc-actual-progress');
+    await expect(page.locator('#desc-actual-progress')).toHaveText('기간(일수) 가중치가 반영된 프로젝트 전체 실적 진척률입니다.');
 
     // Verify progress card accessibility attributes
-    await expect(page.locator('.meta-value-card[title*="작업 기간(일수)"]').first()).toHaveAttribute('tabindex', '0');
-    await expect(page.locator('.meta-value-card[title*="작업 기간(일수)"]').first()).toHaveAttribute('role', 'note');
+    await expect(totalDaysCard).toHaveAttribute('tabindex', '0');
+    await expect(totalDaysCard).toHaveAttribute('role', 'note');
     await expect(page.locator('.plan-card')).toHaveAttribute('tabindex', '0');
     await expect(page.locator('.plan-card')).toHaveAttribute('role', 'note');
     await expect(page.locator('.actual-card')).toHaveAttribute('tabindex', '0');
     await expect(page.locator('.actual-card')).toHaveAttribute('role', 'note');
+
+    // Keyboard focus must reveal the tooltip text, not just carry a hover-only title
+    await totalDaysCard.focus();
+    await expect(page.locator('#desc-total-days')).toBeVisible();
 
     // Verify sync status ARIA attributes
     const syncStatus = page.locator('#sync-status');

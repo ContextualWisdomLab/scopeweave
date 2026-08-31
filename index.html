@@ -29,20 +29,23 @@
             <span>기준일</span>
             <input data-testid="base-date-input" id="base-date" type="date" />
           </label>
-          <div class="meta-value-card" title="프로젝트의 작업 기간(일수) 합계입니다." tabindex="0" role="note">
+          <div class="meta-value-card" tabindex="0" role="note" aria-describedby="desc-total-days">
             <span class="meta-label">전체일수</span>
             <strong data-testid="summary-total-days" id="summary-total-days">0일</strong>
+            <span class="meta-value-tooltip" id="desc-total-days">프로젝트의 작업 기간(일수) 합계입니다.</span>
           </div>
         </div>
 
         <div class="meta-grid meta-grid-secondary">
-          <div class="meta-value-card accent-card plan-card" title="기간(일수) 가중치가 반영된 프로젝트 전체 계획 진척률입니다." tabindex="0" role="note">
+          <div class="meta-value-card accent-card plan-card" tabindex="0" role="note" aria-describedby="desc-planned-progress">
             <span class="meta-label">계획진척률(누적)</span>
             <strong data-testid="summary-planned-progress" id="summary-planned-progress">0.00%</strong>
+            <span class="meta-value-tooltip" id="desc-planned-progress">기간(일수) 가중치가 반영된 프로젝트 전체 계획 진척률입니다.</span>
           </div>
-          <div class="meta-value-card accent-card actual-card" title="기간(일수) 가중치가 반영된 프로젝트 전체 실적 진척률입니다." tabindex="0" role="note">
+          <div class="meta-value-card accent-card actual-card" tabindex="0" role="note" aria-describedby="desc-actual-progress">
             <span class="meta-label">실적진척률(누적)</span>
             <strong data-testid="summary-actual-progress" id="summary-actual-progress">0.00%</strong>
+            <span class="meta-value-tooltip" id="desc-actual-progress">기간(일수) 가중치가 반영된 프로젝트 전체 실적 진척률입니다.</span>
           </div>
           <div class="sync-panel">
             <span id="sync-status" role="status" aria-live="polite" aria-atomic="true">브라우저 로컬 자동저장 사용 중</span>
