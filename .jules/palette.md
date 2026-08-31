@@ -115,3 +115,7 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+
+## 2026-08-31 - 핵심 인터랙션에 명시적 ARIA 레이블 추가
+**Learning:** `connect-json-sync`, `add-root-task` 같은 핵심 버튼과 `project-name`, `base-date` 같은 폼 입력에 명시적 ARIA 레이블이 없으면, 텍스트 콘텐츠만으로는 스크린 리더가 요소의 목적을 모호하게 해석할 수 있다.
+**Action:** 핵심 인터랙션 요소에는 텍스트 콘텐츠에만 의존하지 말고 명시적 `aria-label`을 부여해 스크린 리더가 목적을 정확히 전달하도록 한다.
