@@ -276,6 +276,10 @@ assert.ok(whlist.some((w) => w.id === wh.id), 'webhook listed');
 assert.ok(!whlist.some((w) => 'secret' in w), 'webhook secret never listed');
 r = await req(`/api/orgs/${orgAId}/webhooks`, { method: 'POST', headers: auth, body: body({ url: 'not-a-url' }) });
 assert.equal(r.status, 400, 'invalid webhook url → 400');
+r = await req(`/api/orgs/${orgAId}/webhooks`, { method: 'POST', headers: auth, body: body({ url: 'http://127.0.0.1/hook' }) });
+assert.equal(r.status, 400, 'loopback webhook url → 400');
+r = await req(`/api/orgs/${orgAId}/webhooks`, { method: 'POST', headers: auth, body: body({ url: 'http://169.254.169.254/latest/meta-data/' }) });
+assert.equal(r.status, 400, 'link-local (cloud metadata) webhook url → 400');
 r = await req(`/api/orgs/${orgAId}/webhooks`, { headers: oauth });
 assert.equal(r.status, 403, 'non-member webhooks → 403');
 // trigger project.update → a delivery is attempted (counter increments synchronously)
@@ -287,7 +291,9 @@ assert.equal(r.status, 200);
 const after = (await (await req('/api/metrics')).json()).webhookDeliveries;
 assert.ok(after > before, 'webhook delivery attempted on project.update');
 // outcome recorded: refused url → ok=0, retried to attempt 2
-await new Promise((res) => setTimeout(res, 900));
+// (postWebhook does its own DNS resolve+pin per attempt, so two attempts
+// plus the 500ms retry backoff need real headroom against a live target)
+await new Promise((res) => setTimeout(res, 2500));
 r = await req(`/api/orgs/${orgAId}/webhooks/${wh.id}/deliveries`, { headers: auth });
 assert.equal(r.status, 200, 'deliveries endpoint');
 const dels = (await r.json()).deliveries;

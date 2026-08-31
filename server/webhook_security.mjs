@@ -23,13 +23,18 @@ for (const [network, prefix] of [
 
 for (const [network, prefix] of [
   ['::', 96],
-  ['::ffff:0:0', 96],
   ['fc00::', 7],
   ['fe80::', 10],
   ['ff00::', 8],
 ]) {
   blockedWebhookAddresses.addSubnet(network, prefix, 'ipv6');
 }
+
+// node:net's BlockList stores IPv4 rules internally as IPv4-mapped IPv6
+// addresses, so an explicit ::ffff:0:0/96 ipv6 rule would match every IPv4
+// check too (rejecting all public IPv4 destinations). IPv4-mapped literals
+// are unwrapped and rechecked against the ipv4 rules above instead.
+const IPV4_MAPPED = /^::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i;
 
 function bareHostname(hostname) {
   const value = String(hostname || '').trim().toLowerCase();
@@ -50,9 +55,12 @@ function blockedSpecialHostname(hostname) {
  * Invalid address strings fail closed.
  */
 export function isBlockedWebhookAddress(address) {
-  const family = isIP(String(address || ''));
+  const raw = String(address || '').trim();
+  const mapped = IPV4_MAPPED.exec(raw)?.[1];
+  if (mapped) return isIP(mapped) !== 4 || blockedWebhookAddresses.check(mapped, 'ipv4');
+  const family = isIP(raw);
   if (!family) return true;
-  return blockedWebhookAddresses.check(address, family === 4 ? 'ipv4' : 'ipv6');
+  return blockedWebhookAddresses.check(raw, family === 4 ? 'ipv4' : 'ipv6');
 }
 
 async function resolveAllowedAddresses(hostname, resolver) {
