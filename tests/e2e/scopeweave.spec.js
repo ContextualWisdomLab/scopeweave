@@ -14,7 +14,7 @@ const addTopLevelTask = async (page, values) => {
 
 const expectSaveBlockedWith = async (page, message) => {
   const saveButton = page.getByRole('button', { name: '저장', exact: true });
-  await expect(saveButton).toBeDisabled();
+  await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
   await expect(page.locator('#editor-errors')).toContainText(message);
   await expect(page.locator('.editor-panel')).toBeVisible();
 };
@@ -703,7 +703,7 @@ test.describe('ScopeWeave Planner', () => {
     await page.locator('[data-testid="editor-planned-end"]').fill('2026-05-19');
 
     const saveButton = page.getByRole('button', { name: '저장', exact: true });
-    await expect(saveButton).toBeDisabled();
+    await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
     await expect(page.locator('[data-testid="editor-planned-end"]')).toHaveAttribute('aria-invalid', 'true');
     await expect(page.locator('#editor-errors')).toContainText('계획종료일은 계획시작일보다 빠를 수 없습니다');
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
@@ -720,7 +720,7 @@ test.describe('ScopeWeave Planner', () => {
     await page.locator('[data-testid="editor-planned-start"]').fill('2026-02-31');
 
     const saveButton = page.getByRole('button', { name: '저장', exact: true });
-    await expect(saveButton).toBeDisabled();
+    await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
     await expect(page.locator('[data-testid="editor-planned-start"]')).toHaveAttribute('aria-invalid', 'true');
     await expect(page.locator('#editor-errors')).toContainText('계획시작일은 YYYY-MM-DD 형식의 실제 달력 날짜여야 합니다');
     await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
@@ -733,7 +733,7 @@ test.describe('ScopeWeave Planner', () => {
     await page.locator('[data-testid="editor-task"]').fill('<script>alert(1)</script>');
 
     const saveButton = page.locator('.editor-panel').getByRole('button', { name: '저장' });
-    await expect(saveButton).toBeDisabled();
+    await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
     await expect(page.locator('[data-testid="editor-task"]')).toHaveAttribute('aria-invalid', 'true');
     await expect(page.locator('#editor-errors')).toContainText('HTML 태그 문자를 사용할 수 없습니다');
     await expect(page.locator('.editor-panel')).toBeVisible();
@@ -797,6 +797,19 @@ test.describe('ScopeWeave Planner', () => {
     await page.getByRole('button', { name: '최상위 작업 추가' }).click();
     await page.locator('[data-testid="editor-phase"]').fill('');
     await expectSaveBlockedWith(page, '최상위 작업은 단계 값을 입력해야 합니다.');
+  });
+
+  test('shows the invalid-save toast when clicking Save with an empty required field', async ({ page }) => {
+    await page.getByRole('button', { name: '최상위 작업 추가' }).click();
+    await page.locator('[data-testid="editor-phase"]').fill('');
+    // The native `required` attribute must not silently block the submit event
+    // before validateDraft/saveEditor run (form.noValidate = true). The button
+    // is aria-disabled (not natively disabled) so it stays real-world clickable;
+    // force the click since Playwright's actionability check treats
+    // aria-disabled as non-actionable.
+    await page.getByRole('button', { name: '저장', exact: true }).click({ force: true });
+    await expect(page.locator('#toast')).toContainText('입력값을 올바르게 수정해야 저장할 수 있습니다.');
+    await expect(page.locator('.editor-panel')).toBeVisible();
   });
 
   test('rejects saving a depth 2 task without an activity', async ({ page }) => {
