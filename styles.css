@@ -170,6 +170,38 @@ button {
   letter-spacing: -0.02em;
 }
 
+.meta-value-card {
+  position: relative;
+}
+
+.meta-value-tooltip {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: 260px;
+  width: max-content;
+  background: var(--text);
+  color: #fff;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.4;
+  padding: 8px 12px;
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+  z-index: 5;
+}
+
+.meta-value-card:hover .meta-value-tooltip,
+.meta-value-card:focus-visible .meta-value-tooltip {
+  visibility: visible;
+  opacity: 1;
+}
+
 .accent-card {
   color: #fff;
   border: none;
@@ -360,7 +392,8 @@ button {
 .secondary-button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-.gantt-bar:focus-visible {
+.gantt-bar:focus-visible,
+.meta-value-card:focus-visible {
   outline: 3px solid rgba(37, 99, 235, 0.5);
   outline-offset: 2px;
 }

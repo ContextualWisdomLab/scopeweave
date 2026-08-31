@@ -115,3 +115,7 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+
+## 2026-08-31 - 진행률 카드 툴팁 키보드 접근성 개선
+**Learning:** `title` 속성(네이티브 툴팁)은 마우스 hover에만 반응하고 키보드 focus로는 노출되지 않아, `tabindex="0"`만 추가해도 키보드 사용자는 툴팁 내용을 확인할 수 없음. 스크린 리더에게 의미를 전달하려면 적절한 ARIA 역할(예: `role="note"`)도 함께 필요함.
+**Action:** 툴팁을 제공하는 비상호작용 요소는 `title` 대신 `aria-describedby`로 연결된 별도 설명 요소를 두고, 그 요소를 `:hover`·`:focus-visible` 모두에서 시각적으로 드러내는 CSS 패턴을 적용해야 함. `tabindex="0"` + `role`만으로는 불충분함.
