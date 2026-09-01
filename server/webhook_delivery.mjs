@@ -141,7 +141,9 @@ export function createValidatedLookup(resolver = dnsLookup) {
  * high-level fetch. Redirects therefore remain terminal 3xx responses and can never move
  * a validated request to an unvalidated destination. `agent: false` forces a new socket
  * and DNS validation for every attempt, including retries and rows persisted before this
- * policy existed. TLS certificate verification remains at Node's secure default.
+ * policy existed. TLS certificate verification remains at Node's secure default. The
+ * asynchronous boundary also converts URL-policy failures into rejected promises so
+ * callers' delivery-failure paths record/retry them without aborting the product request.
  *
  * @param {string} url Persisted webhook destination; it is revalidated on every attempt.
  * @param {{headers?: Record<string,string>, body?: string, timeoutMs?: number,
@@ -149,12 +151,13 @@ export function createValidatedLookup(resolver = dnsLookup) {
  *   and injectable network seams used by deterministic tests.
  * @returns {Promise<{status:number, ok:boolean}>} HTTP status and 2xx success classification.
  * @sideeffect Resolves DNS, opens an HTTPS socket, and transmits the supplied signed body.
- * @throws {Error} When URL/DNS/TLS/socket validation fails or the request times out.
+ * @throws {Error} As a rejected promise when URL/DNS/TLS/socket validation fails or the
+ *   request times out; validation failures never synchronously escape the delivery caller.
  * @security Never follows redirects and never sends credentials/body to an address that did
  *   not pass the connection-time global-routability gate.
  * @concurrency Each invocation owns its request/socket and shares only immutable policy data.
  */
-export function postWebhook(url, {
+export async function postWebhook(url, {
   headers = {},
   body = '',
   timeoutMs = 3000,
