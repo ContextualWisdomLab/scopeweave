@@ -21,7 +21,9 @@ let response = await req('/api/auth/signup', {
 assert.equal(response.status, 200);
 const signup = await response.json();
 const auth = { authorization: `Bearer ${signup.token}` };
-const orgId = signup.org.id;
+response = await req('/api/me', { headers: auth });
+assert.equal(response.status, 200);
+const orgId = (await response.json()).orgs[0].id;
 
 // RED: plaintext webhook transport exposes signed event payloads and must be rejected.
 response = await req(`/api/orgs/${orgId}/webhooks`, {
