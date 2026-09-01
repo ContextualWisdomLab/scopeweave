@@ -742,12 +742,24 @@ app.get('/api/orgs/:id/webhooks', requireAuth, (c) => {
   return c.json({ webhooks });
 });
 
+function isInternalUrl(urlStr) {
+  try {
+    const host = new URL(urlStr).hostname.toLowerCase();
+    if (host === 'localhost' || host === '[::1]' || host === '[0:0:0:0:0:0:0:1]') return true;
+    if (host.startsWith('127.') || host.startsWith('169.254.') || host.startsWith('192.168.')) return true;
+    if (host.startsWith('10.') && /^\d+\.\d+\.\d+$/.test(host.substring(3))) return true;
+    if (/^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(host)) return true;
+    return false;
+  } catch { return true; }
+}
+
 app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
   if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  if (isInternalUrl(url)) return c.json({ error: 'internal urls are not allowed' }, 400);
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
