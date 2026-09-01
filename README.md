@@ -1,5 +1,7 @@
 # ScopeWeave
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ContextualWisdomLab/scopeweave)
+
 ScopeWeave is a schedule-control (공정관리) WBS planner with two independently usable profiles over the same planning model:
 
 - **Standalone** — static HTML/CSS/JavaScript, local-first persistence, no server required, deployable to GitHub Pages or any static host.
