@@ -45,10 +45,14 @@ function assertSemanticAuditPersistence(databaseConnection) {
     .prepare("SELECT type FROM main.sqlite_master WHERE name = 'audit_log'")
     .get();
   assert.equal(durableAuditLogObject, undefined, 'legacy audit_log must not remain durable');
-  const compatibilityView = databaseConnection
+  const temporaryAuditLogObject = databaseConnection
     .prepare("SELECT type FROM temp.sqlite_temp_master WHERE name = 'audit_log'")
     .get();
-  assert.equal(compatibilityView?.type, 'view', 'legacy wire names stay in a TEMP adapter view');
+  assert.equal(
+    temporaryAuditLogObject,
+    undefined,
+    'legacy audit_log must not remain as a runtime database object',
+  );
 }
 
 async function importDatabaseModule(databasePath, importLabel) {
@@ -62,22 +66,21 @@ try {
   const freshDatabaseModule = await importDatabaseModule(freshDatabasePath, 'fresh');
   assertSemanticAuditPersistence(freshDatabaseModule.db);
 
+  freshDatabaseModule.db.exec(`
+    INSERT INTO users(id, email, password_hash, name)
+    VALUES(3, 'audit-fresh@example.com', 'test-hash', 'Audit Fresh');
+    INSERT INTO orgs(id, name, owner_id)
+    VALUES(5, 'Audit Fresh Org', 3);
+  `);
   freshDatabaseModule.db.prepare(`
-    INSERT INTO audit_log(org_id, user_id, action, target_type, target_id, meta)
-    VALUES(?, ?, ?, ?, ?, ?)
-  `).run(3, null, 'project.create', 'project', '5', '{"projectName":"P1"}');
-  const compatibilityAuditEvent = freshDatabaseModule.db.prepare(`
-    SELECT id, action, meta FROM audit_log WHERE org_id = ?
-  `).get(3);
-  assert.deepEqual(compatibilityAuditEvent, {
-    id: 1,
-    action: 'project.create',
-    meta: '{"projectName":"P1"}',
-  });
+    INSERT INTO audit_events(
+      org_id, user_id, audit_action, target_type, target_id, audit_metadata_json
+    ) VALUES(?, ?, ?, ?, ?, ?)
+  `).run(5, 3, 'project.create', 'project', '7', '{"projectName":"P1"}');
   const durableAuditEvent = freshDatabaseModule.db.prepare(`
     SELECT audit_event_id, audit_action, audit_metadata_json
-    FROM main.audit_events WHERE org_id = ?
-  `).get(3);
+    FROM audit_events WHERE org_id = ?
+  `).get(5);
   assert.deepEqual(durableAuditEvent, {
     audit_event_id: 1,
     audit_action: 'project.create',
@@ -88,6 +91,26 @@ try {
   const legacyDatabasePath = join(temporaryDirectory, 'legacy.db');
   const legacyDatabaseConnection = new DatabaseSync(legacyDatabasePath);
   legacyDatabaseConnection.exec(`
+    CREATE TABLE users (
+      id INTEGER PRIMARY KEY,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      name TEXT NOT NULL DEFAULT '',
+      token_version INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE TABLE orgs (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      owner_id INTEGER NOT NULL REFERENCES users(id),
+      plan TEXT NOT NULL DEFAULT 'free',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    INSERT INTO users(id, email, password_hash, name)
+    VALUES(29, 'legacy-actor@example.com', 'test-hash', 'Legacy Actor');
+    INSERT INTO orgs(id, name, owner_id)
+    VALUES(23, 'Legacy Org', 29);
+
     CREATE TABLE audit_log (
       id INTEGER PRIMARY KEY,
       org_id INTEGER NOT NULL,
@@ -114,7 +137,7 @@ try {
     .prepare(`
       SELECT audit_event_id, org_id, user_id, audit_action, target_type, target_id,
              audit_metadata_json, created_at
-      FROM main.audit_events
+      FROM audit_events
     `)
     .get();
   assert.deepEqual(migratedAuditEvent, {
@@ -135,6 +158,16 @@ try {
   assert.ok(auditIndexNames.includes('audit_events_org_event_idx'));
   assert.equal(auditIndexNames.includes('idx_audit_org'), false);
   migratedDatabaseModule.db.close();
+
+  const reopenedDatabaseModule = await importDatabaseModule(legacyDatabasePath, 'reopened');
+  assertSemanticAuditPersistence(reopenedDatabaseModule.db);
+  assert.equal(
+    reopenedDatabaseModule.db.prepare('SELECT COUNT(*) AS audit_event_count FROM audit_events').get()
+      .audit_event_count,
+    1,
+    'reopening a migrated store must not duplicate audit events',
+  );
+  reopenedDatabaseModule.db.close();
 } finally {
   await rm(temporaryDirectory, { recursive: true, force: true });
 }
