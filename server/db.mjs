@@ -199,9 +199,9 @@ function migrateAuditPersistenceNames() {
     throw new Error('Audit persistence migration found an ambiguous legacy column set');
   }
 
-  const existingAuditEventCount = db.prepare(
+  const existingAuditEventCount = Number(db.prepare(
     'SELECT COUNT(*) AS audit_event_count FROM audit_events',
-  ).get().audit_event_count;
+  ).get().audit_event_count);
   if (existingAuditEventCount !== 0) {
     throw new Error('Audit persistence migration refuses to merge two populated authorities');
   }
@@ -243,33 +243,6 @@ migrateAuditPersistenceNames();
 db.exec(`
 CREATE INDEX IF NOT EXISTS audit_events_org_event_idx
   ON audit_events(org_id, audit_event_id);
-
--- The existing HTTP audit contract returns id/action/meta. Keep those legacy wire
--- names connection-local at an explicit adapter boundary; the durable main schema
--- remains semantic and contains no generic audit persistence columns.
-CREATE TEMP VIEW audit_log AS
-SELECT
-  audit_event_id AS id,
-  org_id,
-  user_id,
-  audit_action AS action,
-  target_type,
-  target_id,
-  audit_metadata_json AS meta,
-  created_at
-FROM main.audit_events;
-
-CREATE TEMP TRIGGER audit_log_insert_compatibility
-INSTEAD OF INSERT ON audit_log
-BEGIN
-  INSERT INTO main.audit_events(
-    audit_event_id, org_id, user_id, audit_action, target_type, target_id,
-    audit_metadata_json, created_at
-  ) VALUES (
-    NEW.id, NEW.org_id, NEW.user_id, NEW.action, NEW.target_type, NEW.target_id,
-    NEW.meta, COALESCE(NEW.created_at, datetime('now'))
-  );
-END;
 `);
 
 // Migration for pre-existing DBs: add token_version if missing (idempotent).
