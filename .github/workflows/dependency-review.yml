@@ -14,6 +14,6 @@ concurrency:
 
 jobs:
   dependency-review:
-    uses: ContextualWisdomLab/.github/.github/workflows/dependency-review.yml@0bcd22d8bb07650aafb0a8f116e4c2bbb8744f03
+    uses: ContextualWisdomLab/.github/.github/workflows/dependency-review.yml@5f8e5b2a79e709c4ab1a4179a605d34c458b13a1
     with:
       fail_on_severity: moderate
