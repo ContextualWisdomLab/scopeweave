@@ -13,6 +13,34 @@
   WBS-estimation readiness analysis.
 - `wbs.json`: seed data in the user-specified JSON array format.
 
+## SaaS bounded contexts and persistence
+
+- **Tenant and Access** owns workspaces, memberships, authentication, and RBAC.
+- **Project Planning** owns projects, revisions, baselines, comments, sprints,
+  attachments, shares, and schedule-control state.
+- **Audit Trail** owns append-only enterprise compliance evidence. Its durable
+  SQLite relation is `audit_events`, with semantic persistence vocabulary such
+  as `audit_event_id`, `audit_action`, and `audit_metadata_json`; the principal
+  tenant query index is `audit_events_org_event_idx` on
+  `(org_id, audit_event_id)`.
+- **Integration** owns webhooks, Clearfolio attachment conversion, and
+  contextual-orchestrator briefing boundaries.
+
+The Audit Trail HTTP/CSV/export compatibility surface predates the persistence
+rename and continues to expose wire fields such as `id`, `action`, and `meta`.
+Those generic external names are isolated in explicit SQL aliases at the web
+adapter boundary. Production writes and durable reads use the semantic
+`audit_events` vocabulary directly.
+
+Startup migration treats a historical durable `audit_log` table as a legacy
+compatibility source only. The migration creates the semantic authority first,
+validates that legacy and semantic column sets are not ambiguous, refuses to
+merge two populated authorities, copies legacy rows under `BEGIN IMMEDIATE`,
+drops the old table/indexes in the same transaction, and rolls back on failure.
+The relation remains append-only and normalized as one audit event per row;
+foreign-key semantics, the org-scoped hot read path, UPSERT behavior (none),
+and runtime read/write topology are otherwise unchanged.
+
 ## CI and security structure
 
 - `.github/workflows/pages.yml`: GitHub Pages deployment workflow for the

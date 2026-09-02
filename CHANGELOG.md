@@ -53,6 +53,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Migrated Audit Trail persistence from the generic durable
+  `audit_log.id/action/meta` vocabulary to
+  `audit_events.audit_event_id/audit_action/audit_metadata_json` and the
+  `audit_events_org_event_idx` tenant-read index. Existing audit HTTP, CSV, and
+  workspace-export wire fields remain compatible through explicit web-adapter
+  aliases, while startup migration copies and removes legacy persistence in one
+  fail-closed transaction.
 - Switched the repository-local OpenCode development configuration from GitHub
   Models to an NVIDIA NIM-only candidate set while preserving organization-level
   review-workflow ownership in `ContextualWisdomLab/.github`.
