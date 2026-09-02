@@ -247,6 +247,17 @@ for (const act of ['project.create', 'project.update', 'member.invite', 'member.
 }
 assert.ok(audit.some((e) => e.actorEmail === 'a@b.com'), 'audit resolves actor email');
 assert.ok(audit.some((e) => e.meta && typeof e.meta === 'object'), 'audit meta is structured');
+const auditWireEvent = audit[0];
+for (const wireFieldName of ['id', 'action', 'meta']) {
+  assert.ok(Object.hasOwn(auditWireEvent, wireFieldName), `audit wire contract retains ${wireFieldName}`);
+}
+for (const internalFieldName of ['audit_event_id', 'audit_action', 'audit_metadata_json']) {
+  assert.equal(
+    Object.hasOwn(auditWireEvent, internalFieldName),
+    false,
+    `audit wire contract must not leak ${internalFieldName}`,
+  );
+}
 // non-member cannot read the audit trail
 r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'outsider@x.com', password: 'password123' }) });
 const oauth = { authorization: `Bearer ${(await r.json()).token}` };
@@ -516,13 +527,14 @@ assert.equal((await req('/api/auth/login', { method: 'POST', body: body({ email:
 
 // ---- Audit CSV export ----
 // Plant a formula-injection payload with leading whitespace (the historic bypass
-// of /^[=+\-@|]/). action is free text in the audit log; the CSV cell guard
-// must neutralize it.
+// of /^[=+\-@|]/). audit_action is free text in the audit event store; the CSV
+// cell guard must neutralize it.
 {
   const { db } = await import('../../server/db.mjs');
   db.prepare(
-    `INSERT INTO audit_log(org_id,user_id,action,target_type,target_id,meta)
-     VALUES(?,?,?,?,?,?)`
+    `INSERT INTO audit_events(
+       org_id, user_id, audit_action, target_type, target_id, audit_metadata_json
+     ) VALUES(?,?,?,?,?,?)`
   ).run(orgAId, null, '  =cmd|"/c calc"', 'probe', 'csv-inject', null);
 }
 r = await req(`/api/orgs/${orgAId}/audit?format=csv`, { headers: auth });
