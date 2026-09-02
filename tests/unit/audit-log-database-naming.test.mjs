@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
-const REQUIRED_AUDIT_COLUMNS = new Set([
+const REQUIRED_AUDIT_EVENT_COLUMNS = new Set([
   'audit_event_id',
   'org_id',
   'user_id',
@@ -16,30 +16,39 @@ const REQUIRED_AUDIT_COLUMNS = new Set([
 ]);
 const LEGACY_AUDIT_COLUMNS = ['id', 'action', 'meta'];
 
-function readAuditColumnNames(databaseConnection) {
+function readAuditEventColumnNames(databaseConnection) {
   return new Set(
     databaseConnection
-      .prepare("PRAGMA table_info('audit_log')")
+      .prepare("PRAGMA main.table_info('audit_events')")
       .all()
       .map((columnRecord) => columnRecord.name),
   );
 }
 
-function assertSemanticAuditSchema(databaseConnection) {
-  const auditColumnNames = readAuditColumnNames(databaseConnection);
-  for (const requiredColumnName of REQUIRED_AUDIT_COLUMNS) {
+function assertSemanticAuditPersistence(databaseConnection) {
+  const auditEventColumnNames = readAuditEventColumnNames(databaseConnection);
+  for (const requiredColumnName of REQUIRED_AUDIT_EVENT_COLUMNS) {
     assert.ok(
-      auditColumnNames.has(requiredColumnName),
-      `audit_log must expose semantic column ${requiredColumnName}`,
+      auditEventColumnNames.has(requiredColumnName),
+      `audit_events must expose semantic column ${requiredColumnName}`,
     );
   }
   for (const legacyColumnName of LEGACY_AUDIT_COLUMNS) {
     assert.equal(
-      auditColumnNames.has(legacyColumnName),
+      auditEventColumnNames.has(legacyColumnName),
       false,
-      `audit_log must not retain generic legacy column ${legacyColumnName}`,
+      `audit_events must not retain generic legacy column ${legacyColumnName}`,
     );
   }
+
+  const durableAuditLogObject = databaseConnection
+    .prepare("SELECT type FROM main.sqlite_master WHERE name = 'audit_log'")
+    .get();
+  assert.equal(durableAuditLogObject, undefined, 'legacy audit_log must not remain durable');
+  const compatibilityView = databaseConnection
+    .prepare("SELECT type FROM temp.sqlite_temp_master WHERE name = 'audit_log'")
+    .get();
+  assert.equal(compatibilityView?.type, 'view', 'legacy wire names stay in a TEMP adapter view');
 }
 
 async function importDatabaseModule(databasePath, importLabel) {
@@ -51,7 +60,29 @@ const temporaryDirectory = await mkdtemp(join(tmpdir(), 'scopeweave-audit-naming
 try {
   const freshDatabasePath = join(temporaryDirectory, 'fresh.db');
   const freshDatabaseModule = await importDatabaseModule(freshDatabasePath, 'fresh');
-  assertSemanticAuditSchema(freshDatabaseModule.db);
+  assertSemanticAuditPersistence(freshDatabaseModule.db);
+
+  freshDatabaseModule.db.prepare(`
+    INSERT INTO audit_log(org_id, user_id, action, target_type, target_id, meta)
+    VALUES(?, ?, ?, ?, ?, ?)
+  `).run(3, null, 'project.create', 'project', '5', '{"projectName":"P1"}');
+  const compatibilityAuditEvent = freshDatabaseModule.db.prepare(`
+    SELECT id, action, meta FROM audit_log WHERE org_id = ?
+  `).get(3);
+  assert.deepEqual(compatibilityAuditEvent, {
+    id: 1,
+    action: 'project.create',
+    meta: '{"projectName":"P1"}',
+  });
+  const durableAuditEvent = freshDatabaseModule.db.prepare(`
+    SELECT audit_event_id, audit_action, audit_metadata_json
+    FROM main.audit_events WHERE org_id = ?
+  `).get(3);
+  assert.deepEqual(durableAuditEvent, {
+    audit_event_id: 1,
+    audit_action: 'project.create',
+    audit_metadata_json: '{"projectName":"P1"}',
+  });
   freshDatabaseModule.db.close();
 
   const legacyDatabasePath = join(temporaryDirectory, 'legacy.db');
@@ -78,12 +109,12 @@ try {
   legacyDatabaseConnection.close();
 
   const migratedDatabaseModule = await importDatabaseModule(legacyDatabasePath, 'legacy');
-  assertSemanticAuditSchema(migratedDatabaseModule.db);
+  assertSemanticAuditPersistence(migratedDatabaseModule.db);
   const migratedAuditEvent = migratedDatabaseModule.db
     .prepare(`
       SELECT audit_event_id, org_id, user_id, audit_action, target_type, target_id,
              audit_metadata_json, created_at
-      FROM audit_log
+      FROM main.audit_events
     `)
     .get();
   assert.deepEqual(migratedAuditEvent, {
@@ -98,10 +129,10 @@ try {
   });
 
   const auditIndexNames = migratedDatabaseModule.db
-    .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'audit_log'")
+    .prepare("SELECT name FROM main.sqlite_master WHERE type = 'index' AND tbl_name = 'audit_events'")
     .all()
     .map((indexRecord) => indexRecord.name);
-  assert.ok(auditIndexNames.includes('audit_log_org_event_idx'));
+  assert.ok(auditIndexNames.includes('audit_events_org_event_idx'));
   assert.equal(auditIndexNames.includes('idx_audit_org'), false);
   migratedDatabaseModule.db.close();
 } finally {
