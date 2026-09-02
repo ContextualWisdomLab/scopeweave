@@ -77,7 +77,7 @@ CREATE TABLE IF NOT EXISTS webhook_deliveries (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_wh_deliveries ON webhook_deliveries(webhook_id, id);
-CREATE TABLE IF NOT EXISTS audit_log (
+CREATE TABLE IF NOT EXISTS audit_events (
   audit_event_id INTEGER PRIMARY KEY,
   org_id INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
   user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
@@ -171,68 +171,106 @@ CREATE INDEX IF NOT EXISTS idx_projects_org ON projects(org_id);
 CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);
 `);
 
-function readAuditColumnNames() {
+function readMainTableColumnNames(tableName) {
   return new Set(
-    db.prepare("PRAGMA table_info('audit_log')")
+    db.prepare(`PRAGMA main.table_info('${tableName}')`)
       .all()
       .map((columnRecord) => columnRecord.name),
   );
 }
 
 function migrateAuditPersistenceNames() {
-  const auditColumnRenames = [
-    ['id', 'audit_event_id'],
-    ['action', 'audit_action'],
-    ['meta', 'audit_metadata_json'],
-  ];
-  const initialAuditColumnNames = readAuditColumnNames();
-
-  for (const [legacyColumnName, semanticColumnName] of auditColumnRenames) {
-    if (
-      initialAuditColumnNames.has(legacyColumnName)
-      && initialAuditColumnNames.has(semanticColumnName)
-    ) {
-      throw new Error(
-        `Ambiguous audit persistence schema: both ${legacyColumnName} and ${semanticColumnName} exist`,
-      );
-    }
+  const legacyAuditTable = db.prepare(
+    "SELECT type FROM main.sqlite_master WHERE name = 'audit_log'",
+  ).get();
+  if (!legacyAuditTable) return;
+  if (legacyAuditTable.type !== 'table') {
+    throw new Error('Audit persistence migration expected audit_log to be a table');
   }
 
-  const needsAuditColumnMigration = auditColumnRenames.some(
-    ([legacyColumnName]) => initialAuditColumnNames.has(legacyColumnName),
+  const legacyAuditColumnNames = readMainTableColumnNames('audit_log');
+  const hasLegacyColumnSet = ['id', 'action', 'meta'].every(
+    (legacyColumnName) => legacyAuditColumnNames.has(legacyColumnName),
   );
-
-  if (needsAuditColumnMigration) {
-    db.exec('BEGIN IMMEDIATE');
-    try {
-      for (const [legacyColumnName, semanticColumnName] of auditColumnRenames) {
-        if (initialAuditColumnNames.has(legacyColumnName)) {
-          db.exec(
-            `ALTER TABLE audit_log RENAME COLUMN ${legacyColumnName} TO ${semanticColumnName}`,
-          );
-        }
-      }
-      db.exec('COMMIT');
-    } catch (migrationError) {
-      try { db.exec('ROLLBACK'); } catch { /* preserve the causal migration failure */ }
-      throw migrationError;
-    }
-  }
-
-  const migratedAuditColumnNames = readAuditColumnNames();
-  for (const [, semanticColumnName] of auditColumnRenames) {
-    if (!migratedAuditColumnNames.has(semanticColumnName)) {
-      throw new Error(`Audit persistence schema is missing ${semanticColumnName}`);
-    }
-  }
-
-  db.exec('DROP INDEX IF EXISTS idx_audit_org');
-  db.exec(
-    'CREATE INDEX IF NOT EXISTS audit_log_org_event_idx ON audit_log(org_id, audit_event_id)',
+  const hasSemanticColumnSet = ['audit_event_id', 'audit_action', 'audit_metadata_json'].every(
+    (semanticColumnName) => legacyAuditColumnNames.has(semanticColumnName),
   );
+  if (hasLegacyColumnSet === hasSemanticColumnSet) {
+    throw new Error('Audit persistence migration found an ambiguous legacy column set');
+  }
+
+  const existingAuditEventCount = db.prepare(
+    'SELECT COUNT(*) AS audit_event_count FROM audit_events',
+  ).get().audit_event_count;
+  if (existingAuditEventCount !== 0) {
+    throw new Error('Audit persistence migration refuses to merge two populated authorities');
+  }
+
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    if (hasLegacyColumnSet) {
+      db.exec(`
+        INSERT INTO audit_events(
+          audit_event_id, org_id, user_id, audit_action, target_type, target_id,
+          audit_metadata_json, created_at
+        )
+        SELECT id, org_id, user_id, action, target_type, target_id, meta, created_at
+        FROM audit_log
+      `);
+    } else {
+      db.exec(`
+        INSERT INTO audit_events(
+          audit_event_id, org_id, user_id, audit_action, target_type, target_id,
+          audit_metadata_json, created_at
+        )
+        SELECT audit_event_id, org_id, user_id, audit_action, target_type, target_id,
+               audit_metadata_json, created_at
+        FROM audit_log
+      `);
+    }
+    db.exec('DROP INDEX IF EXISTS idx_audit_org');
+    db.exec('DROP INDEX IF EXISTS audit_log_org_event_idx');
+    db.exec('DROP TABLE audit_log');
+    db.exec('COMMIT');
+  } catch (migrationError) {
+    try { db.exec('ROLLBACK'); } catch { /* preserve the causal migration failure */ }
+    throw migrationError;
+  }
 }
 
 migrateAuditPersistenceNames();
+
+db.exec(`
+CREATE INDEX IF NOT EXISTS audit_events_org_event_idx
+  ON audit_events(org_id, audit_event_id);
+
+-- The existing HTTP audit contract returns id/action/meta. Keep those legacy wire
+-- names connection-local at an explicit adapter boundary; the durable main schema
+-- remains semantic and contains no generic audit persistence columns.
+CREATE TEMP VIEW audit_log AS
+SELECT
+  audit_event_id AS id,
+  org_id,
+  user_id,
+  audit_action AS action,
+  target_type,
+  target_id,
+  audit_metadata_json AS meta,
+  created_at
+FROM main.audit_events;
+
+CREATE TEMP TRIGGER audit_log_insert_compatibility
+INSTEAD OF INSERT ON audit_log
+BEGIN
+  INSERT INTO main.audit_events(
+    audit_event_id, org_id, user_id, audit_action, target_type, target_id,
+    audit_metadata_json, created_at
+  ) VALUES (
+    NEW.id, NEW.org_id, NEW.user_id, NEW.action, NEW.target_type, NEW.target_id,
+    NEW.meta, COALESCE(NEW.created_at, datetime('now'))
+  );
+END;
+`);
 
 // Migration for pre-existing DBs: add token_version if missing (idempotent).
 try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
