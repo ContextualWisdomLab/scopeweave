@@ -107,3 +107,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.1] - 2026-06-25
 ### 성능 개선 (Performance)
 - 드래그 앤 드롭 동작 중 `dragover` 이벤트에서 발생하는 O(N) 작업 리스트 검색 성능 병목 문제를, O(1) 해시맵(Map) 기반의 캐싱 조회 로직으로 개선하여 큰 크기의 WBS 리스트에서의 버벅임 현상을 해결했습니다.
+
+### Changed
+
+- `formatDateInput`, `formatLocalDateInput`, `formatCompactDate`와 같은 날짜 포맷팅 함수에서 렌더링 성능 향상을 위해 `padStart` 대신 인라인 삼항 연산자를 사용한 문자열 연결로 변경
