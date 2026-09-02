@@ -30,11 +30,11 @@ jobs:
         with:
           enablement: true
 
-      - name: Stage runtime files
+      - name: Stage runtime and documentation files
         run: |
           mkdir -p _site/docs
           cp index.html 404.html app.js cloud-sync.js analytics.js styles.css toast-state.css wbs.json _site/
-          cp docs/user-guide.md _site/docs/
+          cp docs/index.html docs/user-guide.md docs/api.md docs/deploy.md docs/security.md _site/docs/
 
       - name: Upload static artifact
         uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
