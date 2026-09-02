@@ -12,13 +12,13 @@ import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
-const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
+const getOrg = (organizationId) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(organizationId);
 
 // Append-only audit trail. Never throws into the request path.
-function logAudit(orgId, userId, action, targetType, targetId, meta) {
+function recordAuditEvent(organizationId, actorUserId, auditAction, targetType, targetId, auditMetadata) {
   try {
-    db.prepare('INSERT INTO audit_log(org_id,user_id,action,target_type,target_id,meta) VALUES(?,?,?,?,?,?)')
-      .run(orgId, userId ?? null, action, targetType ?? null, targetId != null ? String(targetId) : null, meta ? JSON.stringify(meta) : null);
+    db.prepare('INSERT INTO audit_events(org_id,user_id,audit_action,target_type,target_id,audit_metadata_json) VALUES(?,?,?,?,?,?)')
+      .run(organizationId, actorUserId ?? null, auditAction, targetType ?? null, targetId != null ? String(targetId) : null, auditMetadata ? JSON.stringify(auditMetadata) : null);
   } catch { /* audit must not break the operation */ }
 }
 
@@ -222,7 +222,7 @@ app.post('/api/orgs', requireAuth, async (c) => {
     db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)').run(oid, uid, 'owner');
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
-  logAudit(oid, uid, 'org.create', 'org', oid, { name });
+  recordAuditEvent(oid, uid, 'org.create', 'org', oid, { name });
   return c.json({ id: oid, name: String(name).trim(), role: 'owner' });
 });
 
@@ -249,7 +249,7 @@ app.post('/api/projects', requireAuth, async (c) => {
   }
   const id = rowid(db.prepare('INSERT INTO projects(org_id,name,created_by) VALUES(?,?,?)').run(org.id, name, uid));
   metrics.projectsCreated++;
-  logAudit(org.id, uid, 'project.create', 'project', id, { name });
+  recordAuditEvent(org.id, uid, 'project.create', 'project', id, { name });
   return c.json({ id, name, version: 1 });
 });
 
@@ -275,7 +275,7 @@ app.put('/api/projects/:id', requireAuth, async (c) => {
   db.prepare(
     "UPDATE projects SET name=?, base_date=?, tasks_json=?, version=?, methodology=?, updated_at=datetime('now') WHERE id=?"
   ).run(body.name ?? p.name, body.baseDate ?? p.base_date, JSON.stringify(tasks), version, methodology, id);
-  logAudit(p.org_id, uid, 'project.update', 'project', id, { version, tasks: tasks.length });
+  recordAuditEvent(p.org_id, uid, 'project.update', 'project', id, { version, tasks: tasks.length });
   // Revision history: snapshot every save, keep the last 20 per project.
   try {
     db.prepare('INSERT OR REPLACE INTO project_revisions(project_id,version,name,base_date,tasks_json,saved_by) VALUES(?,?,?,?,?,?)')
@@ -314,7 +314,7 @@ app.post('/api/projects/:id/comments', requireAuth, async (c) => {
   if (text.length > 2000) return c.json({ error: 'comment too long (max 2000)' }, 400);
   const cid = rowid(db.prepare('INSERT INTO comments(project_id,task_id,user_id,body) VALUES(?,?,?,?)')
     .run(p.id, String(taskId || ''), uid, text));
-  logAudit(p.org_id, uid, 'comment.create', 'project', p.id, { commentId: cid, taskId: taskId || null });
+  recordAuditEvent(p.org_id, uid, 'comment.create', 'project', p.id, { commentId: cid, taskId: taskId || null });
   broadcast(p.id, { type: 'comment', commentId: cid, by: uid });
   return c.json({ id: cid });
 });
@@ -367,7 +367,7 @@ app.post('/api/projects/:id/revisions/:version/restore', requireAuth, (c) => {
     db.prepare('INSERT OR REPLACE INTO project_revisions(project_id,version,name,base_date,tasks_json,saved_by) VALUES(?,?,?,?,?,?)')
       .run(id, version, r.name, r.base_date, r.tasks_json, uid);
   } catch { /* history must not break restore */ }
-  logAudit(p.org_id, uid, 'project.restore', 'project', id, { from: Number(c.req.param('version')), version });
+  recordAuditEvent(p.org_id, uid, 'project.restore', 'project', id, { from: Number(c.req.param('version')), version });
   broadcast(id, { type: 'update', version, by: uid });
   return c.json({ version });
 });
@@ -464,7 +464,7 @@ app.delete('/api/orgs/:id/invites/:inviteId', requireAuth, (c) => {
   const info = db.prepare('DELETE FROM invites WHERE id = ? AND org_id = ? AND accepted_at IS NULL')
     .run(c.req.param('inviteId'), orgId);
   if (!info.changes) return c.json({ error: 'not found' }, 404);
-  logAudit(orgId, uid, 'invite.revoke', 'invite', c.req.param('inviteId'), {});
+  recordAuditEvent(orgId, uid, 'invite.revoke', 'invite', c.req.param('inviteId'), {});
   return c.json({ ok: true });
 });
 
@@ -483,7 +483,7 @@ app.post('/api/orgs/:id/invites', requireAuth, async (c) => {
   const token = randomBytes(24).toString('base64url');
   db.prepare('INSERT INTO invites(org_id,email,role,token,invited_by) VALUES(?,?,?,?,?)')
     .run(orgId, email, inviteRole, token, uid);
-  logAudit(orgId, uid, 'member.invite', 'invite', email, { role: inviteRole });
+  recordAuditEvent(orgId, uid, 'member.invite', 'invite', email, { role: inviteRole });
   return c.json({ token, email, role: inviteRole });
 });
 
@@ -498,7 +498,7 @@ app.post('/api/invites/:token/accept', requireAuth, (c) => {
       return c.json({ error: 'member limit reached on the Free plan', upgrade: true, limit: PLANS.free.limits.members }, 402);
     }
     db.prepare('INSERT INTO memberships(org_id,user_id,role) VALUES(?,?,?)').run(inv.org_id, uid, inv.role);
-    logAudit(inv.org_id, uid, 'member.join', 'user', uid, { role: inv.role });
+    recordAuditEvent(inv.org_id, uid, 'member.join', 'user', uid, { role: inv.role });
     deliver(inv.org_id, 'member.join', { userId: uid, role: inv.role });
   }
   db.prepare("UPDATE invites SET accepted_at = datetime('now') WHERE id = ?").run(inv.id);
@@ -518,7 +518,7 @@ app.patch('/api/orgs/:id/members/:userId', requireAuth, async (c) => {
   if (!target) return c.json({ error: 'not found' }, 404);
   if (target.role === 'owner') return c.json({ error: 'cannot change owner role' }, 403);
   db.prepare('UPDATE memberships SET role = ? WHERE org_id = ? AND user_id = ?').run(newRole, orgId, targetId);
-  logAudit(orgId, uid, 'member.role_change', 'user', targetId, { from: target.role, to: newRole });
+  recordAuditEvent(orgId, uid, 'member.role_change', 'user', targetId, { from: target.role, to: newRole });
   return c.json({ userId: Number(targetId), role: newRole });
 });
 
@@ -532,7 +532,7 @@ app.delete('/api/orgs/:id/members/:userId', requireAuth, (c) => {
   if (!target) return c.json({ error: 'not found' }, 404);
   if (target.role === 'owner') return c.json({ error: 'cannot remove owner' }, 403);
   db.prepare('DELETE FROM memberships WHERE org_id = ? AND user_id = ?').run(orgId, targetId);
-  logAudit(orgId, uid, 'member.remove', 'user', targetId, { role: target.role });
+  recordAuditEvent(orgId, uid, 'member.remove', 'user', targetId, { role: target.role });
   return c.json({ ok: true });
 });
 
@@ -545,7 +545,7 @@ app.post('/api/orgs/:id/leave', requireAuth, (c) => {
   if (!role) return c.json({ error: 'not found' }, 404);
   if (role === 'owner') return c.json({ error: 'owner cannot leave; delete the workspace or transfer ownership' }, 403);
   db.prepare('DELETE FROM memberships WHERE org_id = ? AND user_id = ?').run(orgId, uid);
-  logAudit(orgId, uid, 'member.leave', 'user', uid, { role });
+  recordAuditEvent(orgId, uid, 'member.leave', 'user', uid, { role });
   return c.json({ ok: true });
 });
 
@@ -566,7 +566,7 @@ app.post('/api/orgs/:id/transfer', requireAuth, async (c) => {
     db.prepare('UPDATE orgs SET owner_id = ? WHERE id = ?').run(userId, orgId);
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
-  logAudit(orgId, uid, 'org.transfer', 'user', userId, { from: uid });
+  recordAuditEvent(orgId, uid, 'org.transfer', 'user', userId, { from: uid });
   return c.json({ ok: true, newOwnerId: Number(userId) });
 });
 
@@ -578,7 +578,7 @@ app.patch('/api/orgs/:id', requireAuth, async (c) => {
   const { name } = await c.req.json().catch(() => ({}));
   if (!name || !String(name).trim()) return c.json({ error: 'name required' }, 400);
   db.prepare('UPDATE orgs SET name = ? WHERE id = ?').run(String(name).trim().slice(0, 120), orgId);
-  logAudit(orgId, uid, 'org.rename', 'org', orgId, { name });
+  recordAuditEvent(orgId, uid, 'org.rename', 'org', orgId, { name });
   return c.json({ id: Number(orgId), name: String(name).trim() });
 });
 
@@ -620,7 +620,7 @@ app.post('/api/orgs/:id/_dev/activate-pro', requireAuth, (c) => {
   const orgId = c.req.param('id');
   if (orgRole(uid, orgId) !== 'owner') return c.json({ error: 'forbidden' }, 403);
   db.prepare("UPDATE orgs SET plan = 'pro' WHERE id = ?").run(orgId);
-  logAudit(orgId, uid, 'billing.upgrade', 'org', orgId, { plan: 'pro', via: 'dev' });
+  recordAuditEvent(orgId, uid, 'billing.upgrade', 'org', orgId, { plan: 'pro', via: 'dev' });
   deliver(orgId, 'billing.upgrade', { plan: 'pro' });
   return c.json({ plan: 'pro' });
 });
@@ -656,14 +656,19 @@ app.get('/api/orgs/:id/audit', requireAuth, (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
-  const limit = Math.min(Number(c.req.query('limit')) || 100, 500);
-  const rows = db.prepare(
-    `SELECT a.id, a.action, a.target_type AS targetType, a.target_id AS targetId, a.meta,
-            a.created_at AS createdAt, u.email AS actorEmail
-     FROM audit_log a LEFT JOIN users u ON u.id = a.user_id
-     WHERE a.org_id = ? ORDER BY a.id DESC LIMIT ?`
-  ).all(orgId, limit);
-  const events = rows.map((r) => ({ ...r, meta: r.meta ? JSON.parse(r.meta) : null }));
+  const auditLimit = Math.min(Number(c.req.query('limit')) || 100, 500);
+  const auditRows = db.prepare(
+    `SELECT a.audit_event_id AS id, a.audit_action AS action,
+            a.target_type AS targetType, a.target_id AS targetId,
+            a.audit_metadata_json AS meta, a.created_at AS createdAt,
+            u.email AS actorEmail
+     FROM audit_events a LEFT JOIN users u ON u.id = a.user_id
+     WHERE a.org_id = ? ORDER BY a.audit_event_id DESC LIMIT ?`
+  ).all(orgId, auditLimit);
+  const auditEvents = auditRows.map((auditRow) => ({
+    ...auditRow,
+    meta: auditRow.meta ? JSON.parse(auditRow.meta) : null,
+  }));
   if (c.req.query('format') === 'csv') {
     // Compliance deliverable. Formula-injection-safe: values that (after optional
     // leading whitespace) start with = + - @ | are prefixed with ' so
@@ -676,15 +681,23 @@ app.get('/api/orgs/:id/audit', requireAuth, (c) => {
     };
     const header = ['id', 'createdAt', 'actorEmail', 'action', 'targetType', 'targetId', 'meta'];
     const lines = [header.join(',')];
-    for (const e of events) {
-      lines.push([e.id, e.createdAt, e.actorEmail, e.action, e.targetType, e.targetId, e.meta ? JSON.stringify(e.meta) : ''].map(csvCell).join(','));
+    for (const auditEvent of auditEvents) {
+      lines.push([
+        auditEvent.id,
+        auditEvent.createdAt,
+        auditEvent.actorEmail,
+        auditEvent.action,
+        auditEvent.targetType,
+        auditEvent.targetId,
+        auditEvent.meta ? JSON.stringify(auditEvent.meta) : '',
+      ].map(csvCell).join(','));
     }
     return c.text(lines.join('\r\n') + '\r\n', 200, {
       'content-type': 'text/csv; charset=utf-8',
       'content-disposition': `attachment; filename="scopeweave-audit-${orgId}.csv"`,
     });
   }
-  return c.json({ events });
+  return c.json({ events: auditEvents });
 });
 
 // Full workspace export (owner only) — data portability / GDPR. Everything the
@@ -700,14 +713,17 @@ app.get('/api/orgs/:id/export', requireAuth, (c) => {
   const projects = db.prepare(
     'SELECT id, name, base_date AS baseDate, tasks_json, version, created_at AS createdAt, updated_at AS updatedAt FROM projects WHERE org_id = ?'
   ).all(orgId).map((p) => ({ ...p, tasks: JSON.parse(p.tasks_json), tasks_json: undefined }));
-  const audit = db.prepare(
-    'SELECT action, target_type AS targetType, target_id AS targetId, meta, created_at AS createdAt FROM audit_log WHERE org_id = ? ORDER BY id'
-  ).all(orgId).map((a) => ({ ...a, meta: a.meta ? JSON.parse(a.meta) : null }));
-  logAudit(orgId, uid, 'org.export', 'org', orgId, { projects: projects.length });
+  const auditEvents = db.prepare(
+    'SELECT audit_action AS action, target_type AS targetType, target_id AS targetId, audit_metadata_json AS meta, created_at AS createdAt FROM audit_events WHERE org_id = ? ORDER BY audit_event_id'
+  ).all(orgId).map((auditEventRow) => ({
+    ...auditEventRow,
+    meta: auditEventRow.meta ? JSON.parse(auditEventRow.meta) : null,
+  }));
+  recordAuditEvent(orgId, uid, 'org.export', 'org', orgId, { projects: projects.length });
   return c.json({
     exportedAt: new Date().toISOString(),
     org: { id: org.id, name: org.name, plan: org.plan },
-    members, projects, audit,
+    members, projects, audit: auditEvents,
   }, 200, { 'Content-Disposition': `attachment; filename="scopeweave-org-${orgId}.json"` });
 });
 
@@ -751,7 +767,7 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
-  logAudit(orgId, uid, 'webhook.create', 'webhook', id, { url, events: evs });
+  recordAuditEvent(orgId, uid, 'webhook.create', 'webhook', id, { url, events: evs });
   return c.json({ id, url, events: evs, secret }); // secret shown once for signature verification
 });
 
@@ -776,7 +792,7 @@ app.post('/api/orgs/:id/webhooks/:whId/rotate', requireAuth, (c) => {
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const info = db.prepare('UPDATE webhooks SET secret = ? WHERE id = ? AND org_id = ?').run(secret, c.req.param('whId'), orgId);
   if (!info.changes) return c.json({ error: 'not found' }, 404);
-  logAudit(orgId, uid, 'webhook.rotate', 'webhook', c.req.param('whId'), {});
+  recordAuditEvent(orgId, uid, 'webhook.rotate', 'webhook', c.req.param('whId'), {});
   return c.json({ id: Number(c.req.param('whId')), secret }); // shown once
 });
 
@@ -999,7 +1015,7 @@ app.post('/api/projects/:id/ai/brief', requireAuth, async (c) => {
       service: 'scopeweave',
       account: String(p.org_id),
     });
-    logAudit(p.org_id, uid, 'ai.brief', 'project', p.id, { tasks: tasks.length });
+    recordAuditEvent(p.org_id, uid, 'ai.brief', 'project', p.id, { tasks: tasks.length });
     return c.json({ analysis });
   } catch (e) {
     return c.json({ error: `AI 분석 실패: ${e.message}` }, 502);
@@ -1056,7 +1072,7 @@ app.post('/api/projects/:id/attachments', requireAuth, async (c) => {
   const aid = rowid(db.prepare(
     'INSERT INTO attachments(project_id,task_id,name,mime,size,job_id,status,created_by) VALUES(?,?,?,?,?,?,?,?)'
   ).run(p.id, taskId, file.name || 'document', file.type || '', file.size, job.jobId, job.status, uid));
-  logAudit(p.org_id, uid, 'attachment.upload', 'project', p.id, { attachmentId: aid, name: file.name, taskId: taskId || null });
+  recordAuditEvent(p.org_id, uid, 'attachment.upload', 'project', p.id, { attachmentId: aid, name: file.name, taskId: taskId || null });
   return c.json({ id: aid, status: job.status });
 });
 
@@ -1119,7 +1135,7 @@ app.delete('/api/projects/:id/attachments/:aid', requireAuth, (c) => {
   if (!a) return c.json({ error: 'not found' }, 404);
   if (a.created_by !== uid && !canManage(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
   db.prepare('DELETE FROM attachments WHERE id = ?').run(c.req.param('aid'));
-  logAudit(p.org_id, uid, 'attachment.delete', 'project', p.id, { attachmentId: Number(c.req.param('aid')) });
+  recordAuditEvent(p.org_id, uid, 'attachment.delete', 'project', p.id, { attachmentId: Number(c.req.param('aid')) });
   return c.json({ ok: true });
 });
 
@@ -1144,7 +1160,7 @@ app.post('/api/projects/:id/shares', requireAuth, (c) => {
   if (!canManage(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
   const token = randomBytes(18).toString('base64url');
   db.prepare('INSERT INTO share_tokens(project_id, token, created_by) VALUES(?,?,?)').run(p.id, token, uid);
-  logAudit(p.org_id, uid, 'share.create', 'project', p.id, {});
+  recordAuditEvent(p.org_id, uid, 'share.create', 'project', p.id, {});
   return c.json({ token, url: `/?share=${token}` });
 });
 
@@ -1166,7 +1182,7 @@ app.delete('/api/projects/:id/shares/:sid', requireAuth, (c) => {
   const info = db.prepare('UPDATE share_tokens SET revoked = 1 WHERE id = ? AND project_id = ? AND revoked = 0')
     .run(c.req.param('sid'), p.id);
   if (!info.changes) return c.json({ error: 'not found' }, 404);
-  logAudit(p.org_id, uid, 'share.revoke', 'project', p.id, { shareId: Number(c.req.param('sid')) });
+  recordAuditEvent(p.org_id, uid, 'share.revoke', 'project', p.id, { shareId: Number(c.req.param('sid')) });
   return c.json({ ok: true });
 });
 
@@ -1220,7 +1236,7 @@ app.post('/api/projects/:id/archive', requireAuth, async (c) => {
   const { archived } = await c.req.json().catch(() => ({}));
   const flag = archived === false ? 0 : 1;
   db.prepare('UPDATE projects SET archived = ? WHERE id = ?').run(flag, p.id);
-  logAudit(p.org_id, uid, flag ? 'project.archive' : 'project.unarchive', 'project', p.id, {});
+  recordAuditEvent(p.org_id, uid, flag ? 'project.archive' : 'project.unarchive', 'project', p.id, {});
   return c.json({ id: p.id, archived: Boolean(flag) });
 });
 
@@ -1239,7 +1255,7 @@ app.post('/api/projects/:id/duplicate', requireAuth, async (c) => {
   const nid = rowid(db.prepare('INSERT INTO projects(org_id,name,base_date,tasks_json,created_by) VALUES(?,?,?,?,?)')
     .run(p.org_id, newName, p.base_date, p.tasks_json, uid));
   metrics.projectsCreated++;
-  logAudit(p.org_id, uid, 'project.duplicate', 'project', nid, { from: p.id, name: newName });
+  recordAuditEvent(p.org_id, uid, 'project.duplicate', 'project', nid, { from: p.id, name: newName });
   return c.json({ id: nid, name: newName, version: 1 });
 });
 
@@ -1257,7 +1273,7 @@ app.post('/api/projects/:id/sprints', requireAuth, async (c) => {
   const day = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? v : '');
   const sid = rowid(db.prepare('INSERT INTO sprints(project_id,name,start_date,end_date,goal) VALUES(?,?,?,?,?)')
     .run(p.id, String(name).trim().slice(0, 80), day(startDate), day(endDate), String(goal || '').slice(0, 300)));
-  logAudit(p.org_id, uid, 'sprint.create', 'project', p.id, { sprintId: sid, name });
+  recordAuditEvent(p.org_id, uid, 'sprint.create', 'project', p.id, { sprintId: sid, name });
   return c.json({ id: sid, name: String(name).trim() });
 });
 
@@ -1292,7 +1308,7 @@ app.post('/api/projects/:id/baselines', requireAuth, async (c) => {
   const { name } = await c.req.json().catch(() => ({}));
   const bid = rowid(db.prepare('INSERT INTO baselines(project_id,name,base_date,tasks_json,created_by) VALUES(?,?,?,?,?)')
     .run(id, String(name || 'Baseline').slice(0, 80), p.base_date, p.tasks_json, uid));
-  logAudit(p.org_id, uid, 'baseline.create', 'project', id, { baselineId: bid, name });
+  recordAuditEvent(p.org_id, uid, 'baseline.create', 'project', id, { baselineId: bid, name });
   return c.json({ id: bid, name: name || 'Baseline' });
 });
 
@@ -1332,7 +1348,7 @@ app.delete('/api/projects/:id', requireAuth, (c) => {
   if (!p) return c.json({ error: 'not found' }, 404);
   if (!canWrite(p.memberRole)) return c.json({ error: 'forbidden' }, 403);
   db.prepare('DELETE FROM projects WHERE id = ?').run(id);
-  logAudit(p.org_id, uid, 'project.delete', 'project', id, { name: p.name });
+  recordAuditEvent(p.org_id, uid, 'project.delete', 'project', id, { name: p.name });
   deliver(p.org_id, 'project.delete', { projectId: Number(id) });
   return c.json({ ok: true });
 });
@@ -1370,7 +1386,7 @@ app.delete('/api/account', requireAuth, async (c) => {
   }
   db.exec('BEGIN');
   try {
-    db.prepare('DELETE FROM orgs WHERE owner_id = ?').run(uid); // cascades projects/members/webhooks/invites/audit
+    db.prepare('DELETE FROM orgs WHERE owner_id = ?').run(uid); // cascades projects/members/webhooks/invites/audit_events
     db.prepare('DELETE FROM users WHERE id = ?').run(uid);       // cascades memberships/tokens
     db.exec('COMMIT');
   } catch (e) { db.exec('ROLLBACK'); throw e; }
