@@ -67,6 +67,7 @@ def test_companion_workflows_pin_central_dependency_review_and_cover_osv_manifes
     )
     assert expected_reusable_workflow in dependency_review_source
     assert "dependency-review.yml@main" not in dependency_review_source
+    assert "permissions:\n  contents: read\n  pull-requests: read" in dependency_review_source
     assert "fail_on_severity: moderate" in dependency_review_source
     assert 'requirements(-[A-Za-z0-9._-]+)?\\.txt' in osv_source
     assert "google/osv-scanner-action" in osv_source
