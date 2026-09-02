@@ -8,6 +8,7 @@ DEPENDENCY_REVIEW_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "dependency-r
 OSV_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "osvscanner.yml"
 K8S_DEPLOYMENT = REPO_ROOT / "infra" / "k8s" / "deployment.yaml"
 K8S_SERVICE = REPO_ROOT / "infra" / "k8s" / "service.yaml"
+CENTRAL_DEPENDENCY_REVIEW_WORKFLOW_SHA = "0bcd22d8bb07650aafb0a8f116e4c2bbb8744f03"
 
 
 def test_central_review_workflows_are_not_copied_into_this_repository() -> None:
@@ -56,11 +57,17 @@ def test_kubernetes_deployment_uses_non_root_versioned_runtime() -> None:
     assert 'targetPort: 8080' in service_source
 
 
-def test_companion_workflows_cover_named_requirements_manifests_and_full_history() -> None:
+def test_companion_workflows_pin_central_dependency_review_and_cover_osv_manifests() -> None:
     dependency_review_source = DEPENDENCY_REVIEW_WORKFLOW.read_text(encoding="utf-8")
     osv_source = OSV_WORKFLOW.read_text(encoding="utf-8")
 
-    assert "actions/dependency-review-action@" in dependency_review_source
+    expected_reusable_workflow = (
+        "ContextualWisdomLab/.github/.github/workflows/dependency-review.yml@"
+        f"{CENTRAL_DEPENDENCY_REVIEW_WORKFLOW_SHA}"
+    )
+    assert expected_reusable_workflow in dependency_review_source
+    assert "dependency-review.yml@main" not in dependency_review_source
+    assert "fail_on_severity: moderate" in dependency_review_source
     assert 'requirements(-[A-Za-z0-9._-]+)?\\.txt' in osv_source
     assert "google/osv-scanner-action" in osv_source
     assert "-r" in osv_source
