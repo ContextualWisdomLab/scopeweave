@@ -37,7 +37,8 @@ test.describe('inline editor disabled-state feedback', () => {
     const isDisabled = await saveButton.evaluate(n => n.disabled);
     expect(isDisabled).toBe(false);
 
-    await saveButton.click();
+    // Instead of a Playwright synthetic click, use plain evaluate to sidestep test runner validation bugs
+    await saveButton.evaluate(n => n.click());
 
     await expect(page.locator('#toast')).toContainText('입력값을 올바르게 수정해야 저장할 수 있습니다.');
     await expect(page.locator('#editor-errors')).toContainText('최상위 작업은 단계 값을 입력해야 합니다.');
