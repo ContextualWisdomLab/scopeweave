@@ -115,3 +115,7 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+
+## 2026-09-03 - [Make meta summary cards accessible to keyboard users]
+**Learning:** Decorative information elements like progress summary cards, if not intrinsically focusable, are hidden from keyboard-only and screen-reader users. To make their tooltips accessible, they must be added to the tab order and provide semantic meaning. However, adding `tabindex="0"` alone is an anti-pattern.
+**Action:** When making non-interactive elements like `div` or `span` focusable to expose their tooltips, always pair `tabindex="0"` with a valid ARIA role (e.g., `role="note"`, `role="region"`) to provide semantic context to screen readers.
