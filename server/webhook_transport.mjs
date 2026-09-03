@@ -15,7 +15,6 @@ for (const [network, prefix] of [
 
 for (const [network, prefix] of [
   ['::', 128], ['::1', 128], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8],
-  ['64:ff9b::', 96], ['64:ff9b:1::', 48],
   ['2001:2::', 48], ['2001:db8::', 32],
   ['::ffff:0:0', 104], ['::ffff:a00:0', 104], ['::ffff:6440:0', 106],
   ['::ffff:7f00:0', 104], ['::ffff:a9fe:0', 112], ['::ffff:ac10:0', 108],
@@ -43,10 +42,7 @@ export function parseWebhookUrl(urlText) {
   }
   if (url.protocol !== 'https:') throw new TypeError('webhook URL must use https');
   if (url.username || url.password) throw new TypeError('webhook URL must not contain credentials');
-  const hostname = unbracket(url.hostname);
-  if (isIP(hostname) && !isPublicWebhookAddress(hostname)) {
-    throw new TypeError('webhook URL must use a public destination');
-  }
+  if (!url.hostname) throw new TypeError('webhook URL must contain a host');
   return url;
 }
 

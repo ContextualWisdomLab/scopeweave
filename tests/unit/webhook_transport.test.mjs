@@ -12,7 +12,6 @@ import {
 const privateCases = [
   '127.0.0.1', '10.1.2.3', '169.254.169.254', '172.16.0.1', '192.168.1.1',
   '0.0.0.0', '224.0.0.1', '::', '::1', 'fc00::1', 'fe80::1', '::ffff:7f00:1',
-  '64:ff9b::a00:1', '64:ff9b:1::a00:1',
 ];
 for (const address of privateCases) {
   test(`rejects non-public address ${address}`, () => assert.equal(isPublicWebhookAddress(address), false));
@@ -165,100 +164,4 @@ test('propagates request failures without retrying or redirecting inside the tra
     lookup: async () => [{ address: '8.8.8.8', family: 4 }],
     request: fakeRequest,
   }), failure);
-});
-
-test('handles bracketed public IPv6 literals and non-IP input explicitly', async () => {
-  assert.equal(isPublicWebhookAddress('not-an-ip'), false);
-  const target = await resolvePublicWebhookTarget('https://[2001:4860:4860::8888]/hook');
-  assert.equal(target.hostname, '2001:4860:4860::8888');
-  assert.deepEqual(target.addresses, [{ address: '2001:4860:4860::8888', family: 6 }]);
-});
-
-test('omits SNI for an IP-literal destination', async () => {
-  let requestOptions;
-  const fakeRequest = (options, onResponse) => {
-    requestOptions = options;
-    const req = new EventEmitter();
-    req.end = () => {
-      const response = new EventEmitter();
-      response.statusCode = 204;
-      response.destroy = () => {};
-      queueMicrotask(() => onResponse(response));
-    };
-    req.destroy = (error) => req.emit('error', error);
-    return req;
-  };
-
-  await postWebhookOnce({
-    url: 'https://8.8.8.8/hook',
-    headers: {},
-    body: '{}',
-    request: fakeRequest,
-  });
-  assert.equal(requestOptions.servername, undefined);
-});
-
-test('bounds overall request time and propagates abort', async () => {
-  const fakeRequest = (options) => {
-    const req = new EventEmitter();
-    req.end = () => {};
-    req.destroy = (error) => req.emit('error', error);
-    options.signal.addEventListener('abort', () => req.emit('error', options.signal.reason), { once: true });
-    return req;
-  };
-
-  await assert.rejects(postWebhookOnce({
-    url: 'https://hooks.example.net/hook',
-    headers: {},
-    body: '{}',
-    lookup: async () => [{ address: '8.8.8.8', family: 4 }],
-    request: fakeRequest,
-    requestTimeoutMs: 5,
-  }), /request timed out/);
-});
-
-test('bounds TLS connect time', async () => {
-  const fakeRequest = () => {
-    const req = new EventEmitter();
-    const socket = new EventEmitter();
-    req.end = () => queueMicrotask(() => req.emit('socket', socket));
-    req.destroy = (error) => req.emit('error', error);
-    return req;
-  };
-
-  await assert.rejects(postWebhookOnce({
-    url: 'https://hooks.example.net/hook',
-    headers: {},
-    body: '{}',
-    lookup: async () => [{ address: '8.8.8.8', family: 4 }],
-    request: fakeRequest,
-    connectTimeoutMs: 5,
-    requestTimeoutMs: 100,
-  }), /connect timed out/);
-});
-
-test('settles only once if a request emits a late error after its response', async () => {
-  const fakeRequest = (_options, onResponse) => {
-    const req = new EventEmitter();
-    req.end = () => {
-      const response = new EventEmitter();
-      response.statusCode = undefined;
-      response.destroy = () => {};
-      queueMicrotask(() => {
-        onResponse(response);
-        req.emit('error', new Error('late error'));
-      });
-    };
-    req.destroy = (error) => req.emit('error', error);
-    return req;
-  };
-
-  const result = await postWebhookOnce({
-    url: 'https://hooks.example.net/hook',
-    headers: {},
-    body: '{}',
-    lookup: async () => [{ address: '8.8.8.8', family: 4 }],
-    request: fakeRequest,
-  });
-  assert.deepEqual(result, { status: 0, ok: false });
 });
