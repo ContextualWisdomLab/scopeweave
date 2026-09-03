@@ -13,7 +13,8 @@ test.describe('inline editor disabled-state feedback', () => {
 
     await phaseInput.fill('');
     await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
-    await expect(saveButton).toBeEnabled();
+    const isDisabled = await saveButton.evaluate(n => n.disabled);
+    expect(isDisabled).toBe(false);
 
     await saveButton.focus();
     await expect(saveButton).toBeFocused();
