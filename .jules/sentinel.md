@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2026-09-03 - Added security headers via Hono secureHeaders
+**Vulnerability:** The application was missing critical security headers like X-Content-Type-Options, X-Frame-Options, and Strict-Transport-Security, making it vulnerable to mime-sniffing, clickjacking, and man-in-the-middle attacks.
+**Learning:** Security-sensitive response header policies must be implemented in the runtime wrapper (`server/runtime-app.mjs`) to keep the canonical application (`server/app.mjs`) agnostic and pass the repository's API security header tests.
+**Prevention:** Always implement HTTP security headers using a dedicated middleware (e.g., Hono's `secureHeaders`) applied globally at the outermost runtime layer rather than cluttering business logic routes.
