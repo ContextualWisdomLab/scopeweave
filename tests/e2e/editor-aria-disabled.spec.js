@@ -44,4 +44,24 @@ test.describe('inline editor disabled-state feedback', () => {
     await expect(page.locator('.editor-panel')).toBeVisible();
     await expect(phaseInput).toHaveAttribute('aria-invalid', 'true');
   });
+
+  test('saves a corrected draft on the first immediate submit', async ({ page }) => {
+    const rows = page.locator('tbody tr[data-task-id]');
+    const initialRowCount = await rows.count();
+
+    await page.getByRole('button', { name: '최상위 작업 추가' }).click();
+
+    const phaseInput = page.locator('[data-testid="editor-phase"]');
+    const saveButton = page.getByRole('button', { name: '저장', exact: true });
+
+    await phaseInput.fill('');
+    await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
+
+    await phaseInput.fill('Immediate valid phase');
+    await saveButton.click();
+
+    await expect(page.locator('.editor-panel')).toHaveCount(0);
+    await expect(rows).toHaveCount(initialRowCount + 1);
+    await expect(rows.filter({ hasText: 'Immediate valid phase' })).toHaveCount(1);
+  });
 });
