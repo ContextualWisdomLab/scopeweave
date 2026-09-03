@@ -42,7 +42,6 @@ export function parseWebhookUrl(urlText) {
   }
   if (url.protocol !== 'https:') throw new TypeError('webhook URL must use https');
   if (url.username || url.password) throw new TypeError('webhook URL must not contain credentials');
-  if (!url.hostname) throw new TypeError('webhook URL must contain a host');
   return url;
 }
 
