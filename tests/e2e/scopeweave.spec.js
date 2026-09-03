@@ -14,7 +14,9 @@ const addTopLevelTask = async (page, values) => {
 
 const expectSaveBlockedWith = async (page, message) => {
   const saveButton = page.getByRole('button', { name: '저장', exact: true });
-  await expect(saveButton).toBeDisabled();
+  await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
+  const isDisabled = await saveButton.evaluate(n => n.disabled);
+  expect(isDisabled).toBe(false);
   await expect(page.locator('#editor-errors')).toContainText(message);
   await expect(page.locator('.editor-panel')).toBeVisible();
 };
