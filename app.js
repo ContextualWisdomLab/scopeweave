@@ -429,7 +429,15 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
       return;
     }
     event.preventDefault();
+
     renderDraftValidation.flush();
+
+    const saveButton = form.querySelector('button[type="submit"]');
+    if (saveButton && saveButton.getAttribute('aria-disabled') === 'true') {
+      showToast(saveButton.title || '입력값을 올바르게 수정해야 저장할 수 있습니다.');
+      return;
+    }
+
     saveEditor();
   });
 
@@ -790,6 +798,7 @@ function renderEditorRow(anchorId) {
   panel.className = 'editor-panel';
   const form = document.createElement('form');
   form.dataset.editorForm = 'true';
+  form.noValidate = true;
   const editorGrid = document.createElement('div');
   editorGrid.className = 'editor-grid';
 
@@ -1068,7 +1077,12 @@ function renderEditorValidation() {
 
   const saveButton = form.querySelector('button[type="submit"]');
   if (saveButton) {
-    saveButton.disabled = errors.length > 0;
+    if (errors.length > 0) {
+      saveButton.setAttribute('aria-disabled', 'true');
+    } else {
+      saveButton.removeAttribute('aria-disabled');
+    }
+    saveButton.disabled = false;
     saveButton.title = errors.length > 0 ? '입력값을 올바르게 수정해야 저장할 수 있습니다.' : '저장 (Enter)';
   }
 
