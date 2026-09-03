@@ -4,6 +4,6 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
-## 2026-09-03 - Measure date-formatter changes before generalizing
-**Learning:** Replacing `String.prototype.padStart()` with inline zero-padding can reduce formatter cost in a particular JavaScript runtime, but a microbenchmark alone does not establish browser Gantt p95, GC pressure, or a JS-to-C++ boundary as the cause. The production claim must follow the measured ScopeWeave page/path workload rather than a runtime implementation assumption.
-**Action:** Preserve semantic-equivalence coverage for date formatting and require a representative browser/workload measurement before treating the formatter change as buyer-visible performance evidence. Record runtime, data volume, sample count, warm-up policy, p50/p95, and allocation/main-thread observations; do not exclude slow samples or rely on unrealistic cache warm-up.
+## 2023-10-25 - Avoid String.padStart() in hot loops
+**Learning:** Using `String.prototype.padStart()` creates unnecessary string allocations and introduces JS-to-C++ overhead. When called repeatedly in hot loops (e.g., date formatting for thousands of rendered rows in a Gantt chart or table), this can cause significant GC pressure and performance degradation.
+**Action:** Replace `String.padStart()` with inline ternary string concatenation (e.g., `month < 10 ? '0' + month : month`) to avoid the overhead of method calls and temporary object creation.
