@@ -429,6 +429,11 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
       return;
     }
     event.preventDefault();
+    const saveButton = form.querySelector('button[type="submit"]');
+    if (saveButton && saveButton.getAttribute('aria-disabled') === 'true') {
+      showToast('입력값을 올바르게 수정해야 저장할 수 있습니다.');
+      return;
+    }
     renderDraftValidation.flush();
     saveEditor();
   });
@@ -822,6 +827,11 @@ function renderEditorRow(anchorId) {
   saveButton.textContent = '저장';
   saveButton.title = '저장 (Enter)';
   saveButton.setAttribute('aria-keyshortcuts', 'Enter');
+  saveButton.addEventListener('click', (event) => {
+    if (saveButton.getAttribute('aria-disabled') === 'true') {
+      event.preventDefault();
+    }
+  });
   const cancelButton = document.createElement('button');
   cancelButton.type = 'button';
   cancelButton.className = 'secondary-button';
@@ -1068,7 +1078,11 @@ function renderEditorValidation() {
 
   const saveButton = form.querySelector('button[type="submit"]');
   if (saveButton) {
-    saveButton.disabled = errors.length > 0;
+    if (errors.length > 0) {
+      saveButton.setAttribute('aria-disabled', 'true');
+    } else {
+      saveButton.removeAttribute('aria-disabled');
+    }
     saveButton.title = errors.length > 0 ? '입력값을 올바르게 수정해야 저장할 수 있습니다.' : '저장 (Enter)';
   }
 
