@@ -82,3 +82,86 @@ test('pins the validated address while retaining TLS hostname identity and never
   assert.equal(requestOptions.servername, 'hooks.example.net');
   assert.deepEqual(result, { status: 302, ok: false });
 });
+
+test('rejects malformed URLs and empty DNS answers', async () => {
+  assert.throws(() => parseWebhookUrl('not a url'), /invalid/);
+  await assert.rejects(resolvePublicWebhookTarget('https://hooks.example.net/hook', {
+    lookup: async () => [],
+  }), /did not resolve/);
+});
+
+test('deduplicates validated DNS answers', async () => {
+  const target = await resolvePublicWebhookTarget('https://hooks.example.net/hook', {
+    lookup: async () => [
+      { address: '8.8.8.8', family: 4 },
+      { address: '8.8.8.8', family: 4 },
+      { address: '2001:4860:4860::8888', family: 6 },
+    ],
+  });
+  assert.deepEqual(target.addresses, [
+    { address: '8.8.8.8', family: 4 },
+    { address: '2001:4860:4860::8888', family: 6 },
+  ]);
+});
+
+test('rejects malformed DNS results', async () => {
+  await assert.rejects(resolvePublicWebhookTarget('https://hooks.example.net/hook', {
+    lookup: async () => [{ address: 'not-an-ip', family: 0 }],
+  }), /non-public/);
+});
+
+test('bounds DNS resolution time', async () => {
+  await assert.rejects(resolvePublicWebhookTarget('https://hooks.example.net/hook', {
+    lookup: async () => new Promise(() => {}),
+    dnsTimeoutMs: 5,
+  }), /DNS resolution timed out/);
+});
+
+test('clears connect timer after TLS connects and reports 2xx success', async () => {
+  let destroyed = false;
+  const fakeRequest = (options, onResponse) => {
+    const req = new EventEmitter();
+    const socket = new EventEmitter();
+    req.end = () => {
+      queueMicrotask(() => {
+        req.emit('socket', socket);
+        socket.emit('secureConnect');
+        const response = new EventEmitter();
+        response.statusCode = 204;
+        response.destroy = () => { destroyed = true; };
+        onResponse(response);
+      });
+    };
+    req.destroy = (error) => req.emit('error', error);
+    return req;
+  };
+
+  const result = await postWebhookOnce({
+    url: 'https://hooks.example.net/hook',
+    headers: {},
+    body: '{}',
+    lookup: async () => [{ address: '8.8.8.8', family: 4 }],
+    request: fakeRequest,
+  });
+
+  assert.deepEqual(result, { status: 204, ok: true });
+  assert.equal(destroyed, true);
+});
+
+test('propagates request failures without retrying or redirecting inside the transport', async () => {
+  const failure = new Error('connect failed');
+  const fakeRequest = () => {
+    const req = new EventEmitter();
+    req.end = () => queueMicrotask(() => req.emit('error', failure));
+    req.destroy = (error) => req.emit('error', error);
+    return req;
+  };
+
+  await assert.rejects(postWebhookOnce({
+    url: 'https://hooks.example.net/hook',
+    headers: {},
+    body: '{}',
+    lookup: async () => [{ address: '8.8.8.8', family: 4 }],
+    request: fakeRequest,
+  }), failure);
+});
