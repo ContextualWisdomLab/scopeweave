@@ -12,6 +12,7 @@ import {
 const privateCases = [
   '127.0.0.1', '10.1.2.3', '169.254.169.254', '172.16.0.1', '192.168.1.1',
   '0.0.0.0', '224.0.0.1', '::', '::1', 'fc00::1', 'fe80::1', '::ffff:7f00:1',
+  '64:ff9b::a00:1', '64:ff9b:1::a00:1',
 ];
 for (const address of privateCases) {
   test(`rejects non-public address ${address}`, () => assert.equal(isPublicWebhookAddress(address), false));
