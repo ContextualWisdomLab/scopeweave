@@ -830,6 +830,7 @@ function renderEditorRow(anchorId) {
   saveButton.addEventListener('click', (event) => {
     if (saveButton.getAttribute('aria-disabled') === 'true') {
       event.preventDefault();
+      event.target.closest('form').dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
     }
   });
   const cancelButton = document.createElement('button');

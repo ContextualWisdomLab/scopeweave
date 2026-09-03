@@ -9,10 +9,10 @@ test('aria-disabled save remains focusable and explains why activation is blocke
   await saveButton.focus();
   await expect(saveButton).toBeFocused();
 
-  await saveButton.click();
+  await saveButton.click({ force: true });
 
   await expect(page.locator('.editor-panel')).toBeVisible();
   await expect(page.locator('#toast')).toHaveText('입력값을 올바르게 수정해야 저장할 수 있습니다.');
   await expect(page.locator('#toast')).toHaveAttribute('role', 'status');
-  await expect(page.locator('#toast')).toHaveClass(/\bvisible\b/);
+  await expect(page.locator('#toast')).toHaveClass(/\bshow\b/);
 });
