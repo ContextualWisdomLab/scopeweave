@@ -1,5 +1,11 @@
 import assert from 'node:assert';
-import { hashPassword, verifyPassword } from '../../server/auth.mjs';
+import { spawnSync } from 'node:child_process';
+
+const SECRET = '0123456789abcdef0123456789abcdef';
+
+const script = `
+import assert from 'node:assert';
+import { hashPassword, verifyPassword } from './server/auth.mjs';
 
 const DUMMY_HASH = hashPassword('');
 
@@ -33,3 +39,13 @@ try {
   console.error('Test failed:', err);
   process.exit(1);
 }
+`;
+
+const result = spawnSync(process.execPath, ['--input-type=module', '--eval', script], {
+  cwd: process.cwd(),
+  env: { ...process.env, SCOPEWEAVE_JWT_SECRET: SECRET },
+  encoding: 'utf8',
+});
+
+assert.equal(result.status, 0, result.stderr || result.stdout);
+process.stdout.write(result.stdout);
