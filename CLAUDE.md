@@ -105,11 +105,12 @@ deploy guide is `docs/deploy.md`.
 
 - **Default branch is `develop`.** SaaS work lands as a stacked PR train — see
   "Merge order" in `README.md` before retargeting or merging PRs.
-- Repo-local PR gates: `server-tests.yml` (unit + API + eval-safe check + cloud e2e),
-  `fuzz.yml`, `codeql.yml`, `dependency-review.yml`.
-- OpenCode Review, Strix Security Scan, and PR Review Merge Scheduler are
-  organization-level required workflows from `ContextualWisdomLab/.github` — never
-  copy them into this repository (`tests/config` pytest enforces this).
+- Repo-local PR gates are `server-tests.yml` (unit + API + eval-safe check + cloud e2e)
+  and `fuzz.yml`; Pages remains the repository-owned deployment workflow.
+- OpenCode Review, Strix Security Scan, PR Review Merge Scheduler, CodeQL,
+  Dependency Review, OSV, and the broader Security Scan are organization-level
+  required workflows owned by `ContextualWisdomLab/.github` — never copy them into
+  this repository (`tests/config` pytest enforces this ownership boundary).
 - A failing `trivy-fs` is a real finding, not a flake — follow the remediation
   protocol in `AGENTS.md`.
 
