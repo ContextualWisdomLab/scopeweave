@@ -181,3 +181,50 @@ test('propagates request failures without retrying or redirecting inside the tra
     request: fakeRequest,
   }), failure);
 });
+
+test('application delivery records failed HTTP attempts and retries exactly once without network', async () => {
+  process.env.SCOPEWEAVE_DB = ':memory:';
+  const { sendWebhook } = await import('../../server/app.mjs');
+  assert.equal(typeof sendWebhook, 'function', 'application delivery seam is executable');
+
+  const requests = [];
+  const records = [];
+  const scheduled = [];
+  const runtime = {
+    postWebhook: async (request) => {
+      requests.push(request);
+      return { status: 503, ok: false };
+    },
+    recordDelivery: (...args) => records.push(args),
+    scheduleRetry: (run, delayMs) => scheduled.push({ run, delayMs }),
+  };
+
+  await sendWebhook(17, 'https://hooks.example.net/hook', 'deadbeef', 'project.update', '{"ok":true}', 1, runtime);
+  assert.equal(requests.length, 1);
+  assert.equal(requests[0].headers['x-scopeweave-signature'], 'sha256=deadbeef');
+  assert.deepEqual(records, [[17, 'project.update', 503, false, 1]]);
+  assert.equal(scheduled.length, 1);
+  assert.equal(scheduled[0].delayMs, 500);
+
+  await scheduled.shift().run();
+  assert.equal(requests.length, 2, 'one failed first attempt is retried once');
+  assert.deepEqual(records[1], [17, 'project.update', 503, false, 2]);
+  assert.equal(scheduled.length, 0, 'second failure does not schedule a third attempt');
+});
+
+test('application delivery records transport rejection before the bounded retry', async () => {
+  process.env.SCOPEWEAVE_DB = ':memory:';
+  const { sendWebhook } = await import('../../server/app.mjs');
+  const records = [];
+  const scheduled = [];
+  const runtime = {
+    postWebhook: async () => { throw new Error('connect failed'); },
+    recordDelivery: (...args) => records.push(args),
+    scheduleRetry: (run, delayMs) => scheduled.push({ run, delayMs }),
+  };
+
+  await sendWebhook(18, 'https://hooks.example.net/hook', 'cafebabe', 'project.update', '{}', 1, runtime);
+  assert.deepEqual(records, [[18, 'project.update', null, false, 1]]);
+  assert.equal(scheduled.length, 1);
+  assert.equal(scheduled[0].delayMs, 500);
+});
