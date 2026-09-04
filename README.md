@@ -50,7 +50,7 @@ two modes:
   project duplicate (templates), rate limiting (opt-in), metrics
   (JSON + Prometheus), structured logs
 - **Docs**: complete API reference at [`docs/api.md`](docs/api.md) (served at
-  `/docs/api.md`); deploy guide at [`docs/deploy.md`](docs/deploy.md)
+  `/docs/api.md`); deploy guide is [`docs/deploy.md`](docs/deploy.md)
 
 ## Architecture
 
@@ -168,9 +168,10 @@ the previous; merging in order auto-retargets the next):
 - Runtime dependencies are minimized (`hono`, `@hono/node-server` only, added
   by the SaaS stack); CI/dev-only automation under `.github/`, `scripts/`,
   `tests/`, and `docs/` is allowed.
-- OpenCode Review, Strix Security Scan, and PR Review Merge Scheduler are
-  inherited from the organization-level required workflows in
-  `ContextualWisdomLab/.github`, not copied into this repository.
+- OpenCode Review, Strix Security Scan, PR Review Merge Scheduler, CodeQL,
+  Dependency Review, OSV, and the broader Security Scan are inherited from the
+  organization-level required workflows in `ContextualWisdomLab/.github`, not
+  copied into this repository.
 
 ## Persistence model
 
@@ -187,12 +188,12 @@ the previous; merging in order auto-retargets the next):
 
 ## Security workflow
 
-- Organization required workflows provide OpenCode Review, Strix Security
-  Scan, PR Review Merge Scheduler, failed-check explanation, and coverage
+- Organization-required workflows from `ContextualWisdomLab/.github` own OpenCode
+  Review, Strix Security Scan, PR Review Merge Scheduler, CodeQL, Dependency
+  Review, OSV, the broader Security Scan, failed-check explanation, and coverage
   evidence.
-- Repository-local workflows remain for ScopeWeave-specific static delivery
-  and companion SCA lanes, including dependency review, OSV, Trivy,
-  Scorecard, and Pages.
+- Repository-local workflows remain for ScopeWeave-specific server/runtime tests,
+  fuzzing, and Pages delivery; they do not duplicate the central SCA lanes.
 - Server hardening: pinned-HS256 JWT (no header-alg trust), scrypt passwords,
   hash-only PAT/webhook-secret storage (secrets shown once), server-side RBAC,
   secrets never logged.
