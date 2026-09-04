@@ -12,7 +12,7 @@ permissions:
   id-token: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.repository }}-${{ github.run_id }}
+  group: ${{ github.workflow }}-${{ github.repository }}
   cancel-in-progress: false
 
 jobs:

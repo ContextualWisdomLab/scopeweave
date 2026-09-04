@@ -71,5 +71,5 @@ def test_workflow_concurrency_is_trigger_aware() -> None:
         assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in source
 
     deploy_source = (WORKFLOW_DIR / "pages.yml").read_text(encoding="utf-8")
-    assert "group: ${{ github.workflow }}-${{ github.repository }}-${{ github.run_id }}" in deploy_source
+    assert "group: ${{ github.workflow }}-${{ github.repository }}" in deploy_source
     assert "cancel-in-progress: false" in deploy_source
