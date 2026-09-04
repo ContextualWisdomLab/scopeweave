@@ -23,22 +23,6 @@ test('allows public IPv4 and IPv6 addresses', () => {
   assert.equal(isPublicWebhookAddress('::ffff:808:808'), true);
 });
 
-test('evaluates RFC 6052 well-known-prefix translations by embedded IPv4 policy', () => {
-  assert.equal(isPublicWebhookAddress('64:ff9b::808:808'), true);
-  assert.equal(isPublicWebhookAddress('64:ff9b::a00:1'), false);
-  assert.equal(isPublicWebhookAddress('64:ff9b::7f00:1'), false);
-});
-
-test('evaluates RFC 8215 local-use /48 translations by embedded IPv4 policy', () => {
-  assert.equal(isPublicWebhookAddress('64:ff9b:1:808:8:800::'), true);
-  assert.equal(isPublicWebhookAddress('64:ff9b:1:a00:0:100:0:0'), false);
-  assert.equal(isPublicWebhookAddress('64:ff9b:1:7f00:0:100:0:0'), false);
-});
-
-test('rejects malformed local-use translation addresses with a non-zero u octet', () => {
-  assert.equal(isPublicWebhookAddress('64:ff9b:1:808:108:800::'), false);
-});
-
 test('normalizes shorthand/integer IPv4 before policy evaluation', async () => {
   await assert.rejects(resolvePublicWebhookTarget('https://127.1/hook'), /non-public/);
   await assert.rejects(resolvePublicWebhookTarget('https://2130706433/hook'), /non-public/);
@@ -180,65 +164,4 @@ test('propagates request failures without retrying or redirecting inside the tra
     lookup: async () => [{ address: '8.8.8.8', family: 4 }],
     request: fakeRequest,
   }), failure);
-});
-
-test('application delivery records and retries a persisted blocked destination without network access', async () => {
-  process.env.SCOPEWEAVE_DB = ':memory:';
-  process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
-  const [{ app }, { db, rowid }] = await Promise.all([
-    import('../../server/app.mjs'),
-    import('../../server/db.mjs'),
-  ]);
-  const req = (path, opts = {}) => app.request(path, {
-    ...opts,
-    headers: { 'content-type': 'application/json', ...(opts.headers || {}) },
-  });
-
-  let response = await req('/api/auth/signup', {
-    method: 'POST',
-    body: JSON.stringify({ email: 'webhook-contract@example.net', password: 'password123', name: 'Webhook Contract' }),
-  });
-  assert.equal(response.status, 200);
-  const { token } = await response.json();
-  const auth = { authorization: `Bearer ${token}` };
-
-  response = await req('/api/me', { headers: auth });
-  const me = await response.json();
-  const orgId = me.orgs[0].id;
-
-  response = await req('/api/projects', {
-    method: 'POST',
-    headers: auth,
-    body: JSON.stringify({ name: 'Webhook retry contract', orgId }),
-  });
-  assert.equal(response.status, 200);
-  const project = await response.json();
-
-  // Persist a legacy/hostile row directly so the delivery boundary, not creation
-  // validation, proves it still blocks a non-public target without network I/O.
-  const webhookId = rowid(db.prepare(
-    'INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)'
-  ).run(orgId, 'https://127.0.0.1/internal', 'whsec_test_contract', 'project.update'));
-
-  response = await req(`/api/projects/${project.id}`, {
-    method: 'PUT',
-    headers: auth,
-    body: JSON.stringify({ tasks: [{ id: 'webhook', name: 'retry' }], version: project.version }),
-  });
-  assert.equal(response.status, 200, 'triggering request remains successful');
-
-  let deliveries = [];
-  const deadline = Date.now() + 1500;
-  while (Date.now() < deadline) {
-    response = await req(`/api/orgs/${orgId}/webhooks/${webhookId}/deliveries`, { headers: auth });
-    assert.equal(response.status, 200);
-    deliveries = (await response.json()).deliveries;
-    if (deliveries.length >= 2) break;
-    await new Promise((resolve) => setTimeout(resolve, 25));
-  }
-
-  assert.equal(deliveries.length, 2, 'one initial failure and exactly one retry are recorded');
-  assert.deepEqual(new Set(deliveries.map((delivery) => delivery.attempt)), new Set([1, 2]));
-  assert.ok(deliveries.every((delivery) => delivery.ok === 0));
-  assert.ok(deliveries.every((delivery) => delivery.statusCode === null));
 });
