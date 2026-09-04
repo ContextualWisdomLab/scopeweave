@@ -182,49 +182,63 @@ test('propagates request failures without retrying or redirecting inside the tra
   }), failure);
 });
 
-test('application delivery records failed HTTP attempts and retries exactly once without network', async () => {
+test('application delivery records and retries a persisted blocked destination without network access', async () => {
   process.env.SCOPEWEAVE_DB = ':memory:';
-  const { sendWebhook } = await import('../../server/app.mjs');
-  assert.equal(typeof sendWebhook, 'function', 'application delivery seam is executable');
+  process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
+  const [{ app }, { db, rowid }] = await Promise.all([
+    import('../../server/app.mjs'),
+    import('../../server/db.mjs'),
+  ]);
+  const req = (path, opts = {}) => app.request(path, {
+    ...opts,
+    headers: { 'content-type': 'application/json', ...(opts.headers || {}) },
+  });
 
-  const requests = [];
-  const records = [];
-  const scheduled = [];
-  const runtime = {
-    postWebhook: async (request) => {
-      requests.push(request);
-      return { status: 503, ok: false };
-    },
-    recordDelivery: (...args) => records.push(args),
-    scheduleRetry: (run, delayMs) => scheduled.push({ run, delayMs }),
-  };
+  let response = await req('/api/auth/signup', {
+    method: 'POST',
+    body: JSON.stringify({ email: 'webhook-contract@example.net', password: 'password123', name: 'Webhook Contract' }),
+  });
+  assert.equal(response.status, 200);
+  const { token } = await response.json();
+  const auth = { authorization: `Bearer ${token}` };
 
-  await sendWebhook(17, 'https://hooks.example.net/hook', 'deadbeef', 'project.update', '{"ok":true}', 1, runtime);
-  assert.equal(requests.length, 1);
-  assert.equal(requests[0].headers['x-scopeweave-signature'], 'sha256=deadbeef');
-  assert.deepEqual(records, [[17, 'project.update', 503, false, 1]]);
-  assert.equal(scheduled.length, 1);
-  assert.equal(scheduled[0].delayMs, 500);
+  response = await req('/api/me', { headers: auth });
+  const me = await response.json();
+  const orgId = me.orgs[0].id;
 
-  await scheduled.shift().run();
-  assert.equal(requests.length, 2, 'one failed first attempt is retried once');
-  assert.deepEqual(records[1], [17, 'project.update', 503, false, 2]);
-  assert.equal(scheduled.length, 0, 'second failure does not schedule a third attempt');
-});
+  response = await req('/api/projects', {
+    method: 'POST',
+    headers: auth,
+    body: JSON.stringify({ name: 'Webhook retry contract', orgId }),
+  });
+  assert.equal(response.status, 200);
+  const project = await response.json();
 
-test('application delivery records transport rejection before the bounded retry', async () => {
-  process.env.SCOPEWEAVE_DB = ':memory:';
-  const { sendWebhook } = await import('../../server/app.mjs');
-  const records = [];
-  const scheduled = [];
-  const runtime = {
-    postWebhook: async () => { throw new Error('connect failed'); },
-    recordDelivery: (...args) => records.push(args),
-    scheduleRetry: (run, delayMs) => scheduled.push({ run, delayMs }),
-  };
+  // Persist a legacy/hostile row directly so the delivery boundary, not creation
+  // validation, proves it still blocks a non-public target without network I/O.
+  const webhookId = rowid(db.prepare(
+    'INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)'
+  ).run(orgId, 'https://127.0.0.1/internal', 'whsec_test_contract', 'project.update'));
 
-  await sendWebhook(18, 'https://hooks.example.net/hook', 'cafebabe', 'project.update', '{}', 1, runtime);
-  assert.deepEqual(records, [[18, 'project.update', null, false, 1]]);
-  assert.equal(scheduled.length, 1);
-  assert.equal(scheduled[0].delayMs, 500);
+  response = await req(`/api/projects/${project.id}`, {
+    method: 'PUT',
+    headers: auth,
+    body: JSON.stringify({ tasks: [{ id: 'webhook', name: 'retry' }], version: project.version }),
+  });
+  assert.equal(response.status, 200, 'triggering request remains successful');
+
+  let deliveries = [];
+  const deadline = Date.now() + 1500;
+  while (Date.now() < deadline) {
+    response = await req(`/api/orgs/${orgId}/webhooks/${webhookId}/deliveries`, { headers: auth });
+    assert.equal(response.status, 200);
+    deliveries = (await response.json()).deliveries;
+    if (deliveries.length >= 2) break;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+
+  assert.equal(deliveries.length, 2, 'one initial failure and exactly one retry are recorded');
+  assert.deepEqual(new Set(deliveries.map((delivery) => delivery.attempt)), new Set([1, 2]));
+  assert.ok(deliveries.every((delivery) => delivery.ok === 0));
+  assert.ok(deliveries.every((delivery) => delivery.statusCode === null));
 });
