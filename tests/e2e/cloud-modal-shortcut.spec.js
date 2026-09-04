@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('advertised Escape shortcut closes cloud login and restores its opener', async ({ page }) => {
+test('cloud login keeps focus inside, closes on Escape, and restores its opener', async ({ page }) => {
   await page.goto('./');
 
   const openLogin = page.getByRole('button', { name: '☁ 클라우드 로그인' });
@@ -9,10 +9,17 @@ test('advertised Escape shortcut closes cloud login and restores its opener', as
 
   const dialog = page.getByRole('dialog', { name: '클라우드 로그인' });
   const close = dialog.getByRole('button', { name: '닫기' });
+  const sso = page.locator('#cloud-sso');
 
   await expect(dialog).toBeVisible();
   await expect(close).toHaveAttribute('aria-keyshortcuts', 'Escape');
   await expect(page.locator('#cloud-email')).toBeFocused();
+
+  await close.focus();
+  await page.keyboard.press('Shift+Tab');
+  await expect(sso).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
 
   await page.keyboard.press('Escape');
 
@@ -21,6 +28,11 @@ test('advertised Escape shortcut closes cloud login and restores its opener', as
 
   await openLogin.click();
   await close.click();
+  await expect(dialog).toBeHidden();
+  await expect(openLogin).toBeFocused();
+
+  await openLogin.click();
+  await dialog.locator('.modal-backdrop').click({ position: { x: 2, y: 2 } });
   await expect(dialog).toBeHidden();
   await expect(openLogin).toBeFocused();
 });
@@ -62,6 +74,8 @@ test('dynamic cloud dialog gets internal focus and one Escape dismissal', async 
   await expect(dialog).toBeVisible();
   await expect(close).toBeFocused();
 
+  await page.keyboard.press('Tab');
+  await expect(close).toBeFocused();
   await page.keyboard.press('Escape');
 
   await expect(dialog).toBeHidden();
