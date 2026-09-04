@@ -11,6 +11,15 @@ const CLOUD_DIALOG_IDS = new Set([
   'team-modal',
 ]);
 
+const FOCUSABLE_SELECTOR = [
+  'input:not([disabled])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  'button:not([disabled])',
+  'a[href]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ');
+
 const returnFocusByDialog = new WeakMap();
 
 function cloudDialogFor(node) {
@@ -19,10 +28,9 @@ function cloudDialogFor(node) {
   return dialog && CLOUD_DIALOG_IDS.has(dialog.id) ? dialog : null;
 }
 
-function focusableIn(dialog) {
-  return dialog.querySelector(
-    'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])',
-  );
+function focusablesIn(dialog) {
+  return [...dialog.querySelectorAll(FOCUSABLE_SELECTOR)]
+    .filter((element) => element instanceof HTMLElement && element.getClientRects().length > 0);
 }
 
 function rememberInvokerAndEnter(dialog) {
@@ -35,26 +43,35 @@ function rememberInvokerAndEnter(dialog) {
 
   queueMicrotask(() => {
     if (dialog.classList.contains('hidden') || dialog.contains(document.activeElement)) return;
-    focusableIn(dialog)?.focus();
+    focusablesIn(dialog)[0]?.focus();
   });
 }
 
-function observeDialog(node) {
+function observeAddedNode(node) {
   if (!(node instanceof Element)) return;
-  const dialog = cloudDialogFor(node) || (CLOUD_DIALOG_IDS.has(node.id) ? node : null);
-  if (dialog) rememberInvokerAndEnter(dialog);
-  for (const child of node.querySelectorAll?.('[role="dialog"]') || []) {
-    if (CLOUD_DIALOG_IDS.has(child.id)) rememberInvokerAndEnter(child);
+  if (CLOUD_DIALOG_IDS.has(node.id)) rememberInvokerAndEnter(node);
+  for (const dialog of node.querySelectorAll('[role="dialog"]')) {
+    if (CLOUD_DIALOG_IDS.has(dialog.id)) rememberInvokerAndEnter(dialog);
   }
 }
 
 const observer = new MutationObserver((records) => {
   for (const record of records) {
-    if (record.type === 'attributes') observeDialog(record.target);
-    for (const node of record.addedNodes) observeDialog(node);
+    if (record.type === 'attributes') {
+      if (record.target instanceof Element && CLOUD_DIALOG_IDS.has(record.target.id)) {
+        rememberInvokerAndEnter(record.target);
+      }
+      continue;
+    }
+    for (const node of record.addedNodes) observeAddedNode(node);
   }
 });
-observer.observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ['class'] });
+observer.observe(document.documentElement, {
+  subtree: true,
+  childList: true,
+  attributes: true,
+  attributeFilter: ['class'],
+});
 
 // Preserve the invoking control whenever cloud-sync moves focus into a dialog.
 document.addEventListener('focusin', (event) => {
@@ -65,13 +82,13 @@ document.addEventListener('focusin', (event) => {
   }
 }, true);
 
-// Pointer and keyboard close controls use their existing cloud-sync close path;
-// this listener only restores the invoking control after that path completes.
+// Existing close-button and backdrop paths retain ownership of modal state.
+// This listener only restores the invoking control after those paths complete.
 document.addEventListener('click', (event) => {
-  const close = event.target instanceof Element
-    ? event.target.closest('button.close-button[aria-keyshortcuts~="Escape"]')
-    : null;
-  const dialog = cloudDialogFor(close);
+  const target = event.target instanceof Element ? event.target : null;
+  const close = target?.closest('button.close-button[aria-keyshortcuts~="Escape"]');
+  const backdrop = target?.matches('.modal-backdrop') ? target : null;
+  const dialog = cloudDialogFor(close || backdrop);
   if (!dialog) return;
 
   const invoker = returnFocusByDialog.get(dialog);
@@ -81,15 +98,36 @@ document.addEventListener('click', (event) => {
   });
 }, true);
 
-// Escape is owned here only for cloud-sync dialogs. Gantt/editor Escape remains
-// with app.js, so one keystroke cannot dismiss two independent surfaces.
-document.addEventListener('keydown', (event) => {
-  if (event.key !== 'Escape' || event.defaultPrevented) return;
+function activeCloudDialog() {
+  return [...document.querySelectorAll('[role="dialog"]')]
+    .filter((dialog) => CLOUD_DIALOG_IDS.has(dialog.id) && !dialog.classList.contains('hidden'))
+    .at(-1) || null;
+}
 
-  const dialogs = [...document.querySelectorAll('[role="dialog"]')]
-    .filter((dialog) => CLOUD_DIALOG_IDS.has(dialog.id) && !dialog.classList.contains('hidden'));
-  const dialog = dialogs.at(-1);
+// Cloud dialogs own their Tab loop and Escape dismissal here. Gantt/editor
+// keyboard handling remains in app.js, so one Escape cannot dismiss two surfaces.
+document.addEventListener('keydown', (event) => {
+  if (event.defaultPrevented || (event.key !== 'Escape' && event.key !== 'Tab')) return;
+
+  const dialog = activeCloudDialog();
   if (!dialog) return;
+
+  if (event.key === 'Tab') {
+    const focusables = focusablesIn(dialog);
+    if (!focusables.length) return;
+
+    const first = focusables[0];
+    const last = focusables.at(-1);
+    const active = document.activeElement;
+    if (event.shiftKey && (!dialog.contains(active) || active === first)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && (!dialog.contains(active) || active === last)) {
+      event.preventDefault();
+      first.focus();
+    }
+    return;
+  }
 
   const close = dialog.querySelector('button.close-button[aria-keyshortcuts~="Escape"]');
   if (!close) return;
