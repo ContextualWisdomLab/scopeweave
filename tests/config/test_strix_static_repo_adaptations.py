@@ -36,6 +36,30 @@ def test_central_review_workflows_are_not_copied_into_this_repository() -> None:
         assert not central_only_path.exists(), central_only_path
 
 
+def test_ci_documentation_matches_central_sca_ownership() -> None:
+    documentation_paths = (
+        REPO_ROOT / "ARCHITECTURE.md",
+        REPO_ROOT / "CLAUDE.md",
+        REPO_ROOT / "README.md",
+    )
+
+    for documentation_path in documentation_paths:
+        source = documentation_path.read_text(encoding="utf-8")
+        assert "dependency-review.yml" not in source, documentation_path
+        assert "osvscanner.yml" not in source, documentation_path
+        assert "codeql.yml" not in source, documentation_path
+
+    architecture = (REPO_ROOT / "ARCHITECTURE.md").read_text(encoding="utf-8")
+    claude = (REPO_ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+    readme = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+
+    for source in (architecture, claude, readme):
+        assert "CodeQL" in source
+        assert "Dependency Review" in source
+        assert "OSV" in source
+        assert "ContextualWisdomLab/.github" in source
+
+
 def test_kubernetes_deployment_uses_non_root_versioned_runtime() -> None:
     deployment_source = K8S_DEPLOYMENT.read_text(encoding="utf-8")
     service_source = K8S_SERVICE.read_text(encoding="utf-8")
