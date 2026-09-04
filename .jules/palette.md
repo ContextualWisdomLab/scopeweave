@@ -115,7 +115,3 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
-
-## $(date +%Y-%m-%d) - 모달 닫기 버튼에 키보드 단축키 힌트 추가
-**Learning:** `title` 속성으로만 제공되는 키보드 단축키 힌트는 화면 판독기나 키보드 사용자에게 일관성 있게 전달되지 않는다.
-**Action:** `title` 툴팁과 함께 `aria-keyshortcuts` 속성을 사용하여, 마우스와 보조 기술 사용자 모두가 키보드 단축키(예: Escape)를 인지할 수 있도록 구현한다.
