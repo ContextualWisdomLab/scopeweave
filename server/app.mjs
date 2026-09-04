@@ -12,6 +12,8 @@ import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
+const DUMMY_HASH = hashPassword('');
+
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
 
 // Append-only audit trail. Never throws into the request path.
@@ -192,9 +194,9 @@ app.post('/api/auth/signup', async (c) => {
 app.post('/api/auth/login', async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}));
   const u = db.prepare('SELECT * FROM users WHERE email = ?').get(email || '');
-  // Pass password through only when it is a string — verifyPassword rejects
-  // non-strings (objects/arrays) so they never match an empty-password hash.
-  if (!u || typeof password !== 'string' || !verifyPassword(password, u.password_hash)) {
+  // Always evaluate the password against a hash to mitigate timing attacks.
+  const isMatch = verifyPassword(typeof password === 'string' ? password : '', u ? u.password_hash : DUMMY_HASH);
+  if (!u || typeof password !== 'string' || !isMatch) {
     return c.json({ error: 'invalid credentials' }, 401);
   }
   return c.json({ token: signToken({ sub: u.id, email: u.email, tv: u.token_version }) });
@@ -1352,7 +1354,8 @@ app.post('/api/auth/change-password', requireAuth, async (c) => {
   const { oldPassword, newPassword } = await c.req.json().catch(() => ({}));
   if (typeof newPassword !== 'string' || newPassword.length < 8) return c.json({ error: 'new password (min 8) required' }, 400);
   const u = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(uid);
-  if (!u || typeof oldPassword !== 'string' || !verifyPassword(oldPassword, u.password_hash)) {
+  const isMatch = verifyPassword(typeof oldPassword === 'string' ? oldPassword : '', u ? u.password_hash : DUMMY_HASH);
+  if (!u || typeof oldPassword !== 'string' || !isMatch) {
     return c.json({ error: 'current password incorrect' }, 403);
   }
   db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hashPassword(newPassword), uid);
@@ -1365,7 +1368,8 @@ app.delete('/api/account', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const { password } = await c.req.json().catch(() => ({}));
   const u = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(uid);
-  if (!u || typeof password !== 'string' || !verifyPassword(password, u.password_hash)) {
+  const isMatch = verifyPassword(typeof password === 'string' ? password : '', u ? u.password_hash : DUMMY_HASH);
+  if (!u || typeof password !== 'string' || !isMatch) {
     return c.json({ error: 'password required to delete account' }, 403);
   }
   db.exec('BEGIN');
