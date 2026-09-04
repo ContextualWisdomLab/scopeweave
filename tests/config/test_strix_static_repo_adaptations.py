@@ -12,6 +12,7 @@ K8S_SERVICE = REPO_ROOT / "infra" / "k8s" / "service.yaml"
 def test_central_review_workflows_are_not_copied_into_this_repository() -> None:
     central_only_paths = [
         WORKFLOW_DIR / "dependency-review.yml",
+        WORKFLOW_DIR / "codeql.yml",
         WORKFLOW_DIR / "osvscanner.yml",
         REPO_ROOT / ".github" / "workflows" / "opencode-review.yml",
         REPO_ROOT / ".github" / "workflows" / "pr-review-merge-scheduler.yml",
@@ -58,7 +59,7 @@ def test_kubernetes_deployment_uses_non_root_versioned_runtime() -> None:
 
 
 def test_workflow_concurrency_is_trigger_aware() -> None:
-    pull_request_workflows = ("codeql.yml", "fuzz.yml", "server-tests.yml")
+    pull_request_workflows = ("fuzz.yml", "server-tests.yml")
     expected_group = (
         "${{ github.workflow }}-${{ github.repository }}-"
         "${{ github.event.pull_request.number || github.run_id }}"
