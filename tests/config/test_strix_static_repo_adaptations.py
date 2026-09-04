@@ -4,14 +4,15 @@
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEPENDENCY_REVIEW_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "dependency-review.yml"
-OSV_WORKFLOW = REPO_ROOT / ".github" / "workflows" / "osvscanner.yml"
+WORKFLOW_DIR = REPO_ROOT / ".github" / "workflows"
 K8S_DEPLOYMENT = REPO_ROOT / "infra" / "k8s" / "deployment.yaml"
 K8S_SERVICE = REPO_ROOT / "infra" / "k8s" / "service.yaml"
 
 
 def test_central_review_workflows_are_not_copied_into_this_repository() -> None:
     central_only_paths = [
+        WORKFLOW_DIR / "dependency-review.yml",
+        WORKFLOW_DIR / "osvscanner.yml",
         REPO_ROOT / ".github" / "workflows" / "opencode-review.yml",
         REPO_ROOT / ".github" / "workflows" / "pr-review-merge-scheduler.yml",
         REPO_ROOT / ".github" / "workflows" / "strix-selftest.yml",
@@ -56,11 +57,18 @@ def test_kubernetes_deployment_uses_non_root_versioned_runtime() -> None:
     assert 'targetPort: 8080' in service_source
 
 
-def test_companion_workflows_cover_named_requirements_manifests_and_full_history() -> None:
-    dependency_review_source = DEPENDENCY_REVIEW_WORKFLOW.read_text(encoding="utf-8")
-    osv_source = OSV_WORKFLOW.read_text(encoding="utf-8")
+def test_workflow_concurrency_is_trigger_aware() -> None:
+    pull_request_workflows = ("codeql.yml", "fuzz.yml", "server-tests.yml")
+    expected_group = (
+        "${{ github.workflow }}-${{ github.repository }}-"
+        "${{ github.event.pull_request.number || github.run_id }}"
+    )
 
-    assert "actions/dependency-review-action@" in dependency_review_source
-    assert 'requirements(-[A-Za-z0-9._-]+)?\\.txt' in osv_source
-    assert "google/osv-scanner-action" in osv_source
-    assert "-r" in osv_source
+    for workflow_name in pull_request_workflows:
+        source = (WORKFLOW_DIR / workflow_name).read_text(encoding="utf-8")
+        assert f"group: {expected_group}" in source
+        assert "cancel-in-progress: ${{ github.event_name == 'pull_request' }}" in source
+
+    deploy_source = (WORKFLOW_DIR / "pages.yml").read_text(encoding="utf-8")
+    assert "group: ${{ github.workflow }}-${{ github.repository }}-${{ github.run_id }}" in deploy_source
+    assert "cancel-in-progress: false" in deploy_source
