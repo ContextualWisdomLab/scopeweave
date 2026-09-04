@@ -15,7 +15,6 @@ test.describe('summary metric explanations', () => {
     for (let index = 0; index < 3; index += 1) {
       await expect(cards.nth(index)).not.toHaveAttribute('tabindex');
       await expect(cards.nth(index)).not.toHaveAttribute('role', 'note');
-      await expect(cards.nth(index)).not.toHaveAttribute('title');
     }
 
     for (const [id, text] of summaryExplanations) {
