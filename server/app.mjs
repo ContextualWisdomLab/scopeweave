@@ -11,6 +11,7 @@ import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from 
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
+import { postWebhookOnce, parseWebhookUrl } from './webhook_transport.mjs';
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
 
@@ -101,20 +102,17 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
 
 function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
-  const ctrl = new AbortController();
-  const to = setTimeout(() => ctrl.abort(), 3000);
-  fetch(url, {
-    method: 'POST',
+  postWebhookOnce({
+    url,
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
-    signal: ctrl.signal,
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
     if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
   }).catch(() => {
     recordDelivery(webhookId, event, null, false, attempt);
     if (attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
-  }).finally(() => clearTimeout(to));
+  });
 }
 
 function deliver(orgId, event, payload) {
@@ -742,17 +740,24 @@ app.get('/api/orgs/:id/webhooks', requireAuth, (c) => {
   return c.json({ webhooks });
 });
 
+
+
 app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const orgId = c.req.param('id');
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
-  if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  let webhookUrl;
+  try {
+    webhookUrl = parseWebhookUrl(url).toString();
+  } catch {
+    return c.json({ error: 'valid public https url required' }, 400);
+  }
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
-  const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
-  logAudit(orgId, uid, 'webhook.create', 'webhook', id, { url, events: evs });
-  return c.json({ id, url, events: evs, secret }); // secret shown once for signature verification
+  const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, webhookUrl, secret, evs));
+  logAudit(orgId, uid, 'webhook.create', 'webhook', id, { url: webhookUrl, events: evs });
+  return c.json({ id, url: webhookUrl, events: evs, secret }); // secret shown once for signature verification
 });
 
 app.get('/api/orgs/:id/webhooks/:whId/deliveries', requireAuth, (c) => {
