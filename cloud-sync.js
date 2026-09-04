@@ -175,7 +175,7 @@ function ensureAuthUI() {
     <div class="modal-panel cloud-panel">
       <div class="modal-header">
         <h2 id="cloud-modal-title">클라우드 로그인</h2>
-        <button type="button" class="icon-button close-button" data-cloud-close="true" aria-label="닫기"><span aria-hidden="true">✕</span></button>
+        <button type="button" class="icon-button close-button" data-cloud-close="true" aria-label="닫기" title="닫기 (Esc)" aria-keyshortcuts="Escape"><span aria-hidden="true">✕</span></button>
       </div>
       <form id="cloud-form" class="cloud-form">
         <label class="meta-field"><span>이메일</span><input id="cloud-email" type="email" autocomplete="username" required /></label>
@@ -543,6 +543,8 @@ async function openShareModal() {
   close.type = 'button';
   close.className = 'icon-button close-button';
   close.setAttribute('aria-label', '공유 닫기');
+  close.setAttribute('title', '닫기 (Esc)');
+  close.setAttribute('aria-keyshortcuts', 'Escape');
   close.textContent = '✕';
   close.addEventListener('click', () => modal.classList.add('hidden'));
   head.append(h2, close);
@@ -685,6 +687,8 @@ function openReportModal() {
   close.type = 'button';
   close.className = 'icon-button close-button';
   close.setAttribute('aria-label', '주간보고 닫기');
+  close.setAttribute('title', '닫기 (Esc)');
+  close.setAttribute('aria-keyshortcuts', 'Escape');
   close.textContent = '✕';
   close.addEventListener('click', () => modal.classList.add('hidden'));
   head.append(h2, close);
@@ -875,6 +879,8 @@ async function openPortfolioModal() {
   close.type = 'button';
   close.className = 'icon-button close-button';
   close.setAttribute('aria-label', '대시보드 닫기');
+  close.setAttribute('title', '닫기 (Esc)');
+  close.setAttribute('aria-keyshortcuts', 'Escape');
   close.textContent = '✕';
   close.addEventListener('click', () => modal.classList.add('hidden'));
   head.append(h2, close);
@@ -1049,6 +1055,8 @@ async function openSprintModal() {
   close.type = 'button';
   close.className = 'icon-button close-button';
   close.setAttribute('aria-label', '스프린트 닫기');
+  close.setAttribute('title', '닫기 (Esc)');
+  close.setAttribute('aria-keyshortcuts', 'Escape');
   close.textContent = '✕';
   close.addEventListener('click', () => modal.classList.add('hidden'));
   head.append(h2, close);
@@ -1191,6 +1199,8 @@ async function openAttachmentsModal() {
   close.type = 'button';
   close.className = 'icon-button close-button';
   close.setAttribute('aria-label', '산출물 닫기');
+  close.setAttribute('title', '닫기 (Esc)');
+  close.setAttribute('aria-keyshortcuts', 'Escape');
   close.textContent = '✕';
   close.addEventListener('click', () => modal.classList.add('hidden'));
   head.append(h2, close);
@@ -1328,6 +1338,8 @@ async function openCommentsModal() {
   close.type = 'button';
   close.className = 'icon-button close-button';
   close.setAttribute('aria-label', '코멘트 닫기');
+  close.setAttribute('title', '닫기 (Esc)');
+  close.setAttribute('aria-keyshortcuts', 'Escape');
   close.textContent = '✕';
   close.addEventListener('click', () => modal.classList.add('hidden'));
   head.append(h2, close);
@@ -1440,6 +1452,8 @@ function openSearchModal() {
   close.type = 'button';
   close.className = 'icon-button close-button';
   close.setAttribute('aria-label', '검색 닫기');
+  close.setAttribute('title', '닫기 (Esc)');
+  close.setAttribute('aria-keyshortcuts', 'Escape');
   close.textContent = '✕';
   close.addEventListener('click', () => modal.classList.add('hidden'));
   head.append(h2, close);
@@ -1554,6 +1568,8 @@ async function openBaselineModal() {
   close.type = 'button';
   close.className = 'icon-button close-button';
   close.setAttribute('aria-label', '기준선 닫기');
+  close.setAttribute('title', '닫기 (Esc)');
+  close.setAttribute('aria-keyshortcuts', 'Escape');
   close.textContent = '✕';
   close.addEventListener('click', () => modal.classList.add('hidden'));
   head.append(h2, close);
@@ -1733,7 +1749,7 @@ async function openTeamModal() {
       <div class="modal-panel cloud-panel">
         <div class="modal-header">
           <h2>팀 멤버</h2>
-          <button type="button" class="icon-button close-button" data-team-close="true" aria-label="닫기"><span aria-hidden="true">✕</span></button>
+          <button type="button" class="icon-button close-button" data-team-close="true" aria-label="닫기" title="닫기 (Esc)" aria-keyshortcuts="Escape"><span aria-hidden="true">✕</span></button>
         </div>
         <div id="team-body" class="team-body"></div>
         <form id="team-invite" class="team-invite">
