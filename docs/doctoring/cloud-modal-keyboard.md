@@ -11,18 +11,19 @@ ScopeWeave의 클라우드 로그인·공유·보고·대시보드·스프린트
 - 열린 클라우드 모달에서 Escape를 누르면 기존 close button의 `click()` 경로를 호출합니다. 닫기 상태를 별도로 복제하지 않습니다.
 - 모달이 focus를 받기 전의 invoking control을 기억하고, 모달이 닫힌 뒤 그 element가 아직 DOM에 존재하면 focus를 되돌립니다.
 - 동적으로 생성되는 클라우드 모달이 열린 뒤 focus가 여전히 바깥에 있으면 첫 focusable element로 이동합니다. 로그인 모달처럼 owner가 이미 적절한 input에 focus를 둔 경우에는 덮어쓰지 않습니다.
-- pointer로 기존 close button을 누르는 경로도 그대로 사용하며 동일한 focus-return contract를 적용합니다.
-- Gantt/editor shortcut authority, modal business state, API 호출, 저장·인증 semantics는 변경하지 않습니다.
+- Tab/Shift+Tab은 열린 클라우드 모달의 visible focusable element 사이에서 순환합니다. Gantt/editor의 keyboard authority는 건드리지 않습니다.
+- pointer로 기존 close button이나 backdrop을 누르는 경로도 그대로 사용하며 동일한 focus-return contract를 적용합니다.
+- modal business state, API 호출, 저장·인증 semantics는 변경하지 않습니다.
 
 ## 검증 계약
 
-`tests/e2e/cloud-modal-shortcut.spec.js`는 실제 로그인 모달에서 `aria-keyshortcuts="Escape"`, 기존 이메일 initial focus, Escape close, invoking button focus restoration, pointer close를 검증합니다. API 없이 정적 Playwright 환경에서 동적 모달 registration 경로도 별도로 생성해 opening focus와 single-Escape dismissal을 검증합니다. 이 두 번째 fixture는 클라우드 API 기능 검증이 아니라 동적 DOM lifecycle을 소유하는 keyboard controller의 회귀 계약입니다.
+`tests/e2e/cloud-modal-shortcut.spec.js`는 실제 로그인 모달에서 `aria-keyshortcuts="Escape"`, 기존 이메일 initial focus, Tab/Shift+Tab focus containment, Escape close, invoking button focus restoration, close button과 backdrop pointer dismissal을 검증합니다. API 없이 정적 Playwright 환경에서 동적 모달 registration 경로도 별도로 생성해 opening focus, Tab containment, single-Escape dismissal을 검증합니다. 이 두 번째 fixture는 클라우드 API 기능 검증이 아니라 동적 DOM lifecycle을 소유하는 keyboard controller의 회귀 계약입니다.
 
-Hosted browser evidence가 exact head에서 실행되기 전까지 source/test 정합성만 GREEN으로 취급하며 제품 완료나 assistive-technology 호환성을 과장하지 않습니다. Tab focus containment와 실제 screen-reader 조합은 별도 acceptance 대상입니다.
+Hosted browser evidence가 exact head에서 실행되기 전까지 source/test 정합성만 GREEN으로 취급하며 제품 완료나 assistive-technology 호환성을 과장하지 않습니다. 실제 screen-reader/browser 조합, 터치·모바일 뷰포트, 모든 인증 후 동적 모달의 buyer-path 실행은 별도 acceptance 대상입니다.
 
 ## 표준 근거
 
-WAI-ARIA 1.3 Working Draft의 `aria-keyshortcuts`는 작성자가 구현한 shortcut을 노출하는 속성이며 user agent가 해당 속성 때문에 keyboard behavior를 바꾸지 않는다고 명시합니다. WAI-ARIA Authoring Practices Guide의 Modal Dialog Pattern은 modal open 시 focus를 내부로 이동하고, Escape로 닫으며, 닫힌 뒤 통상 invoking element로 focus를 돌려보내도록 설명합니다. 본 구현은 이 두 계약에 맞추되, WAI-ARIA 1.3이 Working Draft라는 상태를 그대로 기록합니다.
+WAI-ARIA 1.3 Working Draft의 `aria-keyshortcuts`는 작성자가 구현한 shortcut을 노출하는 속성이며 user agent가 해당 속성 때문에 keyboard behavior를 바꾸지 않는다고 명시합니다. WAI-ARIA Authoring Practices Guide의 Modal Dialog Pattern은 modal open 시 focus를 내부로 이동하고 Tab/Shift+Tab을 dialog 내부에 유지하며, Escape로 닫고 닫힌 뒤 통상 invoking element로 focus를 돌려보내도록 설명합니다. 본 구현은 이 두 계약에 맞추되, WAI-ARIA 1.3이 Working Draft라는 상태를 그대로 기록합니다.
 
 ### References
 
