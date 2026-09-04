@@ -17,12 +17,12 @@
 
 - `.github/workflows/pages.yml`: GitHub Pages deployment workflow for the
   static app.
-- OpenCode Review, Strix Security Scan, and PR Review Merge Scheduler:
-  organization-level required workflows from `ContextualWisdomLab/.github`.
-- `.github/workflows/dependency-review.yml`: authoritative manifest-diff
-  review workflow for repository dependency changes.
-- `.github/workflows/osvscanner.yml`: authoritative OSV/SARIF workflow
-  for dependency scanning.
+- `.github/workflows/server-tests.yml` and `.github/workflows/fuzz.yml`:
+  repository-owned product/runtime validation.
+- OpenCode Review, Strix Security Scan, PR Review Merge Scheduler, CodeQL,
+  Dependency Review, OSV, and the broader Security Scan are organization-level
+  required workflows owned by `ContextualWisdomLab/.github`; ScopeWeave does not
+  carry repository-local copies of those central lanes.
 - `tests/e2e/scopeweave.spec.js`: Playwright coverage for the user-facing
   app flows.
 - `tests/config/`: repository governance and workflow ownership checks.
