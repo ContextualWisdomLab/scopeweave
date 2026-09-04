@@ -23,6 +23,22 @@ test('allows public IPv4 and IPv6 addresses', () => {
   assert.equal(isPublicWebhookAddress('::ffff:808:808'), true);
 });
 
+test('evaluates RFC 6052 well-known-prefix translations by embedded IPv4 policy', () => {
+  assert.equal(isPublicWebhookAddress('64:ff9b::808:808'), true);
+  assert.equal(isPublicWebhookAddress('64:ff9b::a00:1'), false);
+  assert.equal(isPublicWebhookAddress('64:ff9b::7f00:1'), false);
+});
+
+test('evaluates RFC 8215 local-use /48 translations by embedded IPv4 policy', () => {
+  assert.equal(isPublicWebhookAddress('64:ff9b:1:808:8:800::'), true);
+  assert.equal(isPublicWebhookAddress('64:ff9b:1:a00:0:100:0:0'), false);
+  assert.equal(isPublicWebhookAddress('64:ff9b:1:7f00:0:100:0:0'), false);
+});
+
+test('rejects malformed local-use translation addresses with a non-zero u octet', () => {
+  assert.equal(isPublicWebhookAddress('64:ff9b:1:808:108:800::'), false);
+});
+
 test('normalizes shorthand/integer IPv4 before policy evaluation', async () => {
   await assert.rejects(resolvePublicWebhookTarget('https://127.1/hook'), /non-public/);
   await assert.rejects(resolvePublicWebhookTarget('https://2130706433/hook'), /non-public/);
