@@ -60,7 +60,11 @@ def test_companion_workflows_cover_named_requirements_manifests_and_full_history
     dependency_review_source = DEPENDENCY_REVIEW_WORKFLOW.read_text(encoding="utf-8")
     osv_source = OSV_WORKFLOW.read_text(encoding="utf-8")
 
-    assert "actions/dependency-review-action@" in dependency_review_source
+    assert (
+        "uses: ContextualWisdomLab/.github/.github/workflows/dependency-review.yml@"
+        "f43dcb884be5a0efc61611b5c8cb83c4c7735995"
+        in dependency_review_source
+    )
     assert 'requirements(-[A-Za-z0-9._-]+)?\\.txt' in osv_source
     assert "google/osv-scanner-action" in osv_source
     assert "-r" in osv_source
