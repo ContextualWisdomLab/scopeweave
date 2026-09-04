@@ -429,6 +429,7 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
       return;
     }
     event.preventDefault();
+    renderDraftValidation.flush();
 
     const saveButton = form.querySelector('button[type="submit"]');
     if (saveButton && saveButton.getAttribute('aria-disabled') === 'true') {
@@ -436,7 +437,6 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
       return;
     }
 
-    renderDraftValidation.flush();
     saveEditor();
   });
 
@@ -797,6 +797,7 @@ function renderEditorRow(anchorId) {
   panel.className = 'editor-panel';
   const form = document.createElement('form');
   form.dataset.editorForm = 'true';
+  form.noValidate = true;
   const editorGrid = document.createElement('div');
   editorGrid.className = 'editor-grid';
 
