@@ -1,28 +1,3 @@
-import { Agent as UndiciAgent, setGlobalDispatcher } from "undici";
-import dns from "node:dns";
-
-class SafeWebhookAgent extends UndiciAgent {
-  constructor(opts) {
-    super({
-      ...opts,
-      connect: {
-        lookup: (hostname, options, callback) => {
-          dns.lookup(hostname, options, (err, address, family) => {
-            if (err) return callback(err);
-            let ips = Array.isArray(address) ? address.map(a => a.address) : [address];
-            for (const ip of ips) {
-              if (ip === "127.0.0.1" || ip === "::1" || ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("169.254.") || (ip.startsWith("172.") && parseInt(ip.split(".")[1]) >= 16 && parseInt(ip.split(".")[1]) <= 31)) {
-                return callback(new Error("SSRF blocked"));
-              }
-            }
-            callback(null, address, family);
-          });
-        }
-      }
-    });
-  }
-}
-setGlobalDispatcher(new SafeWebhookAgent());
 // ScopeWeave SaaS API. Multi-tenant (org-scoped), optimistic concurrency on
 // project docs, SSE realtime fan-out per project. The existing static client
 // (index.html/app.js) becomes the frontend that talks to these routes.
