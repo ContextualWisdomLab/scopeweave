@@ -728,6 +728,26 @@ app.get('/api/metrics', (c) => {
   return c.text(lines.join('\n') + '\n', 200, { 'content-type': 'text/plain; version=0.0.4; charset=utf-8' });
 });
 
+function isSafeWebhookUrl(urlString) {
+  try {
+    const u = new URL(urlString);
+    if (u.hostname === 'localhost' || u.hostname === '[::1]') return false;
+
+    const ipv4Match = u.hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (ipv4Match) {
+      const p1 = parseInt(ipv4Match[1], 10);
+      const p2 = parseInt(ipv4Match[2], 10);
+      if (p1 === 0 || p1 === 127 || p1 === 10) return false;
+      if (p1 === 192 && p2 === 168) return false;
+      if (p1 === 172 && p2 >= 16 && p2 <= 31) return false;
+      if (p1 === 169 && p2 === 254) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // ------------------------------------------------------------------- webhooks
 app.get('/api/orgs/:id/webhooks', requireAuth, (c) => {
   const uid = c.get('user').sub;
@@ -748,6 +768,7 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
   if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  if (!isSafeWebhookUrl(String(url))) return c.json({ error: 'internal or private url forbidden' }, 400);
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
