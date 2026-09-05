@@ -25,9 +25,10 @@ assert.equal(response.status, 200, 'owner workspace is available');
 const orgId = (await response.json()).orgs[0].id;
 
 for (const url of [
-  'http://[fc00::1]/hook',
-  'http://[fe80::1]/hook',
-  'http://[::ffff:127.0.0.1]/hook',
+  'https://[fc00::1]/hook',
+  'https://[fe80::1]/hook',
+  'https://[::ffff:127.0.0.1]/hook',
+  'http://example.com/hook',
 ]) {
   response = await req(`/api/orgs/${orgId}/webhooks`, {
     method: 'POST',
@@ -37,4 +38,11 @@ for (const url of [
   assert.equal(response.status, 400, `${url} must fail closed at webhook registration`);
 }
 
-console.log('✓ webhook SSRF address-family regression tests passed');
+response = await req(`/api/orgs/${orgId}/webhooks`, {
+  method: 'POST',
+  headers: auth,
+  body: body({ url: 'https://example.com/hook', events: ['project.update'] }),
+});
+assert.equal(response.status, 200, 'public HTTPS webhook registration remains available');
+
+console.log('✓ webhook SSRF address-family and transport regression tests passed');
