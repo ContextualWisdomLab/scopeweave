@@ -14,22 +14,49 @@ for (const [network, prefix] of [
 ]) block4(network, prefix);
 
 for (const [network, prefix] of [
-  ['::', 128], ['::1', 128], ['fc00::', 7], ['fe80::', 10], ['ff00::', 8],
+  ['::', 96], ['::ffff:0:0', 96], ['64:ff9b:1::', 48],
+  ['fc00::', 7], ['fe80::', 10], ['ff00::', 8],
   ['2001:2::', 48], ['2001:db8::', 32],
-  ['::ffff:0:0', 104], ['::ffff:a00:0', 104], ['::ffff:6440:0', 106],
-  ['::ffff:7f00:0', 104], ['::ffff:a9fe:0', 112], ['::ffff:ac10:0', 108],
-  ['::ffff:c000:0', 120], ['::ffff:c000:200', 120], ['::ffff:c0a8:0', 112],
-  ['::ffff:c612:0', 111], ['::ffff:c633:6400', 120], ['::ffff:cb00:7100', 120],
-  ['::ffff:e000:0', 100], ['::ffff:f000:0', 100],
 ]) block6(network, prefix);
+
+const RFC6052_WKP = new BlockList();
+RFC6052_WKP.addSubnet('64:ff9b::', 96, 'ipv6');
 
 const unbracket = (hostname) => hostname.startsWith('[') && hostname.endsWith(']')
   ? hostname.slice(1, -1)
   : hostname;
 
+function expandIpv6Words(address) {
+  const halves = address.toLowerCase().split('::');
+  const parseHalf = (half) => {
+    if (!half) return [];
+    return half.split(':').flatMap((part) => {
+      if (!part.includes('.')) return [Number.parseInt(part, 16)];
+      const octets = part.split('.').map(Number);
+      return [(octets[0] << 8) | octets[1], (octets[2] << 8) | octets[3]];
+    });
+  };
+  const left = parseHalf(halves[0]);
+  const right = parseHalf(halves[1] || '');
+  const zeroCount = halves.length === 2 ? 8 - left.length - right.length : 0;
+  return halves.length === 2
+    ? [...left, ...Array(zeroCount).fill(0), ...right]
+    : left;
+}
+
+function rfc6052EmbeddedIpv4(address) {
+  const words = expandIpv6Words(address);
+  if (words.length !== 8) return null;
+  return [words[6] >> 8, words[6] & 0xff, words[7] >> 8, words[7] & 0xff].join('.');
+}
+
 export function isPublicWebhookAddress(address) {
   const family = isIP(address);
   if (!family) return false;
+  if (family === 6 && RFC6052_WKP.check(address, 'ipv6')) {
+    const embeddedIpv4 = rfc6052EmbeddedIpv4(address);
+    return embeddedIpv4 !== null && isPublicWebhookAddress(embeddedIpv4);
+  }
   return !BLOCKED.check(address, family === 4 ? 'ipv4' : 'ipv6');
 }
 
