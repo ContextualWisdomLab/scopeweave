@@ -11,16 +11,18 @@ import {
 
 const privateCases = [
   '127.0.0.1', '10.1.2.3', '169.254.169.254', '172.16.0.1', '192.168.1.1',
-  '0.0.0.0', '224.0.0.1', '::', '::1', 'fc00::1', 'fe80::1', '::ffff:7f00:1',
+  '0.0.0.0', '224.0.0.1', '::', '::1', 'fc00::1', 'fe80::1',
+  '::ffff:7f00:1', '::ffff:808:808',
+  '64:ff9b::a00:1', '64:ff9b::7f00:1', '64:ff9b:1::808:808',
 ];
 for (const address of privateCases) {
   test(`rejects non-public address ${address}`, () => assert.equal(isPublicWebhookAddress(address), false));
 }
 
-test('allows public IPv4 and IPv6 addresses', () => {
+test('allows public IPv4, IPv6, and standards-correct RFC 6052 translation', () => {
   assert.equal(isPublicWebhookAddress('8.8.8.8'), true);
   assert.equal(isPublicWebhookAddress('2001:4860:4860::8888'), true);
-  assert.equal(isPublicWebhookAddress('::ffff:808:808'), true);
+  assert.equal(isPublicWebhookAddress('64:ff9b::808:808'), true);
 });
 
 test('normalizes shorthand/integer IPv4 before policy evaluation', async () => {
