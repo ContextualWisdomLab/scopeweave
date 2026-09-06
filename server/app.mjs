@@ -1,3 +1,11 @@
+import { Agent, fetch as undiciFetch } from "undici";
+import { createSafeWebhookLookup, isSafeWebhookUrl } from "./webhook_destination.mjs";
+
+export const safeWebhookAgent = new Agent({
+  connect: {
+    lookup: createSafeWebhookLookup()
+  }
+});
 // ScopeWeave SaaS API. Multi-tenant (org-scoped), optimistic concurrency on
 // project docs, SSE realtime fan-out per project. The existing static client
 // (index.html/app.js) becomes the frontend that talks to these routes.
@@ -103,11 +111,13 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
-  fetch(url, {
+  undiciFetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
+    dispatcher: safeWebhookAgent,
+    redirect: 'error',
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
     if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
@@ -122,9 +132,10 @@ function deliver(orgId, event, payload) {
   try {
     hooks = db.prepare('SELECT id, url, secret, events FROM webhooks WHERE org_id = ? AND active = 1').all(orgId);
   } catch { return; }
-  for (const h of hooks) {
+for (const h of hooks) {
     const subs = String(h.events || '').split(',').map((s) => s.trim());
     if (!(subs.includes('*') || subs.includes(event))) continue;
+    if (!isSafeWebhookUrl(String(h.url))) continue;
     const body = JSON.stringify({ event, orgId: Number(orgId), payload, ts: new Date().toISOString() });
     const sig = createHmac('sha256', h.secret).update(body).digest('hex');
     sendWebhook(h.id, h.url, sig, event, body, 1);
@@ -748,6 +759,7 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
   if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  if (!isSafeWebhookUrl(String(url))) return c.json({ error: 'internal or private url forbidden' }, 400);
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
