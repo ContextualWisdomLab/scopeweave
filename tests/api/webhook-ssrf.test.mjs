@@ -1,5 +1,5 @@
 import assert from 'node:assert';
-import { MockAgent } from 'undici';
+import { Agent, MockAgent } from 'undici';
 import {
   createSafeWebhookLookup,
   isPublicWebhookIp,
@@ -99,40 +99,8 @@ assert.deepEqual(
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_DEV = '1';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
-const { app, requestWebhook } = await import('../../server/app.mjs');
+const { app } = await import('../../server/app.mjs');
 const { db } = await import('../../server/db.mjs');
-
-const redirectAgent = new MockAgent();
-redirectAgent.disableNetConnect();
-redirectAgent
-  .get('https://webhook.example.test')
-  .intercept({ path: '/start', method: 'POST' })
-  .reply(302, '', { headers: { location: 'https://169.254.169.254/internal' } });
-redirectAgent
-  .get('https://169.254.169.254')
-  .intercept({ path: '/internal', method: 'POST' })
-  .reply(204, '');
-try {
-  await assert.rejects(
-    requestWebhook(
-      'https://webhook.example.test/start',
-      {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: '{}',
-      },
-      redirectAgent,
-    ),
-    /fetch failed|redirect/i,
-    'webhook transport must reject a redirect response instead of following its Location target',
-  );
-  const pendingRedirects = redirectAgent.pendingInterceptors();
-  assert.equal(pendingRedirects.length, 1, 'only the redirect target should remain unrequested');
-  assert.equal(pendingRedirects[0].origin, 'https://169.254.169.254');
-  assert.equal(pendingRedirects[0].path, '/internal');
-} finally {
-  await redirectAgent.close();
-}
 
 const req = (path, opts = {}) =>
   app.request(path, {
@@ -188,30 +156,84 @@ response = await req('/api/projects', {
 });
 assert.equal(response.status, 200, 'project fixture is created');
 const project = await response.json();
+let projectVersion = project.version;
 
+// Exercise the production sendWebhook path with Undici's Dispatcher contract.
+// A 302 with a private Location must be recorded as a failed attempt and retried
+// once, but the redirect target itself must never be dispatched.
 db.prepare('UPDATE webhooks SET url = ? WHERE id = ?')
-  .run('https://127.0.0.1:9/internal', webhookId);
+  .run('https://webhook.example.test/start', webhookId);
+db.prepare('DELETE FROM webhook_deliveries WHERE webhook_id = ?').run(webhookId);
 
-const originalFetch = globalThis.fetch;
-const outboundAttempts = [];
-globalThis.fetch = async (url, options) => {
-  outboundAttempts.push({ url: String(url), options });
-  return { status: 204, ok: true };
+const redirectAgent = new MockAgent();
+redirectAgent.disableNetConnect();
+redirectAgent
+  .get('https://webhook.example.test')
+  .intercept({ path: '/start', method: 'POST' })
+  .reply(302, '', { headers: { location: 'https://169.254.169.254/internal' } })
+  .times(2);
+redirectAgent
+  .get('https://169.254.169.254')
+  .intercept({ path: '/internal', method: 'POST' })
+  .reply(204, '');
+
+const originalAgentDispatch = Agent.prototype.dispatch;
+let webhookDispatches = 0;
+Agent.prototype.dispatch = function dispatchThroughRedirectFixture(options, handler) {
+  webhookDispatches += 1;
+  return redirectAgent.dispatch(options, handler);
 };
 try {
   response = await req(`/api/projects/${project.id}`, {
     method: 'PUT',
     headers: auth,
-    body: body({ version: project.version, name: 'Webhook delivery boundary', tasks: [] }),
+    body: body({ version: projectVersion, name: 'Webhook redirect boundary', tasks: [] }),
+  });
+  assert.equal(response.status, 200, 'project update succeeds independently of rejected webhook redirects');
+  projectVersion = (await response.json()).version;
+  await new Promise((resolve) => setTimeout(resolve, 1200));
+
+  const deliveries = db.prepare(
+    'SELECT status_code AS statusCode, ok, attempt FROM webhook_deliveries WHERE webhook_id = ? ORDER BY id',
+  ).all(webhookId);
+  assert.equal(webhookDispatches, 2, 'a rejected redirect is attempted once and retried exactly once');
+  assert.deepEqual(
+    deliveries.map(({ statusCode, ok, attempt }) => ({ statusCode, ok, attempt })),
+    [
+      { statusCode: null, ok: 0, attempt: 1 },
+      { statusCode: null, ok: 0, attempt: 2 },
+    ],
+    'redirect rejection preserves the delivery receipt and one-retry contract',
+  );
+  const pendingRedirects = redirectAgent.pendingInterceptors();
+  assert.equal(pendingRedirects.length, 1, 'only the private redirect target remains unrequested');
+  assert.equal(pendingRedirects[0].origin, 'https://169.254.169.254');
+  assert.equal(pendingRedirects[0].path, '/internal');
+} finally {
+  Agent.prototype.dispatch = originalAgentDispatch;
+  await redirectAgent.close();
+}
+
+// Persisted private literals must be rejected before the production transport
+// is dispatched. Count Agent dispatches rather than monkeypatching global fetch:
+// webhook delivery intentionally uses the isolated Undici transport.
+db.prepare('UPDATE webhooks SET url = ? WHERE id = ?')
+  .run('https://127.0.0.1:9/internal', webhookId);
+let blockedDispatches = 0;
+Agent.prototype.dispatch = function failIfBlockedDestinationReachesTransport() {
+  blockedDispatches += 1;
+  throw new Error('blocked webhook destination reached network transport');
+};
+try {
+  response = await req(`/api/projects/${project.id}`, {
+    method: 'PUT',
+    headers: auth,
+    body: body({ version: projectVersion, name: 'Webhook delivery boundary', tasks: [] }),
   });
   assert.equal(response.status, 200, 'project update succeeds independently of webhook delivery');
-  assert.equal(
-    outboundAttempts.length,
-    0,
-    'delivery must revalidate persisted destinations and refuse non-public IP literals before network I/O',
-  );
+  assert.equal(blockedDispatches, 0, 'persisted non-public IP literals are refused before network dispatch');
 } finally {
-  globalThis.fetch = originalFetch;
+  Agent.prototype.dispatch = originalAgentDispatch;
 }
 
 console.log('✓ webhook SSRF registration, DNS admission, redirect, and delivery-boundary regression tests passed');
