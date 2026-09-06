@@ -1,4 +1,5 @@
 import assert from 'node:assert';
+import { MockAgent } from 'undici';
 import {
   createSafeWebhookLookup,
   isPublicWebhookIp,
@@ -98,8 +99,40 @@ assert.deepEqual(
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_DEV = '1';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
-const { app } = await import('../../server/app.mjs');
+const { app, requestWebhook } = await import('../../server/app.mjs');
 const { db } = await import('../../server/db.mjs');
+
+const redirectAgent = new MockAgent();
+redirectAgent.disableNetConnect();
+redirectAgent
+  .get('https://webhook.example.test')
+  .intercept({ path: '/start', method: 'POST' })
+  .reply(302, '', { headers: { location: 'https://169.254.169.254/internal' } });
+redirectAgent
+  .get('https://169.254.169.254')
+  .intercept({ path: '/internal', method: 'POST' })
+  .reply(204, '');
+try {
+  await assert.rejects(
+    requestWebhook(
+      'https://webhook.example.test/start',
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: '{}',
+      },
+      redirectAgent,
+    ),
+    /fetch failed|redirect/i,
+    'webhook transport must reject a redirect response instead of following its Location target',
+  );
+  const pendingRedirects = redirectAgent.pendingInterceptors();
+  assert.equal(pendingRedirects.length, 1, 'only the redirect target should remain unrequested');
+  assert.equal(pendingRedirects[0].origin, 'https://169.254.169.254');
+  assert.equal(pendingRedirects[0].path, '/internal');
+} finally {
+  await redirectAgent.close();
+}
 
 const req = (path, opts = {}) =>
   app.request(path, {
@@ -181,4 +214,4 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-console.log('✓ webhook SSRF registration, DNS admission, and delivery-boundary regression tests passed');
+console.log('✓ webhook SSRF registration, DNS admission, redirect, and delivery-boundary regression tests passed');
