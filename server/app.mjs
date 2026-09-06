@@ -4,6 +4,7 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import net from 'node:net';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -747,7 +748,34 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   const orgId = c.req.param('id');
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
-  if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  const urlStr = String(url || '');
+  if (!/^https?:\/\//.test(urlStr)) return c.json({ error: 'valid http(s) url required' }, 400);
+
+  try {
+    const u = new URL(urlStr);
+    let hostname = u.hostname;
+    if (hostname.startsWith('[') && hostname.endsWith(']')) hostname = hostname.slice(1, -1);
+    if (hostname === 'localhost') return c.json({ error: 'internal urls not allowed' }, 400);
+    const ipType = net.isIP(hostname);
+    if (ipType === 4) {
+      if (/^127\./.test(hostname) || /^10\./.test(hostname) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(hostname) || /^192\.168\./.test(hostname) || /^169\.254\./.test(hostname) || hostname === '0.0.0.0') {
+        return c.json({ error: 'internal urls not allowed' }, 400);
+      }
+    } else if (ipType === 6) {
+      if (hostname === '::1' || hostname === '::' || /^fe80:/i.test(hostname) || /^fc00:/i.test(hostname) || /^fd[0-9a-f]{2}:/i.test(hostname)) {
+        return c.json({ error: 'internal urls not allowed' }, 400);
+      }
+      if (hostname.toLowerCase().startsWith('::ffff:')) {
+        const ipv4Part = hostname.slice(7);
+        if (net.isIP(ipv4Part) === 4 && (/^127\./.test(ipv4Part) || /^10\./.test(ipv4Part) || /^172\.(1[6-9]|2[0-9]|3[0-1])\./.test(ipv4Part) || /^192\.168\./.test(ipv4Part) || /^169\.254\./.test(ipv4Part) || ipv4Part === '0.0.0.0')) {
+          return c.json({ error: 'internal urls not allowed' }, 400);
+        }
+      }
+    }
+  } catch {
+    return c.json({ error: 'invalid url' }, 400);
+  }
+
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
