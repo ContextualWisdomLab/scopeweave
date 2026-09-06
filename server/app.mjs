@@ -1,4 +1,4 @@
-import { Agent as UndiciAgent, setGlobalDispatcher } from "undici";
+import { Agent as UndiciAgent } from "undici";
 import dns from "node:dns";
 
 function isPrivateIp(ip) {
