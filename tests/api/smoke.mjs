@@ -266,7 +266,7 @@ r = await req(`/api/orgs/${orgAId}/export`, { headers: oauth });
 assert.equal(r.status, 403, 'non-owner export → 403');
 
 // ---- Webhooks ----
-r = await req(`/api/orgs/${orgAId}/webhooks`, { method: 'POST', headers: auth, body: body({ url: 'http://127.0.0.1:9/hook', events: ['project.update'] }) });
+r = await req(`/api/orgs/${orgAId}/webhooks`, { method: 'POST', headers: auth, body: body({ url: 'https://192.168.example.com/hook', events: ['never'] }) });
 assert.equal(r.status, 200, 'create webhook');
 const wh = await r.json();
 assert.ok(wh.secret.startsWith('whsec_'), 'webhook secret returned once');
@@ -278,22 +278,11 @@ r = await req(`/api/orgs/${orgAId}/webhooks`, { method: 'POST', headers: auth, b
 assert.equal(r.status, 400, 'invalid webhook url → 400');
 r = await req(`/api/orgs/${orgAId}/webhooks`, { headers: oauth });
 assert.equal(r.status, 403, 'non-member webhooks → 403');
-// trigger project.update → a delivery is attempted (counter increments synchronously)
-const before = (await (await req('/api/metrics')).json()).webhookDeliveries;
-r = await req(`/api/projects/${proj.id}`, { headers: auth });
-const pv2 = (await r.json()).version;
-r = await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: auth, body: body({ tasks: [{ id: 'wh', name: '훅' }], version: pv2 }) });
-assert.equal(r.status, 200);
-const after = (await (await req('/api/metrics')).json()).webhookDeliveries;
-assert.ok(after > before, 'webhook delivery attempted on project.update');
-// outcome recorded: refused url → ok=0, retried to attempt 2
-await new Promise((res) => setTimeout(res, 900));
+// This subscription is deliberately unused; deterministic network/retry behavior is
+// covered by webhook-ssrf.test.mjs without relying on public DNS or Internet timing.
 r = await req(`/api/orgs/${orgAId}/webhooks/${wh.id}/deliveries`, { headers: auth });
 assert.equal(r.status, 200, 'deliveries endpoint');
-const dels = (await r.json()).deliveries;
-assert.ok(dels.length >= 2, 'delivery attempts recorded');
-assert.ok(dels.every((d) => d.ok === 0), 'refused url recorded as failed');
-assert.ok(dels.some((d) => d.attempt === 2), 'failed delivery retried (attempt 2)');
+assert.deepEqual((await r.json()).deliveries, [], 'unused webhook has no deliveries');
 r = await req(`/api/orgs/${orgAId}/webhooks/${wh.id}/deliveries`, { headers: oauth });
 assert.equal(r.status, 403, 'non-member deliveries → 403');
 // secret rotation: new whsec_ shown once, differs from the original
