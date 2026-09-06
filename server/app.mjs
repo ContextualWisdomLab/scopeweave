@@ -1,44 +1,12 @@
-import { Agent as UndiciAgent } from "undici";
-import dns from "node:dns";
+import { Agent, fetch } from "undici";
+import { createSafeWebhookLookup, isSafeWebhookUrl } from "./webhook_destination.mjs";
 
-function isPrivateIp(ip) {
-  if (!ip) return false;
-  if (ip === "127.0.0.1" || ip === "::1") return true;
-  if (ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("169.254.")) return true;
-  if (ip.startsWith("172.")) {
-    const p = parseInt(ip.split(".")[1], 10);
-    if (p >= 16 && p <= 31) return true;
+const safeWebhookAgent = new Agent({
+  connect: {
+    lookup: createSafeWebhookLookup()
   }
-  if (ip.match(/^(fc|fd|fe[89ab])/i)) return true;
-  if (ip.startsWith("::ffff:7f") || ip.startsWith("::ffff:127.") || ip.startsWith("::ffff:a") || ip.startsWith("::ffff:c0a8") || ip.startsWith("::ffff:ac")) return true;
-  return false;
-}
-
-class SafeWebhookAgent extends UndiciAgent {
-  constructor(opts) {
-    super({
-      ...opts,
-      connect: {
-        lookup: (hostname, options, callback) => {
-          options.all = true;
-          dns.lookup(hostname, options, (err, addresses) => {
-            if (err) return callback(err);
-            if (!Array.isArray(addresses)) addresses = [addresses];
-            if (addresses.length === 0) return callback(new Error("No addresses found"));
-
-            for (const a of addresses) {
-              if (isPrivateIp(a.address)) {
-                return callback(new Error("SSRF blocked"));
-              }
-            }
-            callback(null, addresses, addresses[0].family);
-          });
-        }
-      }
-    });
-  }
-}
-const safeWebhookAgent = new SafeWebhookAgent();
+});
+// ScopeWeave SaaS API. Multi-tenant (org-scoped), optimistic concurrency on
 // ScopeWeave SaaS API. Multi-tenant (org-scoped), optimistic concurrency on
 // project docs, SSE realtime fan-out per project. The existing static client
 // (index.html/app.js) becomes the frontend that talks to these routes.
@@ -150,7 +118,7 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
     body,
     signal: ctrl.signal,
     dispatcher: safeWebhookAgent,
-    maxRedirections: 0,
+    redirect: 'error',
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
     if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
@@ -771,32 +739,6 @@ app.get('/api/metrics', (c) => {
   }
   return c.text(lines.join('\n') + '\n', 200, { 'content-type': 'text/plain; version=0.0.4; charset=utf-8' });
 });
-
-function isSafeWebhookUrl(urlString) {
-  try {
-    const u = new URL(urlString);
-    if (u.protocol !== 'https:') return false;
-    let host = u.hostname;
-
-    if (host === 'localhost' || host === '[::1]' || host === '::1') return false;
-
-    if (host.startsWith('[fc') || host.startsWith('[fd') || host.startsWith('[fe8') || host.startsWith('[fe9') || host.startsWith('[fea') || host.startsWith('[feb') || host.startsWith('[::ffff:7f') || host.startsWith('[::ffff:127') || host.startsWith('[::ffff:a') || host.startsWith('[::ffff:c0a8') || host.startsWith('[::ffff:ac')) return false;
-
-    const ipv4Match = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
-    if (ipv4Match) {
-      const p1 = parseInt(ipv4Match[1], 10);
-      const p2 = parseInt(ipv4Match[2], 10);
-      if (p1 === 0 || p1 === 127 || p1 === 10) return false;
-      if (p1 === 192 && p2 === 168) return false;
-      if (p1 === 172 && p2 >= 16 && p2 <= 31) return false;
-      if (p1 === 169 && p2 === 254) return false;
-    }
-    return true;
-  } catch {
-    return false;
-  }
-}
-
 
 // ------------------------------------------------------------------- webhooks
 app.get('/api/orgs/:id/webhooks', requireAuth, (c) => {
