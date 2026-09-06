@@ -22,27 +22,28 @@ The active webhook-hardening lineage now establishes these source/test facts:
 - registration requires HTTPS, rejects embedded credentials and special-use literal destinations, and delivery revalidates the persisted URL;
 - `server/webhook_destination.mjs` owns the shared URL/address admission and injected DNS lookup boundary;
 - the webhook-only Undici `Agent` consumes that lookup, so all A/AAAA answers are checked before one admitted address is returned directly to the socket lookup;
+- DNS admission is independently bounded to 1,000 ms by default; a deterministic stalled-resolver regression requires the lookup callback to fail closed before the request-wide timeout budget is consumed and ignores the resolver's later callback;
 - webhook delivery uses a per-request dispatcher with `redirect: 'error'`; unrelated OIDC/global Fetch traffic is not routed through the webhook policy;
 - `tests/api/webhook-ssrf.test.mjs` exercises the exported isolated webhook agent directly instead of monkeypatching every Undici Agent, and covers special-use literals, mixed DNS answers, exact selected-address return, persisted invalid destination rejection, a real 302 carrying a private `Location`, delivery receipts, and one retry;
 - the address policy rejects deprecated IPv4-compatible IPv6 `::/96`, IPv4-mapped `::ffff:0:0/96`, and the RFC 8215 local-use translation prefix `64:ff9b:1::/48`;
 - RFC 6052 `64:ff9b::/96` is evaluated by its embedded IPv4 destination rather than blanket-denied. Public embedded destinations remain admissible; private, loopback, documentation, benchmark, multicast, and otherwise non-public embedded destinations fail closed;
-- `server/webhook_destination.mjs` is explicitly inside the owned c8 instrumentation denominator.
+- `server/webhook_destination.mjs` is explicitly inside the owned c8 instrumentation denominator, including the DNS-timeout regression through the coverage execution path.
 
-The source-level P0 boundary is implemented on the active branch, but it is not a release GREEN. Hosted correctness/coverage/security/static-analysis checks and independent current-head review remain required on one unchanged exact head. PR #649 remains a divergent evidence lane and must not be closed as a duplicate until a successor is verified to inherit every valid NAT64/address/transport/application-retry fixture and documentation delta. Normal descendants that improve test isolation are adopted; descendants that regress standards-correct address semantics or owned coverage are repaired without rewriting history.
+The source-level P0 boundary is implemented on the active branch, but it is not a release GREEN. Hosted correctness/coverage/security/static-analysis checks and independent current-head review remain required on one unchanged exact head. PR #649 remains a divergent evidence lane and must not be closed as a duplicate until a successor is verified to inherit every valid NAT64/address/transport/application-retry fixture and documentation delta. The DNS-timeout invariant is now represented on this consolidation lane; #649 still carries distinct connect-timeout, TLS hostname/SNI, bounded response-header, response-destruction/cleanup, and focused native-transport evidence. Normal descendants that improve test isolation are adopted; descendants that regress standards-correct address semantics or owned coverage are repaired without rewriting history.
 
 ## Security invariant and acceptance
 
 For each webhook delivery:
 
 1. Parse the persisted destination and require HTTPS with no embedded userinfo.
-2. Resolve the original hostname once for the transport attempt and obtain all A/AAAA answers.
+2. Resolve the original hostname once for the transport attempt, obtain all A/AAAA answers, and fail closed on the independent DNS-admission deadline rather than allowing resolution to consume the whole request budget.
 3. Fail closed if any resolved address is outside the repository's admitted public-address policy. The policy must stay aligned with IANA and applicable standards: `64:ff9b::/96` is globally reachable but RFC 6052 forbids using it for non-global embedded IPv4 destinations, while `64:ff9b:1::/48` is local-use and not globally reachable.
 4. Select an admitted address deterministically and bind that exact address to the socket connection while preserving the original hostname for HTTP Host and TLS/SNI verification.
 5. Do not follow HTTP redirects implicitly. A deterministic local 3xx fixture must prove that a `Location` header cannot create a second unvalidated hop.
 6. Preserve request body, HMAC signature, timeout/cancellation, retry, tenant scope, and delivery-record semantics.
 7. Keep webhook transport policy local to this request path; do not install a process-global dispatcher to make a leaf test pass.
 8. Carry negative controls for special-use/translated private destinations and positive controls for representative globally routable IPv4/IPv6 destinations so hardening cannot silently become an allow-nothing policy.
-9. Keep the outbound-policy module inside owned production coverage and retain deterministic edge cases for each translation/address family used as security authority.
+9. Keep the outbound-policy module inside owned production coverage and retain deterministic edge cases for each translation/address family and timeout boundary used as security authority.
 
 A GREEN requires the focused SSRF/API regression, supported Node install/test/coverage path, Security/SAST/CodeQL gates, and an independent current-head review. Local source inspection or predecessor GREEN is not a substitute for that exact-head evidence.
 
