@@ -30,6 +30,7 @@ for (const url of [
   'https://[fe80::1]/hook',
   'https://[::ffff:127.0.0.1]/hook',
   'http://169.254.169.254/hook',
+  'http://example.com/hook',
 ]) {
   response = await req(`/api/orgs/${orgId}/webhooks`, {
     method: 'POST',
