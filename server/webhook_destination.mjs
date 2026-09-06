@@ -1,7 +1,7 @@
 import dns from 'node:dns';
 import net from 'node:net';
 
-const blockedWebhookIps = new net.BlockList();
+const blockedWebhookIpv4 = new net.BlockList();
 for (const [network, prefix] of [
   ['0.0.0.0', 8],
   ['10.0.0.0', 8],
@@ -19,12 +19,14 @@ for (const [network, prefix] of [
   ['224.0.0.0', 4],
   ['240.0.0.0', 4],
 ]) {
-  blockedWebhookIps.addSubnet(network, prefix, 'ipv4');
+  blockedWebhookIpv4.addSubnet(network, prefix, 'ipv4');
 }
+
+const blockedWebhookIpv6 = new net.BlockList();
 for (const [network, prefix] of [
   ['::', 96],
   ['::1', 128],
-  ['64:ff9b::', 96],
+  ['::ffff:0:0', 96],
   ['64:ff9b:1::', 48],
   ['100::', 64],
   ['2001:db8::', 32],
@@ -36,18 +38,50 @@ for (const [network, prefix] of [
   ['fec0::', 10],
   ['ff00::', 8],
 ]) {
-  blockedWebhookIps.addSubnet(network, prefix, 'ipv6');
+  blockedWebhookIpv6.addSubnet(network, prefix, 'ipv6');
 }
+
+const rfc6052WellKnownPrefix = new net.BlockList();
+rfc6052WellKnownPrefix.addSubnet('64:ff9b::', 96, 'ipv6');
 
 function normalizeHostname(hostname) {
   const host = String(hostname || '').trim().toLowerCase();
   return host.startsWith('[') && host.endsWith(']') ? host.slice(1, -1) : host;
 }
 
+function expandIpv6Words(address) {
+  const halves = address.toLowerCase().split('::');
+  const parseHalf = (half) => {
+    if (!half) return [];
+    return half.split(':').flatMap((part) => {
+      if (!part.includes('.')) return [Number.parseInt(part, 16)];
+      const octets = part.split('.').map(Number);
+      return [(octets[0] << 8) | octets[1], (octets[2] << 8) | octets[3]];
+    });
+  };
+  const left = parseHalf(halves[0]);
+  const right = parseHalf(halves[1] || '');
+  const zeroCount = halves.length === 2 ? 8 - left.length - right.length : 0;
+  return halves.length === 2
+    ? [...left, ...Array(zeroCount).fill(0), ...right]
+    : left;
+}
+
+function rfc6052EmbeddedIpv4(address) {
+  const words = expandIpv6Words(address);
+  if (words.length !== 8) return null;
+  return [words[6] >> 8, words[6] & 0xff, words[7] >> 8, words[7] & 0xff].join('.');
+}
+
 export function isPublicWebhookIp(address) {
   const family = net.isIP(address);
   if (family === 0) return false;
-  return !blockedWebhookIps.check(address, family === 4 ? 'ipv4' : 'ipv6');
+  if (family === 6 && rfc6052WellKnownPrefix.check(address, 'ipv6')) {
+    const embeddedIpv4 = rfc6052EmbeddedIpv4(address);
+    return embeddedIpv4 !== null && isPublicWebhookIp(embeddedIpv4);
+  }
+  if (family === 4) return !blockedWebhookIpv4.check(address, 'ipv4');
+  return !blockedWebhookIpv6.check(address, 'ipv6');
 }
 
 export function isSafeWebhookUrl(urlString) {
