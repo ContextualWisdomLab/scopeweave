@@ -1,3 +1,28 @@
+import { Agent as UndiciAgent, setGlobalDispatcher } from "undici";
+import dns from "node:dns";
+
+class SafeWebhookAgent extends UndiciAgent {
+  constructor(opts) {
+    super({
+      ...opts,
+      connect: {
+        lookup: (hostname, options, callback) => {
+          dns.lookup(hostname, options, (err, address, family) => {
+            if (err) return callback(err);
+            let ips = Array.isArray(address) ? address.map(a => a.address) : [address];
+            for (const ip of ips) {
+              if (ip === "127.0.0.1" || ip === "::1" || ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("169.254.") || (ip.startsWith("172.") && parseInt(ip.split(".")[1]) >= 16 && parseInt(ip.split(".")[1]) <= 31) || ip.startsWith("fc") || ip.startsWith("fd") || ip.startsWith("fe8") || ip.startsWith("fe9") || ip.startsWith("fea") || ip.startsWith("feb") || ip.startsWith("::ffff:7f") || ip.startsWith("::ffff:127.")) {
+                return callback(new Error("SSRF blocked"));
+              }
+            }
+            callback(null, address, family);
+          });
+        }
+      }
+    });
+  }
+}
+const safeWebhookAgent = new SafeWebhookAgent();
 // ScopeWeave SaaS API. Multi-tenant (org-scoped), optimistic concurrency on
 // project docs, SSE realtime fan-out per project. The existing static client
 // (index.html/app.js) becomes the frontend that talks to these routes.
@@ -108,6 +133,8 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
+    dispatcher: safeWebhookAgent,
+    maxRedirections: 0,
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
     if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
@@ -122,9 +149,10 @@ function deliver(orgId, event, payload) {
   try {
     hooks = db.prepare('SELECT id, url, secret, events FROM webhooks WHERE org_id = ? AND active = 1').all(orgId);
   } catch { return; }
-  for (const h of hooks) {
+for (const h of hooks) {
     const subs = String(h.events || '').split(',').map((s) => s.trim());
     if (!(subs.includes('*') || subs.includes(event))) continue;
+    if (!isSafeWebhookUrl(String(h.url))) continue;
     const body = JSON.stringify({ event, orgId: Number(orgId), payload, ts: new Date().toISOString() });
     const sig = createHmac('sha256', h.secret).update(body).digest('hex');
     sendWebhook(h.id, h.url, sig, event, body, 1);
@@ -731,9 +759,14 @@ app.get('/api/metrics', (c) => {
 function isSafeWebhookUrl(urlString) {
   try {
     const u = new URL(urlString);
-    if (u.hostname === 'localhost' || u.hostname === '[::1]') return false;
+    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+    let host = u.hostname;
 
-    const ipv4Match = u.hostname.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+    if (host === 'localhost' || host === '[::1]' || host === '::1') return false;
+
+    if (host.startsWith('[fc') || host.startsWith('[fd') || host.startsWith('[fe8') || host.startsWith('[fe9') || host.startsWith('[fea') || host.startsWith('[feb') || host.startsWith('[::ffff:7f') || host.startsWith('[::ffff:127') || host.startsWith('[::ffff:a') || host.startsWith('[::ffff:c0a8') || host.startsWith('[::ffff:ac')) return false;
+
+    const ipv4Match = host.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
     if (ipv4Match) {
       const p1 = parseInt(ipv4Match[1], 10);
       const p2 = parseInt(ipv4Match[2], 10);
