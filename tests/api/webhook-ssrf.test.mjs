@@ -21,6 +21,8 @@ for (const address of [
   '::1',
   '::127.0.0.1',
   '::ffff:127.0.0.1',
+  '64:ff9b::a00:1',
+  '64:ff9b::7f00:1',
   '64:ff9b:1::1',
   '2001:db8::1',
   '2002:7f00:1::',
@@ -33,6 +35,7 @@ for (const address of [
 for (const address of [
   '1.1.1.1',
   '8.8.8.8',
+  '64:ff9b::808:808',
   '2001:4860:4860::8888',
   '2606:4700:4700::1111',
 ]) {
@@ -48,11 +51,19 @@ for (const url of [
   'https://198.18.0.1/hook',
   'https://[::127.0.0.1]/hook',
   'https://[::ffff:127.0.0.1]/hook',
+  'https://[64:ff9b::a00:1]/hook',
+  'https://[64:ff9b::7f00:1]/hook',
+  'https://[64:ff9b:1::1]/hook',
   'https://user:secret@example.com/hook',
 ]) {
   assert.equal(isSafeWebhookUrl(url), false, `${url} must fail closed before persistence or delivery`);
 }
 assert.equal(isSafeWebhookUrl('https://example.com/hook'), true, 'public HTTPS hostname remains admissible');
+assert.equal(
+  isSafeWebhookUrl('https://[64:ff9b::808:808]/hook'),
+  true,
+  'RFC 6052 WKP remains admissible only when its embedded IPv4 destination is public',
+);
 
 function runLookup(lookup, hostname = 'webhook.example.test', options = {}) {
   return new Promise((resolve, reject) => {
