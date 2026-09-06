@@ -1,4 +1,99 @@
 import assert from 'node:assert';
+import {
+  createSafeWebhookLookup,
+  isPublicWebhookIp,
+  isSafeWebhookUrl,
+} from '../../server/webhook_destination.mjs';
+
+for (const address of [
+  '0.0.0.0',
+  '10.0.0.1',
+  '100.64.0.1',
+  '127.0.0.1',
+  '169.254.169.254',
+  '172.16.0.1',
+  '192.168.0.1',
+  '198.18.0.1',
+  '224.0.0.1',
+  '240.0.0.1',
+  '::',
+  '::1',
+  '::ffff:127.0.0.1',
+  '64:ff9b:1::1',
+  '2001:db8::1',
+  '2002:7f00:1::',
+  'fc00::1',
+  'fe80::1',
+  'ff00::1',
+]) {
+  assert.equal(isPublicWebhookIp(address), false, `${address} must not be a webhook destination`);
+}
+for (const address of [
+  '1.1.1.1',
+  '8.8.8.8',
+  '2001:4860:4860::8888',
+  '2606:4700:4700::1111',
+]) {
+  assert.equal(isPublicWebhookIp(address), true, `${address} remains a public webhook destination`);
+}
+
+for (const url of [
+  'http://example.com/hook',
+  'https://localhost/hook',
+  'https://service.local/hook',
+  'https://127.0.0.1/hook',
+  'https://100.64.0.1/hook',
+  'https://198.18.0.1/hook',
+  'https://[::ffff:127.0.0.1]/hook',
+  'https://user:secret@example.com/hook',
+]) {
+  assert.equal(isSafeWebhookUrl(url), false, `${url} must fail closed before persistence or delivery`);
+}
+assert.equal(isSafeWebhookUrl('https://example.com/hook'), true, 'public HTTPS hostname remains admissible');
+
+function runLookup(lookup, hostname = 'webhook.example.test', options = {}) {
+  return new Promise((resolve, reject) => {
+    lookup(hostname, options, (error, address, family) => {
+      if (error) reject(error);
+      else resolve({ address, family });
+    });
+  });
+}
+
+const privateOnlyLookup = createSafeWebhookLookup((_hostname, options, callback) => {
+  assert.equal(options.all, true, 'guarded lookup inspects every resolved address');
+  assert.equal(options.family, 0, 'guarded lookup requests both address families');
+  callback(null, [{ address: '127.0.0.1', family: 4 }]);
+});
+await assert.rejects(
+  runLookup(privateOnlyLookup),
+  /SSRF blocked/,
+  'a private-only DNS answer must fail before socket connection',
+);
+
+const mixedLookup = createSafeWebhookLookup((_hostname, _options, callback) => {
+  callback(null, [
+    { address: '93.184.216.34', family: 4 },
+    { address: '169.254.169.254', family: 4 },
+  ]);
+});
+await assert.rejects(
+  runLookup(mixedLookup),
+  /SSRF blocked/,
+  'one non-public A or AAAA answer must reject the hostname instead of racing the public answer',
+);
+
+const publicLookup = createSafeWebhookLookup((_hostname, _options, callback) => {
+  callback(null, [
+    { address: '93.184.216.34', family: 4 },
+    { address: '2606:2800:220:1:248:1893:25c8:1946', family: 6 },
+  ]);
+});
+assert.deepEqual(
+  await runLookup(publicLookup),
+  { address: '93.184.216.34', family: 4 },
+  'socket lookup must return the exact admitted address rather than resolving the hostname again',
+);
 
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_DEV = '1';
@@ -29,6 +124,8 @@ for (const url of [
   'https://[fc00::1]/hook',
   'https://[fe80::1]/hook',
   'https://[::ffff:127.0.0.1]/hook',
+  'https://100.64.0.1/hook',
+  'https://198.18.0.1/hook',
   'http://169.254.169.254/hook',
   'http://example.com/hook',
 ]) {
@@ -84,4 +181,4 @@ try {
   globalThis.fetch = originalFetch;
 }
 
-console.log('✓ webhook SSRF registration and delivery-boundary regression tests passed');
+console.log('✓ webhook SSRF registration, DNS admission, and delivery-boundary regression tests passed');
