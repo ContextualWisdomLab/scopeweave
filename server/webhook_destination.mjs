@@ -112,28 +112,20 @@ function selectPublicWebhookAddress(addresses) {
   return selected;
 }
 
-export function createSafeWebhookLookup(resolve = dns.lookup, { dnsTimeoutMs = 1000 } = {}) {
+export function createSafeWebhookLookup(resolve = dns.lookup) {
   return (hostname, options, callback) => {
     const callerOptions = options && typeof options === 'object' ? options : {};
     const lookupOptions = { ...callerOptions, family: 0, all: true };
-    let settled = false;
-    const finish = (...args) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      callback(...args);
-    };
-    const timer = setTimeout(() => finish(new Error('webhook DNS resolution timed out')), dnsTimeoutMs);
     resolve(hostname, lookupOptions, (error, addresses) => {
-      if (error) return finish(error);
+      if (error) return callback(error);
       let selected;
       try {
         selected = selectPublicWebhookAddress(addresses);
       } catch (selectionError) {
-        return finish(selectionError);
+        return callback(selectionError);
       }
-      if (callerOptions.all === true) return finish(null, [selected]);
-      return finish(null, selected.address, selected.family);
+      if (callerOptions.all === true) return callback(null, [selected]);
+      return callback(null, selected.address, selected.family);
     });
   };
 }

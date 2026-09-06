@@ -128,3 +128,8 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+
+## 2026-09-06 - Server-Side Request Forgery (SSRF) in webhook creation
+**Vulnerability:** Found a lack of internal IP address blocking in the webhook creation URL validation, allowing users to make the server perform requests to internal services (SSRF) by providing URLs like `http://127.0.0.1`.
+**Learning:** The URL constructor normalizes IP representations (e.g., `2130706433` -> `127.0.0.1`) and can be effectively combined with `net.isIP` and string/regex matching on the `.hostname` property to protect against bypassing the filter via obscure IP formats.
+**Prevention:** Always parse webhook or user-provided URLs using the native `URL` constructor to normalize formats, and explicitly reject hostnames resolving to loopback (`127.0.0.0/8`, `::1`), private networks (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`), and cloud metadata IP ranges (`169.254.0.0/16`) to prevent SSRF vulnerabilities.
