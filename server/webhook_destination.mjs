@@ -22,8 +22,8 @@ for (const [network, prefix] of [
   blockedWebhookIps.addSubnet(network, prefix, 'ipv4');
 }
 for (const [network, prefix] of [
-  ['::', 128],
-  ['::1', 128],
+  ['::', 96],
+  ['::ffff:0:0', 96],
   ['64:ff9b::', 96],
   ['64:ff9b:1::', 48],
   ['100::', 64],
