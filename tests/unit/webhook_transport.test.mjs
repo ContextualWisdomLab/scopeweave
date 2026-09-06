@@ -11,7 +11,8 @@ import {
 
 const privateCases = [
   '127.0.0.1', '10.1.2.3', '169.254.169.254', '172.16.0.1', '192.168.1.1',
-  '0.0.0.0', '224.0.0.1', '::', '::1', 'fc00::1', 'fe80::1', '::ffff:7f00:1',
+  '0.0.0.0', '224.0.0.1', '::', '::1', '::7f00:1', 'fc00::1', 'fe80::1',
+  '::ffff:7f00:1', '::ffff:808:808',
 ];
 for (const address of privateCases) {
   test(`rejects non-public address ${address}`, () => assert.equal(isPublicWebhookAddress(address), false));
@@ -20,7 +21,6 @@ for (const address of privateCases) {
 test('allows public IPv4 and IPv6 addresses', () => {
   assert.equal(isPublicWebhookAddress('8.8.8.8'), true);
   assert.equal(isPublicWebhookAddress('2001:4860:4860::8888'), true);
-  assert.equal(isPublicWebhookAddress('::ffff:808:808'), true);
 });
 
 test('evaluates RFC 6052 well-known-prefix translations by embedded IPv4 policy', () => {
@@ -29,13 +29,13 @@ test('evaluates RFC 6052 well-known-prefix translations by embedded IPv4 policy'
   assert.equal(isPublicWebhookAddress('64:ff9b::7f00:1'), false);
 });
 
-test('evaluates RFC 8215 local-use /48 translations by embedded IPv4 policy', () => {
-  assert.equal(isPublicWebhookAddress('64:ff9b:1:808:8:800::'), true);
+test('rejects the RFC 8215 local-use /48 as non-globally-reachable authority', () => {
+  assert.equal(isPublicWebhookAddress('64:ff9b:1:808:8:800::'), false);
   assert.equal(isPublicWebhookAddress('64:ff9b:1:a00:0:100:0:0'), false);
   assert.equal(isPublicWebhookAddress('64:ff9b:1:7f00:0:100:0:0'), false);
 });
 
-test('rejects malformed local-use translation addresses with a non-zero u octet', () => {
+test('rejects local-use translation addresses regardless of embedded layout', () => {
   assert.equal(isPublicWebhookAddress('64:ff9b:1:808:108:800::'), false);
 });
 
