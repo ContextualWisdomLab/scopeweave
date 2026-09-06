@@ -1,21 +1,37 @@
 import { Agent as UndiciAgent, setGlobalDispatcher } from "undici";
 import dns from "node:dns";
 
+function isPrivateIp(ip) {
+  if (!ip) return false;
+  if (ip === "127.0.0.1" || ip === "::1") return true;
+  if (ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("169.254.")) return true;
+  if (ip.startsWith("172.")) {
+    const p = parseInt(ip.split(".")[1], 10);
+    if (p >= 16 && p <= 31) return true;
+  }
+  if (ip.match(/^(fc|fd|fe[89ab])/i)) return true;
+  if (ip.startsWith("::ffff:7f") || ip.startsWith("::ffff:127.") || ip.startsWith("::ffff:a") || ip.startsWith("::ffff:c0a8") || ip.startsWith("::ffff:ac")) return true;
+  return false;
+}
+
 class SafeWebhookAgent extends UndiciAgent {
   constructor(opts) {
     super({
       ...opts,
       connect: {
         lookup: (hostname, options, callback) => {
-          dns.lookup(hostname, options, (err, address, family) => {
+          options.all = true;
+          dns.lookup(hostname, options, (err, addresses) => {
             if (err) return callback(err);
-            let ips = Array.isArray(address) ? address.map(a => a.address) : [address];
-            for (const ip of ips) {
-              if (ip === "127.0.0.1" || ip === "::1" || ip.startsWith("10.") || ip.startsWith("192.168.") || ip.startsWith("169.254.") || (ip.startsWith("172.") && parseInt(ip.split(".")[1]) >= 16 && parseInt(ip.split(".")[1]) <= 31) || ip.startsWith("fc") || ip.startsWith("fd") || ip.startsWith("fe8") || ip.startsWith("fe9") || ip.startsWith("fea") || ip.startsWith("feb") || ip.startsWith("::ffff:7f") || ip.startsWith("::ffff:127.")) {
+            if (!Array.isArray(addresses)) addresses = [addresses];
+            if (addresses.length === 0) return callback(new Error("No addresses found"));
+
+            for (const a of addresses) {
+              if (isPrivateIp(a.address)) {
                 return callback(new Error("SSRF blocked"));
               }
             }
-            callback(null, address, family);
+            callback(null, addresses, addresses[0].family);
           });
         }
       }
@@ -759,7 +775,7 @@ app.get('/api/metrics', (c) => {
 function isSafeWebhookUrl(urlString) {
   try {
     const u = new URL(urlString);
-    if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
+    if (u.protocol !== 'https:') return false;
     let host = u.hostname;
 
     if (host === 'localhost' || host === '[::1]' || host === '::1') return false;
@@ -780,6 +796,7 @@ function isSafeWebhookUrl(urlString) {
     return false;
   }
 }
+
 
 // ------------------------------------------------------------------- webhooks
 app.get('/api/orgs/:id/webhooks', requireAuth, (c) => {
