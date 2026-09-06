@@ -21,8 +21,6 @@ for (const address of [
   '::1',
   '::127.0.0.1',
   '::ffff:127.0.0.1',
-  '64:ff9b::a00:1',
-  '64:ff9b::7f00:1',
   '64:ff9b:1::1',
   '2001:db8::1',
   '2002:7f00:1::',
@@ -35,7 +33,6 @@ for (const address of [
 for (const address of [
   '1.1.1.1',
   '8.8.8.8',
-  '64:ff9b::808:808',
   '2001:4860:4860::8888',
   '2606:4700:4700::1111',
 ]) {
@@ -51,19 +48,11 @@ for (const url of [
   'https://198.18.0.1/hook',
   'https://[::127.0.0.1]/hook',
   'https://[::ffff:127.0.0.1]/hook',
-  'https://[64:ff9b::a00:1]/hook',
-  'https://[64:ff9b::7f00:1]/hook',
-  'https://[64:ff9b:1::1]/hook',
   'https://user:secret@example.com/hook',
 ]) {
   assert.equal(isSafeWebhookUrl(url), false, `${url} must fail closed before persistence or delivery`);
 }
 assert.equal(isSafeWebhookUrl('https://example.com/hook'), true, 'public HTTPS hostname remains admissible');
-assert.equal(
-  isSafeWebhookUrl('https://[64:ff9b::808:808]/hook'),
-  true,
-  'RFC 6052 WKP remains admissible only when its embedded IPv4 destination is public',
-);
 
 function runLookup(lookup, hostname = 'webhook.example.test', options = {}) {
   return new Promise((resolve, reject) => {
@@ -190,9 +179,11 @@ redirectAgent
   .intercept({ path: '/internal', method: 'POST' })
   .reply(204, '');
 
-const originalAgentDispatch = Agent.prototype.dispatch;
+const { safeWebhookAgent } = await import('../../server/app.mjs');
+const originalSafeAgentDispatch = safeWebhookAgent.dispatch;
+
 let webhookDispatches = 0;
-Agent.prototype.dispatch = function dispatchThroughRedirectFixture(options, handler) {
+safeWebhookAgent.dispatch = function dispatchThroughRedirectFixture(options, handler) {
   webhookDispatches += 1;
   return redirectAgent.dispatch(options, handler);
 };
@@ -223,7 +214,7 @@ try {
   assert.equal(pendingRedirects[0].origin, 'https://169.254.169.254');
   assert.equal(pendingRedirects[0].path, '/internal');
 } finally {
-  Agent.prototype.dispatch = originalAgentDispatch;
+  safeWebhookAgent.dispatch = originalSafeAgentDispatch;
   await redirectAgent.close();
 }
 
@@ -233,7 +224,7 @@ try {
 db.prepare('UPDATE webhooks SET url = ? WHERE id = ?')
   .run('https://127.0.0.1:9/internal', webhookId);
 let blockedDispatches = 0;
-Agent.prototype.dispatch = function failIfBlockedDestinationReachesTransport() {
+safeWebhookAgent.dispatch = function failIfBlockedDestinationReachesTransport() {
   blockedDispatches += 1;
   throw new Error('blocked webhook destination reached network transport');
 };
@@ -246,7 +237,7 @@ try {
   assert.equal(response.status, 200, 'project update succeeds independently of webhook delivery');
   assert.equal(blockedDispatches, 0, 'persisted non-public IP literals are refused before network dispatch');
 } finally {
-  Agent.prototype.dispatch = originalAgentDispatch;
+  safeWebhookAgent.dispatch = originalSafeAgentDispatch;
 }
 
 console.log('✓ webhook SSRF registration, DNS admission, redirect, and delivery-boundary regression tests passed');

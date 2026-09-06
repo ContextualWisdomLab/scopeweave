@@ -1,7 +1,7 @@
 import { Agent, fetch as undiciFetch } from "undici";
 import { createSafeWebhookLookup, isSafeWebhookUrl } from "./webhook_destination.mjs";
 
-const safeWebhookAgent = new Agent({
+export const safeWebhookAgent = new Agent({
   connect: {
     lookup: createSafeWebhookLookup()
   }
