@@ -72,6 +72,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   conversion identifiers from responses, reports attempted, changed, failed,
   skipped-data, and deferred-budget counters separately, and exposes fixed
   low-cardinality timeout, lookup, validation, and persistence failure counters.
+- Attachment and comment modal refreshes build a refresh-scoped task lookup map
+  before rendering returned rows, and the static document declares preload hints
+  for `cloud-sync.js` and `analytics.js`; buyer-visible latency or startup gains
+  remain measurement-gated rather than inferred from this structural change.
 - Toast notifications and synchronization feedback now expose advisory updates
   as explicit polite, atomic WAI-ARIA status regions without adding keyboard
   stops, and cloud toast feedback now has a shipped visual state so the same
@@ -99,7 +103,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Initial ScopeWeave Planner release with tree-table editing,
   cumulative metrics, CSV import/export, and Gantt modal.
-- `wbs.json` seed loading plus browser autosave and optional file sync.
 - Playwright E2E coverage for add/edit hierarchy flows, delete
   confirmation, subtree drag-and-drop, and JSON sync shape.
 - GitHub Pages deployment workflow and operator documentation.
