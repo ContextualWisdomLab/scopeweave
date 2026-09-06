@@ -1,5 +1,5 @@
 import assert from 'node:assert';
-import { Agent, MockAgent } from 'undici';
+import { MockAgent } from 'undici';
 import {
   createSafeWebhookLookup,
   isPublicWebhookIp,
@@ -21,6 +21,8 @@ for (const address of [
   '::1',
   '::127.0.0.1',
   '::ffff:127.0.0.1',
+  '64:ff9b::a00:1',
+  '64:ff9b::7f00:1',
   '64:ff9b:1::1',
   '2001:db8::1',
   '2002:7f00:1::',
@@ -33,6 +35,7 @@ for (const address of [
 for (const address of [
   '1.1.1.1',
   '8.8.8.8',
+  '64:ff9b::808:808',
   '2001:4860:4860::8888',
   '2606:4700:4700::1111',
 ]) {
@@ -48,11 +51,19 @@ for (const url of [
   'https://198.18.0.1/hook',
   'https://[::127.0.0.1]/hook',
   'https://[::ffff:127.0.0.1]/hook',
+  'https://[64:ff9b::a00:1]/hook',
+  'https://[64:ff9b::7f00:1]/hook',
+  'https://[64:ff9b:1::1]/hook',
   'https://user:secret@example.com/hook',
 ]) {
   assert.equal(isSafeWebhookUrl(url), false, `${url} must fail closed before persistence or delivery`);
 }
 assert.equal(isSafeWebhookUrl('https://example.com/hook'), true, 'public HTTPS hostname remains admissible');
+assert.equal(
+  isSafeWebhookUrl('https://[64:ff9b::808:808]/hook'),
+  true,
+  'RFC 6052 WKP remains admissible only when its embedded IPv4 destination is public',
+);
 
 function runLookup(lookup, hostname = 'webhook.example.test', options = {}) {
   return new Promise((resolve, reject) => {
@@ -101,7 +112,7 @@ assert.deepEqual(
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_DEV = '1';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
-const { app } = await import('../../server/app.mjs');
+const { app, safeWebhookAgent } = await import('../../server/app.mjs');
 const { db } = await import('../../server/db.mjs');
 
 const req = (path, opts = {}) =>
@@ -148,9 +159,6 @@ response = await req(`/api/orgs/${orgId}/webhooks`, {
 assert.equal(response.status, 200, 'public HTTPS webhook registration remains available');
 const webhookId = (await response.json()).id;
 
-// Delivery is a separate security boundary from registration. A legacy row,
-// restore, migration, or future DNS result must not become trusted merely
-// because the destination was admissible when the webhook was created.
 response = await req('/api/projects', {
   method: 'POST',
   headers: auth,
@@ -160,9 +168,6 @@ assert.equal(response.status, 200, 'project fixture is created');
 const project = await response.json();
 let projectVersion = project.version;
 
-// Exercise the production sendWebhook path with Undici's Dispatcher contract.
-// A 302 with a private Location must be recorded as a failed attempt and retried
-// once, but the redirect target itself must never be dispatched.
 db.prepare('UPDATE webhooks SET url = ? WHERE id = ?')
   .run('https://webhook.example.test/start', webhookId);
 db.prepare('DELETE FROM webhook_deliveries WHERE webhook_id = ?').run(webhookId);
@@ -179,9 +184,7 @@ redirectAgent
   .intercept({ path: '/internal', method: 'POST' })
   .reply(204, '');
 
-const { safeWebhookAgent } = await import('../../server/app.mjs');
 const originalSafeAgentDispatch = safeWebhookAgent.dispatch;
-
 let webhookDispatches = 0;
 safeWebhookAgent.dispatch = function dispatchThroughRedirectFixture(options, handler) {
   webhookDispatches += 1;
@@ -218,9 +221,6 @@ try {
   await redirectAgent.close();
 }
 
-// Persisted private literals must be rejected before the production transport
-// is dispatched. Count Agent dispatches rather than monkeypatching global fetch:
-// webhook delivery intentionally uses the isolated Undici transport.
 db.prepare('UPDATE webhooks SET url = ? WHERE id = ?')
   .run('https://127.0.0.1:9/internal', webhookId);
 let blockedDispatches = 0;
