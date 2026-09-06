@@ -1,7 +1,7 @@
 import dns from 'node:dns';
 import net from 'node:net';
 
-const blockedWebhookIps = new net.BlockList();
+const blockedWebhookIpv4 = new net.BlockList();
 for (const [network, prefix] of [
   ['0.0.0.0', 8],
   ['10.0.0.0', 8],
@@ -19,8 +19,10 @@ for (const [network, prefix] of [
   ['224.0.0.0', 4],
   ['240.0.0.0', 4],
 ]) {
-  blockedWebhookIps.addSubnet(network, prefix, 'ipv4');
+  blockedWebhookIpv4.addSubnet(network, prefix, 'ipv4');
 }
+
+const blockedWebhookIpv6 = new net.BlockList();
 for (const [network, prefix] of [
   ['::', 96],
   ['::1', 128],
@@ -36,7 +38,7 @@ for (const [network, prefix] of [
   ['fec0::', 10],
   ['ff00::', 8],
 ]) {
-  blockedWebhookIps.addSubnet(network, prefix, 'ipv6');
+  blockedWebhookIpv6.addSubnet(network, prefix, 'ipv6');
 }
 
 const rfc6052WellKnownPrefix = new net.BlockList();
@@ -78,7 +80,8 @@ export function isPublicWebhookIp(address) {
     const embeddedIpv4 = rfc6052EmbeddedIpv4(address);
     return embeddedIpv4 !== null && isPublicWebhookIp(embeddedIpv4);
   }
-  return !blockedWebhookIps.check(address, family === 4 ? 'ipv4' : 'ipv6');
+  if (family === 4) return !blockedWebhookIpv4.check(address, 'ipv4');
+  return !blockedWebhookIpv6.check(address, 'ipv6');
 }
 
 export function isSafeWebhookUrl(urlString) {
