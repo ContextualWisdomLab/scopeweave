@@ -128,14 +128,3 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
-## 2026-09-01 - Prevent SSRF via webhook URLs
-**Vulnerability:** The `/api/orgs/:id/webhooks` POST endpoint accepted any valid HTTP/HTTPS URL, including internal IP addresses and loopback domains (`127.0.0.1`, `localhost`, etc). This allowed Server-Side Request Forgery (SSRF).
-**Learning:** `new URL(urlStr).hostname` should be strictly validated against a blocklist of internal IP ranges and loopback domains before issuing external HTTP requests on behalf of a user. The native `URL` constructor handles various IP format normalizations effectively.
-**Prevention:** Always validate webhook URLs against a known blocklist of internal and loopback IP addresses (like `127.x.x.x`, `10.x.x.x`, `169.254.x.x`, `localhost`) to prevent SSRF vulnerabilities.
-## 2026-09-06 - BlockList subnet intersection bug for IPv4-mapped IPv6
-
-**Vulnerability:** Node.js `net.BlockList` drops public IPv4 requests completely when the `::ffff:0:0/96` IPv4-mapped subnet is added to a shared `BlockList` tracking both IPv4 and IPv6 families.
-
-**Learning:** When `net.BlockList.check(address, 'ipv4')` evaluates an IPv4 address, if an overlapping or mapped representation exists in the same list instance, it causes a false positive block for valid public IPv4 addresses, undermining availability or causing valid E2E assertions to fail.
-
-**Prevention:** Always isolate IPv4 and IPv6 blocklist definitions into two separate `net.BlockList` instances (`BLOCKED4` and `BLOCKED6`) and select the appropriate instance when validating an IP address family (`family === 4 ? BLOCKED4 : BLOCKED6`).
