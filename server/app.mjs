@@ -1,4 +1,4 @@
-import { Agent, fetch } from "undici";
+import { Agent, fetch as undiciFetch } from "undici";
 import { createSafeWebhookLookup, isSafeWebhookUrl } from "./webhook_destination.mjs";
 
 const safeWebhookAgent = new Agent({
@@ -6,7 +6,6 @@ const safeWebhookAgent = new Agent({
     lookup: createSafeWebhookLookup()
   }
 });
-// ScopeWeave SaaS API. Multi-tenant (org-scoped), optimistic concurrency on
 // ScopeWeave SaaS API. Multi-tenant (org-scoped), optimistic concurrency on
 // project docs, SSE realtime fan-out per project. The existing static client
 // (index.html/app.js) becomes the frontend that talks to these routes.
@@ -112,7 +111,7 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
-  fetch(url, {
+  undiciFetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
