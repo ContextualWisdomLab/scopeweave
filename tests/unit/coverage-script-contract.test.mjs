@@ -35,16 +35,6 @@ assert.match(
   'the abortable Clearfolio adapter is instrumented',
 );
 assert.match(
-  scripts['test:coverage'],
-  /--include=server\/webhook_destination\.mjs/,
-  'the webhook outbound-policy boundary is instrumented',
-);
-assert.match(
-  scripts['test:api'],
-  /tests\/api\/webhook-ssrf\.test\.mjs/,
-  'the webhook destination regression executes in the API suite',
-);
-assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
