@@ -19,6 +19,7 @@ for (const address of [
   '240.0.0.1',
   '::',
   '::1',
+  '::127.0.0.1',
   '::ffff:127.0.0.1',
   '64:ff9b:1::1',
   '2001:db8::1',
@@ -45,6 +46,7 @@ for (const url of [
   'https://127.0.0.1/hook',
   'https://100.64.0.1/hook',
   'https://198.18.0.1/hook',
+  'https://[::127.0.0.1]/hook',
   'https://[::ffff:127.0.0.1]/hook',
   'https://user:secret@example.com/hook',
 ]) {
