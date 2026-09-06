@@ -24,9 +24,11 @@ The active webhook-hardening lineage now establishes these source/test facts:
 - the webhook-only Undici `Agent` consumes that lookup, so all A/AAAA answers are checked before one admitted address is returned directly to the socket lookup;
 - webhook delivery uses a per-request dispatcher with `redirect: 'error'`; unrelated OIDC/global Fetch traffic is not routed through the webhook policy;
 - `tests/api/webhook-ssrf.test.mjs` covers special-use IPv4/IPv6 literals, private-only and mixed public/private DNS answers, exact selected-address return, persisted invalid destination rejection, a real 302 carrying a private `Location`, delivery receipts, and the existing one-retry behavior;
-- the address policy now rejects the deprecated IPv4-compatible IPv6 `::/96` space and the IPv4-mapped `::ffff:0:0/96` space, with a regression for `::127.0.0.1` / canonical `::7f00:1`.
+- the address policy rejects deprecated IPv4-compatible IPv6 `::/96`, IPv4-mapped `::ffff:0:0/96`, and the RFC 8215 local-use translation prefix `64:ff9b:1::/48`;
+- the RFC 6052 Well-Known Prefix `64:ff9b::/96` is not blanket-denied: its low-order 32-bit IPv4 destination is evaluated through the same IPv4 public-address policy. Public embedded destinations remain admissible while private, loopback, documentation, benchmarking, multicast, and otherwise non-public embedded destinations fail closed;
+- the webhook destination module is part of the owned c8 instrumentation denominator rather than relying only on transitive execution through `server/app.mjs`.
 
-The source-level P0 transport boundary is therefore implemented on the active branch, but it is not a release GREEN. Hosted correctness/security/static-analysis checks and independent current-head review remain required on one unchanged exact head. The older PR #649 remains a divergent evidence lane and must not be closed as a duplicate until a successor is verified to inherit every valid NAT64/address/transport/application-retry fixture and documentation delta.
+The source-level P0 transport boundary is implemented on the active branch, but it is not a release GREEN. Hosted correctness/coverage/security/static-analysis checks and independent current-head review remain required on one unchanged exact head. The older PR #649 remains a divergent evidence lane and must not be closed as a duplicate until a successor is verified to inherit every valid NAT64/address/transport/application-retry fixture and documentation delta. The RFC 6052/RFC 8215 policy distinction is now adopted from that lane; its remaining unique fixtures still require explicit inheritance proof.
 
 ## Security invariant and acceptance
 
@@ -34,14 +36,15 @@ For each webhook delivery:
 
 1. Parse the persisted destination and require HTTPS with no embedded userinfo.
 2. Resolve the original hostname once for the transport attempt and obtain all A/AAAA answers.
-3. Fail closed if any resolved address is outside the repository's admitted public-address policy. The policy must remain aligned with authoritative special-purpose address registries and standards, including transition/translation forms that can encode non-public IPv4 addresses.
+3. Fail closed if any resolved address is outside the repository's admitted public-address policy. The policy must remain aligned with the IANA special-purpose registries and the applicable translation standards. In particular, `64:ff9b::/96` is globally reachable but RFC 6052 forbids using it for non-global embedded IPv4 addresses, while `64:ff9b:1::/48` is local-use and not globally reachable.
 4. Select an admitted address deterministically and bind that exact address to the socket connection while preserving the original hostname for HTTP Host and TLS/SNI verification.
 5. Do not follow HTTP redirects implicitly. A deterministic local 3xx fixture must prove that a `Location` header cannot create a second unvalidated hop.
 6. Preserve the existing request body, HMAC signature, timeout/cancellation, retry, tenant scope, and delivery-record semantics.
 7. Keep webhook transport policy local to this request path; do not install a process-global dispatcher to make a leaf test pass.
 8. Address-policy expansion must carry both negative controls for special-use/translated private destinations and positive controls for representative globally routable IPv4/IPv6 destinations so hardening does not silently become an allow-nothing policy.
+9. Keep the outbound-policy module inside owned production coverage and retain deterministic edge cases for every admitted/denied translation family used as security authority.
 
-A GREEN requires the focused SSRF/API regression, the supported Node runtime install/test path, security/SAST/CodeQL gates, and an independent current-head review. Local contract checks and public-network success are not substitutes for that exact-head evidence.
+A GREEN requires the focused SSRF/API regression, the supported Node runtime install/test/coverage path, security/SAST/CodeQL gates, and an independent current-head review. Local contract checks and public-network success are not substitutes for that exact-head evidence.
 
 ## DDD / data / operability implications
 
@@ -63,7 +66,9 @@ Repository evidence for this snapshot is the active webhook-hardening PR and its
 
 Primary references:
 
-- Internet Assigned Numbers Authority. (n.d.). *Number-related registries*. IANA. IPv4/IPv6 special-purpose registries are the address-policy authority. https://www.iana.org/numbers/registries
+- Internet Assigned Numbers Authority. (2025). *IPv6 special-purpose address space*. IANA. `64:ff9b::/96` is marked globally reachable; `64:ff9b:1::/48` is not. https://www.iana.org/assignments/iana-ipv6-special-registry
+- Bao, C., Huitema, C., Bagnulo, M., Boucadair, M., & Li, X. (2010). *RFC 6052: IPv6 addressing of IPv4/IPv6 translators*. Internet Engineering Task Force. The Well-Known Prefix is `64:ff9b::/96`, with the IPv4 address in the low-order 32 bits; the WKP must not represent non-global IPv4 destinations. https://www.rfc-editor.org/rfc/rfc6052
+- Anderson, T. (2017). *RFC 8215: Local-use IPv4/IPv6 translation prefix*. Internet Engineering Task Force. `64:ff9b:1::/48` is reserved for local use and is not globally reachable. https://www.rfc-editor.org/rfc/rfc8215
 - Hinden, R., & Deering, S. (2006). *RFC 4291: IP Version 6 Addressing Architecture*. Internet Engineering Task Force. IPv4-Compatible IPv6 addresses are deprecated. https://www.rfc-editor.org/rfc/rfc4291
 - Blanchet, M. (2008). *RFC 5156: Special-Use IPv6 Addresses*. Internet Engineering Task Force. IPv4-compatible and IPv4-mapped forms are not public-Internet destination authority. https://www.rfc-editor.org/rfc/rfc5156
 - WHATWG. (2026). *Fetch Standard*. Redirect mode is explicitly `follow`, `error`, or `manual`; outbound code that does not support redirects must select a non-follow mode. https://fetch.spec.whatwg.org/
