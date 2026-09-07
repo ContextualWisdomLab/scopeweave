@@ -2684,29 +2684,20 @@ function clamp(value, min, max) {
 
 function formatDateInput(date) {
   const year = date.getUTCFullYear();
-  const rawMonth = date.getUTCMonth() + 1;
-  const rawDay = date.getUTCDate();
-  const month = rawMonth < 10 ? '0' + rawMonth : rawMonth;
-  const day = rawDay < 10 ? '0' + rawDay : rawDay;
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
 function formatLocalDateInput(date) {
   const year = date.getFullYear();
-  const rawMonth = date.getMonth() + 1;
-  const rawDay = date.getDate();
-  const month = rawMonth < 10 ? '0' + rawMonth : rawMonth;
-  const day = rawDay < 10 ? '0' + rawDay : rawDay;
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
 function formatCompactDate(date) {
-  const year = date.getFullYear();
-  const rawMonth = date.getMonth() + 1;
-  const rawDay = date.getDate();
-  const month = rawMonth < 10 ? '0' + rawMonth : rawMonth;
-  const day = rawDay < 10 ? '0' + rawDay : rawDay;
-  return `${year}${month}${day}`;
+  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function formatPercent(value, digits) {
