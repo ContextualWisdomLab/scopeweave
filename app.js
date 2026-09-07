@@ -2682,22 +2682,27 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+// ⚡ Bolt: 불필요한 문자열 할당 및 JS-to-C++ 브리지 오버헤드를 방지하기 위해
+// 핫 렌더링 루프에서 String.padStart() 대신 인라인 삼항 문자열 연결을 사용합니다.
 function formatDateInput(date) {
   const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+  return `${year}-${month < 10 ? '0' + month : month}-${day < 10 ? '0' + day : day}`;
 }
 
 function formatLocalDateInput(date) {
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return `${year}-${month < 10 ? '0' + month : month}-${day < 10 ? '0' + day : day}`;
 }
 
 function formatCompactDate(date) {
-  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return `${year}${month < 10 ? '0' + month : month}${day < 10 ? '0' + day : day}`;
 }
 
 function formatPercent(value, digits) {
