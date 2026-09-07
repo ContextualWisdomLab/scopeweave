@@ -1,200 +1,178 @@
 # ScopeWeave
 
-Schedule-control (공정관리) tool: a WBS planner with cumulative progress, EVM
-(SPI·SV) + S-curve, CPM critical path, and a weekly Gantt overlay — usable in
-two modes:
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ContextualWisdomLab/scopeweave)
 
-- **Standalone (static)** — the original zero-dependency HTML/CSS/JS planner.
-  Works from any static host; data stays in `localStorage`/`wbs.json`.
-- **Cloud (SaaS)** — an opt-in Node backend adds accounts + SSO, multi-tenant
-  workspaces, real-time collaboration, team roles, billing, baselines/history,
-  webhooks, and a public API. The static client is the frontend; cloud features
-  layer on without breaking standalone mode.
+**Schedule-control workspace for building a WBS, tracking plan versus actual, and turning project structure into explainable schedule evidence.**
 
-> The SaaS pivot lands as a stacked PR train (see **Merge order** below). On
-> `develop` as of this branch, only standalone mode exists.
+ScopeWeave helps a project manager structure work, maintain planned and actual dates, inspect weighted progress, understand critical-path and earned-value signals, and share the same planning model in a lightweight browser-only workflow or an optional self-hosted server mode.
 
-## Standalone features
+The repository keeps those modes deliberately compatible: the standalone planner remains useful without an account or backend, while the server adds authenticated shared workspaces and API-backed collaboration for teams that need it.
 
-- Pure static runtime: HTML, CSS, JavaScript only
-- 3-level WBS hierarchy (`단계 > Activity > Task`) with expand/collapse
-- Inline add/edit/delete, row-click edit, and same-level drag-and-drop
-  subtree reorder
-- Automatic day, weight, planned progress, actual progress, and weighted
-  progress calculations
-- CSV import/export using the screen column contract
-- Local autosave with optional File System Access API sync to `wbs.json`
-- Weekly Gantt modal with planned (`#333333`) and actual (`#34cb03`) overlays
-- Responsive column reduction for screens under 800px
+## What ScopeWeave provides
 
-## Cloud (SaaS) features
-
-- **Auth**: email/password (scrypt) + JWT (7d, revocable via logout-everywhere),
-  SSO (OIDC + PKCE, built-in mock IdP for dev), personal access tokens (`swk_`,
-  hash-stored)
-- **Multi-tenancy**: workspaces (orgs) with owner/admin/member/viewer roles —
-  enforced server-side; invites (revocable), member removal, leave, rename,
-  ownership transfer
-- **Collaboration**: SSE live sync, optimistic concurrency (409 on stale
-  version), task comments
-- **Schedule control**: EVM (SPI·SV) + S-curve, CPM critical path with slack,
-  predecessors, baselines (freeze/compare — slip table), revision history +
-  restore
-- **PM analysis**: deterministic requirements/RFI/RFP readiness, WBS estimation
-  coverage, inter-event dependency risk, and procurement package section checks
-  from the existing WBS fields
-- **Billing**: Free (2 projects / 3 members) vs Pro ₩19,000/mo — server-enforced
-  402 caps; Stripe when configured, mock otherwise
-- **Platform**: signed webhooks (HMAC-SHA256, retry + delivery log, secret
-  rotation), audit log, workspace export (JSON), cross-project search,
-  project duplicate (templates), rate limiting (opt-in), metrics
-  (JSON + Prometheus), structured logs
-- **Docs**: complete API reference at [`docs/api.md`](docs/api.md) (served at
-  `/docs/api.md`); deploy guide at [`docs/deploy.md`](docs/deploy.md)
-
-## Architecture
-
-```
-index.html + app.js + styles.css + toast-state.css  ← static client (eval-safe; no top-level imports)
-  ├─ analytics.js                    ← EVM/S-curve/CPM (window.ScopeWeaveAnalytics)
-  └─ cloud-sync.js                   ← opt-in cloud overlay (window.ScopeWeaveCloud)
-server/
-  ├─ server.mjs                      ← @hono/node-server entry (PORT, default 8787)
-  ├─ app.mjs                         ← Hono routes: auth/SSO, projects, teams, billing,
-  │                                    webhooks, baselines, revisions, comments, search…
-  ├─ auth.mjs                        ← scrypt + pinned-HS256 JWT + PAT hashing (node:crypto)
-  ├─ billing.mjs                     ← plans/caps; Stripe via dynamic import
-  └─ db.mjs                          ← node:sqlite schema (Postgres-portable)
-```
-
-Only two runtime dependencies (`hono`, `@hono/node-server`); everything else is
-Node built-ins. `node:sqlite` is for dev/self-host — swap the driver for managed
-Postgres in production.
-
-## Local development
-
-Standalone:
-
-```bash
-python3 -m http.server 4173   # open http://127.0.0.1:4173
-```
-
-Cloud (Node 22.13+ or 23.4+):
-
-```bash
-npm install
-# Persist this across restarts (do not re-mint every boot — that invalidates JWTs).
-export SCOPEWEAVE_JWT_SECRET="${SCOPEWEAVE_JWT_SECRET:-$(openssl rand -base64 32)}"
-npm run server                # serves the API + the static client on :8787
-```
-
-Docker: set a **persistent** `SCOPEWEAVE_JWT_SECRET` first, then run `docker compose up`
-(see `Dockerfile.server` / `docs/deploy.md`).
-
-### Environment
-
-| Var | Purpose |
+| Need | Current product capability |
 | --- | --- |
-| `SCOPEWEAVE_JWT_SECRET` | **Required** — JWT signing secret (at least 32 non-whitespace characters; startup fails closed otherwise) |
-| `SCOPEWEAVE_DB` | SQLite path (default `data.db`; `:memory:` for tests) |
-| `PORT` | API port (default 8787) |
-| `OIDC_ISSUER/CLIENT_ID/CLIENT_SECRET/REDIRECT_URI` | Real SSO IdP (mock when unset) |
-| `STRIPE_SECRET_KEY` | Real checkout (mock URL when unset) |
-| `SCOPEWEAVE_RATE_LIMIT_MAX` (+`_WINDOW_MS`) | Opt-in per-IP rate limiting |
-| `SCOPEWEAVE_DEV=1` | Dev-only endpoints (activate-pro) |
+| Build a work breakdown structure | Three-level `단계 → Activity → Task` hierarchy with inline editing and same-level subtree reordering |
+| Track schedule execution | Planned/actual dates, weighted progress, weekly Gantt overlays, and baseline comparisons |
+| Understand schedule risk | CPM critical-path/slack calculations and predecessor consistency checks |
+| Review delivery performance | EVM/S-curve signals including SPI and schedule variance, plus deterministic readiness analysis from plan evidence |
+| Exchange planning data | CSV import/export and the user-facing `wbs.json` model |
+| Work without a backend | Browser `localStorage` plus optional File System Access API synchronization |
+| Collaborate through a server | Authenticated workspaces, project persistence, revision history, comments, search, SSE updates, and public API surfaces |
+| Integrate adjacent services | Explicit optional contracts for `contextual-orchestrator` and Clearfolio rather than copied implementations or shared databases |
 
-## Verification
+## Choose a mode
+
+### Standalone planner
+
+The standalone application is plain HTML, CSS, and JavaScript. It can be served from any ordinary static host and keeps the working plan in the browser unless the user explicitly connects a writable `wbs.json` file.
 
 ```bash
-npm run test:api    # API smoke (auth, tenancy, RBAC, billing, webhooks, …) + rate limit
-npm run test:unit   # EVM/S-curve, CPM, baseline-compare (pure math)
-npm run test:e2e    # Playwright UI suite
-python3 -m pytest tests/config
+python3 -m http.server 4173
 ```
 
-`app.js` must stay eval-safe (no top-level `import`/`export`) — the e2e harness
-evaluates it with `new Function`. Optional modules bridge via `window.*` globals.
+Open `http://127.0.0.1:4173`.
 
-## Merge order (SaaS PR stack)
+This is the simplest way to evaluate the WBS, CSV, Gantt, CPM, EVM, baseline, and local planning flows without creating an account or running a database.
 
-`#233` first — it fixes pre-existing infra misconfigs that fail the required
-`trivy-fs` gate on **every** PR. Then the stack in order (each PR is based on
-the previous; merging in order auto-retargets the next):
+### Self-hosted server mode
 
-| Order | PR | Slice |
-| --- | --- | --- |
-| 0 | #233 | fix(ci): trivy-fs misconfigs (Dockerfile HEALTHCHECK, k8s uid/gid + namespace) |
-| 1 | #212 | multi-tenant backend foundation (auth·projects·SSE·isolation) |
-| 2 | #214 | client wiring (login UI, cloud save, live sync) |
-| 3 | #215 | EVM (SPI·SV) + S-curve |
-| 4 | #216 | teams + RBAC |
-| 5 | #217 | billing + plan gating |
-| 6 | #218, #219 | CPM engine + UI |
-| 7 | #220 | public API + PAT |
-| 8 | #221 | predecessors (editor + CSV) |
-| 9 | #222 | Dockerfile + compose |
-| 10 | #223 | landing page |
-| 11 | #224 | audit log |
-| 12 | #225 | workspace export |
-| 13 | #226 | onboarding (샘플로 시작) |
-| 14 | #227 | observability (metrics + logs) |
-| 15 | #228 | signed webhooks |
-| 16 | #230 | English landing (i18n) |
-| 17 | #231 | SSO (OIDC) |
-| 18 | #232 | webhook retry + delivery log |
-| 19 | #234 | lifecycle (delete project / change pw / delete account) |
-| 20 | #236 | baselines |
-| 21 | #237 | rate limiting |
-| 22 | #238 | create workspaces |
-| 23 | #239 | baseline-vs-actual comparison UI |
-| 24 | #240 | project duplicate |
-| 25 | #241 | Prometheus metrics |
-| 26 | #242 | webhook secret rotation |
-| 27 | #243 | invite revocation |
-| 28 | #244 | leave + rename workspace |
-| 29 | #245 | complete API docs |
-| 30 | #246 | ownership transfer |
-| 31 | #247 | cross-project search |
-| 32 | #248 | logout everywhere |
-| 33 | #249 | revision history + restore |
-| 34 | #250 | task comments |
-| 35 | #251 | SEO (OG cards, hreflang, robots, sitemap) |
-| 36 | (this PR) | README: architecture + merge map |
+The repository also contains a Node/Hono backend that serves the same client and adds authenticated, server-backed workspace features. Current package metadata requires Node.js `^22.13.0 || >=23.4.0`.
 
-## Repository contract
+Install from the lockfile and create one persistent signing secret:
 
-- The static client stays static-host compatible for GitHub Pages
-  (standalone mode is preserved).
-- Runtime dependencies are minimized (`hono`, `@hono/node-server` only, added
-  by the SaaS stack); CI/dev-only automation under `.github/`, `scripts/`,
-  `tests/`, and `docs/` is allowed.
-- OpenCode Review, Strix Security Scan, and PR Review Merge Scheduler are
-  inherited from the organization-level required workflows in
-  `ContextualWisdomLab/.github`, not copied into this repository.
+```bash
+npm ci
 
-## Persistence model
+install -d -m 700 "$HOME/.config/scopeweave"
+if [ ! -s "$HOME/.config/scopeweave/jwt-secret" ]; then
+  umask 077
+  openssl rand -base64 32 > "$HOME/.config/scopeweave/jwt-secret"
+fi
+export SCOPEWEAVE_JWT_SECRET="$(cat "$HOME/.config/scopeweave/jwt-secret")"
 
-- Standalone: every mutation autosaves to `localStorage`; `wbs.json` seeds
-  static hosting; File System Access API can sync a writable `wbs.json`.
-- Cloud: projects live server-side with versioned saves (last 20 revisions),
-  SSE fan-out to collaborators, and offline fallback to the standalone model.
-- Synthetic hierarchy wrapper rows generated from imported flat records are
-  excluded from external `wbs.json` sync so the saved JSON remains in the
-  user-facing schema.
-- Requirements/RFI/RFP and WBS-estimation analysis is computed locally from the
-  single `tasks` array. It is a readiness signal over evidence already present
-  in the plan, not an external estimator or LLM judgment.
+npm run server
+```
 
-## Security workflow
+Open `http://127.0.0.1:8787`.
 
-- Organization required workflows provide OpenCode Review, Strix Security
-  Scan, PR Review Merge Scheduler, failed-check explanation, and coverage
-  evidence.
-- Repository-local workflows remain for ScopeWeave-specific static delivery
-  and companion SCA lanes, including dependency review, OSV, Trivy,
-  Scorecard, and Pages.
-- Server hardening: pinned-HS256 JWT (no header-alg trust), scrypt passwords,
-  hash-only PAT/webhook-secret storage (secrets shown once), server-side RBAC,
-  secrets never logged.
+Do not mint a different signing secret on every restart: rotating `SCOPEWEAVE_JWT_SECRET` intentionally invalidates existing sessions. Managed deployments should keep it in the platform secret manager.
 
-See `docs/user-guide.md` for operator guidance and `docs/api.md` for the API.
+For container deployment, use `docker compose up --build` only after supplying the same persistent secret. See [`docs/deploy.md`](docs/deploy.md) for the full deployment contract and current scaling ceiling.
+
+## Product boundary
+
+ScopeWeave owns project schedule-control behavior represented by this repository: WBS structure, plan/actual state, local and server persistence of that model, schedule analytics, project collaboration surfaces, and explicit integration adapters.
+
+It does **not** make every adjacent system part of its own product boundary:
+
+- `contextual-orchestrator` remains authoritative for model/provider routing when AI briefing is enabled;
+- Clearfolio remains authoritative for its document/viewer job state when attachments are connected;
+- OIDC providers remain authoritative for external identity;
+- Stripe remains authoritative for live payment processing when configured;
+- customer infrastructure remains authoritative for TLS termination, secrets, database topology, backup, and deployment policy.
+
+Unset external integrations use the repository's documented development/test behavior where one exists; a mock or deterministic fallback is not evidence that a real provider transaction occurred.
+
+## Standalone data model
+
+Every standalone mutation autosaves to browser `localStorage`. On supported Chromium-family browsers, the user can explicitly connect a writable `wbs.json` through the File System Access API and keep the same user-facing JSON schema synchronized.
+
+CSV import replaces the current plan using the screen column contract; CSV export produces `wbs_export_YYYYMMDD.csv`. Synthetic hierarchy wrapper rows used internally are not written into the external `wbs.json` representation.
+
+The user guide documents the current hierarchy, validation, save, CSV, Gantt, and PM-analysis behavior: [`docs/user-guide.md`](docs/user-guide.md).
+
+## Server mode and integration context
+
+The self-hosted server currently uses Hono with `@hono/node-server` and `node:sqlite` for the single-node path. The deployment guide names SQLite as the development/self-host single-writer ceiling and describes managed PostgreSQL as the intended multi-instance persistence boundary rather than pretending the current SQLite path scales horizontally.
+
+Important optional integration settings include:
+
+| Setting | Purpose |
+| --- | --- |
+| `SCOPEWEAVE_JWT_SECRET` | Required server-mode session signing secret |
+| `SCOPEWEAVE_DB` | SQLite path for the current single-node server path |
+| `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET`, `OIDC_REDIRECT_URI` | External OIDC identity provider |
+| `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET` | Live billing integration |
+| `ORCHESTRATOR_URL`, `ORCHESTRATOR_TOKEN` | `contextual-orchestrator` integration |
+| `CLEARFOLIO_URL`, `CLEARFOLIO_HMAC_SECRET` | Clearfolio integration |
+| `SCOPEWEAVE_RATE_LIMIT_MAX`, `SCOPEWEAVE_RATE_LIMIT_WINDOW_MS` | Optional per-IP fixed-window rate limiting |
+
+Development mock paths for billing or identity are not production configuration. See [`docs/deploy.md`](docs/deploy.md), [`docs/api.md`](docs/api.md), and [`docs/orchestrator-production.md`](docs/orchestrator-production.md) before enabling external integrations.
+
+## Architecture at a glance
+
+```text
+Browser
+  |
+  +---- standalone -----------------------+
+  |                                       |
+  |   localStorage / optional wbs.json    |
+  |                                       |
+  +---- self-hosted server ---------------+
+          |
+          v
+     ScopeWeave API
+     auth · workspace · project
+     schedule · history · collaboration
+          |
+          +---- node:sqlite (single-node path)
+          |
+          +---- explicit external adapters
+                  OIDC / Stripe / orchestrator / Clearfolio
+```
+
+The static client remains intentionally evaluable without top-level module imports; optional browser modules bridge through the documented `window.ScopeWeave*` contracts. Server and provider concerns stay behind their own interfaces rather than being copied into the standalone planner.
+
+## Security and trust boundaries
+
+The current server path uses a configured signing secret, scrypt password handling, hash-stored personal access tokens and webhook secrets, server-side workspace authorization, and optional rate limiting. Secrets must not be logged or committed.
+
+A successful local calculation, mock provider path, API response, or test result is evidence only for the operation it actually performed. It does not prove an external IdP authenticated a person, Stripe completed a payment, Clearfolio finished a document job, or an AI provider produced a result unless the corresponding integration evidence says so.
+
+Read [`docs/security.md`](docs/security.md) and the operational/deployment documentation before exposing server mode beyond a local evaluation environment.
+
+## Verify the source
+
+Install from the checked-in lockfile:
+
+```bash
+npm ci
+```
+
+Then run the repository's current verification paths:
+
+```bash
+npm run test:api
+npm run test:unit
+npm run test:e2e
+npm run test:fuzz
+```
+
+The repository also contains targeted configuration and security evidence under `tests/` and organization-required security workflows. A green source revision is engineering evidence for that exact revision; it is not a release, deployment, customer, or commercial claim.
+
+## Current maturity
+
+The current package metadata is `1.0.0` and the repository is private-package marked for npm, but **there is no published GitHub release**. The source checkout contains both standalone and server-mode implementation; the old stacked-PR merge train is historical development context and no longer belongs on the customer landing page.
+
+Treat source version metadata, development mocks, successful checks, and documentation as distinct from release publication and production deployment evidence.
+
+## Documentation map
+
+- [`docs/user-guide.md`](docs/user-guide.md) — standalone planner workflow, storage, CSV, validation, Gantt, and PM analysis.
+- [`docs/api.md`](docs/api.md) — current server API contract.
+- [`docs/deploy.md`](docs/deploy.md) — self-hosted deployment, secrets, persistence, TLS, and scaling guidance.
+- [`docs/security.md`](docs/security.md) — security and trust-boundary guidance.
+- [`docs/orchestrator-production.md`](docs/orchestrator-production.md) — production-oriented orchestrator integration.
+- [`docs/operations/`](docs/operations/) — operator procedures and evidence.
+- [`docs/research/`](docs/research/) and [`docs/doctoring/`](docs/doctoring/) — research/standards traceability.
+
+## Contributing
+
+Keep standalone mode usable without a server and keep server-only behavior behind explicit boundaries. Changes to schedule mathematics, authentication, tenant isolation, persistence, billing, provider calls, or externally visible APIs should update their tests and documentation together.
+
+Do not move merge queues, agent workflow instructions, or internal PR-stack maps back into the customer README. Those are contributor/governance concerns, not product value.
+
+## License
+
+ScopeWeave is licensed under the [MIT License](LICENSE). Third-party Node packages, provider APIs, external services, and other dependencies retain their own license and service terms and are not relicensed by ScopeWeave.
