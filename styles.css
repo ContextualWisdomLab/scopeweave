@@ -1110,3 +1110,86 @@ tbody tr.cpm-critical { background: rgba(234, 88, 12, 0.04); }
 .pm-recommendations li + li {
   margin-top: 4px;
 }
+
+
+/* Documentation hub */
+.docs-hub {
+  line-height: 1.6;
+}
+
+.docs-hub main {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 48px 24px 72px;
+}
+
+.docs-hub h1 {
+  margin: 0 0 20px;
+  font-size: clamp(2.2rem, 7vw, 4.6rem);
+  line-height: 1;
+  letter-spacing: -0.04em;
+}
+
+.docs-hub h2 {
+  margin-top: 42px;
+}
+
+.docs-hub .lede {
+  max-width: 760px;
+  font-size: 1.18rem;
+}
+
+.docs-hub .status {
+  margin: 28px 0;
+  padding: 12px 16px;
+  border-left: 4px solid currentColor;
+  opacity: 0.86;
+}
+
+.docs-hub .grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 14px;
+  margin: 22px 0;
+}
+
+.docs-hub .card {
+  display: block;
+  padding: 18px;
+  border: 1px solid currentColor;
+  border-radius: 14px;
+  text-decoration: none;
+}
+
+.docs-hub .card strong {
+  display: block;
+  margin-bottom: 6px;
+}
+
+.docs-hub .card span {
+  opacity: 0.75;
+}
+
+.docs-hub .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin: 28px 0;
+}
+
+.docs-hub .actions a {
+  padding: 9px 14px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  text-decoration: none;
+}
+
+.docs-hub code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+.docs-hub footer {
+  margin-top: 56px;
+  font-size: 0.95rem;
+  opacity: 0.72;
+}
