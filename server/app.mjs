@@ -4,6 +4,7 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import { BlockList, isIP } from 'node:net';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -13,6 +14,23 @@ import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
+
+const ipv4Block = new BlockList();
+['0.0.0.0/8', '127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '169.254.0.0/16'].forEach(s => ipv4Block.addSubnet(s.split('/')[0], parseInt(s.split('/')[1])));
+const ipv6Block = new BlockList();
+['::1/128', 'fc00::/7', 'fe80::/10'].forEach(s => ipv6Block.addSubnet(s.split('/')[0], parseInt(s.split('/')[1]), 'ipv6'));
+
+function isSafeWebhookUrl(u) {
+  try { u = new URL(u); } catch { return false; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+  let hn = u.hostname;
+  if (hn === 'localhost') return false;
+  if (hn.startsWith('[') && hn.endsWith(']')) hn = hn.slice(1, -1);
+  const type = isIP(hn);
+  if (type === 4 && ipv4Block.check(hn)) return false;
+  if (type === 6 && ipv6Block.check(hn, 'ipv6')) return false;
+  return true;
+}
 
 // Append-only audit trail. Never throws into the request path.
 function logAudit(orgId, userId, action, targetType, targetId, meta) {
@@ -748,6 +766,7 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
   if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  if (!isSafeWebhookUrl(url)) return c.json({ error: 'url must not point to internal or reserved IP addresses' }, 400);
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
