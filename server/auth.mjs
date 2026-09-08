@@ -71,7 +71,16 @@ export function hashPassword(pw) {
 export function verifyPassword(pw, stored) {
   if (typeof pw !== 'string') return false;
   const [salt, hash] = String(stored || '').split(':');
-  if (!salt || !hash) return false;
+
+  if (!salt || !hash) {
+    // Missing-user/malformed short-circuit path. Evaluate the heavy primitive to
+    // close the largest magnitude timing gap, but do not promise algorithmic
+    // constant-time bounds to the caller since we bypass buffer allocation and
+    // timingSafeEqual.
+    scryptSync(pw, '00000000000000000000000000000000', 64);
+    return false;
+  }
+
   const test = scryptSync(pw, salt, 64);
   const known = Buffer.from(hash, 'hex');
   return test.length === known.length && timingSafeEqual(test, known);
