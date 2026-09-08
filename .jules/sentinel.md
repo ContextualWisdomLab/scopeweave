@@ -19,7 +19,7 @@
 
 ## 2026-06-20 - Prevent DOM Clobbering Bypass in HTML Sanitizer
 **Vulnerability:** The HTML sanitization loop in `stripUnsafeGeneratedMarkup` used `element.tagName`, `element.attributes` and `element.remove()` which are vulnerable to DOM Clobbering (e.g. `<form><input name="remove"></form>`). This caused the sanitizer to crash and skip elements/attributes filtering entirely, leading to XSS vulnerabilities.
-**Learning:** In browser environments, attacker-controlled HTML elements like `<form>` can override their properties using named inputs. Using property getters (`element.tagName`) or methods (`element.remove()`) is not safe against DOM Clobbering during HTML sanitization.
+**Learning:** Using property getters (`element.tagName`) or methods (`element.remove()`) is not safe against DOM Clobbering during HTML sanitization.
 **Prevention:** Always extract element tag names and attributes safely using prototype methods like `Object.getOwnPropertyDescriptor(Node.prototype, 'nodeName').get.call(element)` and `Element.prototype.getAttributeNames.call(element)`, and invoke methods like `Element.prototype.remove.call(element)`.\n
 
 ## 2026-06-21 - Hardcoded Secrets
@@ -128,7 +128,3 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
-## 2026-09-08 - Prevent user enumeration via timing attack in authentication
-**Vulnerability:** The login endpoint bypassed password verification entirely when a user was not found, resulting in significantly shorter response times compared to failed logins for existing users (who underwent expensive scrypt hashing). This timing difference allowed user enumeration.
-**Learning:** Security validation functions involving cryptographic operations must execute identically irrespective of entity existence or payload correctness to prevent timing attacks. However, ensuring strict algorithmic constant-time boundaries (like buffer allocations) is sometimes unnecessary and impractical for all error paths.
-**Prevention:** Unconditionally evaluate the heavy primitive (`scryptSync`) with dummy fallback values when actual values are unavailable or malformed to close the largest magnitude timing gap, without promising strict constant-time bounds to the caller.
