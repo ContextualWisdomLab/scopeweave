@@ -4,3 +4,7 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+
+## 2026-09-08 - Bolt: 작업 지표 계산 성능 최적화
+**Learning:** Replaced `Array.prototype.reduce`/`forEach` and `Map` cache mapping with standard `for` loops and `Float64Array` typed array indices in hot-path `computeTaskMetrics` iterations. This eliminates continuous JS engine callback allocations, hash-lookup overheads, and unnecessary garbage collections for massive WBS datasets.
+**Action:** When performing heavily looped metric computations referencing array indexes internally, fallback to standard `for` loop caching structures natively via numeric typed arrays (`Float64Array` or `Int32Array`) instead of allocating high-overhead structures like Maps or nested callbacks.
