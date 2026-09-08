@@ -11,7 +11,9 @@ Updated: 2026-09-08
 
 ## Authentication boundary
 
-`server/auth.mjs` owns local password/JWT cryptographic primitives. The `/api/auth/login` application boundary in `server/app.mjs` coordinates user lookup and credential admission. WBS/project aggregate truth remains separate from authentication and tenant admission.
+Keyverse is the canonical identity backend. ScopeWeave owns its login, signup, and recovery product forms and the application-facing admission boundary, but it must not become the long-term owner of credential/JWT identity truth. The current `server/auth.mjs` password/JWT implementation is therefore treated as a legacy/local compatibility boundary that must eventually be replaced by a released Keyverse contract/ACL without copying Keyverse domain truth or using a mutable sibling head. WBS/project aggregate truth remains separate from identity and tenant admission.
+
+PR #674 is a repair-first hardening of that currently deployed compatibility path; it is not an architectural decision to keep local credential authority permanently.
 
 Invariant: for a string password, a login lookup miss must not take the protected branch's password-verification quick exit. The candidate miss path invokes `verifyPassword(password, null)`, which performs dummy scrypt work before returning the same generic `401` used for invalid credentials. This narrows a known processing-work discrepancy; it does not make the complete HTTP request constant-time. Database lookup, parsing, scheduling, transport, rate limiting, memory allocation, and other layers can still vary.
 
@@ -27,14 +29,15 @@ The protected route contains the lookup-miss quick exit before password verifica
 
 ### Candidate repair
 
-PR #674 adds an explicit missing-user branch that calls the shared verification primitive with absent storage. `verifyPassword` substitutes fixed-shape dummy salt material and performs scrypt before failing closed. Existing-user wrong-password behavior remains generic `401`; non-string password bodies continue to fail closed without being coerced into real credentials.
+PR #674 adds an explicit missing-user branch that calls the current compatibility verifier with absent storage. `verifyPassword` substitutes fixed-shape dummy salt material and performs scrypt before failing closed. Existing-user wrong-password behavior remains generic `401`; non-string password bodies continue to fail closed without being coerced into real credentials.
 
 Rejected alternatives:
 
 - protected-branch early return: preserves the known quick exit;
 - artificial sleep or wall-clock pass/fail threshold: does not prove equivalent authentication work and varies with host/scheduler load;
 - user-specific failure messages: increase account-enumeration disclosure;
-- claiming constant-time HTTP behavior from `timingSafeEqual` or dummy scrypt alone: exceeds the available evidence.
+- claiming constant-time HTTP behavior from `timingSafeEqual` or dummy scrypt alone: exceeds the available evidence;
+- copying Keyverse credential logic into ScopeWeave as the final design: violates identity bounded-context ownership and creates mutable duplicate security policy.
 
 ### GREEN acceptance
 
@@ -47,6 +50,12 @@ One exact candidate SHA must demonstrate all of the following:
 5. merge is a normal protected-branch merge without predecessor receipts, synthetic statuses, source-neutral/no-op retriggers, or gate weakening.
 
 If a quantitative timing claim is later required, retain repeated existing-user/wrong-password and missing-user endpoint distributions under equivalent representative runtime/network conditions, and report median/tail latency with uncertainty rather than a single minimum-duration assertion.
+
+## Successor architecture gap: Keyverse ACL migration
+
+After the immediate repair is protected and released, ScopeWeave must move credential verification, token issuance, recovery authority, and identity lifecycle truth behind the released Keyverse API/client/schema. ScopeWeave should retain only product forms, product-specific authorization composition, session-facing UX, and an anti-corruption layer translating Keyverse identity outcomes into ScopeWeave application commands/results.
+
+Successor acceptance requires a released immutable Keyverse contract; no source copy, cross-service SQL, or mutable sibling PR-head dependency; explicit login/signup/recovery error and permission states; migration/rollback for existing local credentials; current-head API-schema/E2E/security evidence; and removal of the legacy local credential authority only after equivalence and recovery paths are proven.
 
 ## Traceability
 
