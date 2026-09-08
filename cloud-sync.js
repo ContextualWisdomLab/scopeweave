@@ -1228,13 +1228,13 @@ async function openAttachmentsModal() {
   list.className = 'team-list';
   panel.appendChild(list);
 
-  const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
-    return t ? (t.name || t.task || id) : id;
-  };
-
   async function refresh() {
     list.textContent = '';
+    const taskMap = new Map((host?.getState?.()?.tasks || []).map((t) => [t.id, t]));
+    const taskName = (id) => {
+      const t = taskMap.get(id);
+      return t ? (t.name || t.task || id) : id;
+    };
     const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
     const data = await api(`/api/projects/${pid}/attachments${q}`);
     if (!data.attachments.length) {
@@ -1365,13 +1365,13 @@ async function openCommentsModal() {
   form.append(input, send);
   panel.appendChild(form);
 
-  const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
-    return t ? (t.name || t.task || id) : id;
-  };
-
   async function refresh() {
     list.textContent = '';
+    const taskMap = new Map((host?.getState?.()?.tasks || []).map((t) => [t.id, t]));
+    const taskName = (id) => {
+      const t = taskMap.get(id);
+      return t ? (t.name || t.task || id) : id;
+    };
     const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
     const data = await api(`/api/projects/${pid}/comments${q}`);
     if (!data.comments.length) {
