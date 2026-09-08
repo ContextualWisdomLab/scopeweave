@@ -192,9 +192,11 @@ app.post('/api/auth/signup', async (c) => {
 app.post('/api/auth/login', async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}));
   const u = db.prepare('SELECT * FROM users WHERE email = ?').get(email || '');
-  // Pass password through only when it is a string — verifyPassword rejects
-  // non-strings (objects/arrays) so they never match an empty-password hash.
-  if (!u || typeof password !== 'string' || !verifyPassword(password, u.password_hash)) {
+
+  // Unconditionally verify password to prevent timing attacks based on user existence.
+  const isValid = verifyPassword(password, u ? u.password_hash : null);
+
+  if (!u || !isValid) {
     return c.json({ error: 'invalid credentials' }, 401);
   }
   return c.json({ token: signToken({ sub: u.id, email: u.email, tv: u.token_version }) });

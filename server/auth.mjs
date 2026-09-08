@@ -69,12 +69,22 @@ export function hashPassword(pw) {
  * @returns {boolean} Whether the candidate matches the stored password hash.
  */
 export function verifyPassword(pw, stored) {
-  if (typeof pw !== 'string') return false;
-  const [salt, hash] = String(stored || '').split(':');
-  if (!salt || !hash) return false;
-  const test = scryptSync(pw, salt, 64);
+  const password = typeof pw === 'string' ? pw : '';
+  let [salt, hash] = String(stored || '').split(':');
+
+  // Dummy values to prevent timing attacks if the user does not exist or salt/hash is malformed.
+  let validStored = true;
+  if (!salt || !hash) {
+    validStored = false;
+    salt = '00000000000000000000000000000000';
+    hash = '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000';
+  }
+
+  const test = scryptSync(password, salt, 64);
   const known = Buffer.from(hash, 'hex');
-  return test.length === known.length && timingSafeEqual(test, known);
+
+  const match = test.length === known.length && timingSafeEqual(test, known);
+  return validStored && match && typeof pw === 'string';
 }
 
 /**
