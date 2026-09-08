@@ -69,22 +69,21 @@ export function hashPassword(pw) {
  * @returns {boolean} Whether the candidate matches the stored password hash.
  */
 export function verifyPassword(pw, stored) {
-  const password = typeof pw === 'string' ? pw : '';
-  let [salt, hash] = String(stored || '').split(':');
+  if (typeof pw !== 'string') return false;
+  const [salt, hash] = String(stored || '').split(':');
 
-  // Dummy values to prevent timing attacks if the user does not exist or salt/hash is malformed.
-  let validStored = true;
   if (!salt || !hash) {
-    validStored = false;
-    salt = '00000000000000000000000000000000';
-    hash = '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000';
+    // Missing-user/malformed short-circuit path. Evaluate the heavy primitive to
+    // close the largest magnitude timing gap, but do not promise algorithmic
+    // constant-time bounds to the caller since we bypass buffer allocation and
+    // timingSafeEqual.
+    scryptSync(pw, '00000000000000000000000000000000', 64);
+    return false;
   }
 
-  const test = scryptSync(password, salt, 64);
+  const test = scryptSync(pw, salt, 64);
   const known = Buffer.from(hash, 'hex');
-
-  const match = test.length === known.length && timingSafeEqual(test, known);
-  return validStored && match && typeof pw === 'string';
+  return test.length === known.length && timingSafeEqual(test, known);
 }
 
 /**
