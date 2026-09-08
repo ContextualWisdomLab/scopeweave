@@ -15,7 +15,7 @@
 ## 2026-06-20 - Container Hardening and Privilege Escalation
 **Vulnerability:** The Docker container was running as the root user, and the Kubernetes deployment allowed privilege escalation. This could allow attackers who compromise the container to gain elevated permissions on the host system or cluster.
 **Learning:** Containers must be run as non-root users by explicitly defining a `USER` instruction in the Dockerfile. Furthermore, in Kubernetes deployments, the `securityContext` should explicitly set `allowPrivilegeEscalation: false` and `runAsNonRoot: true`, alongside dropping all unused capabilities to restrict attackers if the container is breached.
-**Prevention:** Always add a `USER` directive (e.g. `USER 1000`) before `CMD` or `ENTRYPOINT` in a Dockerfile. In Kubernetes deployments, routinely implement the least-privilege principle by enforcing `securityContext` blocks on all containers.
+**Prevention:** Always add a `USER` directive (e.g. `USER 1000`) before `CMD` or `ENTRYPOINT` in a Dockerfile. In Kubernetes, routinely implement the least-privilege principle by enforcing `securityContext` blocks on all containers.
 
 ## 2026-06-20 - Prevent DOM Clobbering Bypass in HTML Sanitizer
 **Vulnerability:** The HTML sanitization loop in `stripUnsafeGeneratedMarkup` used `element.tagName`, `element.attributes` and `element.remove()` which are vulnerable to DOM Clobbering (e.g. `<form><input name="remove"></form>`). This caused the sanitizer to crash and skip elements/attributes filtering entirely, leading to XSS vulnerabilities.
@@ -128,3 +128,8 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+
+## 2026-06-27 - Remove innerHTML to prevent Stored XSS false positives
+**Vulnerability:** The `cloud-modal` and `team-modal` components were using `innerHTML` with template literals to construct the DOM. Although they didn't interpolate user data directly in this specific instance, security scanners like Strix flag `innerHTML` usage as a potential Stored XSS vulnerability.
+**Learning:** Security scanners flag `innerHTML` because it is highly prone to Stored XSS if developer assumptions change and user data is interpolated later. Explicit programmatic DOM creation (e.g. `document.createElement`, `.append`) prevents XSS fundamentally.
+**Prevention:** Always build DOM trees explicitly using `document.createElement()` and `append()` instead of `innerHTML` or `insertAdjacentHTML`, regardless of whether the template contains user data currently.
