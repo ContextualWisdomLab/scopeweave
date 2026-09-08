@@ -170,25 +170,97 @@ function ensureAuthUI() {
   modal.setAttribute('role', 'dialog');
   modal.setAttribute('aria-modal', 'true');
   modal.setAttribute('aria-labelledby', 'cloud-modal-title');
-  modal.innerHTML = `
-    <div class="modal-backdrop" data-cloud-close="true"></div>
-    <div class="modal-panel cloud-panel">
-      <div class="modal-header">
-        <h2 id="cloud-modal-title">클라우드 로그인</h2>
-        <button type="button" class="icon-button close-button" data-cloud-close="true" aria-label="닫기"><span aria-hidden="true">✕</span></button>
-      </div>
-      <form id="cloud-form" class="cloud-form">
-        <label class="meta-field"><span>이메일</span><input id="cloud-email" type="email" autocomplete="username" required /></label>
-        <label class="meta-field cloud-name-field hidden"><span>이름</span><input id="cloud-name" type="text" autocomplete="name" /></label>
-        <label class="meta-field"><span>비밀번호 (8자 이상)</span><input id="cloud-password" type="password" autocomplete="current-password" minlength="8" required /></label>
-        <p id="cloud-error" class="cloud-error" role="alert"></p>
-        <div class="cloud-actions">
-          <button type="submit" class="primary-button" id="cloud-submit">로그인</button>
-          <button type="button" class="secondary-button" id="cloud-toggle">계정 만들기</button>
-        </div>
-        <button type="button" class="secondary-button" id="cloud-sso" style="width:100%;margin-top:8px">SSO로 로그인 (OIDC)</button>
-      </form>
-    </div>`;
+  const backdrop = document.createElement('div');
+  backdrop.className = 'modal-backdrop';
+  backdrop.setAttribute('data-cloud-close', 'true');
+
+  const panel = document.createElement('div');
+  panel.className = 'modal-panel cloud-panel';
+
+  const header = document.createElement('div');
+  header.className = 'modal-header';
+  const h2 = document.createElement('h2');
+  h2.id = 'cloud-modal-title';
+  h2.textContent = '클라우드 로그인';
+  const closeBtn = document.createElement('button');
+  closeBtn.type = 'button';
+  closeBtn.className = 'icon-button close-button';
+  closeBtn.setAttribute('data-cloud-close', 'true');
+  closeBtn.setAttribute('aria-label', '닫기');
+  const closeIcon = document.createElement('span');
+  closeIcon.setAttribute('aria-hidden', 'true');
+  closeIcon.textContent = '✕';
+  closeBtn.append(closeIcon);
+  header.append(h2, closeBtn);
+
+  const form = document.createElement('form');
+  form.id = 'cloud-form';
+  form.className = 'cloud-form';
+
+  const emailLabel = document.createElement('label');
+  emailLabel.className = 'meta-field';
+  const emailSpan = document.createElement('span');
+  emailSpan.textContent = '이메일';
+  const emailInput = document.createElement('input');
+  emailInput.id = 'cloud-email';
+  emailInput.type = 'email';
+  emailInput.autocomplete = 'username';
+  emailInput.required = true;
+  emailLabel.append(emailSpan, emailInput);
+
+  const nameLabel = document.createElement('label');
+  nameLabel.className = 'meta-field cloud-name-field hidden';
+  const nameSpan = document.createElement('span');
+  nameSpan.textContent = '이름';
+  const nameInput = document.createElement('input');
+  nameInput.id = 'cloud-name';
+  nameInput.type = 'text';
+  nameInput.autocomplete = 'name';
+  nameLabel.append(nameSpan, nameInput);
+
+  const pwLabel = document.createElement('label');
+  pwLabel.className = 'meta-field';
+  const pwSpan = document.createElement('span');
+  pwSpan.textContent = '비밀번호 (8자 이상)';
+  const pwInput = document.createElement('input');
+  pwInput.id = 'cloud-password';
+  pwInput.type = 'password';
+  pwInput.autocomplete = 'current-password';
+  pwInput.minLength = 8;
+  pwInput.required = true;
+  pwLabel.append(pwSpan, pwInput);
+
+  const errorP = document.createElement('p');
+  errorP.id = 'cloud-error';
+  errorP.className = 'cloud-error';
+  errorP.setAttribute('role', 'alert');
+
+  const actions = document.createElement('div');
+  actions.className = 'cloud-actions';
+  const submitBtn = document.createElement('button');
+  submitBtn.type = 'submit';
+  submitBtn.className = 'primary-button';
+  submitBtn.id = 'cloud-submit';
+  submitBtn.textContent = '로그인';
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.className = 'secondary-button';
+  toggleBtn.id = 'cloud-toggle';
+  toggleBtn.textContent = '계정 만들기';
+  actions.append(submitBtn, toggleBtn);
+
+  const ssoBtn = document.createElement('button');
+  ssoBtn.type = 'button';
+  ssoBtn.className = 'secondary-button';
+  ssoBtn.id = 'cloud-sso';
+  ssoBtn.style.width = '100%';
+  ssoBtn.style.marginTop = '8px';
+  ssoBtn.textContent = 'SSO로 로그인 (OIDC)';
+
+  form.append(emailLabel, nameLabel, pwLabel, errorP, actions, ssoBtn);
+  panel.append(header, form);
+  modal.append(backdrop, panel);
+
   document.body.appendChild(modal);
 
   let mode = 'login';
@@ -1728,25 +1800,72 @@ async function openTeamModal() {
     modal.className = 'modal hidden';
     modal.setAttribute('role', 'dialog');
     modal.setAttribute('aria-modal', 'true');
-    modal.innerHTML = `
-      <div class="modal-backdrop" data-team-close="true"></div>
-      <div class="modal-panel cloud-panel">
-        <div class="modal-header">
-          <h2>팀 멤버</h2>
-          <button type="button" class="icon-button close-button" data-team-close="true" aria-label="닫기"><span aria-hidden="true">✕</span></button>
-        </div>
-        <div id="team-body" class="team-body"></div>
-        <form id="team-invite" class="team-invite">
-          <input id="team-email" type="email" placeholder="초대할 이메일" required />
-          <select id="team-role" class="cloud-select">
-            <option value="member">멤버</option>
-            <option value="admin">관리자</option>
-            <option value="viewer">뷰어</option>
-          </select>
-          <button type="submit" class="primary-button">초대</button>
-        </form>
-        <p id="team-msg" class="cloud-error"></p>
-      </div>`;
+
+    const backdrop = document.createElement('div');
+    backdrop.className = 'modal-backdrop';
+    backdrop.setAttribute('data-team-close', 'true');
+
+    const panel = document.createElement('div');
+    panel.className = 'modal-panel cloud-panel';
+
+    const header = document.createElement('div');
+    header.className = 'modal-header';
+    const h2 = document.createElement('h2');
+    h2.textContent = '팀 멤버';
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'icon-button close-button';
+    closeBtn.setAttribute('data-team-close', 'true');
+    closeBtn.setAttribute('aria-label', '닫기');
+    const closeIcon = document.createElement('span');
+    closeIcon.setAttribute('aria-hidden', 'true');
+    closeIcon.textContent = '✕';
+    closeBtn.append(closeIcon);
+    header.append(h2, closeBtn);
+
+    const body = document.createElement('div');
+    body.id = 'team-body';
+    body.className = 'team-body';
+
+    const form = document.createElement('form');
+    form.id = 'team-invite';
+    form.className = 'team-invite';
+    const emailInput = document.createElement('input');
+    emailInput.id = 'team-email';
+    emailInput.type = 'email';
+    emailInput.placeholder = '초대할 이메일';
+    emailInput.required = true;
+
+    const roleSelect = document.createElement('select');
+    roleSelect.id = 'team-role';
+    roleSelect.className = 'cloud-select';
+
+    const memberOption = document.createElement('option');
+    memberOption.value = 'member';
+    memberOption.textContent = '멤버';
+    const adminOption = document.createElement('option');
+    adminOption.value = 'admin';
+    adminOption.textContent = '관리자';
+    const viewerOption = document.createElement('option');
+    viewerOption.value = 'viewer';
+    viewerOption.textContent = '뷰어';
+
+    roleSelect.append(memberOption, adminOption, viewerOption);
+
+    const submitBtn = document.createElement('button');
+    submitBtn.type = 'submit';
+    submitBtn.className = 'primary-button';
+    submitBtn.textContent = '초대';
+
+    form.append(emailInput, roleSelect, submitBtn);
+
+    const msgP = document.createElement('p');
+    msgP.id = 'team-msg';
+    msgP.className = 'cloud-error';
+
+    panel.append(header, body, form, msgP);
+    modal.append(backdrop, panel);
+
     document.body.appendChild(modal);
     modal.addEventListener('click', (e) => { if (e.target.dataset.teamClose) modal.classList.add('hidden'); });
     modal.querySelector('#team-invite').addEventListener('submit', async (e) => {
