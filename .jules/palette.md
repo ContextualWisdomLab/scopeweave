@@ -115,3 +115,7 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+
+## 2026-09-09 - Restore Focus on CSV Import
+**Learning:** Destructive operations like CSV imports cause a full re-render of the DOM, which causes the browser to reset focus to the `<body>` element. This breaks keyboard navigation flow for users.
+**Action:** Use `requestAnimationFrame` to explicitly set focus back to the triggering element (e.g., the "CSV 가져오기" button) after the asynchronous data loading and DOM updates have finished.

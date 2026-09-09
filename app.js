@@ -2007,6 +2007,9 @@ async function handleCsvImport(event) {
     showToast(`CSV 가져오기에 실패했습니다: ${error.message}`);
   } finally {
     event.target.value = '';
+    requestAnimationFrame(() => {
+      elements.importCsvButton.focus();
+    });
   }
 }
 
