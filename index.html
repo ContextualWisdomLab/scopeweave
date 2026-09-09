@@ -7,6 +7,9 @@
     <title>ScopeWeave Planner</title>
     <link rel="preload" href="styles.css" as="style" />
     <link rel="modulepreload" href="app.js" />
+    <!-- ⚡ Bolt: 병목 현상을 방지하고 로드 시간을 단축하기 위해 핵심 자산에 대한 리소스 사전 로드를 추가합니다. -->
+    <link rel="modulepreload" href="analytics.js" />
+    <link rel="modulepreload" href="cloud-sync.js" />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="toast-state.css" />
   </head>
