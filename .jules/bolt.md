@@ -4,3 +4,6 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+## 2026-09-09 - Replace reduce with for loop for calculating min/max dates
+**Learning:** Using `reduce` for calculating minimum and maximum values over an array in hot paths (like chart rendering) adds significant callback allocation overhead compared to standard `for` loops.
+**Action:** Default to standard `for` loops when computing aggregates over arrays in performance-sensitive sections to eliminate callback and hash-lookup overhead.
