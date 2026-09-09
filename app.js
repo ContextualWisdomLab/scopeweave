@@ -2008,7 +2008,10 @@ async function handleCsvImport(event) {
   } finally {
     event.target.value = '';
     requestAnimationFrame(() => {
-      elements.importCsvButton.focus();
+      const importBtn = document.getElementById('import-csv');
+      if (importBtn) {
+        importBtn.focus();
+      }
     });
   }
 }
