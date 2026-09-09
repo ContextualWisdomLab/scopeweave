@@ -8,7 +8,7 @@ process.env.SCOPEWEAVE_ATTACHMENT_STATUS_TIMEOUT_MS = '500';
 process.env.SCOPEWEAVE_ATTACHMENT_STATUS_BUDGET_MS = '1000';
 process.env.CLEARFOLIO_URL = '';
 
-const { app } = await import('../../server/app.mjs');
+const { app } = await import('../../server/runtime-app.mjs');
 const { db } = await import('../../server/db.mjs');
 const jsonRequest = (path, options = {}) => app.request(path, {
   ...options,
