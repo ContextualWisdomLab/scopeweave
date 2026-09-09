@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2026-09-09 - API 보안 헤더(Secure Headers) 추가
+**Vulnerability:** API 응답에 적절한 보안 헤더(X-Frame-Options, X-XSS-Protection 등)가 없었습니다. 이는 Clickjacking 등의 공격에 애플리케이션을 노출시킬 수 있습니다.
+**Learning:** Hono 애플리케이션을 작성할 때 기본적으로 보안 헤더가 설정되지 않습니다.
+**Prevention:** `hono/secure-headers` 미들웨어를 사용하여 애플리케이션 엔트리 포인트(예: `runtime-app.mjs`)에 전역으로 보안 헤더를 적용해야 합니다.
