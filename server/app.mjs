@@ -12,6 +12,8 @@ import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
+const DUMMY_PASSWORD_HASH = hashPassword('');
+
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
 
 // Append-only audit trail. Never throws into the request path.
@@ -194,7 +196,9 @@ app.post('/api/auth/login', async (c) => {
   const u = db.prepare('SELECT * FROM users WHERE email = ?').get(email || '');
   // Pass password through only when it is a string — verifyPassword rejects
   // non-strings (objects/arrays) so they never match an empty-password hash.
-  if (!u || typeof password !== 'string' || !verifyPassword(password, u.password_hash)) {
+  const pwStr = typeof password === 'string' ? password : '';
+  const isValid = verifyPassword(pwStr, u ? u.password_hash : DUMMY_PASSWORD_HASH);
+  if (!u || typeof password !== 'string' || !isValid) {
     return c.json({ error: 'invalid credentials' }, 401);
   }
   return c.json({ token: signToken({ sub: u.id, email: u.email, tv: u.token_version }) });

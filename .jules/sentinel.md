@@ -128,3 +128,15 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2024-07-12 - Prevent user enumeration via timing attack in auth endpoints
+**Vulnerability:** The authentication endpoints short-circuited `verifyPassword` calls if the user was not found, which made it possible to determine if an email or account ID existed based on response times.
+**Learning:** Security boundaries must ensure a constant execution time regardless of whether a record exists. Passing a non-string variable (like an empty object) to cryptographic functions can also cause unhandled TypeErrors that bypass intended timing logic.
+**Prevention:** Unconditionally evaluate `verifyPassword` using a dummy hash when the user is not found, and explicitly coerce the candidate password to a string to enforce constant execution time and prevent runtime errors.
+## 2024-07-12 - Prevent user enumeration via timing attack in auth endpoints (Revised)
+**Vulnerability:** The authentication endpoints short-circuited `verifyPassword` calls if the user was not found, which made it possible to determine if an email or account ID existed based on response times.
+**Learning:** Security boundaries must ensure a constant execution time regardless of whether a record exists. Passing a non-string variable (like an empty object) to cryptographic functions can also cause unhandled TypeErrors that bypass intended timing logic. Additionally, user enumeration via timing attacks is primarily a concern on unauthenticated routes (e.g., login). Authenticated routes implicitly verify user existence via the token, making dummy hash evaluations unnecessary. Also, all PR processes must follow requested guidelines strictly (such as using Korean if asked).
+**Prevention:** Unconditionally evaluate `verifyPassword` using a dummy hash when the user is not found *on unauthenticated routes*, explicitly coerce the candidate password to a string to enforce constant execution time and prevent runtime errors, and verify the changes are only applied where necessary.
+## 2024-07-12 - 인증 엔드포인트의 타이밍 공격을 통한 사용자 열거 방지
+**취약점:** 인증 엔드포인트에서 사용자를 찾을 수 없는 경우 `verifyPassword` 호출이 단락(short-circuit)되어 응답 시간을 통해 이메일이나 계정 ID 존재 여부를 유추할 수 있었습니다.
+**학습 내용:** 보안 경계는 레코드 존재 여부와 무관하게 일정한 실행 시간을 보장해야 합니다. 또한 문자열이 아닌 변수를 암호화 함수에 전달하면 의도된 타이밍 로직을 우회하는 런타임 오류가 발생할 수 있습니다.
+**예방 조치:** 사용자를 찾을 수 없는 경우 더미 해시를 사용하여 `verifyPassword`를 무조건 실행하고, 입력된 비밀번호를 명시적으로 문자열로 변환하여 일정한 실행 시간을 강제합니다.
