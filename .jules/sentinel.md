@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2026-09-10 - Server-Side Request Forgery (SSRF) in Webhooks
+**Vulnerability:** The `/api/orgs/:id/webhooks` endpoint accepted arbitrary URLs, allowing Server-Side Request Forgery (SSRF) where attackers could use the application server to make requests to internal resources (e.g., `127.0.0.1`, AWS metadata).
+**Learning:** URL hostnames parsed by the Node.js `URL` object normalize various formats (e.g., decimal IP like `2130706433` becomes `127.0.0.1`). String matching is insufficient. Using `BlockList` from `node:net` effectively blocks these normalized IP addresses across ranges. Also learned IPv6 URLs include brackets like `[::1]`.
+**Prevention:** Always validate external URLs using robust network-level validation (e.g., `node:net`'s `BlockList` checking IP ranges) and properly handle normalized hostname formats, including stripping brackets for IPv6.

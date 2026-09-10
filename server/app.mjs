@@ -4,6 +4,8 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import { BlockList, isIPv4, isIPv6 } from 'node:net';
+import { resolve4, resolve6 } from 'node:dns/promises';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -13,6 +15,60 @@ import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
+
+const ipv4BlockList = new BlockList();
+ipv4BlockList.addSubnet('127.0.0.0', 8, 'ipv4');
+ipv4BlockList.addSubnet('10.0.0.0', 8, 'ipv4');
+ipv4BlockList.addSubnet('172.16.0.0', 12, 'ipv4');
+ipv4BlockList.addSubnet('192.168.0.0', 16, 'ipv4');
+ipv4BlockList.addSubnet('169.254.0.0', 16, 'ipv4');
+ipv4BlockList.addSubnet('0.0.0.0', 8, 'ipv4');
+
+const ipv6BlockList = new BlockList();
+ipv6BlockList.addSubnet('::1', 128, 'ipv6');
+ipv6BlockList.addSubnet('fc00::', 7, 'ipv6');
+ipv6BlockList.addSubnet('fe80::', 10, 'ipv6');
+ipv6BlockList.addSubnet('::ffff:0:0', 96, 'ipv6'); // Block IPv4-mapped IPv6
+
+async function isUrlSafe(urlString) {
+  try {
+    const url = new URL(urlString);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    let hostname = url.hostname;
+
+    if (hostname.startsWith('[') && hostname.endsWith(']')) {
+      hostname = hostname.slice(1, -1);
+    }
+
+    if (hostname.toLowerCase() === 'localhost') return false;
+
+    if (isIPv4(hostname) && ipv4BlockList.check(hostname, 'ipv4')) return false;
+    if (isIPv6(hostname) && ipv6BlockList.check(hostname, 'ipv6')) return false;
+
+    if (!isIPv4(hostname) && !isIPv6(hostname)) {
+      try {
+        const addresses4 = await resolve4(hostname).catch(() => []);
+        for (const address of addresses4) {
+          if (ipv4BlockList.check(address, 'ipv4')) return false;
+        }
+
+        const addresses6 = await resolve6(hostname).catch(() => []);
+        for (const address of addresses6) {
+          if (ipv6BlockList.check(address, 'ipv6')) return false;
+        }
+
+        if (addresses4.length === 0 && addresses6.length === 0) return false;
+      } catch (err) {
+        // DNS lookup failed
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 
 // Append-only audit trail. Never throws into the request path.
 function logAudit(orgId, userId, action, targetType, targetId, meta) {
@@ -747,7 +803,7 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   const orgId = c.req.param('id');
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
-  if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  if (!/^https?:\/\//.test(String(url || '')) || !(await isUrlSafe(String(url || '')))) return c.json({ error: 'valid safe http(s) url required' }, 400);
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
