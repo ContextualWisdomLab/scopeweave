@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
 import { BlockList, isIPv4, isIPv6 } from 'node:net';
-import { resolve } from 'node:dns/promises';
+import { resolve4, resolve6 } from 'node:dns/promises';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -47,24 +47,17 @@ async function isUrlSafe(urlString) {
 
     if (!isIPv4(hostname) && !isIPv6(hostname)) {
       try {
-
-        let addresses = [];
-        try {
-          const ipv4Addresses = await resolve(hostname, 'A');
-          addresses.push(...ipv4Addresses);
-        } catch { /* Ignore A lookup failure */ }
-
-        try {
-          const ipv6Addresses = await resolve(hostname, 'AAAA');
-          addresses.push(...ipv6Addresses);
-        } catch { /* Ignore AAAA lookup failure */ }
-
-        if (addresses.length === 0) return false;
-
-        for (const address of addresses) {
-          if (isIPv4(address) && ipv4BlockList.check(address, 'ipv4')) return false;
-          if (isIPv6(address) && ipv6BlockList.check(address, 'ipv6')) return false;
+        const addresses4 = await resolve4(hostname).catch(() => []);
+        for (const address of addresses4) {
+          if (ipv4BlockList.check(address, 'ipv4')) return false;
         }
+
+        const addresses6 = await resolve6(hostname).catch(() => []);
+        for (const address of addresses6) {
+          if (ipv6BlockList.check(address, 'ipv6')) return false;
+        }
+
+        if (addresses4.length === 0 && addresses6.length === 0) return false;
       } catch (err) {
         // DNS lookup failed
         return false;
