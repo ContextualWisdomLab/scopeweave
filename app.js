@@ -1370,20 +1370,27 @@ function validateDateRange(startLabel, startValue, endLabel, endValue, errors) {
 }
 
 function computeTaskMetrics() {
-  // ⚡ Bolt: Cache durationDays during total calculation to avoid recalculating for every task
+  // ⚡ Bolt: Use standard for loop to avoid callback allocation while preserving Map overhead
   const durationCache = new Map();
-  const totalDays = state.tasks.reduce((sum, task) => {
+  const tasks = state.tasks;
+  const tasksLen = tasks.length;
+  let totalDays = 0;
+
+  for (let i = 0; i < tasksLen; i++) {
+    const task = tasks[i];
     const duration = calculateDurationDays(task.plannedStartDate, task.plannedEndDate);
     durationCache.set(task.id, duration);
-    return sum + duration;
-  }, 0);
+    totalDays += duration;
+  }
 
   const baseDate = state.baseDate;
+  // Preserve Map keyed by task.id to maintain original overwrite semantics
   const byTask = new Map();
   let totalWeightedPlannedRatio = 0;
   let totalWeightedActualRatio = 0;
 
-  state.tasks.forEach((task) => {
+  for (let i = 0; i < tasksLen; i++) {
+    const task = tasks[i];
     const durationDays = durationCache.get(task.id);
     const weightRatio = totalDays > 0 ? durationDays / totalDays : 0;
     const plannedProgressRatio = calculatePlannedProgressRatio(baseDate, task.plannedStartDate, task.plannedEndDate, durationDays);
@@ -1408,7 +1415,7 @@ function computeTaskMetrics() {
       plannedDateWarning,
       actualDateWarning
     });
-  });
+  }
 
   return {
     totalDays,
