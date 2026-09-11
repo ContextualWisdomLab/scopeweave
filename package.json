@@ -18,7 +18,7 @@
     "test:coverage:cases": "node tests/unit/coverage-script-contract.test.mjs && node tests/unit/attachment-status.test.mjs && node tests/unit/clearfolio-status-signal.test.mjs && node tests/unit/clearfolio-adapter-mock-hmac.test.mjs && node tests/unit/orchestrator.test.mjs && node tests/unit/orchestrator-coverage.test.mjs && node tests/unit/orchestrator-attribution.test.mjs && node tests/unit/msproject.test.mjs && node tests/unit/auth-password.test.mjs && node tests/unit/editor-unsaved.test.mjs && node tests/unit/static-coverage-evidence.test.mjs && npm run test:api",
     "test:e2e": "playwright test",
     "test:e2e:headed": "playwright test --headed",
-    "test:e2e:cloud": "playwright install chromium && playwright test tests/e2e/cloud.spec.js tests/e2e/toast-accessibility.spec.js",
+    "test:e2e:cloud": "playwright install chromium && playwright test tests/e2e/cloud.spec.js tests/e2e/toast-accessibility.spec.js tests/e2e/test_focus_restoration.spec.js tests/e2e/test_focus_mobile.spec.js",
     "test:fuzz": "playwright install chromium && playwright test tests/e2e/csv_formula_fuzz.spec.js",
     "fuzz": "node --test tests/fuzz/*.mjs"
   },
