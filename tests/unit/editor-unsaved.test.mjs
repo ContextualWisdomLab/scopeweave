@@ -104,6 +104,7 @@ function loadApp() {
     Proxy,
     Reflect,
     Promise,
+    requestAnimationFrame: (cb) => cb(),
   };
   sandbox.globalThis = sandbox;
   windowStub.window = windowStub;

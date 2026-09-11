@@ -1176,7 +1176,14 @@ function handleRowAction(action, taskId) {
 }
 
 function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertAfterId = null, draft = null }) {
-  state.previousFocus = document.activeElement;
+  // Record the previous focus, and track enough metadata to restore focus after synchronous re-rendering
+  const active = document.activeElement;
+  state.previousFocus = {
+    element: active,
+    taskId: active?.closest('tr[data-task-id]')?.dataset.taskId,
+    action: active?.dataset.action,
+    id: active?.id
+  };
   if (mode === 'edit') {
     const task = findTask(targetId);
     if (!task) {
@@ -1226,10 +1233,25 @@ function closeEditor(force = false) {
   state.editor = { ...DEFAULT_EDITOR_STATE, errors: [] };
   renderAll();
 
-  if (state.previousFocus) {
-    state.previousFocus.focus();
-    state.previousFocus = null;
-  }
+  requestAnimationFrame(() => {
+    if (state.previousFocus) {
+      let target = null;
+      if (state.previousFocus.element && document.body.contains(state.previousFocus.element)) {
+        target = state.previousFocus.element;
+      } else if (state.previousFocus.taskId && state.previousFocus.action) {
+        const row = document.querySelector(`tr[data-task-id="${state.previousFocus.taskId}"]`);
+        if (row) {
+          target = row.querySelector(`[data-action="${state.previousFocus.action}"]`);
+        }
+      } else if (state.previousFocus.id) {
+        target = document.getElementById(state.previousFocus.id);
+      }
+      if (target) {
+        target.focus();
+      }
+      state.previousFocus = null;
+    }
+  });
 }
 
 function saveEditor() {
@@ -2211,7 +2233,13 @@ function exportJsonArray() {
 }
 
 function openGanttModal() {
-  state.previousFocus = document.activeElement;
+  const active = document.activeElement;
+  state.previousFocus = {
+    element: active,
+    taskId: active?.closest('tr[data-task-id]')?.dataset.taskId,
+    action: active?.dataset.action,
+    id: active?.id
+  };
   elements.ganttModal.classList.remove('hidden');
   renderGantt();
   // Focus the modal to handle Escape key properly
@@ -2221,7 +2249,20 @@ function openGanttModal() {
 function closeGanttModal() {
   elements.ganttModal.classList.add('hidden');
   if (state.previousFocus) {
-    state.previousFocus.focus();
+    let target = null;
+    if (state.previousFocus.element && document.body.contains(state.previousFocus.element)) {
+      target = state.previousFocus.element;
+    } else if (state.previousFocus.taskId && state.previousFocus.action) {
+      const row = document.querySelector(`tr[data-task-id="${state.previousFocus.taskId}"]`);
+      if (row) {
+        target = row.querySelector(`[data-action="${state.previousFocus.action}"]`);
+      }
+    } else if (state.previousFocus.id) {
+      target = document.getElementById(state.previousFocus.id);
+    }
+    if (target) {
+      target.focus();
+    }
     state.previousFocus = null;
   }
 }
