@@ -1228,12 +1228,10 @@ async function openAttachmentsModal() {
   list.className = 'team-list';
   panel.appendChild(list);
 
-  const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
-    return t ? (t.name || t.task || id) : id;
-  };
-
   async function refresh() {
+    // ⚡ Bolt: Precompute an O(1) Map to prevent O(N*M) lookup penalty inside the attachment render loop
+    const taskMap = new Map((host?.getState?.()?.tasks || []).map((t) => [t.id, t.name || t.task || t.id]));
+    const taskName = (id) => taskMap.get(id) || id;
     list.textContent = '';
     const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
     const data = await api(`/api/projects/${pid}/attachments${q}`);
@@ -1365,12 +1363,10 @@ async function openCommentsModal() {
   form.append(input, send);
   panel.appendChild(form);
 
-  const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
-    return t ? (t.name || t.task || id) : id;
-  };
-
   async function refresh() {
+    // ⚡ Bolt: Precompute an O(1) Map to prevent O(N*M) lookup penalty inside the comment render loop
+    const taskMap = new Map((host?.getState?.()?.tasks || []).map((t) => [t.id, t.name || t.task || t.id]));
+    const taskName = (id) => taskMap.get(id) || id;
     list.textContent = '';
     const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
     const data = await api(`/api/projects/${pid}/comments${q}`);
