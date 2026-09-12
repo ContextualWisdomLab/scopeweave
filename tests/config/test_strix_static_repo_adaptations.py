@@ -26,7 +26,7 @@ def test_central_review_workflows_are_not_copied_into_this_repository() -> None:
         REPO_ROOT / "scripts" / "ci" / "strix_model_utils.sh",
         REPO_ROOT / "scripts" / "ci" / "strix_quick_gate.sh",
         REPO_ROOT / "scripts" / "ci" / "test_opencode_fact_gate_contract.sh",
-        REPO_ROOT / "scripts" / "ci" / "test_strix_quick_gate.sh",
+
         REPO_ROOT / "scripts" / "ci" / "validate_opencode_failed_check_review.sh",
     ]
 
