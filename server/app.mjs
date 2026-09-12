@@ -21,6 +21,78 @@ v6BlockList.addSubnet('fe80::', 10, 'ipv6');
 v6BlockList.addSubnet('fc00::', 7, 'ipv6');
 v6BlockList.addSubnet('::ffff:0:0', 96, 'ipv6');
 
+import http from 'node:http';
+import https from 'node:https';
+
+function createSsrfSafeAgent(BaseAgent) {
+  return new BaseAgent({
+    lookup: (hostname, options, callback) => {
+      import('node:dns').then(dns => {
+        dns.lookup(hostname, options, (err, address, family) => {
+          if (err) return callback(err);
+          let safe = true;
+          if (family === 4) {
+            safe = !v4BlockList.check(address, 'ipv4');
+          } else if (family === 6) {
+            safe = !v6BlockList.check(address, 'ipv6');
+          }
+          if (!safe) return callback(new Error('Blocked by SSRF protection'));
+          callback(null, address, family);
+        });
+      });
+    }
+  });
+}
+
+const ssrfSafeHttpAgent = createSsrfSafeAgent(http.Agent);
+const ssrfSafeHttpsAgent = createSsrfSafeAgent(https.Agent);
+
+function safeFetch(urlStr, options = {}) {
+  const url = new URL(urlStr);
+  const agent = url.protocol === 'https:' ? ssrfSafeHttpsAgent : ssrfSafeHttpAgent;
+  return new Promise((resolve, reject) => {
+    const reqOptions = {
+        hostname: url.hostname,
+        port: url.port || (url.protocol === 'https:' ? 443 : 80),
+        path: url.pathname + url.search,
+        method: options.method || 'GET',
+        headers: options.headers || {},
+        agent,
+        signal: options.signal
+    };
+    const lib = url.protocol === 'https:' ? https : http;
+    const req = lib.request(reqOptions, (res) => {
+      const headers = new Headers();
+      for (const [k, v] of Object.entries(res.headers)) {
+        if (Array.isArray(v)) v.forEach(val => headers.append(k, val));
+        else headers.append(k, v);
+      }
+      resolve({
+          ok: res.statusCode >= 200 && res.statusCode < 300,
+          status: res.statusCode,
+          statusText: res.statusMessage,
+          headers,
+      });
+    });
+
+    req.on('error', reject);
+
+    if (options.signal) {
+      if (options.signal.aborted) {
+        req.destroy(new Error('AbortError'));
+      } else {
+        options.signal.addEventListener('abort', () => {
+          req.destroy(new Error('AbortError'));
+        });
+      }
+    }
+
+    if (options.body) {
+      req.write(options.body);
+    }
+    req.end();
+  });
+}
 async function isSafeWebhookUrl(urlStr) {
   try {
     const url = new URL(urlStr);
