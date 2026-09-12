@@ -17,10 +17,18 @@ JSON 입력도 같은 실패 계약을 지켜야 한다. `email` 객체나 배�
 - 보안 dependency는 인증 lane에 복사하지 않는다. Hono security floor는 canonical dependency owner #687이 protected branch에 통합한 뒤 ordinary non-force restack으로 상속한다.
 - API/coverage/Security/SAST/Fuzz/CodeQL 및 독립 current-head review가 하나의 변경되지 않은 exact generation에서 통과해야 한다.
 
+## Authentication KDF resource bound
+
+Unknown-user도 동일한 scrypt cost class를 통과시키면 계정 열거 discrepancy는 줄어들지만, 공개 로그인 경계의 CPU 비용은 더 명확한 운영·가용성 책임이 된다. 현재 protected 구현은 `SCOPEWEAVE_RATE_LIMIT_MAX`가 없으면 fixed-window limiter를 비활성화하며, 동기 `scryptSync` 검증 자체에 별도 work-admission 한도가 없다. PR #688의 current review가 이 잔여 위험을 정확히 지적했다.
+
+이 문제는 discrepancy repair를 되돌려 해결하지 않는다. 별도 buyer/security Gap #696에서 KDF-specific bounded admission, production deployment guard, trusted-proxy rate-limit foundation #587과의 결합, representative concurrent workload의 CPU/event-loop/queue/median·p95 evidence를 소유한다. #694는 #696이 해결됐다고 주장하지 않으며, #688의 해당 review finding은 #696의 RED/GREEN acceptance로 보존한다.
+
 ### Traceability
 
 - Code: `server/app.mjs` login boundary, `server/auth.mjs` scrypt verification.
 - Regression: `tests/api/login-input-boundary.test.mjs`, `tests/api/login-enumeration-contract.test.mjs`, 기존 `tests/api/ratelimit.test.mjs`.
 - Current consolidation: PR #694. PR #692의 known/unknown failure-equivalence regression과 PR #688의 product-gap evidence를 현재 lane이 승계한다.
+- Residual resource-consumption owner: Issue #696.
+- Trusted proxy/rate-limit prerequisite: PR #587.
 - Dependency prerequisite: PR #687, Hono 4.13.0 → 4.13.7.
 - Reference: OWASP Foundation. (n.d.). *Authentication Cheat Sheet*. OWASP Cheat Sheet Series. https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html
