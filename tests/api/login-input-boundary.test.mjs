@@ -1,3 +1,4 @@
+process.env.SCOPEWEAVE_JWT_SECRET = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';
 import assert from 'node:assert';
 import { randomBytes } from 'node:crypto';
 import { db } from '../../server/db.mjs';
