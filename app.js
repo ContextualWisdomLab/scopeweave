@@ -2310,21 +2310,9 @@ function renderGantt() {
     return;
   }
 
-  // ⚡ Bolt: Replace reduce with standard for loop to eliminate callback overhead when calculating minDate/maxDate.
-  const plannedTasksLen = plannedTasks.length;
-  let minDate = plannedTasks[0].plannedStartDate;
-  let maxDate = plannedTasks[0].plannedEndDate;
-
-  for (let i = 1; i < plannedTasksLen; i++) {
-    const task = plannedTasks[i];
-    if (task.plannedStartDate < minDate) {
-      minDate = task.plannedStartDate;
-    }
-    if (task.plannedEndDate > maxDate) {
-      maxDate = task.plannedEndDate;
-    }
-  }
-
+  // ⚡ Bolt: Use direct string comparison for minDate/maxDate calculation since plannedTasks already filter for valid dates.
+  const minDate = plannedTasks.reduce((min, task) => (task.plannedStartDate < min ? task.plannedStartDate : min), plannedTasks[0].plannedStartDate);
+  const maxDate = plannedTasks.reduce((max, task) => (task.plannedEndDate > max ? task.plannedEndDate : max), plannedTasks[0].plannedEndDate);
   const weekdays = buildWeekdayTimeline(minDate, maxDate);
   const weeks = groupTimelineByWeek(weekdays);
 
