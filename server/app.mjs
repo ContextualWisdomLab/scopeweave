@@ -194,7 +194,8 @@ const DUMMY_HASH = hashPassword('dummy');
 
 app.post('/api/auth/login', async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}));
-  const u = db.prepare('SELECT * FROM users WHERE email = ?').get(email || '');
+  const safeEmail = typeof email === 'string' ? email : '';
+  const u = db.prepare('SELECT * FROM users WHERE email = ?').get(safeEmail);
 
   // Coerce password to string to avoid TypeErrors in cryptographic functions when
   // untyped JSON is evaluated unconditionally against a dummy hash.

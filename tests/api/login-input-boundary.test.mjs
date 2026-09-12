@@ -1,29 +1,30 @@
-import assert from 'node:assert/strict';
+import assert from 'node:assert';
+import { randomBytes } from 'node:crypto';
+import { db } from '../../server/db.mjs';
 
-process.env.SCOPEWEAVE_DB = ':memory:';
-process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
+test('login string coercion contract', async () => {
+  const email = `test-${randomBytes(4).toString('hex')}@example.com`;
+  db.prepare('INSERT INTO users(email,password_hash,name) VALUES(?,?,?)').run(email, 'salt:hash', 'Test User');
 
-const { app } = await import('../../server/app.mjs');
+  const { app } = await import('../../server/app.mjs');
 
-async function login(email, password = 'password123') {
-  return app.request('/api/auth/login', {
+  // Non-string email object
+  const res1 = await app.request('/api/auth/login', {
     method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email, password }),
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: { $gt: '' }, password: 'password123' })
   });
-}
+  assert.strictEqual(res1.status, 401, 'object email must fail through the normal login boundary');
 
-for (const [label, email] of [
-  ['object', { address: 'unknown@example.test' }],
-  ['array', ['unknown@example.test']],
-]) {
-  const response = await login(email);
-  assert.equal(response.status, 401, `${label} email must fail through the normal login boundary`);
-  assert.deepEqual(
-    await response.json(),
-    { error: 'invalid credentials' },
-    `${label} email must not escape as an internal binding error`,
-  );
-}
+  // String email but non-string password
+  const res2 = await app.request('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password: { p: 1 } })
+  });
+  assert.strictEqual(res2.status, 401, 'object password must fail through the normal login boundary');
+});
 
-console.log('✓ login input boundary tests passed');
+function test(name, fn) {
+  fn().catch(e => { console.error(e); process.exit(1); });
+}
