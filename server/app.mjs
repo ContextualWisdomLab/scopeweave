@@ -4,6 +4,109 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import dns from 'node:dns/promises';
+import { BlockList } from 'node:net';
+
+const v4BlockList = new BlockList();
+v4BlockList.addSubnet('127.0.0.0', 8, 'ipv4');
+v4BlockList.addSubnet('10.0.0.0', 8, 'ipv4');
+v4BlockList.addSubnet('172.16.0.0', 12, 'ipv4');
+v4BlockList.addSubnet('192.168.0.0', 16, 'ipv4');
+v4BlockList.addSubnet('169.254.0.0', 16, 'ipv4');
+v4BlockList.addSubnet('0.0.0.0', 8, 'ipv4');
+
+const v6BlockList = new BlockList();
+v6BlockList.addAddress('::1', 'ipv6');
+v6BlockList.addSubnet('fe80::', 10, 'ipv6');
+v6BlockList.addSubnet('fc00::', 7, 'ipv6');
+v6BlockList.addSubnet('::ffff:0:0', 96, 'ipv6');
+
+import http from 'node:http';
+import https from 'node:https';
+
+function createSsrfSafeAgent(BaseAgent) {
+  return new BaseAgent({
+    lookup: (hostname, options, callback) => {
+      import('node:dns').then(dns => {
+        dns.lookup(hostname, options, (err, address, family) => {
+          if (err) return callback(err);
+          let safe = true;
+          if (family === 4) {
+            safe = !v4BlockList.check(address, 'ipv4');
+          } else if (family === 6) {
+            safe = !v6BlockList.check(address, 'ipv6');
+          }
+          if (!safe) return callback(new Error('Blocked by SSRF protection'));
+          callback(null, address, family);
+        });
+      });
+    }
+  });
+}
+
+const ssrfSafeHttpAgent = createSsrfSafeAgent(http.Agent);
+const ssrfSafeHttpsAgent = createSsrfSafeAgent(https.Agent);
+
+function safeFetch(urlStr, options = {}) {
+  const url = new URL(urlStr);
+  const agent = url.protocol === 'https:' ? ssrfSafeHttpsAgent : ssrfSafeHttpAgent;
+  return new Promise((resolve, reject) => {
+    const reqOptions = {
+        hostname: url.hostname,
+        port: url.port || (url.protocol === 'https:' ? 443 : 80),
+        path: url.pathname + url.search,
+        method: options.method || 'GET',
+        headers: options.headers || {},
+        agent,
+        signal: options.signal
+    };
+    const lib = url.protocol === 'https:' ? https : http;
+    const req = lib.request(reqOptions, (res) => {
+      const headers = new Headers();
+      for (const [k, v] of Object.entries(res.headers)) {
+        if (Array.isArray(v)) v.forEach(val => headers.append(k, val));
+        else headers.append(k, v);
+      }
+      resolve({
+          ok: res.statusCode >= 200 && res.statusCode < 300,
+          status: res.statusCode,
+          statusText: res.statusMessage,
+          headers,
+      });
+    });
+
+    req.on('error', reject);
+
+    if (options.signal) {
+      if (options.signal.aborted) {
+        req.destroy(new Error('AbortError'));
+      } else {
+        options.signal.addEventListener('abort', () => {
+          req.destroy(new Error('AbortError'));
+        });
+      }
+    }
+
+    if (options.body) {
+      req.write(options.body);
+    }
+    req.end();
+  });
+}
+async function isSafeWebhookUrl(urlStr) {
+  try {
+    const url = new URL(urlStr);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    const v4 = await dns.resolve4(url.hostname).catch(() => []);
+    const v6 = await dns.resolve6(url.hostname).catch(() => []);
+    if (v4.length === 0 && v6.length === 0) return false;
+    for (const ip of v4) if (v4BlockList.check(ip, 'ipv4')) return false;
+    for (const ip of v6) if (v6BlockList.check(ip, 'ipv6')) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -748,6 +851,7 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
   if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  if (!(await isSafeWebhookUrl(url))) return c.json({ error: 'url is not permitted by SSRF protection' }, 400);
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
