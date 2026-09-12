@@ -5,7 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased] - 2026-09-12
+
+### 변경 사항 (Changed)
+- `String.padStart()` 호출로 인한 문자열 할당 오버헤드를 방지하기 위해 날짜 포맷팅 로직(formatDateInput, formatLocalDateInput, formatCompactDate)을 인라인 삼항 연산자로 최적화 (성능 개선).
+- `app.js` 등 주요 모듈에 대해 `<link rel="modulepreload">` 태그를 추가하여 브라우저의 리소스 조기 발견 성능 개선.
 
 ### Added
 
