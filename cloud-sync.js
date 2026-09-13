@@ -77,7 +77,7 @@ function subscribe(id) {
 async function openProject(id, { silent = false } = {}) {
   const p = await api(`/api/projects/${id}`);
   setProjectId(id);
-  currentOrgId = p.orgId || projectsCache.find((x) => String(x.id) === String(id))?.orgId || currentOrgId;
+  currentOrgId = p.orgId || projectsCacheMap.get(String(id))?.orgId || currentOrgId;
   version = p.version;
   host?.hydrateState({ projectName: p.name, baseDate: p.baseDate, tasks: p.tasks });
   host?.renderAll();
@@ -224,10 +224,12 @@ function ensureAuthUI() {
 }
 
 let projectsCache = [];
+let projectsCacheMap = new Map();
 let notifCache = new Map(); // projectId -> unseen count
 
 async function refreshProjects() {
   try { projectsCache = (await api('/api/projects')).projects || []; } catch { projectsCache = []; }
+  projectsCacheMap = new Map(projectsCache.map(p => [String(p.id), p]));
   try {
     const n = await api('/api/notifications');
     notifCache = new Map((n.notifications || []).map((x) => [String(x.projectId), x.unseen]));
@@ -377,7 +379,7 @@ function renderAuthUI() {
     });
     bar.appendChild(msp);
 
-    const cur = projectsCache.find((x) => String(x.id) === String(getProjectId()));
+    const cur = projectsCacheMap.get(String(getProjectId()));
     const arch = document.createElement('button');
     arch.type = 'button';
     arch.className = 'secondary-button';
@@ -450,7 +452,7 @@ async function makeProject(name, seedState) {
   await refreshProjects();
   version = r.version;
   setProjectId(r.id);
-  const meta = projectsCache.find((x) => String(x.id) === String(r.id));
+  const meta = projectsCacheMap.get(String(r.id));
   if (meta) currentOrgId = meta.orgId;
   const base = seedState || host?.getState?.() || { baseDate: '', tasks: [] };
   await doPush({ ...base, projectName: name }); // keep the chosen project name
