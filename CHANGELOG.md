@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased] - 2026-09-12
 
 ### 변경 사항 (Changed)
-- `String.padStart()` 호출로 인한 문자열 할당 오버헤드를 방지하기 위해 날짜 포맷팅 로직(formatDateInput, formatLocalDateInput, formatCompactDate)을 인라인 삼항 연산자로 최적화 (성능 개선).
+- `formatDateInput`, `formatLocalDateInput`, `formatCompactDate`의 두 자리 월·일 zero-padding 구현을 `String.padStart()`에서 명시적 조건식으로 변경했습니다. 실제 제품 성능 개선 여부는 대표 workload 측정 전에는 주장하지 않습니다.
 
 ### Added
 
