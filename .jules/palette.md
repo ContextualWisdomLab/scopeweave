@@ -115,3 +115,7 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+
+## 2026-09-13 - Ensure Custom Validation Feedback on Submit
+**Learning:** When using `aria-disabled="true"` to preserve keyboard focus on a form submit button, intercepting the `submit` event without showing a notification leaves the user wondering why the form didn't save. Also, the browser's native validation UI must be bypassed using `noValidate` on the `<form>` element to prevent native balloons from interfering with custom error states (like toasts or inline ARIA descriptions).
+**Action:** Always intercept form `submit` events and check the `aria-disabled` state of the submit button. If disabled, provide immediate, actionable feedback (e.g., using a toast) and ensure `form.noValidate = true` is set on the form element so native tooltips don't conflict with custom validation UX.
