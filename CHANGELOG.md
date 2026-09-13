@@ -5,7 +5,10 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [Unreleased] - 2026-09-12
+
+### 변경 사항 (Changed)
+- `formatDateInput`, `formatLocalDateInput`, `formatCompactDate`의 두 자리 월·일 zero-padding 구현을 `String.padStart()`에서 명시적 조건식으로 변경했습니다. 실제 제품 성능 개선 여부는 대표 workload 측정 전에는 주장하지 않습니다.
 
 ### Added
 
