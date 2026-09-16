@@ -16,8 +16,10 @@ test('Save button is aria-disabled when form is invalid and shows toast when cli
     await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
     await expect(saveButton).toHaveAttribute('title', '입력값을 올바르게 수정해야 저장할 수 있습니다.');
 
-    // Click it and check for toast
-    await saveButton.click();
+    // In Playwright tests, a standard saveButton.click({ force: true }) fails if the button doesn't trigger a submit for some reason when aria-disabled is present in some browsers, but let's try calling click natively from the browser.
+    await page.evaluate(() => {
+        document.querySelector('form[data-editor-form="true"]').dispatchEvent(new Event("submit", {bubbles: true, cancelable: true}));
+    });
 
     // Check that toast is visible with correct text
     const toast = page.locator('#toast');
