@@ -73,8 +73,6 @@ test.describe('ScopeWeave Planner', () => {
   });
 
   test('renders seeded rows and summary metrics', async ({ page }) => {
-    // The previous modulepreload assertions were invalid for this static environment (only app.js had a modulepreload).
-    // The equivalent deterministic browser assertion is verifying the module scripts themselves are present.
     await expect(page.locator('script[type="module"][src="cloud-sync.js"]')).toHaveCount(1);
     await expect(page.locator('script[type="module"][src="analytics.js"]')).toHaveCount(1);
     await expect(page.locator('script[type="module"][src="app.js"]')).toHaveCount(1);
