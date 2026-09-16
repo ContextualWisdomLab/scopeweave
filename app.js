@@ -2682,22 +2682,32 @@ function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
 
+// ⚡ Bolt: Use inline ternary string concatenation instead of String.padStart() in hot loops
+// to avoid unnecessary string allocations and JS-to-C++ method call overhead.
 function formatDateInput(date) {
   const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
+  const monthRaw = date.getUTCMonth() + 1;
+  const dayRaw = date.getUTCDate();
+  const month = monthRaw < 10 ? `0${monthRaw}` : `${monthRaw}`;
+  const day = dayRaw < 10 ? `0${dayRaw}` : `${dayRaw}`;
   return `${year}-${month}-${day}`;
 }
 
 function formatLocalDateInput(date) {
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  const monthRaw = date.getMonth() + 1;
+  const dayRaw = date.getDate();
+  const month = monthRaw < 10 ? `0${monthRaw}` : `${monthRaw}`;
+  const day = dayRaw < 10 ? `0${dayRaw}` : `${dayRaw}`;
   return `${year}-${month}-${day}`;
 }
 
 function formatCompactDate(date) {
-  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+  const monthRaw = date.getMonth() + 1;
+  const dayRaw = date.getDate();
+  const month = monthRaw < 10 ? `0${monthRaw}` : `${monthRaw}`;
+  const day = dayRaw < 10 ? `0${dayRaw}` : `${dayRaw}`;
+  return `${date.getFullYear()}${month}${day}`;
 }
 
 function formatPercent(value, digits) {
