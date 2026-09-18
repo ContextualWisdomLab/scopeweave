@@ -4,6 +4,8 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import { BlockList } from 'node:net';
+import { resolve4, resolve6 } from 'node:dns/promises';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -99,8 +101,13 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+  if (!(await isSafeWebhookUrl(url))) {
+    recordDelivery(webhookId, event, 403, false, attempt);
+    return;
+  }
+
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
   fetch(url, {
@@ -108,6 +115,7 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
+    redirect: 'error'
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
     if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
@@ -130,6 +138,57 @@ function deliver(orgId, event, payload) {
     sendWebhook(h.id, h.url, sig, event, body, 1);
   }
 }
+
+
+const ssrfBlocklist4 = new BlockList();
+ssrfBlocklist4.addSubnet('127.0.0.0', 8, 'ipv4');
+ssrfBlocklist4.addSubnet('10.0.0.0', 8, 'ipv4');
+ssrfBlocklist4.addSubnet('172.16.0.0', 12, 'ipv4');
+ssrfBlocklist4.addSubnet('192.168.0.0', 16, 'ipv4');
+ssrfBlocklist4.addSubnet('169.254.0.0', 16, 'ipv4');
+ssrfBlocklist4.addSubnet('0.0.0.0', 8, 'ipv4');
+
+const ssrfBlocklist6 = new BlockList();
+ssrfBlocklist6.addAddress('::1', 'ipv6');
+ssrfBlocklist6.addSubnet('fc00::', 7, 'ipv6');
+ssrfBlocklist6.addSubnet('fe80::', 10, 'ipv6');
+ssrfBlocklist6.addSubnet('::ffff:0:0', 96, 'ipv6');
+
+async function isSafeWebhookUrl(urlString) {
+  try {
+    const url = new URL(urlString);
+    const hostname = url.hostname;
+    let ips = [];
+
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(hostname)) {
+      ips.push({ address: hostname, family: 4 });
+    } else {
+      let isIp6 = hostname.startsWith('[') && hostname.endsWith(']');
+      if (isIp6) {
+        ips.push({ address: hostname.slice(1, -1), family: 6 });
+      } else {
+        const [a, aaaa] = await Promise.allSettled([
+          resolve4(hostname),
+          resolve6(hostname)
+        ]);
+        if (a.status === 'fulfilled') ips.push(...a.value.map(ip => ({ address: ip, family: 4 })));
+        if (aaaa.status === 'fulfilled') ips.push(...aaaa.value.map(ip => ({ address: ip, family: 6 })));
+      }
+    }
+
+    if (ips.length === 0) return false;
+
+    for (const ip of ips) {
+      if (ip.family === 4 && ssrfBlocklist4.check(ip.address, 'ipv4')) return false;
+      if (ip.family === 6 && ssrfBlocklist6.check(ip.address, 'ipv6')) return false;
+    }
+
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 const quietLogs = String(process.env.SCOPEWEAVE_DB || '').includes(':memory:'); // silence during tests
 app.use('*', async (c, next) => {
   const t = Date.now();
@@ -748,6 +807,7 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
   if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  if (!(await isSafeWebhookUrl(url))) return c.json({ error: 'url is not allowed' }, 400);
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
