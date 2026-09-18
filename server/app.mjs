@@ -4,6 +4,7 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import net from 'node:net';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -11,6 +12,51 @@ import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from 
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
+
+const v4BlockList = new net.BlockList();
+v4BlockList.addSubnet('127.0.0.0', 8, 'ipv4');
+v4BlockList.addSubnet('10.0.0.0', 8, 'ipv4');
+v4BlockList.addSubnet('172.16.0.0', 12, 'ipv4');
+v4BlockList.addSubnet('192.168.0.0', 16, 'ipv4');
+v4BlockList.addSubnet('169.254.0.0', 16, 'ipv4');
+v4BlockList.addSubnet('0.0.0.0', 8, 'ipv4');
+
+const v6BlockList = new net.BlockList();
+v6BlockList.addAddress('::1', 'ipv6');
+v6BlockList.addSubnet('fc00::', 7, 'ipv6');
+v6BlockList.addSubnet('fe80::', 10, 'ipv6');
+
+// IPv4-mapped IPv6 addresses can bypass v4 rules but route to v4 IPs
+const v6MappedBlockList = new net.BlockList();
+v6MappedBlockList.addSubnet('::ffff:0:0', 96, 'ipv6');
+
+function isSafeWebhookUrl(urlString) {
+  try {
+    const u = new URL(urlString);
+    if (!['http:', 'https:'].includes(u.protocol)) return false;
+
+    let host = u.hostname;
+
+    if (host === 'localhost') return false;
+
+    // IPv6 hostnames from URL include brackets, strip them for net.isIP
+    if (host.startsWith('[') && host.endsWith(']')) {
+      host = host.slice(1, -1);
+    }
+
+    if (net.isIPv4(host)) {
+      if (v4BlockList.check(host, 'ipv4')) return false;
+    } else if (net.isIPv6(host)) {
+      if (v6BlockList.check(host, 'ipv6')) return false;
+      if (v6MappedBlockList.check(host, 'ipv6')) return false;
+    }
+
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
 
@@ -101,6 +147,10 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
 
 function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+  if (!isSafeWebhookUrl(url)) {
+    recordDelivery(webhookId, event, null, false, attempt);
+    return;
+  }
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
   fetch(url, {
@@ -108,6 +158,7 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
+    redirect: 'error',
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
     if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
@@ -748,6 +799,7 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
   if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  if (!isSafeWebhookUrl(url)) return c.json({ error: 'invalid webhook url: disallowed destination' }, 400);
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
