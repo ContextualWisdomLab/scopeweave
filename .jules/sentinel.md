@@ -128,3 +128,8 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+
+## 2024-05-29 - Prevent Server-Side Request Forgery in Webhooks
+**Vulnerability:** The webhook delivery function used user-provided URLs in `fetch` without restricting the destination, allowing SSRF (Server-Side Request Forgery) attacks where an external attacker could instruct the server to make requests to internal network resources or cloud metadata endpoints.
+**Learning:** Node's `fetch` does not intrinsically block requests to private or loopback IP spaces. In dual-stack environments, both IPv4 and IPv6 loopback addresses and their IPv4-mapped equivalents must be explicitly blocked. Additionally, `fetch` must not silently follow redirects that bypass the initial IP check.
+**Prevention:** Implement strict IP validation using `node:net` `BlockList`, block loopback (`127.0.0.0/8`, `::1`), private (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`, `fe80::/10`), metadata (`169.254.0.0/16`), unspecified (`0.0.0.0/8`), and mapped (`::ffff:0:0/96`) ranges. Disable redirect following (`redirect: 'manual'`) on the `fetch` options to prevent redirect-based SSRF bypass.
