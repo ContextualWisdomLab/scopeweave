@@ -4,6 +4,6 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
-## 2024-05-18 - Replacing map/reduce with typed arrays and for-loops
-**Learning:** Using `reduce` and `forEach` along with `Map` for cache lookups in tight loops adds unnecessary overhead from function creation and hash lookups. Standard `for` loops combined with typed arrays (like `Float64Array`) and index-based lookups are significantly faster for numeric caching.
-**Action:** When caching data across multiple iterations of the same unmodified array, use numeric array indices with a typed array rather than mapping by unique object properties (like `task.id`) to eliminate hash-lookup overhead.
+## 2024-05-18 - Readability over Typed Array micro-optimizations
+**Learning:** While replacing standard objects like `Map` with typed arrays (like `Float64Array`) and index lookups can marginally improve performance in tight loops, doing so in typical business logic sacrifices code readability and violates the codebase rules against unreadable micro-optimizations.
+**Action:** Replace `reduce`/`forEach` with standard `for` loops to eliminate function creation overhead, but retain standard data structures like `Map` for readability and clarity in general business logic.
