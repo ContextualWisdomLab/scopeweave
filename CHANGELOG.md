@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Kept weekly-report calendar dates and Monday–Sunday ranges stable across
+  UTC, negative-offset, and positive-offset browser time zones instead of
+  parsing date-only input as a UTC instant that could move to the prior day.
+
 ### Added
 
 - Added deterministic PM analysis for requirements/RFI/RFP readiness, WBS

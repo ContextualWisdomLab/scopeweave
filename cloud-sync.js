@@ -603,16 +603,29 @@ async function openShareModal() {
 // 주간보고 generator — the PM deliverable, straight from live data.
 // Pure: takes tasks + a reference date, returns markdown.
 export function buildWeeklyReport(tasks, refDate, projectName = '') {
-  const ref = new Date(refDate);
-  if (Number.isNaN(ref.getTime())) return '';
-  const day = (d) => d.toISOString().slice(0, 10);
-  const monday = new Date(ref);
-  monday.setDate(ref.getDate() - ((ref.getDay() + 6) % 7)); // this week's Monday
-  const weekStart = day(monday);
-  const weekEnd = day(new Date(monday.getTime() + 6 * 86400000));
-  const nextStart = day(new Date(monday.getTime() + 7 * 86400000));
-  const nextEnd = day(new Date(monday.getTime() + 13 * 86400000));
-  const today = day(ref);
+  const calendarDatePattern = /^\d{4}-\d{2}-\d{2}$/;
+  const referenceDate = new Date(
+    typeof refDate === 'string' && calendarDatePattern.test(refDate)
+      ? `${refDate}T00:00:00`
+      : refDate,
+  );
+  if (Number.isNaN(referenceDate.getTime())) return '';
+  const formatCalendarDay = (dateValue) => [
+    dateValue.getFullYear(),
+    String(dateValue.getMonth() + 1).padStart(2, '0'),
+    String(dateValue.getDate()).padStart(2, '0'),
+  ].join('-');
+  const shiftCalendarDays = (dateValue, dayCount) => {
+    const shiftedDate = new Date(dateValue);
+    shiftedDate.setDate(shiftedDate.getDate() + dayCount);
+    return shiftedDate;
+  };
+  const monday = shiftCalendarDays(referenceDate, -((referenceDate.getDay() + 6) % 7));
+  const weekStart = formatCalendarDay(monday);
+  const weekEnd = formatCalendarDay(shiftCalendarDays(monday, 6));
+  const nextStart = formatCalendarDay(shiftCalendarDays(monday, 7));
+  const nextEnd = formatCalendarDay(shiftCalendarDays(monday, 13));
+  const today = formatCalendarDay(referenceDate);
   const name = (t) => t.name || t.task || t.activity || t.phase || t.id;
   const leaf = (tasks || []).filter((t) => !t.isSynthetic);
 

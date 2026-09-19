@@ -15,8 +15,18 @@ const tasks = [
   { id: 's', name: '합성행', isSynthetic: true, plannedProgress: 0, actualProgress: 0 },
 ];
 
+const originalTimezone = process.env.TZ;
+for (const reportTimezone of ['UTC', 'America/Los_Angeles', 'Asia/Seoul']) {
+  process.env.TZ = reportTimezone;
+  const timezoneReport = buildWeeklyReport(tasks, REF, '데모');
+  assert.ok(
+    timezoneReport.startsWith('# 주간보고 — 데모 (2026-07-06 ~ 2026-07-12)'),
+    `week range from Monday in ${reportTimezone}`,
+  );
+}
+process.env.TZ = originalTimezone;
+
 const md = buildWeeklyReport(tasks, REF, '데모');
-assert.ok(md.startsWith('# 주간보고 — 데모 (2026-07-06 ~ 2026-07-12)'), 'week range from Monday');
 assert.ok(md.includes('## 금주 완료\n- 완료작업 (2026-07-07)'), 'this-week completion listed');
 assert.ok(!md.includes('지난완료'), 'old completion excluded');
 assert.ok(md.includes('- 진행작업 — 40% (김담당)'), 'in-progress with owner');
