@@ -49,11 +49,24 @@ jobs:
       - name: Select iteration budget
         id: budget
         shell: bash
+        # The dispatch input reaches the shell through env rather than ${{ }}
+        # interpolation into the script body, and is checked as a plain integer
+        # before it is written to an output another step consumes.
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          FUZZ_RUNS_INPUT: ${{ github.event.inputs.fuzz_runs }}
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ]; then
+          set -euo pipefail
+          if [ "$EVENT_NAME" = "schedule" ]; then
             echo "runs=200000" >> "$GITHUB_OUTPUT"
-          elif [ -n "${{ github.event.inputs.fuzz_runs }}" ]; then
-            echo "runs=${{ github.event.inputs.fuzz_runs }}" >> "$GITHUB_OUTPUT"
+          elif [ -n "${FUZZ_RUNS_INPUT:-}" ]; then
+            case "$FUZZ_RUNS_INPUT" in
+              ''|*[!0-9]*)
+                echo "fuzz_runs must be a positive integer (got: $FUZZ_RUNS_INPUT)" >&2
+                exit 2
+                ;;
+            esac
+            echo "runs=$FUZZ_RUNS_INPUT" >> "$GITHUB_OUTPUT"
           else
             echo "runs=20000" >> "$GITHUB_OUTPUT"
           fi
