@@ -128,3 +128,15 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2026-09-14 - Fix SSRF Vulnerability in Webhooks
+**Vulnerability:** The application was susceptible to Server-Side Request Forgery (SSRF) via the webhook URL creation and delivery endpoints.
+**Learning:** The native `URL` constructor normalizes different representations of IP addresses (like decimal, octal, hex) into their canonical forms (e.g., `2130706433` becomes `127.0.0.1` when using `node:url` and passing it to HTTP requests or parsing logic). Thus, blocking IP subnets using `net.BlockList` requires correctly identifying family types and stripping brackets from IPv6 hostnames.
+**Prevention:** Always validate URLs passed to outbound HTTP requests using strict IP bounds checking, specifically including loopback (`127.0.0.0/8`, `::1`), local subnets (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`, `fe80::/10`), the cloud metadata service (`169.254.0.0/16`), and `0.0.0.0/8`. Never use naive string matching on the hostname.
+## 2026-09-14 - Prevent SSRF Bypasses via Redirects
+**Vulnerability:** Attackers could bypass URL allowlists by supplying an external URL that returns a 3xx redirect pointing to an internal or restricted IP address.
+**Learning:** `fetch` natively follows redirects by default. A URL string check before dispatch does not cover subsequent URLs resolved during the redirect chain.
+**Prevention:** When making outbound server-side requests with user-controlled input, set `redirect: 'error'` or `'manual'` in the fetch options to explicitly prevent redirect-based SSRF bypasses.
+## 2026-09-14 - Prevent SSRF Bypasses via IPv4-Mapped IPv6 Addresses
+**Vulnerability:** Attackers could bypass IPv4 loopback blocklists by supplying an IPv4-mapped IPv6 address (e.g., `::ffff:127.0.0.1` or `::ffff:7f00:1`).
+**Learning:** Node.js HTTP clients (and underlying OS resolvers) typically route IPv4-mapped IPv6 addresses to their respective IPv4 destinations. An IPv6 blocklist that only covers local IPv6 subnets (like `fc00::`) will fail to block these mapped addresses, allowing an attacker to reach `127.0.0.1` via its mapped IPv6 equivalent.
+**Prevention:** When validating IPs for SSRF protection, explicitly add the `::ffff:0:0/96` subnet to the IPv6 blocklist to ensure all IPv4-mapped IPv6 addresses are rejected.
