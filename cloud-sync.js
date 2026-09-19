@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 23216)
+Total output lines: 2221
+
 // ScopeWeave cloud sync — an OPT-IN overlay on the offline planner.
 // Logged out, every export here is a no-op and the app behaves exactly as the
 // original localStorage-only planner (so existing e2e tests are unaffected).
@@ -603,16 +606,29 @@ async function openShareModal() {
 // 주간보고 generator — the PM deliverable, straight from live data.
 // Pure: takes tasks + a reference date, returns markdown.
 export function buildWeeklyReport(tasks, refDate, projectName = '') {
-  const ref = new Date(refDate);
-  if (Number.isNaN(ref.getTime())) return '';
-  const day = (d) => d.toISOString().slice(0, 10);
-  const monday = new Date(ref);
-  monday.setDate(ref.getDate() - ((ref.getDay() + 6) % 7)); // this week's Monday
-  const weekStart = day(monday);
-  const weekEnd = day(new Date(monday.getTime() + 6 * 86400000));
-  const nextStart = day(new Date(monday.getTime() + 7 * 86400000));
-  const nextEnd = day(new Date(monday.getTime() + 13 * 86400000));
-  const today = day(ref);
+  const calendarDatePattern = /^\d{4}-\d{2}-\d{2}$/;
+  const referenceDate = new Date(
+    typeof refDate === 'string' && calendarDatePattern.test(refDate)
+      ? `${refDate}T00:00:00`
+      : refDate,
+  );
+  if (Number.isNaN(referenceDate.getTime())) return '';
+  const formatCalendarDay = (dateValue) => [
+    dateValue.getFullYear(),
+    String(dateValue.getMonth() + 1).padStart(2, '0'),
+    String(dateValue.getDate()).padStart(2, '0'),
+  ].join('-');
+  const shiftCalendarDays = (dateValue, dayCount) => {
+    const shiftedDate = new Date(dateValue);
+    shiftedDate.setDate(shiftedDate.getDate() + dayCount);
+    return shiftedDate;
+  };
+  const monday = shiftCalendarDays(referenceDate, -((referenceDate.getDay() + 6) % 7));
+  const weekStart = formatCalendarDay(monday);
+  const weekEnd = formatCalendarDay(shiftCalendarDays(monday, 6));
+  const nextStart = formatCalendarDay(shiftCalendarDays(monday, 7));
+  const nextEnd = formatCalendarDay(shiftCalendarDays(monday, 13));
+  const today = formatCalendarDay(referenceDate);
   const name = (t) => t.name || t.task || t.activity || t.phase || t.id;
   const leaf = (tasks || []).filter((t) => !t.isSynthetic);
 
@@ -937,296 +953,7 @@ async function openPortfolioModal() {
 // --------------------------------------------------------------- sprints
 // Agile/Hybrid 지표 (순수): 스프린트별 커밋/완료 스토리포인트와 팀 벨로시티.
 // 작업 배정 = task.sprint(이름 일치), 추정 = task.storyPoints, 완료 = 실적 100%.
-export function computeSprintStats(tasks, sprints, today) {
-  const leaf = (tasks || []).filter((t) => !t.isSynthetic);
-  const rows = (sprints || []).map((sp) => {
-    const mine = leaf.filter((t) => String(t.sprint || '').trim() === sp.name);
-    const pts = (t) => Number(t.storyPoints) || 0;
-    const committed = mine.reduce((n, t) => n + pts(t), 0);
-    const completed = mine.filter((t) => (Number(t.actualProgress) || 0) >= 100).reduce((n, t) => n + pts(t), 0);
-    const closed = Boolean(sp.endDate && today && sp.endDate < today);
-    return { id: sp.id, name: sp.name, startDate: sp.startDate, endDate: sp.endDate, goal: sp.goal, taskCount: mine.length, committed, completed, remaining: committed - completed, closed };
-  });
-  const closedWithWork = rows.filter((r) => r.closed && r.committed > 0);
-  const velocity = closedWithWork.length
-    ? closedWithWork.reduce((n, r) => n + r.completed, 0) / closedWithWork.length
-    : null;
-  const backlog = leaf.filter((t) => !String(t.sprint || '').trim() || !(sprints || []).some((sp) => sp.name === String(t.sprint).trim()));
-  return { rows, velocity, backlogCount: backlog.length };
-}
-
-// 번다운 (순수): 스프린트 기간의 일별 잔여 포인트 — ideal(선형 소진) vs
-// actual(완료일 actualEndDate 기준; 완료일 없는 100% 작업은 오늘 완료로 간주).
-export function computeBurndown(tasks, sprint, today) {
-  if (!sprint?.startDate || !sprint?.endDate || sprint.endDate < sprint.startDate) return null;
-  const leaf = (tasks || []).filter((t) => !t.isSynthetic && String(t.sprint || '').trim() === sprint.name);
-  const pts = (t) => Number(t.storyPoints) || 0;
-  const committed = leaf.reduce((n, t) => n + pts(t), 0);
-  if (committed <= 0) return null;
-  const days = [];
-  for (let d = new Date(sprint.startDate); ; d.setDate(d.getDate() + 1)) {
-    const iso = d.toISOString().slice(0, 10);
-    days.push(iso);
-    if (iso >= sprint.endDate) break;
-    if (days.length > 120) break; // 안전 상한
-  }
-  const n = days.length;
-  const ideal = days.map((_, i) => committed * (1 - (n === 1 ? 1 : i / (n - 1))));
-  const doneAt = (t) => t.actualEndDate || ((Number(t.actualProgress) || 0) >= 100 ? today : null);
-  const actual = days.map((day) => {
-    if (today && day > today) return null; // 미래는 미기록
-    const burned = leaf.filter((t) => { const d = doneAt(t); return d && d <= day; }).reduce((s2, t) => s2 + pts(t), 0);
-    return committed - burned;
-  });
-  return { days, committed, ideal, actual };
-}
-
-function renderBurndownSvg(bd) {
-  const W = 420, H = 110, PAD = 6;
-  const n = bd.days.length;
-  const x = (i) => PAD + (n === 1 ? 0 : (i / (n - 1)) * (W - 2 * PAD));
-  const y = (v) => H - PAD - (v / bd.committed) * (H - 2 * PAD);
-  const NS = 'http://www.w3.org/2000/svg';
-  const svg = document.createElementNS(NS, 'svg');
-  svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
-  svg.setAttribute('role', 'img');
-  svg.setAttribute('aria-label', `번다운: 커밋 ${bd.committed}pt`);
-  svg.style.width = '100%';
-  svg.style.maxWidth = '460px';
-  const grid = document.createElementNS(NS, 'line');
-  grid.setAttribute('x1', PAD); grid.setAttribute('x2', W - PAD);
-  grid.setAttribute('y1', y(0)); grid.setAttribute('y2', y(0));
-  grid.setAttribute('stroke', '#e2e8f0');
-  svg.appendChild(grid);
-  const idealLine = document.createElementNS(NS, 'polyline');
-  idealLine.setAttribute('points', bd.ideal.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' '));
-  idealLine.setAttribute('fill', 'none');
-  idealLine.setAttribute('stroke', '#94a3b8');
-  idealLine.setAttribute('stroke-dasharray', '4 3');
-  svg.appendChild(idealLine);
-  const actualPts = bd.actual.map((v, i) => (v === null ? null : `${x(i).toFixed(1)},${y(v).toFixed(1)}`)).filter(Boolean);
-  if (actualPts.length) {
-    const actualLine = document.createElementNS(NS, 'polyline');
-    actualLine.setAttribute('points', actualPts.join(' '));
-    actualLine.setAttribute('fill', 'none');
-    actualLine.setAttribute('stroke', '#2563eb');
-    actualLine.setAttribute('stroke-width', '2');
-    svg.appendChild(actualLine);
-  }
-  return svg;
-}
-
-const METHODOLOGY_LABELS = { waterfall: 'Waterfall (예측형)', agile: 'Agile (적응형)', hybrid: 'Hybrid (혼합형)' };
-
-async function openSprintModal() {
-  const pid = getProjectId();
-  if (!pid) return;
-  let modal = document.getElementById('sprint-modal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'sprint-modal';
-    modal.className = 'modal';
-    modal.setAttribute('role', 'dialog');
-    modal.setAttribute('aria-modal', 'true');
-    const backdrop = document.createElement('div');
-    backdrop.className = 'modal-backdrop';
-    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
-    const panel = document.createElement('div');
-    panel.className = 'modal-panel';
-    panel.id = 'sprint-panel';
-    modal.append(backdrop, panel);
-    document.body.appendChild(modal);
-  }
-  modal.classList.remove('hidden');
-  const panel = modal.querySelector('#sprint-panel');
-  panel.textContent = '';
-
-  const head = document.createElement('div');
-  head.className = 'modal-header';
-  const h2 = document.createElement('h2');
-  h2.textContent = '스프린트 (Agile / Hybrid)';
-  const close = document.createElement('button');
-  close.type = 'button';
-  close.className = 'icon-button close-button';
-  close.setAttribute('aria-label', '스프린트 닫기');
-  close.textContent = '✕';
-  close.addEventListener('click', () => modal.classList.add('hidden'));
-  head.append(h2, close);
-  panel.appendChild(head);
-
-  const data = await api(`/api/projects/${pid}/sprints`);
-
-  // 방법론 선택 — 프로젝트 메타로 저장
-  const mLabel = document.createElement('label');
-  mLabel.className = 'meta-field';
-  const mSpan = document.createElement('span');
-  mSpan.textContent = '프로젝트 방법론';
-  const mSel = document.createElement('select');
-  mSel.className = 'cloud-select';
-  mSel.id = 'methodology-select';
-  for (const [v, label] of Object.entries(METHODOLOGY_LABELS)) {
-    const opt = document.createElement('option');
-    opt.value = v;
-    opt.textContent = label;
-    if (v === (data.methodology || 'waterfall')) opt.selected = true;
-    mSel.appendChild(opt);
-  }
-  mSel.addEventListener('change', async () => {
-    try {
-      const cur = await api(`/api/projects/${pid}`);
-      await api(`/api/projects/${pid}`, { method: 'PUT', body: { methodology: mSel.value, version: cur.version } });
-      toast(`방법론: ${METHODOLOGY_LABELS[mSel.value]}`);
-    } catch (e) { toast(e.data?.error || e.message); }
-  });
-  mLabel.append(mSpan, mSel);
-  panel.appendChild(mLabel);
-
-  // 지표 + 목록
-  const stats = computeSprintStats(host?.getState?.()?.tasks || [], data.sprints, new Date().toISOString().slice(0, 10));
-  const summary = document.createElement('p');
-  summary.className = 'cpm-summary';
-  summary.textContent = `스프린트 ${stats.rows.length}개 · 벨로시티 ${stats.velocity === null ? 'N/A (종료 스프린트 없음)' : stats.velocity.toFixed(1) + 'pt'} · 백로그 ${stats.backlogCount}건`;
-  panel.appendChild(summary);
-
-  const list = document.createElement('ul');
-  list.className = 'team-list';
-  for (const r of stats.rows) {
-    const li = document.createElement('li');
-    const who = document.createElement('span');
-    who.className = 'team-who';
-    const period = r.startDate || r.endDate ? ` (${r.startDate}~${r.endDate})` : '';
-    who.textContent = `${r.name}${period} · ${r.taskCount}작업 · ${r.completed}/${r.committed}pt${r.closed ? ' · 종료' : ''}`;
-    const bdBtn = document.createElement('button');
-    bdBtn.type = 'button';
-    bdBtn.className = 'secondary-button';
-    bdBtn.textContent = '번다운';
-    bdBtn.addEventListener('click', () => {
-      const holder = document.getElementById('burndown-holder');
-      holder.textContent = '';
-      const bd = computeBurndown(host?.getState?.()?.tasks || [], r, new Date().toISOString().slice(0, 10));
-      if (!bd) { holder.textContent = '번다운을 그리려면 스프린트 기간과 스토리포인트가 필요합니다.'; return; }
-      const cap = document.createElement('p');
-      cap.className = 'evm-caption';
-      cap.textContent = `${r.name} 번다운 — 커밋 ${bd.committed}pt · 점선=이상적 소진, 실선=실제 잔여`;
-      holder.append(cap, renderBurndownSvg(bd));
-    });
-    const del = document.createElement('button');
-    del.type = 'button';
-    del.className = 'secondary-button team-remove';
-    del.textContent = '삭제';
-    del.addEventListener('click', () =>
-      api(`/api/projects/${pid}/sprints/${r.id}`, { method: 'DELETE' })
-        .then(() => openSprintModal()).catch((e) => toast(e.data?.error || e.message)));
-    li.append(who, bdBtn, del);
-    list.appendChild(li);
-  }
-  if (!stats.rows.length) {
-    const li = document.createElement('li');
-    li.textContent = '스프린트가 없습니다. 아래에서 추가하세요. (작업 배정: 편집기의 스프린트 필드)';
-    list.appendChild(li);
-  }
-  panel.appendChild(list);
-
-  const bdHolder = document.createElement('div');
-  bdHolder.id = 'burndown-holder';
-  panel.appendChild(bdHolder);
-
-  const form = document.createElement('form');
-  form.className = 'cloud-form';
-  const nameIn = document.createElement('input');
-  nameIn.type = 'text';
-  nameIn.placeholder = '스프린트 이름 (예: Sprint 3)';
-  nameIn.required = true;
-  const startIn = document.createElement('input');
-  startIn.type = 'date';
-  const endIn = document.createElement('input');
-  endIn.type = 'date';
-  const add = document.createElement('button');
-  add.type = 'submit';
-  add.className = 'primary-button';
-  add.textContent = '추가';
-  form.append(nameIn, startIn, endIn, add);
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    try {
-      await api(`/api/projects/${pid}/sprints`, { method: 'POST', body: { name: nameIn.value.trim(), startDate: startIn.value, endDate: endIn.value } });
-      toast('스프린트를 추가했습니다.');
-      openSprintModal();
-    } catch (err) { toast(err.data?.error || err.message); }
-  });
-  panel.appendChild(form);
-}
-
-// ----------------------------------------------------------- attachments
-// 산출물 첨부: Clearfolio 통합 문서 뷰어로 업로드/열람. 서버가 프록시하므로
-// 브라우저에는 Clearfolio 자격/시크릿이 노출되지 않는다.
-async function openAttachmentsModal() {
-  const pid = getProjectId();
-  if (!pid) return;
-  let modal = document.getElementById('attachments-modal');
-  if (!modal) {
-    modal = document.createElement('div');
-    modal.id = 'attachments-modal';
-    modal.className = 'modal';
-    modal.setAttribute('role', 'dialog');
-    modal.setAttribute('aria-modal', 'true');
-    const backdrop = document.createElement('div');
-    backdrop.className = 'modal-backdrop';
-    backdrop.addEventListener('click', () => modal.classList.add('hidden'));
-    const panel = document.createElement('div');
-    panel.className = 'modal-panel';
-    panel.id = 'attachments-panel';
-    modal.append(backdrop, panel);
-    document.body.appendChild(modal);
-  }
-  modal.classList.remove('hidden');
-  const panel = modal.querySelector('#attachments-panel');
-  panel.textContent = '';
-
-  const head = document.createElement('div');
-  head.className = 'modal-header';
-  const h2 = document.createElement('h2');
-  h2.textContent = '산출물 (문서 뷰어)';
-  const close = document.createElement('button');
-  close.type = 'button';
-  close.className = 'icon-button close-button';
-  close.setAttribute('aria-label', '산출물 닫기');
-  close.textContent = '✕';
-  close.addEventListener('click', () => modal.classList.add('hidden'));
-  head.append(h2, close);
-  panel.appendChild(head);
-
-  // 작업 선택 + 파일 업로드
-  const sel = document.createElement('select');
-  sel.className = 'cloud-select';
-  const optAll = document.createElement('option');
-  optAll.value = '';
-  optAll.textContent = '전체 산출물';
-  sel.appendChild(optAll);
-  for (const t of host?.getState?.()?.tasks || []) {
-    const opt = document.createElement('option');
-    opt.value = t.id;
-    opt.textContent = t.name || t.task || t.activity || t.phase || t.id;
-    sel.appendChild(opt);
-  }
-  panel.appendChild(sel);
-
-  const form = document.createElement('form');
-  form.className = 'cloud-form';
-  const fi = document.createElement('input');
-  fi.type = 'file';
-  fi.id = 'attachment-file-input';
-  fi.accept = '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.png,.jpg,.jpeg,.txt,.md';
-  const up = document.createElement('button');
-  up.type = 'submit';
-  up.className = 'primary-button';
-  up.textContent = '업로드';
-  form.append(fi, up);
-  panel.appendChild(form);
-
-  const list = document.createElement('ul');
-  list.className = 'team-list';
-  panel.appendChild(list);
+export function computeSprintStat…3216 tokens truncated…list);
 
   const taskName = (id) => {
     const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
