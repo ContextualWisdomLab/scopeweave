@@ -4,6 +4,8 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import { BlockList, isIP } from 'node:net';
+import dns from 'node:dns/promises';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -89,9 +91,58 @@ const metrics = {
   attachmentStatusRefreshDeferred: 0,
 };
 
+
 // Outbound webhooks: POST signed JSON to each active hook subscribed to `event`.
 // Fire-and-forget with a timeout, one retry on failure, and a recorded outcome
 // per attempt — never blocks or fails the triggering request.
+
+const webhookIpv4BlockList = new BlockList();
+webhookIpv4BlockList.addSubnet('127.0.0.0', 8, 'ipv4');
+webhookIpv4BlockList.addSubnet('10.0.0.0', 8, 'ipv4');
+webhookIpv4BlockList.addSubnet('172.16.0.0', 12, 'ipv4');
+webhookIpv4BlockList.addSubnet('192.168.0.0', 16, 'ipv4');
+webhookIpv4BlockList.addSubnet('169.254.0.0', 16, 'ipv4');
+webhookIpv4BlockList.addSubnet('0.0.0.0', 8, 'ipv4');
+
+const webhookIpv6BlockList = new BlockList();
+webhookIpv6BlockList.addAddress('::1', 'ipv6');
+webhookIpv6BlockList.addSubnet('fc00::', 7, 'ipv6');
+webhookIpv6BlockList.addSubnet('fe80::', 10, 'ipv6');
+webhookIpv6BlockList.addSubnet('::ffff:0:0', 96, 'ipv6');
+
+async function isSafeWebhookUrl(urlString) {
+  try {
+    const parsed = new URL(urlString);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return false;
+    let host = parsed.hostname;
+
+    if (host === 'localhost') return false;
+
+    if (host.startsWith('[') && host.endsWith(']')) {
+      host = host.slice(1, -1);
+    }
+
+    if (isIP(host) === 4 && webhookIpv4BlockList.check(host, 'ipv4')) return false;
+    if (isIP(host) === 6 && webhookIpv6BlockList.check(host, 'ipv6')) return false;
+
+    const [ipv4s, ipv6s] = await Promise.all([
+      dns.resolve4(host).catch(() => []),
+      dns.resolve6(host).catch(() => [])
+    ]);
+
+    for (const ip of ipv4s) {
+      if (webhookIpv4BlockList.check(ip, 'ipv4')) return false;
+    }
+    for (const ip of ipv6s) {
+      if (webhookIpv6BlockList.check(ip, 'ipv6')) return false;
+    }
+
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function recordDelivery(webhookId, event, status, ok, attempt) {
   try {
     db.prepare('INSERT INTO webhook_deliveries(webhook_id,event,status_code,ok,attempt) VALUES(?,?,?,?,?)')
@@ -99,8 +150,12 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+  if (!(await isSafeWebhookUrl(url))) {
+    recordDelivery(webhookId, event, 403, false, attempt);
+    return;
+  }
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
   fetch(url, {
@@ -108,6 +163,7 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
+    redirect: 'error'
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
     if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
