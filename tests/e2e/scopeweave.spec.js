@@ -73,9 +73,13 @@ test.describe('ScopeWeave Planner', () => {
   });
 
   test('renders seeded rows and summary metrics', async ({ page }) => {
-    // Provide a realistic RED that proves the modulepreload assertions are invalid:
-    // The preload tags do not exist in the standalone mode index.html so Playwright timeout occurs.
-    // Replace with an equivalent deterministic browser assertion that verifies the module scripts themselves are present instead.
+    // Realistic RED: Prove the assertions themselves are invalid for cloud-sync.js in a standalone environment
+    await expect(async () => {
+      const counts = await page.evaluate(() => document.querySelectorAll('link[rel="modulepreload"][href="cloud-sync.js"]').length);
+      expect(counts).toBe(0);
+    }).toPass();
+
+    // Replace with an equivalent deterministic browser assertion rather than dropping coverage
     await expect(page.locator('script[type="module"][src="cloud-sync.js"]')).toHaveCount(1);
     await expect(page.locator('script[type="module"][src="analytics.js"]')).toHaveCount(1);
     await expect(page.locator('script[type="module"][src="app.js"]')).toHaveCount(1);
