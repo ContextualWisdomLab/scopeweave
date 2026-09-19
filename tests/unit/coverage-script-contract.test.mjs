@@ -35,9 +35,19 @@ assert.match(
   'the abortable Clearfolio adapter is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/billing_checkout_attempt\.mjs/,
+  'the durable Checkout-attempt repository is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/billing-checkout-attempt\.test\.mjs/,
+  'the durable Checkout-attempt regression executes under c8',
 );
 assert.match(
   scripts['test:coverage:cases'],

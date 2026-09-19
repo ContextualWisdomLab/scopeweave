@@ -4,6 +4,10 @@
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
+import {
+  createSqliteBillingCheckoutAttemptRepository,
+  installBillingCheckoutAttemptSchema,
+} from './billing_checkout_attempt.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const dbPath = process.env.SCOPEWEAVE_DB || join(__dirname, '..', 'data.db');
@@ -176,6 +180,10 @@ CREATE INDEX IF NOT EXISTS idx_invites_token ON invites(token);
 try { db.exec('ALTER TABLE users ADD COLUMN token_version INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
 try { db.exec('ALTER TABLE projects ADD COLUMN archived INTEGER NOT NULL DEFAULT 0'); } catch { /* already there */ }
 try { db.exec("ALTER TABLE projects ADD COLUMN methodology TEXT NOT NULL DEFAULT 'waterfall'"); } catch { /* already there */ }
+
+// Billing attempt state is installed at bootstrap only, after referenced orgs exist.
+installBillingCheckoutAttemptSchema(db);
+export const billingCheckoutAttempts = createSqliteBillingCheckoutAttemptRepository(db);
 
 // node:sqlite returns lastInsertRowid as number|bigint; normalize to Number.
 export const rowid = (r) => Number(r.lastInsertRowid);

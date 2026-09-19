@@ -22,7 +22,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Aborted the shared SQLite transaction when a Checkout-attempt savepoint
+  rollback cannot confirm state, preserving the causal write error and marking
+  a connection that also cannot roll back as unsafe to reuse.
 - Made contextual-orchestrator briefing requests fail closed unless an authenticated endpoint is configured. Deterministic generated text is restricted to explicit `SCOPEWEAVE_DEV=1`, message/provider responses are bounded and validated, and non-loopback HTTP transport is rejected.
+- Persisted a tenant/price-scoped Stripe Checkout attempt identity and opaque
+  idempotency key before live Session creation, reusing unresolved identity only
+  inside a 23-hour safety window; network/abort, Stripe 5xx, malformed or
+  untrusted successful responses, and local success-persistence failures remain
+  pending for same-key retry or reconciliation, while known Stripe 4xx outcomes
+  other than concurrent 409 conflicts close the attempt before a later deliberate
+  Checkout receives fresh authority.
 - Bounded hosted Stripe Checkout provider calls to one 15-second, no-retry
   attempt with a 1 MiB response ceiling before JSON parsing until durable
   idempotency exists; validated returned destinations as exact HTTPS
@@ -120,4 +130,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.0.1] - 2026-06-25
 ### 성능 개선 (Performance)
-- 드래그 앤 드롭 동작 중 `dragover` 이벤트에서 발생하는 O(N) 작업 리스트 검색 성능 병목 문제를, O(1) 해시맵(Map) 기반의 캐싱 조회 로직으로 개선하여 큰 크기의 WBS 리스트에서의 버벅임 현상을 해결했습니다.
+- 드래그 앤 드롭 동작 중 `dragover` 이벤트에서 발생하던 O(N) 작업 리스트 검색 성능 병목 문제를, O(1) 해시맵(Map) 기반의 캐싱 조회 로직으로 개선하여 큰 크기의 WBS 리스트에서의 버벅임 현상을 해결했습니다.
