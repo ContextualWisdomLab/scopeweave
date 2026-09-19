@@ -1371,20 +1371,22 @@ function validateDateRange(startLabel, startValue, endLabel, endValue, errors) {
 
 function computeTaskMetrics() {
   // ⚡ Bolt: Cache durationDays during total calculation to avoid recalculating for every task
-  const durationCache = new Map();
-  const totalDays = state.tasks.reduce((sum, task) => {
+  let totalDays = 0;
+  const durations = new Float64Array(state.tasks.length);
+  for (let i = 0; i < state.tasks.length; i++) {
+    const task = state.tasks[i];
     const duration = calculateDurationDays(task.plannedStartDate, task.plannedEndDate);
-    durationCache.set(task.id, duration);
-    return sum + duration;
-  }, 0);
+    durations[i] = duration;
+    totalDays += duration;
+  }
 
   const baseDate = state.baseDate;
   const byTask = new Map();
   let totalWeightedPlannedRatio = 0;
   let totalWeightedActualRatio = 0;
 
-  state.tasks.forEach((task) => {
-    const durationDays = durationCache.get(task.id);
+  state.tasks.forEach((task, index) => {
+    const durationDays = durations[index];
     const weightRatio = totalDays > 0 ? durationDays / totalDays : 0;
     const plannedProgressRatio = calculatePlannedProgressRatio(baseDate, task.plannedStartDate, task.plannedEndDate, durationDays);
     const actualProgressRatio = (ACTUAL_PROGRESS_MAP[task.actualProgressStatus] || 0) / 100;
