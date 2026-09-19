@@ -115,3 +115,7 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+
+## 2026-09-19 - Accessible and Intuitive Disabled Buttons
+**Learning:** For submit buttons, changing `disabled` attribute to `aria-disabled` and using `event.preventDefault()` allows native focus but prevents unintended submissions, improving accessibility for screen readers.
+**Action:** Always follow the repository guideline to dispatch synthetic events when replacing `disabled` with `aria-disabled='true'` on submit buttons so users can still focus on them.
