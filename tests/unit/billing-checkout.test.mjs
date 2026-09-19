@@ -67,23 +67,30 @@ async function withDefaultStripeTransport(responseFactory, assertion) {
 }
 
 async function assertProviderFailure(runCheckout, expectedCode = 'billing_provider_unavailable') {
-  let rejectedError;
-  await assert.rejects(
-    runCheckout(),
-    (error) => {
-      rejectedError = error;
-      assert.equal(error.status, 502);
-      assert.equal(typeof error.getResponse, 'function');
-      return true;
-    },
-  );
+  const previousPrice = process.env.STRIPE_PRICE_ID;
+  process.env.STRIPE_PRICE_ID = previousPrice || 'price_provider_failure';
+  try {
+    let rejectedError;
+    await assert.rejects(
+      runCheckout(),
+      (error) => {
+        rejectedError = error;
+        assert.equal(error.status, 502);
+        assert.equal(typeof error.getResponse, 'function');
+        return true;
+      },
+    );
 
-  const response = rejectedError.getResponse();
-  assert.equal(response.status, 502);
-  assert.equal(response.headers.get('cache-control'), 'no-store');
-  assert.equal(response.headers.get('content-type'), 'application/json; charset=UTF-8');
-  const payload = await response.json();
-  assert.deepEqual(payload, providerFailurePayloads[expectedCode]);
+    const response = rejectedError.getResponse();
+    assert.equal(response.status, 502);
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    assert.equal(response.headers.get('content-type'), 'application/json; charset=UTF-8');
+    const payload = await response.json();
+    assert.deepEqual(payload, providerFailurePayloads[expectedCode]);
+  } finally {
+    if (previousPrice === undefined) delete process.env.STRIPE_PRICE_ID;
+    else process.env.STRIPE_PRICE_ID = previousPrice;
+  }
 }
 
 async function expectSafeProviderFailure(responseFactory, expectedCode = 'billing_provider_unavailable') {
