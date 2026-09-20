@@ -4,7 +4,7 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
-import { BlockList } from 'node:net';
+import { BlockList, isIP } from 'node:net';
 import { resolve4, resolve6 } from 'node:dns/promises';
 
 const blockv4 = new BlockList();
@@ -26,6 +26,13 @@ async function isSafeWebhookUrl(urlStr) {
     const u = new URL(urlStr);
     const host = u.hostname;
     let hasV4 = false, hasV6 = false;
+
+    if (isIP(host)) {
+       const family = isIP(host);
+       if (family === 4) return !blockv4.check(host, 'ipv4');
+       if (family === 6) return !blockv6.check(host, 'ipv6');
+       return false;
+    }
 
     try {
       const ips4 = await resolve4(host);
