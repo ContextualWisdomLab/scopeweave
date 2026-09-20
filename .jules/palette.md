@@ -115,3 +115,7 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+
+## 2025-02-12 - 키보드 사용자를 위한 툴팁(title) 접근성 개선
+**Learning:** 비대화형 요소(`div`, `span` 등)에 부여된 `title` 속성(툴팁)은 마우스 호버 시에만 동작하여 키보드 사용자나 스크린 리더가 인지할 수 없는 접근성 안티패턴이다.
+**Action:** 비대화형 요소에 툴팁이나 중요한 설명이 포함될 경우, 반드시 `tabindex="0"`을 추가하여 키보드 포커스가 가능하게 하고, `role="note"`(또는 적절한 역할)을 부여해 시맨틱 맥락을 제공하며, `:focus-visible` 스타일을 적용해 시각적 포커스 상태를 명확히 해야 한다.
