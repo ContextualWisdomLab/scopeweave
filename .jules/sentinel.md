@@ -128,3 +128,13 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+
+## 2024-08-01 - Prevent user enumeration via timing attacks in login
+**Vulnerability:** The login endpoint short-circuited when a user was not found, making password verification significantly faster for non-existent users and enabling user enumeration via timing attacks.
+**Learning:** Unauthenticated endpoints must execute cryptographic operations in constant time regardless of whether the user exists. Short-circuiting `!user` allows attackers to differentiate valid vs. invalid emails.
+**Prevention:** Unconditionally evaluate `verifyPassword`, passing a dynamic dummy hash (`'0'.repeat(32) + ':' + '0'.repeat(128)`) when the user is not found. Coerce the candidate password to a string to prevent TypeErrors from unexpected JSON payloads.
+
+## 2024-08-01 - Upgrade hono dependency to fix Medium vulnerabilities
+**Vulnerability:** Trivy filesystem scan flagged multiple MEDIUM vulnerabilities (CVE-2026-84363, CVE-2026-84364, CVE-2026-84365) in the `hono` package version 4.13.0.
+**Learning:** Outdated dependencies can contain known CVEs which pose security risks even if not directly exploitable in the application's specific context. Routine updates are necessary to maintain a secure supply chain.
+**Prevention:** Upgrade dependencies to versions that address known vulnerabilities (in this case, updating `hono` to `^4.13.8`).
