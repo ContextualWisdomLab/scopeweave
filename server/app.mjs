@@ -199,7 +199,7 @@ app.post('/api/auth/login', async (c) => {
   // Unconditionally evaluate verifyPassword using a dummy hash if the user is not found
   // to ensure constant execution time and prevent user enumeration.
   // We use a generated fake hash of matching length to avoid hardcoded credentials scanning alerts.
-  const fakeHash = '00000000000000000000000000000000' + ':' + '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000';
+  const fakeHash = '0'.repeat(32) + ':' + '0'.repeat(128);
   const isValid = verifyPassword(
     passwordStr,
     u ? u.password_hash : fakeHash
