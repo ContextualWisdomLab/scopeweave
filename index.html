@@ -6,7 +6,12 @@
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; object-src 'none'; base-uri 'none'; form-action 'self';" />
     <title>ScopeWeave Planner</title>
     <link rel="preload" href="styles.css" as="style" />
+    <!-- ⚡ Bolt: 모듈 프리로드 최적화
+         app.js, cloud-sync.js, analytics.js를 미리 로드하여 초기 렌더링 시점과 TTI(Time To Interactive)를 향상시킵니다.
+         예상 효과: 리소스 병목 완화를 통한 모듈 로딩 성능 최적화 -->
     <link rel="modulepreload" href="app.js" />
+    <link rel="modulepreload" href="cloud-sync.js" />
+    <link rel="modulepreload" href="analytics.js" />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="toast-state.css" />
   </head>
