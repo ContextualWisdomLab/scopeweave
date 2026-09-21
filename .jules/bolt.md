@@ -4,3 +4,7 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+
+## 2026-09-21 - Replaced findIndex with explicit loops
+**Learning:** In hot render paths, using `Array.prototype.findIndex()` incurs an O(N) array scan per call. Converting these calls to explicit `for` loops improves iteration speed over large collections without the memory overhead of constructing an O(1) `Map` for one-off lookups, avoiding a net pessimization.
+**Action:** Replaced `.findIndex()` with explicit `for` loops where one-off scans were occurring (e.g., in `app.js` and `analytics.js`).

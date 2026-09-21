@@ -641,7 +641,13 @@ function buildScurveSvg(series, evm, baseDate) {
   svg.appendChild(poly);
 
   // actual EV marker at baseDate x-position (nearest timeline index)
-  let idx = series.timeline.findIndex((d) => d >= baseDate);
+  let idx = -1;
+  for (let i = 0; i < series.timeline.length; i++) {
+    if (series.timeline[i] >= baseDate) {
+      idx = i;
+      break;
+    }
+  }
   if (idx === -1) idx = n - 1;
   const evLine = document.createElementNS(SVGNS, 'line');
   evLine.setAttribute('x1', x(idx)); evLine.setAttribute('x2', x(idx));
