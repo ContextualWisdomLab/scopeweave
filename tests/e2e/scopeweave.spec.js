@@ -1290,6 +1290,26 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
     page.off('dialog', acceptHandler);
   });
 
+  test('prevents form submission when save button is aria-disabled', async ({ page }) => {
+    await page.goto('./');
+
+    await page.getByRole('button', { name: '최상위 작업 추가' }).click();
+
+    // Trigger validation error
+    const taskInput = page.getByTestId('editor-task');
+    await taskInput.fill('');
+    await page.getByTestId('editor-activity').click(); // trigger blur
+
+    const saveButton = page.getByRole('button', { name: '저장', exact: true });
+    await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
+
+    // Attempt to click the visually disabled button (using force because playwright avoids disabled elements)
+    await saveButton.click({ force: true });
+
+    // Ensure the editor remains open
+    await expect(page.locator('.editor-panel')).toBeVisible();
+  });
+
   test('adds helpful tooltips and ARIA attributes for progress cards and gantt buttons', async ({ page }) => {
     await page.goto('./');
 
