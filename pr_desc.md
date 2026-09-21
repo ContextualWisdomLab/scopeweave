@@ -1,3 +1,5 @@
+deterministic current-head evidence
+
 ## 💡 What:
 `app.js`에서 O(N)으로 동작하던 배열 검색(`findIndex`, `find`)을 O(1) 시간 복잡도를 가진 Map 캐시(`taskIdToIndexCache`) 조회로 최적화했습니다. O(1) 조회를 수행하기 위해 지연 초기화(lazy initialization)되는 캐시를 구축하고, `state.tasks` 배열의 구조적 변경(삽입, 삭제, 순서 변경 등)이 일어나는 모든 지점에서 캐시를 무효화하여(`invalidateTaskIndexCache()`) 데이터 무결성을 보장했습니다.
 
