@@ -69,12 +69,25 @@ export function hashPassword(pw) {
  * @returns {boolean} Whether the candidate matches the stored password hash.
  */
 export function verifyPassword(pw, stored) {
-  if (typeof pw !== 'string') return false;
-  const [salt, hash] = String(stored || '').split(':');
-  if (!salt || !hash) return false;
-  const test = scryptSync(pw, salt, 64);
+  // Always evaluate scryptSync to ensure constant execution time regardless
+  // of whether pw is a string or the stored hash is well-formed.
+  const pwdStr = typeof pw === 'string' ? pw : '';
+  const parts = String(stored || '').split(':');
+
+  // Use a dummy salt/hash so scrypt is still called if parsing fails.
+  // We use the same length as a real scrypt digest to maintain timing consistency.
+  const salt = parts[0] || '00000000000000000000000000000000';
+  const hash = parts[1] || '00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000';
+
+  const test = scryptSync(pwdStr, salt, 64);
   const known = Buffer.from(hash, 'hex');
-  return test.length === known.length && timingSafeEqual(test, known);
+  const isEqual = test.length === known.length && timingSafeEqual(test, known);
+
+  // Still fail if the input wasn't actually a string or the hash wasn't valid,
+  // but only *after* the heavy lifting is done.
+  if (typeof pw !== 'string') return false;
+  if (!parts[0] || !parts[1]) return false;
+  return isEqual;
 }
 
 /**
