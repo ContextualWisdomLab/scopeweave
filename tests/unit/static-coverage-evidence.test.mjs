@@ -28,4 +28,19 @@ assert.match(bad.stderr, /Usage: static_coverage_evidence\.mjs docstrings/);
 const missing = run([]);
 assert.equal(missing.status, 2, 'missing mode → exit 2');
 
+// Validate auth timing structural requirements (Sentinel) since this is the designated file for structural checks that aren't hooked up to package.json
+import { readFileSync } from 'node:fs';
+const appCode = readFileSync(path.join(root, 'server/app.mjs'), 'utf8');
+const loginEndpoint = appCode.substring(
+  appCode.indexOf("app.post('/api/auth/login'"),
+  appCode.indexOf("app.get('/api/me'")
+);
+
+assert.ok(
+  loginEndpoint.includes("const dummyHash = '0'.repeat(32) + ':' + '0'.repeat(128);") &&
+  loginEndpoint.includes("const hashToVerify = u ? u.password_hash : dummyHash;") &&
+  loginEndpoint.includes("const isValid = verifyPassword(candidatePassword, hashToVerify);"),
+  'Login endpoint must use a dynamic dummy hash and unconditional verifyPassword to prevent user enumeration timing attacks.'
+);
+
 console.log('✓ static_coverage_evidence tests passed');
