@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 // Coverage + contract for scripts/ci/static_coverage_evidence.mjs
 // Run: node tests/unit/static-coverage-evidence.test.mjs
 import assert from 'node:assert/strict';
@@ -29,3 +30,5 @@ const missing = run([]);
 assert.equal(missing.status, 2, 'missing mode → exit 2');
 
 console.log('✓ static_coverage_evidence tests passed');
+const cloudSyncCode = fs.readFileSync('cloud-sync.js', 'utf8');
+assert(cloudSyncCode.includes('const taskMap = new Map((host?.getState?.()?.tasks || []).map(t => [t.id, t]));'), 'Should use Map for task lookup optimization');
