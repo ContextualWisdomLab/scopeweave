@@ -10,7 +10,10 @@ import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
-import { computeEvm } from '../analytics.js'; // pure math, shared with the client
+import { computeEvm } from '../analytics.js';
+import { BlockList, isIPv4, isIPv6 } from 'node:net';
+import { resolve4, resolve6 } from 'node:dns/promises';
+
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
 
@@ -92,6 +95,54 @@ const metrics = {
 // Outbound webhooks: POST signed JSON to each active hook subscribed to `event`.
 // Fire-and-forget with a timeout, one retry on failure, and a recorded outcome
 // per attempt — never blocks or fails the triggering request.
+
+const ipv4Blocklist = new BlockList();
+ipv4Blocklist.addSubnet('0.0.0.0', 8, 'ipv4');
+ipv4Blocklist.addSubnet('10.0.0.0', 8, 'ipv4');
+ipv4Blocklist.addSubnet('127.0.0.0', 8, 'ipv4');
+ipv4Blocklist.addSubnet('169.254.0.0', 16, 'ipv4');
+ipv4Blocklist.addSubnet('172.16.0.0', 12, 'ipv4');
+ipv4Blocklist.addSubnet('192.168.0.0', 16, 'ipv4');
+
+const ipv6Blocklist = new BlockList();
+ipv6Blocklist.addAddress('::1', 'ipv6');
+ipv6Blocklist.addSubnet('fc00::', 7, 'ipv6');
+ipv6Blocklist.addSubnet('fe80::', 10, 'ipv6');
+ipv6Blocklist.addSubnet('::ffff:0:0', 96, 'ipv6');
+
+async function isSafeWebhookUrl(urlString) {
+  try {
+    const url = new URL(urlString);
+    if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+    const hostname = url.hostname;
+
+    let ipsToCheck = [];
+    if (isIPv4(hostname)) {
+      ipsToCheck.push({ ip: hostname, type: 'ipv4' });
+    } else if (isIPv6(hostname)) {
+      ipsToCheck.push({ ip: hostname, type: 'ipv6' });
+    } else {
+      try {
+        const v4 = await resolve4(hostname);
+        for (const ip of v4) ipsToCheck.push({ ip, type: 'ipv4' });
+      } catch (e) { /* ignore */ }
+      try {
+        const v6 = await resolve6(hostname);
+        for (const ip of v6) ipsToCheck.push({ ip, type: 'ipv6' });
+      } catch (e) { /* ignore */ }
+      if (ipsToCheck.length === 0) return false;
+    }
+
+    for (const { ip, type } of ipsToCheck) {
+      if (type === 'ipv4' && ipv4Blocklist.check(ip, 'ipv4')) return false;
+      if (type === 'ipv6' && ipv6Blocklist.check(ip, 'ipv6')) return false;
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 function recordDelivery(webhookId, event, status, ok, attempt) {
   try {
     db.prepare('INSERT INTO webhook_deliveries(webhook_id,event,status_code,ok,attempt) VALUES(?,?,?,?,?)')
@@ -99,8 +150,13 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+  if (!(await isSafeWebhookUrl(url))) {
+    recordDelivery(webhookId, event, null, false, attempt);
+    if (attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
+    return;
+  }
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
   fetch(url, {
@@ -108,6 +164,7 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
+    redirect: 'error',
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
     if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
