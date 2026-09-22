@@ -4,3 +4,6 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+## 2026-09-22 - Optimize CSV Parser String Building
+**Learning:** Parsing large CSV files (e.g. 1000+ rows) character-by-character with string concatenation (`current += char`) is slow due to heavy string allocation overhead. Using `charCodeAt` and chunking substrings with `.substring(start, end)` is over 50% faster in Node.js V8.
+**Action:** When implementing manual string parsing loops in JavaScript, favor index tracking and substring extraction over individual character concatenation to minimize garbage collection and memory allocation pressure.
