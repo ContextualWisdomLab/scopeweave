@@ -1232,6 +1232,8 @@ async function openAttachmentsModal() {
     list.textContent = '';
     const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
     const data = await api(`/api/projects/${pid}/attachments${q}`);
+    // Bolt: O(N) Array.find() inside O(M) rendering loop causes O(N*M) freezing.
+    // Extract tasks into an O(1) Map outside the loop to achieve O(N+M) performance.
     const taskMap = new Map((host?.getState?.()?.tasks || []).map(t => [t.id, t]));
     const taskName = (id) => {
       const t = taskMap.get(id);
@@ -1369,6 +1371,8 @@ async function openCommentsModal() {
     list.textContent = '';
     const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
     const data = await api(`/api/projects/${pid}/comments${q}`);
+    // Bolt: O(N) Array.find() inside O(M) rendering loop causes O(N*M) freezing.
+    // Extract tasks into an O(1) Map outside the loop to achieve O(N+M) performance.
     const taskMap = new Map((host?.getState?.()?.tasks || []).map(t => [t.id, t]));
     const taskName = (id) => {
       const t = taskMap.get(id);
