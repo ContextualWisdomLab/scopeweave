@@ -25,7 +25,7 @@
 ## 2026-06-21 - Hardcoded Secrets
 **Vulnerability:** A test script contained a hardcoded API key (`sk-test...`). Even though it was for testing purposes, hardcoding secrets is a bad practice and can lead to exposure if the script is deployed or shared.
 **Learning:** Never hardcode secrets in source code, including test scripts. Always use environment variables or a secure configuration management system to manage sensitive data.
-**Prevention:** Replace hardcoded strings with environment variable references (e.g. `os.getenv("TEST_API_KEY")` or `{env:TEST_API_KEY}`) and manage secrets externally.
+**Prevention:** Replace hardcoded strings with environment variable references (e.g., `os.getenv("TEST_API_KEY")` or `{env:TEST_API_KEY}`) and manage secrets externally.
 
 ## 2026-06-21 - Prevent Prototype Injection in Lookup Maps
 **Vulnerability:** Lookup maps defined as literal objects (e.g., `CSV_FIELD_LABELS` and `HTML_ESCAPE_ENTITIES`) exposed prototype properties, leaving the application vulnerable to prototype injection if an untrusted key (like `__proto__`) is looked up.
@@ -128,3 +128,8 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+
+## $(date +%Y-%m-%d) - Fix Server-Side Request Forgery (SSRF) in webhooks
+**Vulnerability:** The webhook configuration endpoint (`/api/orgs/:id/webhooks`) and delivery system (`sendWebhook`) failed to block private, loopback, and cloud metadata IPs, allowing attackers to perform Server-Side Request Forgery (SSRF). Additionally, DNS-based rebinding was possible as the code did not resolve target hostnames prior to fetching.
+**Learning:** Checking the parsed URL hostname or using `net.isIPv4` is insufficient due to DNS rebinding and custom local domains. Furthermore, `node:dns/promises` methods will throw an `ENOTFOUND`/`ENODATA` exception when passed raw IPs (e.g., `127.0.0.1`), meaning we must explicitly handle raw IPs and catch DNS exceptions gracefully. IPv4-mapped IPv6 IPs (`::ffff:0:0/96`) must also be accounted for to prevent routing evasion.
+**Prevention:** Always perform comprehensive DNS resolution (`resolve4` and `resolve6`) on outgoing URLs containing user input, and evaluate the resulting IP addresses against a robust `net.BlockList` covering both IPv4 and IPv6 private/internal networks before proceeding. Ensure `fetch` uses `redirect: 'error'` to block SSRF via 3xx redirects.
