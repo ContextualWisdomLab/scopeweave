@@ -2432,17 +2432,20 @@ function createGanttChartTable(weeks, weekdays, totalWidth) {
 
 function buildWeekdayTimeline(minDate, maxDate) {
   const days = [];
-  let cursor = getMonday(minDate);
-  const endBoundary = getFriday(maxDate);
-  // ⚡ Bolt: Use direct string comparison for cursor loop since both are generated valid dates.
-  while (cursor <= endBoundary) {
-    if (!isWeekend(cursor)) {
+  let cursorMs = dateStringToUtcMs(getMonday(minDate));
+  const endMs = dateStringToUtcMs(getFriday(maxDate));
+
+  while (cursorMs <= endMs) {
+    const dateObj = new Date(cursorMs);
+    const day = dateObj.getUTCDay();
+    if (day !== 0 && day !== 6) {
+      const dateStr = formatDateInput(dateObj);
       days.push({
-        date: cursor,
-        dayLabel: cursor.slice(8, 10)
+        date: dateStr,
+        dayLabel: dateStr.slice(8, 10)
       });
     }
-    cursor = addDays(cursor, 1);
+    cursorMs += 86400000;
   }
   return days;
 }
@@ -2684,20 +2687,23 @@ function clamp(value, min, max) {
 
 function formatDateInput(date) {
   const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
-  const day = String(date.getUTCDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const month = date.getUTCMonth() + 1;
+  const day = date.getUTCDate();
+  return `${year}-${month < 10 ? '0' + month : month}-${day < 10 ? '0' + day : day}`;
 }
 
 function formatLocalDateInput(date) {
   const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return `${year}-${month < 10 ? '0' + month : month}-${day < 10 ? '0' + day : day}`;
 }
 
 function formatCompactDate(date) {
-  return `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}`;
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const day = date.getDate();
+  return `${year}${month < 10 ? '0' + month : month}${day < 10 ? '0' + day : day}`;
 }
 
 function formatPercent(value, digits) {
