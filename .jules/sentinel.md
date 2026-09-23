@@ -128,13 +128,3 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
-
-## 2026-09-23 - [HIGH] Fix user enumeration timing attack in login endpoint
-**Vulnerability:** The `/api/auth/login` endpoint bypassed `verifyPassword` execution when a user was not found or the password was not a string. This allowed an attacker to enumerate valid user emails through timing attacks, since a non-existent user login request would return significantly faster than a valid one.
-**Learning:** Short-circuit evaluation (`!u || typeof password !== 'string' || !verifyPassword(...)`) prevents errors but introduces timing differences.
-**Prevention:** We must unconditionally evaluate the password verification using a dynamically generated dummy hash when the user is not found, and explicitly coerce the candidate password to a string to prevent runtime TypeErrors from unexpected JSON payloads while keeping the evaluation time constant.
-
-## 2026-09-23 - [MEDIUM] Update hono to fix path traversal and memory exhaustion
-**Vulnerability:** The application used `hono` v4.13.0, which was flagged by Trivy for multiple moderate severity CVEs (CVE-2026-84363, CVE-2026-84364, CVE-2026-84365 / GHSA-gqvv-2mrq-wpjv, GHSA-g6gw-c38x-mqfc, GHSA-crvj-82cr-hjcx) relating to path traversal out of output directories (`toSSG()`), unbounded dot-notation memory exhaustion in `parseBody()`, and cache-key differentials in the query parser.
-**Learning:** Even well-maintained backend frameworks need regular updates to patch newly discovered vulnerabilities. Static analysis in CI checks (like Trivy) will flag these vulnerabilities, and ignoring them can lead to DoS or cache-poisoning risks.
-**Prevention:** Regularly update dependencies and heed CI vulnerability scanning alerts. Here, updating `hono` to `^4.13.4` (resolving to `4.13.8`) mitigates the issues.
