@@ -29,7 +29,7 @@ assert.match(bad.stderr, /Usage: static_coverage_evidence\.mjs docstrings/);
 const missing = run([]);
 assert.equal(missing.status, 2, 'missing mode → exit 2');
 
-const cloudSyncCode = fs.readFileSync('cloud-sync.js', 'utf8');
-assert.match(cloudSyncCode, /const\s+taskMap\s*=\s*new\s+Map\(/, 'Should extract task array into a Map for O(1) lookups');
 
+const cloudSyncCode = fs.readFileSync('cloud-sync.js', 'utf8');
+assert(cloudSyncCode.includes("const taskMap = new Map((host?.getState?.()?.tasks || []).map(t => [t.id, t]));"), 'Should extract task array into a Map for O(1) lookups');
 console.log('✓ static_coverage_evidence tests passed');
