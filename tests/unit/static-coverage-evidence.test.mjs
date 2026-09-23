@@ -28,4 +28,10 @@ assert.match(bad.stderr, /Usage: static_coverage_evidence\.mjs docstrings/);
 const missing = run([]);
 assert.equal(missing.status, 2, 'missing mode → exit 2');
 
+import fs from 'node:fs';
+const appFile = path.join(root, 'server/app.mjs');
+const appContent = fs.readFileSync(appFile, 'utf8');
+assert.ok(appContent.includes("const dummyHash = '0'.repeat(32) + ':' + '0'.repeat(128);"), 'Constant-time dummy hash logic must be present in login endpoint');
+assert.ok(appContent.includes("verifyPassword(passwordStr, u ? u.password_hash : dummyHash);"), 'Unconditional verifyPassword call must be present in login endpoint to prevent timing attacks');
+
 console.log('✓ static_coverage_evidence tests passed');
