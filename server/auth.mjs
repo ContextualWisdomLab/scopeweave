@@ -68,11 +68,7 @@ export function hashPassword(pw) {
  * @param {unknown} stored - Persisted `salt:hash` representation.
  * @returns {boolean} Whether the candidate matches the stored password hash.
  */
-export let _verifyCallCount = 0;
-export function _resetVerifySpy() { _verifyCallCount = 0; }
-
 export function verifyPassword(pw, stored) {
-  _verifyCallCount++;
   if (typeof pw !== 'string') return false;
   const [salt, hash] = String(stored || '').split(':');
   if (!salt || !hash) return false;
