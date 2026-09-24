@@ -131,9 +131,10 @@ async function isSafeWebhookUrl(urlString) {
       ];
     }
     if (ips.length === 0) return null;
-    const ip = ips[0];
-    if (ip.family === 4 && block4.check(ip.address, 'ipv4')) return null;
-    if (ip.family === 6 && block6.check(ip.address, 'ipv6')) return null;
+    for (const ip of ips) {
+      if (ip.family === 4 && block4.check(ip.address, 'ipv4')) return null;
+      if (ip.family === 6 && block6.check(ip.address, 'ipv6')) return null;
+    }
 
     // To support HTTPS (SNI), we cannot blindly replace hostname with IP in native fetch.
     // We validate the IP, but return the original URL to fetch.
@@ -149,8 +150,7 @@ async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   const safe = await isSafeWebhookUrl(url);
   if (!safe) {
     recordDelivery(webhookId, event, null, false, attempt);
-    if (attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
-    return;
+    return; // Do not retry if blocked by SSRF checks
   }
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);

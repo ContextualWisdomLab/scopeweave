@@ -137,3 +137,8 @@
 **Vulnerability:** When fixing SSRF, replacing the URL hostname with the resolved IP address to prevent TOCTOU DNS rebinding breaks HTTPS webhooks because the IP address does not match the SSL certificate's Server Name Indication (SNI).
 **Learning:** Node.js native `fetch` uses the URL's hostname for TLS SNI and certificate validation. If a custom agent/dispatcher (like `undici.Agent`) cannot be used to override the DNS resolution while keeping the original URL hostname, we must accept the TOCTOU risk and fetch the original URL after IP validation to preserve HTTPS functionality.
 **Prevention:** Be aware of the HTTPS regression when replacing hostnames with IPs in `fetch`. If a custom dispatcher is unavailable, document the accepted TOCTOU tradeoff when validating the IP but fetching the original URL.
+
+## 2026-09-24 - SSRF Multi-IP Validation Bypass
+**Vulnerability:** When validating resolved IPs for SSRF protection, checking only the first IP returned by the DNS resolver (e.g., `ips[0]`) is insufficient. An attacker could configure a domain to return an allowed external IP first, followed by a blocked internal IP (like `127.0.0.1`). Depending on the HTTP client's connection logic, it might fall back to or prefer the internal IP, bypassing the check.
+**Learning:** To properly mitigate DNS-based SSRF, *every* IP address returned by the DNS resolution must be evaluated against the blocklist. If *any* of the resolved IPs belong to a restricted range, the entire request must be blocked. Additionally, blocked requests should fail fast and not trigger retry logic.
+**Prevention:** Always iterate through the entire array of resolved IPs and fail closed if any IP hits the blocklist.
