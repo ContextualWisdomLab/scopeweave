@@ -199,7 +199,6 @@ app.post('/api/auth/login', async (c) => {
   const hashToVerify = u ? u.password_hash : dummyHash;
   const passwordStr = typeof password === 'string' ? password : '';
   const validPassword = verifyPassword(passwordStr, hashToVerify);
-
   if (!u || !validPassword || typeof password !== 'string') {
     return c.json({ error: 'invalid credentials' }, 401);
   }
