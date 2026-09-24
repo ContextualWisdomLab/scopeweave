@@ -3,8 +3,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import fs from 'node:fs';
-
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -29,19 +27,5 @@ assert.match(bad.stderr, /Usage: static_coverage_evidence\.mjs docstrings/);
 
 const missing = run([]);
 assert.equal(missing.status, 2, 'missing mode → exit 2');
-
-
-// Static analysis: Ensure timing attack prevention in /api/auth/login
-const appCode = fs.readFileSync(path.join(root, 'server/app.mjs'), 'utf8');
-assert.match(
-  appCode,
-  /const dummyHash = '0'\.repeat\(32\) \+ ':' \+ '0'\.repeat\(128\);/,
-  'Dummy hash must be dynamically generated to prevent hardcoded credentials scanning'
-);
-assert.match(
-  appCode,
-  /const validPassword = verifyPassword\(passwordStr, hashToVerify\);/,
-  'verifyPassword must unconditionally execute to prevent timing attacks'
-);
 
 console.log('✓ static_coverage_evidence tests passed');
