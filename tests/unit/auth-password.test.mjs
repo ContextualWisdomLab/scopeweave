@@ -30,6 +30,44 @@ assert.equal(verifyPassword([], empty), false, 'empty array must not coerce to a
 assert.equal(verifyPassword(null, empty), false);
 assert.equal(verifyPassword({ evil: true }, stored), false);
 
+// Deterministic timing attack mitigation tests
+import { db } from './server/db.mjs';
+import { app } from './server/app.mjs';
+import { _verifyCallCount, _resetVerifySpy } from './server/auth.mjs';
+
+db.prepare('DELETE FROM users WHERE email = ?').run('timing@example.com');
+const uIdInfo = db.prepare('INSERT INTO users(email, password_hash) VALUES(?, ?) RETURNING id').get('timing@example.com', hashPassword('real-password'));
+
+const testCases = [
+  { name: 'existing user + wrong string password', email: 'timing@example.com', password: 'wrong' },
+  { name: 'missing user + string password', email: 'missing@example.com', password: 'wrong' },
+  { name: 'existing user + non-string password', email: 'timing@example.com', password: { obj: true } },
+  { name: 'missing user + non-string password', email: 'missing@example.com', password: { obj: true } },
+];
+
+for (const tc of testCases) {
+  _resetVerifySpy();
+  const req = new Request('http://localhost/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email: tc.email, password: tc.password })
+  });
+  const res = await app.fetch(req);
+  assert.equal(res.status, 401, \`Expected 401 for \${tc.name}\`);
+  assert.equal(_verifyCallCount, 1, \`verifyPassword must be called exactly once for \${tc.name}\`);
+}
+
+_resetVerifySpy();
+const reqSuccess = new Request('http://localhost/api/auth/login', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email: 'timing@example.com', password: 'real-password' })
+});
+const resSuccess = await app.fetch(reqSuccess);
+assert.equal(resSuccess.status, 200, 'Expected 200 for correct credentials');
+assert.equal(_verifyCallCount, 1, 'verifyPassword must be called exactly once for success');
+
+console.log('✓ auth timing attack deterministic checks passed');
 console.log('✓ auth password type-safety tests passed');
 `;
 

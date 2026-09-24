@@ -28,12 +28,4 @@ assert.match(bad.stderr, /Usage: static_coverage_evidence\.mjs docstrings/);
 const missing = run([]);
 assert.equal(missing.status, 2, 'missing mode → exit 2');
 
-import fs from 'node:fs';
-const appPath = path.join(root, 'server/app.mjs');
-const appContent = fs.readFileSync(appPath, 'utf8');
-
-assert.match(appContent, /targetHash\s*=\s*u\s*\?\s*u\.password_hash\s*:\s*dummyHash/);
-assert.match(appContent, /verifyPassword\(\s*candidate,\s*targetHash\s*\)/);
-assert.match(appContent, /const\s+dummyHash\s*=\s*'0'\.repeat\(32\)\s*\+\s*':'\s*\+\s*'0'\.repeat\(128\)/);
-
 console.log('✓ static_coverage_evidence tests passed');
