@@ -6,8 +6,6 @@ import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
-export let _testPasswordVerifier = null;
-export function _setTestPasswordVerifier(fn) { _testPasswordVerifier = fn; }
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
@@ -199,8 +197,7 @@ app.post('/api/auth/login', async (c) => {
   const dummyHash = '0'.repeat(32) + ':' + '0'.repeat(128);
   const targetHash = u ? u.password_hash : dummyHash;
   const candidate = typeof password === 'string' ? password : '';
-  const verifier = _testPasswordVerifier || verifyPassword;
-  const valid = verifier(candidate, targetHash);
+  const valid = verifyPassword(candidate, targetHash);
   if (!u || typeof password !== 'string' || !valid) {
     return c.json({ error: 'invalid credentials' }, 401);
   }
