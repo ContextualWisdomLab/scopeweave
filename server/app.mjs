@@ -4,6 +4,8 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import dns from 'node:dns/promises';
+import net from 'node:net';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -99,15 +101,67 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+const block4 = new net.BlockList();
+block4.addSubnet('127.0.0.0', 8);
+block4.addSubnet('10.0.0.0', 8);
+block4.addSubnet('172.16.0.0', 12);
+block4.addSubnet('192.168.0.0', 16);
+block4.addSubnet('169.254.0.0', 16);
+block4.addSubnet('0.0.0.0', 8);
+
+const block6 = new net.BlockList();
+block6.addSubnet('::1', 128, 'ipv6');
+block6.addSubnet('fe80::', 10, 'ipv6');
+block6.addSubnet('::ffff:0:0', 96, 'ipv6');
+
+async function isSafeWebhookUrl(urlString) {
+  try {
+    const u = new URL(urlString);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return null;
+    const host = u.hostname;
+    let ips = [];
+    if (net.isIPv4(host)) ips = [{ address: host, family: 4 }];
+    else if (net.isIPv6(host)) ips = [{ address: host, family: 6 }];
+    else {
+      const records4 = await dns.resolve4(host).catch(() => []);
+      const records6 = await dns.resolve6(host).catch(() => []);
+      ips = [
+        ...records4.map(r => ({ address: r, family: 4 })),
+        ...records6.map(r => ({ address: r, family: 6 }))
+      ];
+    }
+    if (ips.length === 0) return null;
+    const ip = ips[0];
+    if (ip.family === 4 && block4.check(ip.address, 'ipv4')) return null;
+    if (ip.family === 6 && block6.check(ip.address, 'ipv6')) return null;
+
+    // To support HTTPS (SNI), we cannot blindly replace hostname with IP in native fetch.
+    // We validate the IP, but return the original URL to fetch.
+    // This accepts a TOCTOU risk, but preserves HTTPS webhooks.
+    return { safeUrl: urlString, hostHeader: u.host };
+  } catch {
+    return null;
+  }
+}
+
+async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+  const safe = await isSafeWebhookUrl(url);
+  if (!safe) {
+    recordDelivery(webhookId, event, null, false, attempt);
+    if (attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
+    return;
+  }
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
-  fetch(url, {
+  // We use safe.safeUrl (which is original URL) to preserve HTTPS SNI,
+  // accepting a TOCTOU risk because we validate IP prior but do not override the fetch agent.
+  fetch(safe.safeUrl, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
+    redirect: 'error'
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
     if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);

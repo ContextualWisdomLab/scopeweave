@@ -128,3 +128,12 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2026-09-24 - Fix Webhook SSRF Vulnerability
+**Vulnerability:** The application was vulnerable to SSRF (Server-Side Request Forgery) because it allowed fetching user-provided webhook URLs without validating the resolved IP address.
+**Learning:** Checking the hostname is insufficient due to DNS rebinding, custom domains, and IPv4-mapped IPv6 bypasses. It is necessary to explicitly perform DNS resolution, validate the resolved IP against a comprehensive blocklist (including loopback, cloud metadata, and private IP ranges), and importantly, route the HTTP request directly to the validated IP using the `Host` header to prevent Time-Of-Check to Time-Of-Use (TOCTOU) DNS rebinding attacks. Also, `fetch` must be configured with `redirect: 'error'` to prevent redirect-based SSRF bypasses.
+**Prevention:** Always use a robust, dedicated SSRF validation wrapper for outbound requests that performs explicit DNS resolution, validates against a `net.BlockList` of restricted ranges (including IPv6), routes to the resolved IP, and disables redirects.
+
+## 2026-09-24 - HTTPS SSRF TOCTOU Tradeoff
+**Vulnerability:** When fixing SSRF, replacing the URL hostname with the resolved IP address to prevent TOCTOU DNS rebinding breaks HTTPS webhooks because the IP address does not match the SSL certificate's Server Name Indication (SNI).
+**Learning:** Node.js native `fetch` uses the URL's hostname for TLS SNI and certificate validation. If a custom agent/dispatcher (like `undici.Agent`) cannot be used to override the DNS resolution while keeping the original URL hostname, we must accept the TOCTOU risk and fetch the original URL after IP validation to preserve HTTPS functionality.
+**Prevention:** Be aware of the HTTPS regression when replacing hostnames with IPs in `fetch`. If a custom dispatcher is unavailable, document the accepted TOCTOU tradeoff when validating the IP but fetching the original URL.
