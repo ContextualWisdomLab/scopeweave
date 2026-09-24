@@ -128,3 +128,8 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+
+## 2024-05-29 - Prevent User Enumeration via Timing Attacks in Login
+**Vulnerability:** The login endpoint bypassed password verification if the user was not found, making the endpoint return faster for invalid users. This timing discrepancy allowed attackers to enumerate valid usernames.
+**Learning:** Short-circuiting authentication logic based on user existence creates a timing side-channel.
+**Prevention:** Always evaluate the cryptographic password verification function, providing a dynamically generated dummy hash when the user does not exist, ensuring constant execution time regardless of user validity.
