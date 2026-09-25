@@ -2333,6 +2333,7 @@ function renderGantt() {
   elements.ganttContent.replaceChildren(shell);
 }
 
+// ⚡ Bolt: Cache unattached DOM template to prevent JS-to-C++ instantiation overhead in the O(N) Gantt meta rendering loop.
 let ganttMetaRowTemplate = null;
 
 function createGanttMetaTable() {
@@ -2387,6 +2388,7 @@ function createGanttMetaTable() {
   return table;
 }
 
+// ⚡ Bolt: Cache unattached DOM templates to prevent JS-to-C++ instantiation overhead in the O(N) Gantt chart rendering loop.
 let ganttChartRowTemplate = null;
 let ganttChartCellTemplate = null;
 let ganttChartTrackTemplate = null;
