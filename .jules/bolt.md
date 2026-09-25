@@ -4,6 +4,3 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
-## 2026-09-24 - Cache unattached templates in Gantt rendering loops
-**Learning:** The application renders Gantt chart meta tables and track rows using O(N) loops. Continuously allocating DOM elements using `document.createElement` per cell/row results in significant JS-to-C++ instantiation overhead, just like rendering the main task table.
-**Action:** Cache unattached templates (`tr`, `td`, `div`) outside the loop and use `.cloneNode(false)` inside the O(N) Gantt chart creation methods (`createGanttMetaTable` and `createGanttChartTable`).
