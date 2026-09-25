@@ -107,3 +107,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [1.0.1] - 2026-06-25
 ### 성능 개선 (Performance)
 - 드래그 앤 드롭 동작 중 `dragover` 이벤트에서 발생하는 O(N) 작업 리스트 검색 성능 병목 문제를, O(1) 해시맵(Map) 기반의 캐싱 조회 로직으로 개선하여 큰 크기의 WBS 리스트에서의 버벅임 현상을 해결했습니다.
+## [Unreleased]
+### Changed
+- ⚡ Bolt: 날짜 포맷팅 함수(`formatDateInput`, `formatLocalDateInput`, `formatCompactDate`)에서 `String.prototype.padStart()` 호출을 인라인 삼항 연산자로 대체하여 메모리 할당을 최적화하고 핫루프 성능을 개선했습니다.
