@@ -190,9 +190,12 @@ the previous; merging in order auto-retargets the next):
 - Organization required workflows provide OpenCode Review, Strix Security
   Scan, PR Review Merge Scheduler, failed-check explanation, and coverage
   evidence.
-- Repository-local workflows remain for ScopeWeave-specific static delivery
-  and companion SCA lanes, including dependency review, OSV, Trivy,
-  Scorecard, and Pages.
+- GitHub-managed CodeQL Default setup and Code Quality provide the required
+  `Analyze (javascript-typescript)` and `Analyze (python)` checks. Keep Default
+  setup enabled; turning it off permanently blocks PRs that require these
+  checks.
+- Repository-local workflows provide ScopeWeave-specific server tests, fuzzing,
+  Pages delivery, dependency review, and OSV scanning.
 - Server hardening: pinned-HS256 JWT (no header-alg trust), scrypt passwords,
   hash-only PAT/webhook-secret storage (secrets shown once), server-side RBAC,
   secrets never logged.

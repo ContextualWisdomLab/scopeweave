@@ -14,7 +14,11 @@ concurrency:
 
 jobs:
   osv-scan:
-    if: github.event_name == 'pull_request'
+    # Central required Security Scan osv-scan (hard gate on new vulns)
+    # already runs this check on pull requests that target the default branch.
+    # Skip the local duplicate there; keep it for workflow_dispatch and non-default
+    # base branches.
+    if: github.event_name == 'pull_request' && github.base_ref != github.event.repository.default_branch
     # Companion SCA lane for manifest evidence. Central .github still owns the
     # required review/security/scheduler workflows.
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@3a7550f43ba5b58905a821ce3a0ed24c4858b3f4 # v2.3.8 + export-results gate

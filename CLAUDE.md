@@ -106,7 +106,8 @@ deploy guide is `docs/deploy.md`.
 - **Default branch is `develop`.** SaaS work lands as a stacked PR train — see
   "Merge order" in `README.md` before retargeting or merging PRs.
 - Repo-local PR gates: `server-tests.yml` (unit + API + eval-safe check + cloud e2e),
-  `fuzz.yml`, `codeql.yml`, `dependency-review.yml`.
+  `fuzz.yml`, and `dependency-review.yml`; GitHub-managed CodeQL Default setup
+  and Code Quality provide the required `Analyze (...)` checks.
 - OpenCode Review, Strix Security Scan, and PR Review Merge Scheduler are
   organization-level required workflows from `ContextualWisdomLab/.github` — never
   copy them into this repository (`tests/config` pytest enforces this).

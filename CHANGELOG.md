@@ -53,6 +53,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Removed the manually disabled repository-local CodeQL workflow and documented
+  that GitHub-managed CodeQL Default setup and Code Quality provide the required
+  `Analyze (...)` checks; preserved the default-branch skips for dependency-review
+  and OSV as cleanup, since those jobs were already disabled and do not save
+  runner time.
 - Switched the repository-local OpenCode development configuration from GitHub
   Models to an NVIDIA NIM-only candidate set while preserving organization-level
   review-workflow ownership in `ContextualWisdomLab/.github`.
