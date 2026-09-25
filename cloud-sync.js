@@ -1228,15 +1228,17 @@ async function openAttachmentsModal() {
   list.className = 'team-list';
   panel.appendChild(list);
 
-  const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
-    return t ? (t.name || t.task || id) : id;
-  };
-
   async function refresh() {
     list.textContent = '';
     const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
     const data = await api(`/api/projects/${pid}/attachments${q}`);
+    // Bolt: O(N) Array.find() inside O(M) rendering loop causes O(N*M) freezing.
+    // Extract tasks into an O(1) Map outside the loop to achieve O(N+M) performance.
+    const taskMap = new Map((host?.getState?.()?.tasks || []).map(t => [t.id, t]));
+    const taskName = (id) => {
+      const t = taskMap.get(id);
+      return t ? (t.name || t.task || id) : id;
+    };
     if (!data.attachments.length) {
       const li = document.createElement('li');
       li.textContent = '첨부된 산출물이 없습니다.';
@@ -1365,15 +1367,17 @@ async function openCommentsModal() {
   form.append(input, send);
   panel.appendChild(form);
 
-  const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
-    return t ? (t.name || t.task || id) : id;
-  };
-
   async function refresh() {
     list.textContent = '';
     const q = sel.value ? `?taskId=${encodeURIComponent(sel.value)}` : '';
     const data = await api(`/api/projects/${pid}/comments${q}`);
+    // Bolt: O(N) Array.find() inside O(M) rendering loop causes O(N*M) freezing.
+    // Extract tasks into an O(1) Map outside the loop to achieve O(N+M) performance.
+    const taskMap = new Map((host?.getState?.()?.tasks || []).map(t => [t.id, t]));
+    const taskName = (id) => {
+      const t = taskMap.get(id);
+      return t ? (t.name || t.task || id) : id;
+    };
     if (!data.comments.length) {
       const li = document.createElement('li');
       li.textContent = '코멘트가 없습니다.';
