@@ -4,6 +4,56 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import { BlockList, isIPv4, isIPv6 } from 'node:net';
+import { resolve4, resolve6 } from 'node:dns/promises';
+
+const v4Blocklist = new BlockList();
+v4Blocklist.addSubnet('127.0.0.0', 8, 'ipv4');
+v4Blocklist.addSubnet('10.0.0.0', 8, 'ipv4');
+v4Blocklist.addSubnet('172.16.0.0', 12, 'ipv4');
+v4Blocklist.addSubnet('192.168.0.0', 16, 'ipv4');
+v4Blocklist.addSubnet('169.254.0.0', 16, 'ipv4');
+v4Blocklist.addSubnet('0.0.0.0', 8, 'ipv4');
+
+const v6Blocklist = new BlockList();
+v6Blocklist.addAddress('::1', 'ipv6');
+v6Blocklist.addSubnet('fe80::', 10, 'ipv6');
+v6Blocklist.addSubnet('fc00::', 7, 'ipv6');
+v6Blocklist.addSubnet('::ffff:0:0', 96, 'ipv6');
+
+async function isSafeWebhookUrl(urlString) {
+  try {
+    const url = new URL(urlString);
+    if (!['http:', 'https:'].includes(url.protocol)) return false;
+    const hostname = url.hostname;
+
+    let ips = [];
+    if (isIPv4(hostname)) {
+      ips.push({ address: hostname, family: 'ipv4' });
+    } else if (isIPv6(hostname)) {
+      ips.push({ address: hostname, family: 'ipv6' });
+    } else {
+      try {
+        const v4s = await resolve4(hostname);
+        ips.push(...v4s.map(ip => ({ address: ip, family: 'ipv4' })));
+      } catch (e) { if (e.code !== 'ENOTFOUND' && e.code !== 'ENODATA') throw e; }
+      try {
+        const v6s = await resolve6(hostname);
+        ips.push(...v6s.map(ip => ({ address: ip, family: 'ipv6' })));
+      } catch (e) { if (e.code !== 'ENOTFOUND' && e.code !== 'ENODATA') throw e; }
+    }
+
+    if (ips.length === 0) return false;
+
+    for (const ip of ips) {
+      if (ip.family === 'ipv4' && v4Blocklist.check(ip.address, 'ipv4')) return false;
+      if (ip.family === 'ipv6' && v6Blocklist.check(ip.address, 'ipv6')) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -99,8 +149,12 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+  if (!(await isSafeWebhookUrl(url))) {
+    recordDelivery(webhookId, event, null, false, attempt);
+    return;
+  }
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
   fetch(url, {
@@ -108,6 +162,7 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
+    redirect: 'error'
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
     if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
@@ -748,6 +803,7 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
   if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+  if (!(await isSafeWebhookUrl(url))) return c.json({ error: 'unsafe webhook url' }, 400);
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
   const evs = Array.isArray(events) ? events.join(',') : (events || '*');
   const id = rowid(db.prepare('INSERT INTO webhooks(org_id,url,secret,events) VALUES(?,?,?,?)').run(orgId, url, secret, evs));
