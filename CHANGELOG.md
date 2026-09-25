@@ -53,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Skip duplicate repository-local dependency-review and OSV jobs when a pull
+  request targets the default branch, where the central Security Scan runs
+  those checks.
 - Switched the repository-local OpenCode development configuration from GitHub
   Models to an NVIDIA NIM-only candidate set while preserving organization-level
   review-workflow ownership in `ContextualWisdomLab/.github`.
