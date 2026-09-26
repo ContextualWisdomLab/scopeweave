@@ -133,3 +133,8 @@
 **Vulnerability:** User enumeration timing attack in login endpoint due to short-circuit evaluation.
 **Learning:** Checking if a user exists and short-circuiting before checking the password leaks user existence via response timing.
 **Prevention:** Unconditionally evaluate cryptographic operations with a dummy hash and coerced password type to ensure constant time execution.
+
+## 2024-10-25 - [Upgrade hono dependency to fix CVEs]
+**Vulnerability:** Trivy filesystem scan reported MEDIUM severity vulnerabilities in the `hono` package (CVE-2026-84363, CVE-2026-84364, CVE-2026-84365).
+**Learning:** Outdated dependencies can expose the application to known vulnerabilities. Regular updates are necessary.
+**Prevention:** Monitor dependency vulnerabilities and update affected packages (e.g., using `npm update`) as a routine security practice.
