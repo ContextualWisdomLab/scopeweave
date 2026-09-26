@@ -31,7 +31,11 @@ async function isSafeWebhookUrl(urlString) {
 
   if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
 
-  const hostname = url.hostname;
+  let hostname = url.hostname;
+  if (hostname.startsWith('[') && hostname.endsWith(']')) {
+    hostname = hostname.slice(1, -1);
+  }
+
   let ips = [];
 
   if (isIPv4(hostname)) {
