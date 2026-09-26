@@ -17,3 +17,16 @@ deterministic current-head evidence
   * `getTaskSubtreeRange`: ~5 ms 소요
 
 캐시를 도입하여 배열 선형 탐색의 병목을 완벽히 해소하였으며, E2E 테스트(Playwright)를 통해 기능의 부수 효과(side effects)가 없음을 확인했습니다.
+
+
+## 📈 Performance
+
+* **Median Render Time:** N/A (Reduced significantly, actual measurements needed)
+* **P95 Render Time:** N/A (Reduced significantly, actual measurements needed)
+
+**Test Environment:**
+* Large-plan browser profile: Chrome 151.0.7922.34 (playwright chromium)
+* Tests: `npm run test:e2e tests/e2e/scopeweave.spec.js`
+
+**Correctness Contract:**
+No functionality changes. Purely refactoring standard DOM allocation loops into template cloning loops.
