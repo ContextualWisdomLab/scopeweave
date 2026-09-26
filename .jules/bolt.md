@@ -4,3 +4,6 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+## 2026-09-19 - Avoid Date instantiations in tight loops
+**Learning:** Instantiating new Date objects and string parsing on every iteration inside a loop creates significant GC pressure and overhead.
+**Action:** Mutate a single Date object across iterations using setUTCDate to drastically improve performance.
