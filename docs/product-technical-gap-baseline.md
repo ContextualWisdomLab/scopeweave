@@ -661,7 +661,7 @@ of Standards and Technology. https://doi.org/10.6028/NIST.SP.800-218
 
 ## 2026-09-27 Gantt rendering acceptance
 
-PR #731 exact `c77e846b0179007b5d91fadbb010537c36168faa` remains Draft/Proposed. The Gantt template-cache delta is preserved, but cloud/analytics preload and Hono lock changes require separate ownership and its performance claim has no current-head browser profile. Successor `0dd9760f…` reintroduced the same stale `pr_desc.md` artifact whose O(1) benchmark described a different change; ordinary-forward deletion restored the artifact-clean verified tree. Compared with `c0901a95…`, the current head is two commits ahead with `files: []`; the recurrence remains an RCA finding.
+PR #731 exact `82fce52de8fa534b4984b61d6e9eaab386a55473` remains Draft/Proposed. The Gantt template-cache delta is preserved, but cloud/analytics preload and Hono lock changes require separate ownership and its performance claim has no current-head browser profile. Successor `6349cfde…` reintroduced the same stale `pr_desc.md` artifact whose benchmark described a different change; ordinary-forward deletion restored the artifact-clean verified tree. Compared with `c77e846b…`, the current head is two commits ahead with `files: []`; the recurrence remains an RCA finding.
 
 | Concern | Required evidence | Status |
 |---|---|---|
