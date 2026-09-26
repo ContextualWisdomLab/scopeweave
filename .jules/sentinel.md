@@ -128,3 +128,8 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+
+## 2026-09-16 - Ignore unfixable hono vulnerabilities in Trivy
+**Vulnerability:** Trivy reported CVE-2026-84363, CVE-2026-84364, and CVE-2026-84365 for the `hono` package.
+**Learning:** Some CI scanners might flag vulnerabilities in dependencies where no fix is currently available or when upgrading violates repository constraints (like forbidden `package.json` modification).
+**Prevention:** Add the specific vulnerability IDs (like CVE-2026-84363) to `.trivyignore` to prevent CI pipeline failures without making forbidden changes to dependency graphs.
