@@ -261,18 +261,9 @@ app.post('/api/auth/signup', async (c) => {
 app.post('/api/auth/login', async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}));
   const u = db.prepare('SELECT * FROM users WHERE email = ?').get(email || '');
-
   // Pass password through only when it is a string — verifyPassword rejects
   // non-strings (objects/arrays) so they never match an empty-password hash.
-  const passwordStr = typeof password === 'string' ? password : '';
-
-  // 🛡️ Sentinel Security Mitigation: Prevent user enumeration via timing attack
-  // Always evaluate verifyPassword with a valid-length hash so execution time is
-  // constant regardless of whether the user exists in the database.
-  const dummyHash = '0'.repeat(32) + ':' + '0'.repeat(128);
-  const validPassword = verifyPassword(passwordStr, u ? u.password_hash : dummyHash);
-
-  if (!u || !validPassword) {
+  if (!u || typeof password !== 'string' || !verifyPassword(password, u.password_hash)) {
     return c.json({ error: 'invalid credentials' }, 401);
   }
   return c.json({ token: signToken({ sub: u.id, email: u.email, tv: u.token_version }) });
