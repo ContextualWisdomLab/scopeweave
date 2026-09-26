@@ -1,6 +1,8 @@
 // ScopeWeave SaaS API. Multi-tenant (org-scoped), optimistic concurrency on
 // project docs, SSE realtime fan-out per project. The existing static client
 // (index.html/app.js) becomes the frontend that talks to these routes.
+import { BlockList, isIPv4, isIPv6 } from 'node:net';
+import { resolve4, resolve6 } from 'node:dns/promises';
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
@@ -73,6 +75,48 @@ function projectAccess(userId, projectId) {
   ).get(projectId, userId);
 }
 
+
+// SSRF Protection Blocklists
+const v4BlockList = new BlockList();
+v4BlockList.addSubnet('127.0.0.0', 8, 'ipv4');
+v4BlockList.addSubnet('10.0.0.0', 8, 'ipv4');
+v4BlockList.addSubnet('172.16.0.0', 12, 'ipv4');
+v4BlockList.addSubnet('192.168.0.0', 16, 'ipv4');
+v4BlockList.addSubnet('169.254.0.0', 16, 'ipv4');
+v4BlockList.addSubnet('0.0.0.0', 8, 'ipv4');
+
+const v6BlockList = new BlockList();
+v6BlockList.addAddress('::1', 'ipv6');
+v6BlockList.addSubnet('fc00::', 7, 'ipv6');
+v6BlockList.addSubnet('fe80::', 10, 'ipv6');
+v6BlockList.addSubnet('::ffff:0:0', 96, 'ipv6');
+
+async function isSafeWebhookUrl(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+
+    let ips = [];
+    if (isIPv4(u.hostname)) ips.push({ ip: u.hostname, type: 'ipv4' });
+    else if (isIPv6(u.hostname.replace(/^\[|\]$/g, ''))) ips.push({ ip: u.hostname.replace(/^\[|\]$/g, ''), type: 'ipv6' });
+    else {
+      const [v4, v6] = await Promise.allSettled([resolve4(u.hostname), resolve6(u.hostname)]);
+      if (v4.status === 'fulfilled') ips.push(...v4.value.map(ip => ({ ip, type: 'ipv4' })));
+      if (v6.status === 'fulfilled') ips.push(...v6.value.map(ip => ({ ip, type: 'ipv6' })));
+    }
+
+    if (ips.length === 0) return false;
+
+    for (const { ip, type } of ips) {
+      if (type === 'ipv4' && v4BlockList.check(ip, 'ipv4')) return false;
+      if (type === 'ipv6' && v6BlockList.check(ip, 'ipv6')) return false;
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // --- observability: in-process counters + structured request log.
 const metrics = {
   startedAt: new Date().toISOString(),
@@ -99,14 +143,21 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+
+  if (!(await isSafeWebhookUrl(url))) {
+    recordDelivery(webhookId, event, null, false, attempt);
+    return;
+  }
+
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
   fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
+    redirect: 'error',
     signal: ctrl.signal,
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
