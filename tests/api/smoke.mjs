@@ -266,7 +266,7 @@ r = await req(`/api/orgs/${orgAId}/export`, { headers: oauth });
 assert.equal(r.status, 403, 'non-owner export → 403');
 
 // ---- Webhooks ----
-r = await req(`/api/orgs/${orgAId}/webhooks`, { method: 'POST', headers: auth, body: body({ url: 'http://127.0.0.1:9/hook', events: ['project.update'] }) });
+r = await req(`/api/orgs/${orgAId}/webhooks`, { method: 'POST', headers: auth, body: body({ url: 'http://example.com:9/hook', events: ['project.update'] }) });
 assert.equal(r.status, 200, 'create webhook');
 const wh = await r.json();
 assert.ok(wh.secret.startsWith('whsec_'), 'webhook secret returned once');
@@ -284,6 +284,7 @@ r = await req(`/api/projects/${proj.id}`, { headers: auth });
 const pv2 = (await r.json()).version;
 r = await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: auth, body: body({ tasks: [{ id: 'wh', name: '훅' }], version: pv2 }) });
 assert.equal(r.status, 200);
+await new Promise(res => setTimeout(res, 500));
 const after = (await (await req('/api/metrics')).json()).webhookDeliveries;
 assert.ok(after > before, 'webhook delivery attempted on project.update');
 // outcome recorded: refused url → ok=0, retried to attempt 2
