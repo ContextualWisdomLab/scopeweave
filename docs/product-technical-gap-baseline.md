@@ -658,3 +658,16 @@ of Standards and Technology. https://doi.org/10.6028/NIST.SP.800-218
 [`docs/research/pm-analysis/README.md`](research/pm-analysis/README.md), 설계 결정은
 [`docs/plans/2026-04-20-scopeweave-design.md`](plans/2026-04-20-scopeweave-design.md)에
 보존한다.
+
+## 2026-09-27 Gantt rendering acceptance
+
+PR #731 exact `9d072da60540b381db24f8b6ba373d42314fabae` remains Draft/Proposed. The Gantt template-cache delta is preserved, but cloud/analytics preload and Hono lock changes require separate ownership and its performance claim has no current-head browser profile.
+
+| Concern | Required evidence | Status |
+|---|---|---|
+| Determinism / semantics | Exact task rows, bars, dates, selection and structured table alternative before/after caching | Pending |
+| Interaction | Pointer/touch/keyboard selection, zoom, pan, fit, resize and lifecycle cleanup | FAIL |
+| Responsive / accessibility / locales | 320/768/desktop, AT, reduced motion, ko/en/ja/zh/vi/es/de/fr | FAIL |
+| Large data performance | Fixed realistic plan, hardware/runtime, warm-up, samples, failure denominator, main-thread/heap/GC, median/p95 | FAIL |
+| Import/export/recovery | JSON/CSV round trip, reload, offline/stale/conflict/retry/rollback | FAIL |
+| Ownership / governance | Split dependency/preload delta; terminal exact-head checks and independent approval | FAIL |
