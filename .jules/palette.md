@@ -116,6 +116,6 @@
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
 
-## 2026-09-26 - Keyboard Accessibility for Meta Card Tooltips
-**Learning:** Tooltip titles on non-interactive elements like cards are inaccessible to keyboard users unless they receive focus and have a semantic role.
-**Action:** Add tabindex="0" and an appropriate ARIA role (e.g., role="note") along with visible focus styles so screen readers provide semantic context and keyboard users can trigger the tooltip natively.
+## 2026-09-26 - Accessible descriptions without synthetic tab stops
+**Learning:** A native `title` is not a reliable cross-browser or assistive-technology description, but making a static summary card focusable adds a no-action stop to keyboard navigation.
+**Action:** Keep static summaries out of the tab order, retain `role="note"`, and bind an explicit in-document `aria-describedby` target. Reserve `:focus-visible` styling for controls that actually accept an action.
