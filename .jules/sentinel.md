@@ -128,3 +128,8 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+
+## 2026-09-25 - 로그인 엔드포인트의 타이밍 공격을 통한 사용자 열거 방지
+**Vulnerability:** 로그인 엔드포인트에서 사용자를 찾지 못했을 때 비밀번호 검증을 생략(단락 평가)하여 응답 시간이 눈에 띄게 빨라지는 취약점이 있었습니다. 이를 통해 공격자가 요청 타이밍을 기반으로 유효한 이메일 주소를 열거할 수 있었습니다.
+**Learning:** 보안 완화 조치는 암호화 기능과 같은 계산 작업을 항상 무조건적으로 평가하여 타이밍 공격을 방지해야 합니다. 인증되지 않은 라우트에서는 단락 평가(short-circuit evaluations)를 피해야 합니다.
+**Prevention:** 사용자를 찾지 못한 경우 동적으로 생성된 더미 해시(예: `'0'.repeat(32) + ':' + '0'.repeat(128)`)를 사용하여 비밀번호 검증 함수를 무조건적으로 평가하십시오. 타입 오류를 방지하기 위해 비밀번호를 문자열로 엄격하게 변환하십시오.
