@@ -11,7 +11,6 @@ import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from 
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
-import { validateWebhookUrl, postWebhook } from './webhook_security.mjs';
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
 
@@ -102,20 +101,20 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
 
 function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
-  // postWebhook re-resolves DNS and pins the connection at send time (not just
-  // at webhook-creation time) and never follows redirects, so a hook that was
-  // public when created can't be rebound to an internal address later.
-  postWebhook(url, {
+  const ctrl = new AbortController();
+  const to = setTimeout(() => ctrl.abort(), 3000);
+  fetch(url, {
+    method: 'POST',
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
-    timeoutMs: 3000,
+    signal: ctrl.signal,
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
     if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
   }).catch(() => {
     recordDelivery(webhookId, event, null, false, attempt);
     if (attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
-  });
+  }).finally(() => clearTimeout(to));
 }
 
 function deliver(orgId, event, payload) {
@@ -748,10 +747,24 @@ app.post('/api/orgs/:id/webhooks', requireAuth, async (c) => {
   const orgId = c.req.param('id');
   if (!canManage(orgRole(uid, orgId))) return c.json({ error: 'forbidden' }, 403);
   const { url, events } = await c.req.json().catch(() => ({}));
+  if (!/^https?:\/\//.test(String(url || ''))) return c.json({ error: 'valid http(s) url required' }, 400);
+
   try {
-    await validateWebhookUrl(url);
+    const host = new URL(url).hostname;
+    if (
+      host === 'localhost' ||
+      host === '[::1]' ||
+      host === '0.0.0.0' ||
+      /^127\.\d+\.\d+\.\d+$/.test(host) ||
+      /^10\.\d+\.\d+\.\d+$/.test(host) ||
+      /^192\.168\.\d+\.\d+$/.test(host) ||
+      /^172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+$/.test(host) ||
+      /^169\.254\.\d+\.\d+$/.test(host)
+    ) {
+      return c.json({ error: 'internal urls are not allowed' }, 400);
+    }
   } catch {
-    return c.json({ error: 'valid public http(s) url required' }, 400);
+    return c.json({ error: 'valid http(s) url required' }, 400);
   }
 
   const secret = `whsec_${randomBytes(24).toString('base64url')}`;
