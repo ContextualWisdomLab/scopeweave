@@ -1371,8 +1371,8 @@ function validateDateRange(startLabel, startValue, endLabel, endValue, errors) {
 
 function computeTaskMetrics() {
   let totalDays = 0;
-  // ⚡ Bolt: Replace Map with Int32Array and reduce/forEach with standard for loops to eliminate hash-lookup, callback allocation, and GC overhead
-  const durationCache = new Int32Array(state.tasks.length);
+  // ⚡ Bolt: Replace Map with Float64Array and reduce/forEach with standard for loops to eliminate hash-lookup, callback allocation, and GC overhead. Float64Array prevents potential precision loss or clamping issues with very large numerical keys.
+  const durationCache = new Float64Array(state.tasks.length);
   for (let i = 0; i < state.tasks.length; i++) {
     const task = state.tasks[i];
     const duration = calculateDurationDays(task.plannedStartDate, task.plannedEndDate);
