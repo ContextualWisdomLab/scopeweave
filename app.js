@@ -2333,7 +2333,14 @@ function renderGantt() {
   elements.ganttContent.replaceChildren(shell);
 }
 
+// ⚡ Bolt: Cache unattached DOM template to prevent JS-to-C++ instantiation overhead in the O(N) Gantt meta rendering loop.
+let ganttMetaRowTemplate = null;
+
 function createGanttMetaTable() {
+  if (!ganttMetaRowTemplate) {
+    ganttMetaRowTemplate = document.createElement('tr');
+  }
+
   const table = document.createElement('table');
   const thead = document.createElement('thead');
   const headerRow = document.createElement('tr');
@@ -2359,7 +2366,7 @@ function createGanttMetaTable() {
 
   const tbody = document.createElement('tbody');
   state.tasks.forEach((task) => {
-    const row = document.createElement('tr');
+    const row = ganttMetaRowTemplate.cloneNode(false);
     row.append(
       createTableCell('', createTreeCellContent(task.phase || task.activity || task.task || '-', task.depth)),
       createTableCell('', createTextCellContent(task.activity)),
@@ -2381,7 +2388,19 @@ function createGanttMetaTable() {
   return table;
 }
 
+// ⚡ Bolt: Cache unattached DOM templates to prevent JS-to-C++ instantiation overhead in the O(N) Gantt chart rendering loop.
+let ganttChartRowTemplate = null;
+let ganttChartCellTemplate = null;
+let ganttChartTrackTemplate = null;
+
 function createGanttChartTable(weeks, weekdays, totalWidth) {
+  if (!ganttChartRowTemplate) {
+    ganttChartRowTemplate = document.createElement('tr');
+    ganttChartCellTemplate = document.createElement('td');
+    ganttChartTrackTemplate = document.createElement('div');
+    ganttChartTrackTemplate.className = 'gantt-day-track';
+  }
+
   const table = document.createElement('table');
   const thead = document.createElement('thead');
   const weekRow = document.createElement('tr');
@@ -2404,12 +2423,11 @@ function createGanttChartTable(weeks, weekdays, totalWidth) {
 
   const tbody = document.createElement('tbody');
   state.tasks.forEach((task) => {
-    const row = document.createElement('tr');
-    const cell = document.createElement('td');
+    const row = ganttChartRowTemplate.cloneNode(false);
+    const cell = ganttChartCellTemplate.cloneNode(false);
     cell.colSpan = weekdays.length;
 
-    const track = document.createElement('div');
-    track.className = 'gantt-day-track';
+    const track = ganttChartTrackTemplate.cloneNode(false);
     track.style.width = `${totalWidth}px`;
 
     const planBar = createGanttBarElement(task.plannedStartDate, task.plannedEndDate, weekdays, 'plan', task);
