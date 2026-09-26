@@ -73,7 +73,6 @@ test.describe('ScopeWeave Planner', () => {
   });
 
   test('renders seeded rows and summary metrics', async ({ page }) => {
-
     await expect(page.locator('link[rel="modulepreload"][href="cloud-sync.js"]')).toHaveCount(1);
     await expect(page.locator('link[rel="modulepreload"][href="analytics.js"]')).toHaveCount(1);
     await expect(page.locator('link[rel="modulepreload"][href="app.js"]')).toHaveCount(1);
