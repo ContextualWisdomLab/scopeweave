@@ -10,7 +10,7 @@ const JWT_SECRET = '0123456789abcdef0123456789abcdef';
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_JWT_SECRET = JWT_SECRET;
 
-const { app } = await import('../../server/app.mjs');
+const { app } = await import('../../server/runtime-app.mjs');
 const { signToken } = await import('../../server/auth.mjs');
 
 const req = (path, opts = {}) =>

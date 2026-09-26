@@ -18,7 +18,7 @@ globalThis.fetch = async (url, init) => {
   });
 };
 
-const { app } = await import(`../../server/app.mjs?attribution-api-test=${Date.now()}`);
+const { app } = await import(`../../server/runtime-app.mjs?attribution-api-test=${Date.now()}`);
 
 const jsonRequest = (path, options = {}) => app.request(path, {
   ...options,

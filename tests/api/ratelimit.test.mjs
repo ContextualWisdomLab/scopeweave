@@ -5,7 +5,7 @@ import assert from 'node:assert';
 process.env.SCOPEWEAVE_DB = ':memory:';
 process.env.SCOPEWEAVE_RATE_LIMIT_MAX = '3';
 process.env.SCOPEWEAVE_JWT_SECRET = '0123456789abcdef0123456789abcdef';
-const { app } = await import('../../server/app.mjs');
+const { app } = await import('../../server/runtime-app.mjs');
 
 const req = (path, opts = {}) =>
   app.request(path, { ...opts, headers: { 'content-type': 'application/json', 'x-forwarded-for': '203.0.113.7', ...(opts.headers || {}) } });
