@@ -32,9 +32,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Rejected non-string password candidates at the authentication boundary.
 - Added regression coverage that prevents array-valued passwords from being
   coerced into valid credentials.
-- Updated Hono from 4.13.0 to 4.13.8 to remove the locked artifacts reported as
-  CVE-2026-84363, CVE-2026-84364, and CVE-2026-84365 by the exact-head central
-  filesystem scan.
+- Updated Hono runtime dependencies to patched supported releases.
 - Sanitized Clearfolio submission, status, and artifact-link transport failures
   so network details and downstream response text cannot reach browser or
   diagnostic payloads; rejected unknown or whitespace-padded conversion states
