@@ -360,8 +360,7 @@ button {
 .secondary-button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-.gantt-bar:focus-visible,
-.meta-value-card:focus-visible {
+.gantt-bar:focus-visible {
   outline: 3px solid rgba(37, 99, 235, 0.5);
   outline-offset: 2px;
 }
