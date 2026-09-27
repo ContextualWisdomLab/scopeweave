@@ -38,6 +38,10 @@ assert.equal(r.status, 400, 'array password signup → 400');
 r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'a@b.com', password: 'nope' }) });
 assert.equal(r.status, 401, 'bad login → 401');
 
+// non-existent user login also returns 401 and takes about the same time due to dummy hash eval
+r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'nonexistent@b.com', password: 'nope' }) });
+assert.equal(r.status, 401, 'non-existent user login → 401');
+
 // non-string login password never authenticates
 r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'a@b.com', password: { length: 12 } }) });
 assert.equal(r.status, 401, 'object password login → 401');
