@@ -1,7 +1,7 @@
 # ScopeWeave product-technical Gap baseline
 
-Status: **Proposed**  
-Canonical product writer: scopeweave#756  
+Status: **Proposed**
+Canonical product writer: scopeweave#756
 Product evidence ancestor: `52a2ac8cef4d6289a88f5205f43f1c74e9f09bd5`
 
 ## Goal / PRD
