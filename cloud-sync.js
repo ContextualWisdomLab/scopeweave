@@ -42,7 +42,7 @@ export function routeTokenPathSegment(value) {
 export function downloadBlobSafely(blob, filename, { documentRef = document, urlRef = URL } = {}) {
   const url = urlRef.createObjectURL(blob);
   let anchor = null;
-  let causalError = null;
+  let firstError = null;
   try {
     anchor = documentRef.createElement('a');
     anchor.href = url;
@@ -51,28 +51,26 @@ export function downloadBlobSafely(blob, filename, { documentRef = document, url
     documentRef.body.appendChild(anchor);
     anchor.click();
   } catch (error) {
-    causalError = error;
+    firstError = error;
   } finally {
     try {
       if (anchor) {
         const remove = Object.getPrototypeOf(anchor)?.remove;
         if (typeof remove === 'function') {
-          try {
-            remove.call(anchor);
-          } catch (cleanupError) {
-            if (!causalError) causalError = cleanupError;
-          }
+          remove.call(anchor);
         }
       }
+    } catch (error) {
+      if (!firstError) firstError = error;
     } finally {
       try {
         urlRef.revokeObjectURL(url);
-      } catch (revokeError) {
-        if (!causalError) causalError = revokeError;
+      } catch (error) {
+        if (!firstError) firstError = error;
       }
+      if (firstError) throw firstError;
     }
   }
-  if (causalError) throw causalError;
 }
 
 function safeApiPath(path) {
