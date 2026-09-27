@@ -543,7 +543,9 @@ async function openShareModal() {
   close.type = 'button';
   close.className = 'icon-button close-button';
   close.setAttribute('aria-label', '공유 닫기');
-  close.textContent = '✕';
+  close.title = '닫기 (Esc)';
+  close.setAttribute('aria-keyshortcuts', 'Escape');
+  close.innerHTML = '<span aria-hidden="true">✕</span>';
   close.addEventListener('click', () => modal.classList.add('hidden'));
   head.append(h2, close);
   panel.appendChild(head);
@@ -685,7 +687,9 @@ function openReportModal() {
   close.type = 'button';
   close.className = 'icon-button close-button';
   close.setAttribute('aria-label', '주간보고 닫기');
-  close.textContent = '✕';
+  close.title = '닫기 (Esc)';
+  close.setAttribute('aria-keyshortcuts', 'Escape');
+  close.innerHTML = '<span aria-hidden="true">✕</span>';
   close.addEventListener('click', () => modal.classList.add('hidden'));
   head.append(h2, close);
   panel.appendChild(head);
@@ -875,7 +879,9 @@ async function openPortfolioModal() {
   close.type = 'button';
   close.className = 'icon-button close-button';
   close.setAttribute('aria-label', '대시보드 닫기');
-  close.textContent = '✕';
+  close.title = '닫기 (Esc)';
+  close.setAttribute('aria-keyshortcuts', 'Escape');
+  close.innerHTML = '<span aria-hidden="true">✕</span>';
   close.addEventListener('click', () => modal.classList.add('hidden'));
   head.append(h2, close);
   panel.appendChild(head);
@@ -1049,7 +1055,9 @@ async function openSprintModal() {
   close.type = 'button';
   close.className = 'icon-button close-button';
   close.setAttribute('aria-label', '스프린트 닫기');
-  close.textContent = '✕';
+  close.title = '닫기 (Esc)';
+  close.setAttribute('aria-keyshortcuts', 'Escape');
+  close.innerHTML = '<span aria-hidden="true">✕</span>';
   close.addEventListener('click', () => modal.classList.add('hidden'));
   head.append(h2, close);
   panel.appendChild(head);
@@ -1191,7 +1199,9 @@ async function openAttachmentsModal() {
   close.type = 'button';
   close.className = 'icon-button close-button';
   close.setAttribute('aria-label', '산출물 닫기');
-  close.textContent = '✕';
+  close.title = '닫기 (Esc)';
+  close.setAttribute('aria-keyshortcuts', 'Escape');
+  close.innerHTML = '<span aria-hidden="true">✕</span>';
   close.addEventListener('click', () => modal.classList.add('hidden'));
   head.append(h2, close);
   panel.appendChild(head);
@@ -1328,7 +1338,9 @@ async function openCommentsModal() {
   close.type = 'button';
   close.className = 'icon-button close-button';
   close.setAttribute('aria-label', '코멘트 닫기');
-  close.textContent = '✕';
+  close.title = '닫기 (Esc)';
+  close.setAttribute('aria-keyshortcuts', 'Escape');
+  close.innerHTML = '<span aria-hidden="true">✕</span>';
   close.addEventListener('click', () => modal.classList.add('hidden'));
   head.append(h2, close);
   panel.appendChild(head);
@@ -1440,7 +1452,9 @@ function openSearchModal() {
   close.type = 'button';
   close.className = 'icon-button close-button';
   close.setAttribute('aria-label', '검색 닫기');
-  close.textContent = '✕';
+  close.title = '닫기 (Esc)';
+  close.setAttribute('aria-keyshortcuts', 'Escape');
+  close.innerHTML = '<span aria-hidden="true">✕</span>';
   close.addEventListener('click', () => modal.classList.add('hidden'));
   head.append(h2, close);
   panel.appendChild(head);
@@ -1554,7 +1568,9 @@ async function openBaselineModal() {
   close.type = 'button';
   close.className = 'icon-button close-button';
   close.setAttribute('aria-label', '기준선 닫기');
-  close.textContent = '✕';
+  close.title = '닫기 (Esc)';
+  close.setAttribute('aria-keyshortcuts', 'Escape');
+  close.innerHTML = '<span aria-hidden="true">✕</span>';
   close.addEventListener('click', () => modal.classList.add('hidden'));
   head.append(h2, close);
   panel.appendChild(head);
