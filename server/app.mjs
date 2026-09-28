@@ -194,15 +194,12 @@ const DUMMY_HASH = hashPassword('');
 app.post('/api/auth/login', async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}));
   const u = db.prepare('SELECT * FROM users WHERE email = ?').get(email || '');
-
-  // Sentinel: Pass password through only when it is a string
+  // Pass password through only when it is a string — verifyPassword rejects
+  // non-strings (objects/arrays) so they never match an empty-password hash.
   const safePassword = typeof password === 'string' ? password : '';
-
-  // Sentinel: Prevent user enumeration via timing attacks
   const hashToVerify = u ? u.password_hash : DUMMY_HASH;
   const isValid = verifyPassword(safePassword, hashToVerify);
-
-  if (!u || !isValid || typeof password !== 'string') {
+  if (!u || typeof password !== 'string' || !isValid) {
     return c.json({ error: 'invalid credentials' }, 401);
   }
   return c.json({ token: signToken({ sub: u.id, email: u.email, tv: u.token_version }) });
