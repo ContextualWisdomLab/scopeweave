@@ -128,3 +128,13 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+
+## 2026-09-17 - Prevent user enumeration via timing attack in login
+**Vulnerability:** The `/api/auth/login` endpoint short-circuited evaluation when a user was not found, resulting in significantly faster response times compared to valid usernames, which allowed for user enumeration.
+**Learning:** Checking for user existence before verifying passwords introduces a timing leak. All password evaluations must be constant-time, regardless of whether the user exists or not. Unauthenticated endpoints are highly susceptible to this.
+**Prevention:** Unconditionally evaluate `verifyPassword`, using a `DUMMY_HASH` when the user is not found, to ensure constant execution time. Ensure candidate password is string-coerced to prevent TypeErrors in cryptographic functions.
+
+## 2026-09-17 - Add unit tests for constant-time password verification
+**Vulnerability:** Without explicit unit tests, future refactoring could inadvertently reintroduce timing attacks into the authentication logic.
+**Learning:** Security controls like constant-time evaluation are invisible during normal operation and require dedicated tests to ensure they are not regressed by future changes.
+**Prevention:** Wrote `tests/unit/auth-timing.test.mjs` to explicitly assert the presence of `DUMMY_HASH` logic and the absence of short-circuit evaluation in the `/api/auth/login` endpoint implementation.
