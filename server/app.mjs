@@ -4,7 +4,58 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import { BlockList } from 'node:net';
+import dns from 'node:dns/promises';
 import { db, rowid } from './db.mjs';
+
+const v4Blocklist = new BlockList();
+v4Blocklist.addSubnet('127.0.0.0', 8, 'ipv4');
+v4Blocklist.addSubnet('10.0.0.0', 8, 'ipv4');
+v4Blocklist.addSubnet('172.16.0.0', 12, 'ipv4');
+v4Blocklist.addSubnet('192.168.0.0', 16, 'ipv4');
+v4Blocklist.addSubnet('169.254.0.0', 16, 'ipv4');
+v4Blocklist.addSubnet('0.0.0.0', 8, 'ipv4');
+
+const v6Blocklist = new BlockList();
+v6Blocklist.addSubnet('::1', 128, 'ipv6');
+v6Blocklist.addSubnet('fc00::', 7, 'ipv6');
+v6Blocklist.addSubnet('fe80::', 10, 'ipv6');
+v6Blocklist.addSubnet('::ffff:0:0', 96, 'ipv6'); // IPv4-mapped IPv6
+
+async function isSafeWebhookUrl(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    if (u.hostname === 'localhost') return false;
+
+    const hostname = u.hostname.replace(/^\[|\]$/g, '');
+    let isV4 = /^(?:\d{1,3}\.){3}\d{1,3}$/.test(hostname);
+    let isV6 = hostname.includes(':');
+
+    if (isV4 && v4Blocklist.check(hostname, 'ipv4')) return false;
+    if (isV6 && v6Blocklist.check(hostname, 'ipv6')) return false;
+
+    if (!isV4 && !isV6) {
+      let resolved = false;
+      const ips4 = await dns.resolve4(hostname).catch(() => []);
+      for (const ip of ips4) {
+        resolved = true;
+        if (v4Blocklist.check(ip, 'ipv4')) return false;
+      }
+
+      const ips6 = await dns.resolve6(hostname).catch(() => []);
+      for (const ip of ips6) {
+        resolved = true;
+        if (v6Blocklist.check(ip, 'ipv6')) return false;
+      }
+      if (!resolved) return false;
+    }
+
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
@@ -108,6 +159,7 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
+    redirect: 'error',
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
     if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
@@ -117,7 +169,7 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
   }).finally(() => clearTimeout(to));
 }
 
-function deliver(orgId, event, payload) {
+async function deliver(orgId, event, payload) {
   let hooks;
   try {
     hooks = db.prepare('SELECT id, url, secret, events FROM webhooks WHERE org_id = ? AND active = 1').all(orgId);
@@ -125,6 +177,12 @@ function deliver(orgId, event, payload) {
   for (const h of hooks) {
     const subs = String(h.events || '').split(',').map((s) => s.trim());
     if (!(subs.includes('*') || subs.includes(event))) continue;
+    const isSafe = await isSafeWebhookUrl(h.url);
+    if (!isSafe) {
+      metrics.webhookDeliveries++;
+      recordDelivery(h.id, event, null, false, 1);
+      continue;
+    }
     const body = JSON.stringify({ event, orgId: Number(orgId), payload, ts: new Date().toISOString() });
     const sig = createHmac('sha256', h.secret).update(body).digest('hex');
     sendWebhook(h.id, h.url, sig, event, body, 1);
