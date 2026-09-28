@@ -1,5 +1,0 @@
-[
-  { "__id": "p1", "__depth": "1", "phase": "설계" },
-  { "__id": "a1", "__parentId": "p1", "__depth": "2", "phase": "설계", "activity": "요구분석" },
-  { "__id": "t1", "__parentId": "a1", "__depth": "3", "phase": "설계", "activity": "요구분석", "task": "정의" }
-]
