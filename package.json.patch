@@ -1,0 +1,5 @@
+<<<<<<< SEARCH
+    "test:coverage": "c8 --all --include=app.js --include=cloud-sync.js --include=scripts/ci/static_coverage_evidence.mjs --include=server/attachment_status.mjs --include=server/app.mjs --include=server/auth.mjs --include=server/clearfolio.mjs --include=server/orchestrator.mjs --reporter=json --reporter=json-summary npm run test:coverage:cases",
+=======
+    "test:coverage": "npm run test:e2e && c8 --all --include=app.js --include=cloud-sync.js --include=scripts/ci/static_coverage_evidence.mjs --include=server/attachment_status.mjs --include=server/app.mjs --include=server/auth.mjs --include=server/clearfolio.mjs --include=server/orchestrator.mjs --reporter=json --reporter=json-summary npm run test:coverage:cases",
+>>>>>>> REPLACE

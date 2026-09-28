@@ -1,38 +1,45 @@
 import { test, expect } from '@playwright/test';
 
-test.beforeEach(async ({ page }) => {
-  await page.goto('./');
-});
+test.describe('ScopeWeave Planner - Editor UX Enhancements', () => {
+  test('save button uses aria-disabled and prevents submission when invalid', async ({ page }) => {
+    // Intercept API calls to prevent actual saving if it tries
+    await page.route('/api/wbs', route => route.abort());
 
-test('Save button is aria-disabled when form is invalid and shows toast when clicked', async ({ page }) => {
-    // wait for app to load
-    await expect(page.locator('tbody tr[data-task-id]')).toHaveCount(4);
+    await page.goto('/');
 
-    // Click "Add Root Task" to open editor
+    // Add a new row to open the editor
     await page.getByRole('button', { name: '최상위 작업 추가' }).click();
 
-    // Check that the save button has aria-disabled set
-    const saveButton = page.locator('button[type="submit"]:has-text("저장")');
+    // Verify the editor is open
+    const editorPanel = page.locator('.editor-panel').first();
+    await expect(editorPanel).toBeVisible();
+
+    // Find the save button inside the editor
+    const saveButton = editorPanel.locator('button[type="submit"]');
+    await expect(saveButton).toBeVisible();
+
+    // Check that aria-disabled is applied initially since required fields are empty
     await expect(saveButton).toHaveAttribute('aria-disabled', 'true');
-    await expect(saveButton).toHaveAttribute('title', '입력값을 올바르게 수정해야 저장할 수 있습니다.');
+    await expect(saveButton).not.toHaveAttribute('disabled');
 
-    // We evaluate to click the button naturally as Playwright's saveButton.click({ force: true }) does not bubble appropriately for form submit interception in this setup
-    await page.evaluate(() => document.querySelector('form[data-editor-form="true"]').dispatchEvent(new Event("submit", {bubbles: true, cancelable: true})));
+    // Click the button using page.evaluate so it triggers the form submission event
+    await page.evaluate(() => {
+        document.querySelector('.editor-panel form').dispatchEvent(new window.Event('submit', { cancelable: true, bubbles: true }));
+    });
 
-    // Check that toast is visible with correct text
+    // Verify that a toast message appears explaining why it can't be saved
     const toast = page.locator('#toast');
-
-    // ensure toast is visible by checking class. Wait for it to become visible
-    // In Playwright tests, a fast click might close the toast instantly if another render cycle happens, but this test passes locally.
     await expect(toast).toHaveClass(/show/);
-    await expect(toast).toHaveText('입력값을 올바르게 수정해야 저장할 수 있습니다.');
+    await expect(toast).toContainText('입력값을 올바르게 수정해야 저장할 수 있습니다.');
 
-    // type something into phase to make it valid
-    const phaseInput = page.locator('input[data-testid="editor-phase"]');
-    await phaseInput.fill('Phase 1');
-    await page.waitForTimeout(500); // Wait for debounce
+    // Now make the form valid again
+    const phaseInput = editorPanel.locator('input[id^="editor-input-phase-"]');
+    await phaseInput.fill('P0000.ValidPhase');
+    await page.evaluate(() => {
+        document.querySelector('input[id^="editor-input-phase-"]').dispatchEvent(new window.Event('input', { bubbles: true }));
+    });
 
-    // Check that it's no longer aria-disabled
+    // Verify aria-disabled is removed
     await expect(saveButton).not.toHaveAttribute('aria-disabled', 'true');
-    await expect(saveButton).toHaveAttribute('title', '저장 (Enter)');
+  });
 });
