@@ -266,7 +266,7 @@ r = await req(`/api/orgs/${orgAId}/export`, { headers: oauth });
 assert.equal(r.status, 403, 'non-owner export → 403');
 
 // ---- Webhooks ----
-r = await req(`/api/orgs/${orgAId}/webhooks`, { method: 'POST', headers: auth, body: body({ url: 'http://127.0.0.1:9/hook', events: ['project.update'] }) });
+r = await req(`/api/orgs/${orgAId}/webhooks`, { method: 'POST', headers: auth, body: body({ url: 'http://example.com/hook', events: ['project.update'] }) });
 assert.equal(r.status, 200, 'create webhook');
 const wh = await r.json();
 assert.ok(wh.secret.startsWith('whsec_'), 'webhook secret returned once');
