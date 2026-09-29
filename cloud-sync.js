@@ -1228,8 +1228,13 @@ async function openAttachmentsModal() {
   list.className = 'team-list';
   panel.appendChild(list);
 
+  // ⚡ Bolt: Use Map for O(1) task lookups instead of O(N) Array.find to avoid O(N^2) bottleneck when rendering attachments/comments
+  let _tasksCache = null;
   const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
+    if (!_tasksCache) {
+      _tasksCache = new Map((host?.getState?.()?.tasks || []).map(x => [x.id, x]));
+    }
+    const t = _tasksCache.get(id);
     return t ? (t.name || t.task || id) : id;
   };
 
@@ -1365,8 +1370,13 @@ async function openCommentsModal() {
   form.append(input, send);
   panel.appendChild(form);
 
+  // ⚡ Bolt: Use Map for O(1) task lookups instead of O(N) Array.find to avoid O(N^2) bottleneck when rendering attachments/comments
+  let _tasksCache = null;
   const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
+    if (!_tasksCache) {
+      _tasksCache = new Map((host?.getState?.()?.tasks || []).map(x => [x.id, x]));
+    }
+    const t = _tasksCache.get(id);
     return t ? (t.name || t.task || id) : id;
   };
 
