@@ -4,7 +4,70 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import { BlockList, isIPv4, isIPv6 } from 'node:net';
+import { resolve4, resolve6 } from 'node:dns/promises';
 import { db, rowid } from './db.mjs';
+
+const ipv4BlockList = new BlockList();
+ipv4BlockList.addSubnet('127.0.0.0', 8, 'ipv4');
+ipv4BlockList.addSubnet('10.0.0.0', 8, 'ipv4');
+ipv4BlockList.addSubnet('172.16.0.0', 12, 'ipv4');
+ipv4BlockList.addSubnet('192.168.0.0', 16, 'ipv4');
+ipv4BlockList.addSubnet('169.254.0.0', 16, 'ipv4');
+ipv4BlockList.addSubnet('0.0.0.0', 8, 'ipv4');
+
+const ipv6BlockList = new BlockList();
+ipv6BlockList.addSubnet('::1', 128, 'ipv6');
+ipv6BlockList.addSubnet('::', 128, 'ipv6');
+ipv6BlockList.addSubnet('fc00::', 7, 'ipv6');
+ipv6BlockList.addSubnet('fe80::', 10, 'ipv6');
+ipv6BlockList.addSubnet('::ffff:0:0', 96, 'ipv6');
+
+async function isSafeWebhookUrl(urlString) {
+  let url;
+  try {
+    url = new URL(urlString);
+  } catch { return false; }
+
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return false;
+
+  let hostname = url.hostname;
+  if (hostname.startsWith('[') && hostname.endsWith(']')) {
+    hostname = hostname.slice(1, -1);
+  }
+
+  let ips = [];
+
+  if (isIPv4(hostname)) {
+    ips.push({ address: hostname, family: 4 });
+  } else if (isIPv6(hostname)) {
+    ips.push({ address: hostname, family: 6 });
+  } else {
+    try {
+      const records4 = await resolve4(hostname).catch(e => {
+        if (e.code === 'ENOTFOUND' || e.code === 'ENODATA') return [];
+        throw e;
+      });
+      for (const ip of records4) ips.push({ address: ip, family: 4 });
+    } catch {}
+    try {
+      const records6 = await resolve6(hostname).catch(e => {
+        if (e.code === 'ENOTFOUND' || e.code === 'ENODATA') return [];
+        throw e;
+      });
+      for (const ip of records6) ips.push({ address: ip, family: 6 });
+    } catch {}
+  }
+
+  if (ips.length === 0) return false;
+
+  for (const ip of ips) {
+    if (ip.family === 4 && ipv4BlockList.check(ip.address, 'ipv4')) return false;
+    if (ip.family === 6 && ipv6BlockList.check(ip.address, 'ipv6')) return false;
+  }
+
+  return true;
+}
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
@@ -99,8 +162,13 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+  const isSafe = await isSafeWebhookUrl(url);
+  if (!isSafe) {
+    recordDelivery(webhookId, event, null, false, attempt);
+    return; // SSRF Blocked - do not retry
+  }
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
   fetch(url, {
@@ -108,6 +176,7 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
+    redirect: 'error',
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
     if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
