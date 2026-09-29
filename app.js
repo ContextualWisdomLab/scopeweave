@@ -2523,6 +2523,8 @@ function findLastWeekdayIndexOnOrBefore(weekdays, targetDate) {
   return result;
 }
 
+let ganttBarTemplate = null;
+
 function createGanttBarElement(startDate, endDate, weekdays, type, task) {
   if (!isValidDateString(startDate) || !isValidDateString(endDate)) {
     return null;
@@ -2536,8 +2538,15 @@ function createGanttBarElement(startDate, endDate, weekdays, type, task) {
   if (normalizedEndIndex < startIndex) {
     return null;
   }
-  const bar = document.createElement('div');
-  bar.className = `gantt-bar ${type}`;
+
+  if (!ganttBarTemplate) {
+    ganttBarTemplate = document.createElement('div');
+    ganttBarTemplate.className = 'gantt-bar';
+    ganttBarTemplate.setAttribute('role', 'img');
+    ganttBarTemplate.tabIndex = 0;
+  }
+  const bar = ganttBarTemplate.cloneNode(false);
+  bar.classList.add(type);
   bar.style.left = `${startIndex * 36}px`;
   bar.style.width = `${(normalizedEndIndex - startIndex + 1) * 36}px`;
 
@@ -2549,8 +2558,6 @@ function createGanttBarElement(startDate, endDate, weekdays, type, task) {
 
   bar.title = tooltipText;
   bar.setAttribute('aria-label', tooltipText);
-  bar.setAttribute('role', 'img');
-  bar.tabIndex = 0;
 
   return bar;
 }
