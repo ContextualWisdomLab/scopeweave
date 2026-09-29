@@ -4,3 +4,7 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+
+## 2026-09-29 - Missing Resource Hints
+**Learning:** Omitted `<link rel="modulepreload">` tags for critical ES modules significantly delay module discovery and parallel downloading, causing suboptimal Critical Rendering Path delays in standard frontend setups.
+**Action:** Always ensure all explicitly utilized critical ES module scripts in the main application flow have corresponding `modulepreload` tags in the `<head>`.

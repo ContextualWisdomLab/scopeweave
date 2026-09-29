@@ -7,6 +7,9 @@
     <title>ScopeWeave Planner</title>
     <link rel="preload" href="styles.css" as="style" />
     <link rel="modulepreload" href="app.js" />
+    <!-- ⚡ Bolt: ES 모듈 사전 로딩으로 초기 렌더링 성능 최적화 (Critical Rendering Path 지연 감소) -->
+    <link rel="modulepreload" href="cloud-sync.js" />
+    <link rel="modulepreload" href="analytics.js" />
     <link rel="stylesheet" href="styles.css" />
     <link rel="stylesheet" href="toast-state.css" />
   </head>
