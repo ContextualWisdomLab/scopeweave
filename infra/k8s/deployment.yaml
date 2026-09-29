@@ -17,6 +17,8 @@ spec:
       containers:
       - name: scopeweave
         image: scopeweave:latest
+        securityContext:
+          allowPrivilegeEscalation: false
         ports:
         - containerPort: 80
         resources:
