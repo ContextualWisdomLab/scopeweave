@@ -1265,15 +1265,25 @@ function saveEditor() {
   }
 
   if (state.editor.mode === 'create') {
-      const newTask = {
-        ...createEmptyTaskDraft(),
-        ...sanitizeDraft(state.editor.draft),
-        id: createId(),
-        parentId: state.editor.parentId,
-        depth: state.editor.depth,
-        expanded: true,
-        isSynthetic: false
-      };
+    let finalDepth = 1;
+    if (state.editor.parentId) {
+      const parentIndex = getTaskIndexById(state.editor.parentId);
+      if (parentIndex === -1) {
+        showToast('상위 작업을 찾을 수 없습니다. (유효하지 않은 계층 구조)');
+        return;
+      }
+      finalDepth = state.tasks[parentIndex].depth + 1;
+    }
+
+    const newTask = {
+      ...createEmptyTaskDraft(),
+      ...sanitizeDraft(state.editor.draft),
+      id: createId(),
+      parentId: state.editor.parentId,
+      depth: finalDepth,
+      expanded: true,
+      isSynthetic: false
+    };
     insertTaskAfter(newTask, state.editor.insertAfterId);
   }
 

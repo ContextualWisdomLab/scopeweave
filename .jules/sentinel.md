@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2026-09-29 - Enforce Hierarchical Integrity in Task Creation
+**Vulnerability:** An attacker could manipulate the `state.editor` object via the browser console to set an arbitrary `depth` or a non-existent `parentId` when creating a new task, leading to a corrupted task tree.
+**Learning:** Client-side state can be manipulated, so UI constraints must be enforced at the logic layer before applying state changes. Trusting the client-provided `depth` or `parentId` without validation causes structural inconsistencies.
+**Prevention:** In the `saveEditor` function, validate that the `parentId` exists in the task array. If it does, automatically calculate the correct `depth` based on the parent's depth (`parent.depth + 1`), ignoring any potentially manipulated `depth` from the draft state.
