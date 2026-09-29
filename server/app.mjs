@@ -4,7 +4,22 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import { isIPv4, isIPv6, BlockList } from 'node:net';
+import { resolve4, resolve6 } from 'node:dns/promises';
 import { db, rowid } from './db.mjs';
+
+const ipv4BlockList = new BlockList();
+ipv4BlockList.addSubnet('127.0.0.0', 8, 'ipv4');
+ipv4BlockList.addSubnet('10.0.0.0', 8, 'ipv4');
+ipv4BlockList.addSubnet('172.16.0.0', 12, 'ipv4');
+ipv4BlockList.addSubnet('192.168.0.0', 16, 'ipv4');
+ipv4BlockList.addSubnet('169.254.0.0', 16, 'ipv4');
+ipv4BlockList.addSubnet('0.0.0.0', 8, 'ipv4');
+
+const ipv6BlockList = new BlockList();
+ipv6BlockList.addAddress('::1', 'ipv6');
+ipv6BlockList.addSubnet('fe80::', 10, 'ipv6');
+ipv6BlockList.addSubnet('fc00::', 7, 'ipv6');
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
@@ -99,21 +114,67 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+async function sendWebhook(webhookId, urlStr, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+
+  try {
+    const u = new URL(urlStr);
+    const host = u.hostname.replace(/^\[|\]$/g, '');
+    let blocked = false;
+    let hasIps = false;
+
+    if (isIPv4(host)) {
+      hasIps = true;
+      if (ipv4BlockList.check(host, 'ipv4')) blocked = true;
+    } else if (isIPv6(host)) {
+      hasIps = true;
+      if (ipv6BlockList.check(host, 'ipv6')) blocked = true;
+    } else {
+      try {
+        const ips4 = await resolve4(host);
+        if (ips4.length > 0) hasIps = true;
+        for (const ip of ips4) {
+          if (ipv4BlockList.check(ip, 'ipv4')) blocked = true;
+        }
+      } catch (e) {
+        if (e.code !== 'ENOTFOUND' && e.code !== 'ENODATA') blocked = true;
+      }
+      if (!blocked) {
+        try {
+          const ips6 = await resolve6(host);
+          if (ips6.length > 0) hasIps = true;
+          for (const ip of ips6) {
+            if (ipv6BlockList.check(ip, 'ipv6')) blocked = true;
+          }
+        } catch (e) {
+          if (e.code !== 'ENOTFOUND' && e.code !== 'ENODATA') blocked = true;
+        }
+      }
+    }
+
+    if (blocked || !hasIps) {
+      recordDelivery(webhookId, event, null, false, attempt);
+      return; // Do not retry if blocked for SSRF or unresolvable
+    }
+  } catch (e) {
+    recordDelivery(webhookId, event, null, false, attempt);
+    return; // Invalid URL
+  }
+
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
-  fetch(url, {
+  fetch(urlStr, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
+    redirect: 'error',
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
-    if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
+    if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, urlStr, sig, event, body, attempt + 1), 500);
   }).catch(() => {
     recordDelivery(webhookId, event, null, false, attempt);
-    if (attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
+    if (attempt < 2) setTimeout(() => sendWebhook(webhookId, urlStr, sig, event, body, attempt + 1), 500);
   }).finally(() => clearTimeout(to));
 }
 
