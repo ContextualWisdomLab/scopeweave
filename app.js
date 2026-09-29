@@ -2523,8 +2523,6 @@ function findLastWeekdayIndexOnOrBefore(weekdays, targetDate) {
   return result;
 }
 
-let ganttBarTemplate = null;
-
 function createGanttBarElement(startDate, endDate, weekdays, type, task) {
   if (!isValidDateString(startDate) || !isValidDateString(endDate)) {
     return null;
@@ -2538,13 +2536,8 @@ function createGanttBarElement(startDate, endDate, weekdays, type, task) {
   if (normalizedEndIndex < startIndex) {
     return null;
   }
-
-  if (!ganttBarTemplate) {
-    ganttBarTemplate = document.createElement('div');
-    ganttBarTemplate.className = 'gantt-bar';
-  }
-  const bar = ganttBarTemplate.cloneNode(false);
-  bar.classList.add(type);
+  const bar = document.createElement('div');
+  bar.className = `gantt-bar ${type}`;
   bar.style.left = `${startIndex * 36}px`;
   bar.style.width = `${(normalizedEndIndex - startIndex + 1) * 36}px`;
 
