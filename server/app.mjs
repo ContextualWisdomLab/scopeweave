@@ -198,8 +198,7 @@ app.post('/api/auth/login', async (c) => {
   // non-strings (objects/arrays) so they never match an empty-password hash.
   const safePassword = typeof password === 'string' ? password : '';
   const hashToVerify = u ? u.password_hash : DUMMY_HASH;
-  const isValid = verifyPassword(safePassword, hashToVerify);
-  if (!u || typeof password !== 'string' || !isValid) {
+  if (!u || typeof password !== 'string' || !verifyPassword(safePassword, hashToVerify)) {
     return c.json({ error: 'invalid credentials' }, 401);
   }
   return c.json({ token: signToken({ sub: u.id, email: u.email, tv: u.token_version }) });
