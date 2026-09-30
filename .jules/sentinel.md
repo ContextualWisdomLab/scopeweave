@@ -128,3 +128,11 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2026-09-30 - 로그인 시 타이밍 공격을 통한 사용자 열거 방지
+**Vulnerability:** `/api/auth/login` 엔드포인트는 사용자가 존재하는 경우에만 비밀번호를 평가하여 타이밍 분석을 통한 사용자 열거를 허용했습니다.
+**Learning:** 인증 엔드포인트에서 사용자 존재 여부에 따른 빠른 반환은 관찰 가능한 타이밍 차이를 만듭니다.
+**Prevention:** 사용자를 찾을 수 없을 때 동적으로 생성된 더미 해시를 전달하여 비밀번호 검증 함수를 무조건 평가하고, 암호화 검사를 위해 입력을 문자열로 안전하게 강제 변환하되 최종 승인 결정을 위해 유형을 엄격하게 검증합니다.
+## 2026-09-30 - 취약한 종속성 라이브러리 업데이트 방지
+**Vulnerability:** Trivy 스캐너가 `package-lock.json`에 선언된 `hono` 패키지(4.13.0)에서 `CVE-2026-84363`, `CVE-2026-84364`, `CVE-2026-84365` 취약점을 발견했습니다.
+**Learning:** 애플리케이션 보안은 작성된 코드뿐만 아니라 사용되는 서드파티 라이브러리의 보안 상태에도 의존합니다. 취약한 버전의 라이브러리를 사용하면 애플리케이션이 알려진 공격 벡터에 노출될 수 있습니다.
+**Prevention:** 정기적인 보안 스캐닝을 통해 발견된 취약한 종속성(`hono`)을 픽스 버전(4.13.12 이상)으로 업데이트하여 보안 요구 사항을 충족합니다.

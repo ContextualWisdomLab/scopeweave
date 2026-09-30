@@ -38,6 +38,12 @@ assert.equal(r.status, 400, 'array password signup → 400');
 r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'a@b.com', password: 'nope' }) });
 assert.equal(r.status, 401, 'bad login → 401');
 
+// 존재하지 않는 사용자 로그인 거부 (타이밍 공격 방지 커버리지)
+r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'nobody@b.com', password: 'password123' }) });
+assert.equal(r.status, 401, 'non-existent user login → 401');
+r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'nobody@b.com', password: { evil: true } }) });
+assert.equal(r.status, 401, 'non-existent user object password login → 401');
+
 // non-string login password never authenticates
 r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'a@b.com', password: { length: 12 } }) });
 assert.equal(r.status, 401, 'object password login → 401');
