@@ -1290,6 +1290,39 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
     page.off('dialog', acceptHandler);
   });
 
+  test('prompts for confirmation when attempting to open another editor while one has unsaved changes', async ({ page }) => {
+    await page.goto('./');
+
+    await page.getByRole('button', { name: '최상위 작업 추가' }).click();
+
+    // Type into an editor field
+    const phaseInput = page.getByTestId('editor-phase');
+    await phaseInput.fill('Phase X');
+
+    // Setup dialog handler to mock returning false (cancel open)
+    let dialogTriggered = false;
+    let dialogMessage = '';
+    const dismissHandler = async (dialog) => {
+      dialogTriggered = true;
+      dialogMessage = dialog.message();
+      await dialog.dismiss();
+    };
+    page.on('dialog', dismissHandler);
+
+    // Try opening another editor (e.g. clicking '최상위 작업 추가' again)
+    await page.getByRole('button', { name: '최상위 작업 추가' }).click();
+
+    expect(dialogTriggered).toBe(true);
+    expect(dialogMessage).toBe('저장하지 않은 변경 사항이 있습니다. 편집을 취소하시겠습니까?');
+
+    // Editor should still be visible because we dismissed the prompt
+    await expect(page.locator('.editor-panel')).toBeVisible();
+
+    // The input should still have our changes
+    await expect(phaseInput).toHaveValue('Phase X');
+    page.off('dialog', dismissHandler);
+  });
+
   test('adds helpful tooltips and ARIA attributes for progress cards and gantt buttons', async ({ page }) => {
     await page.goto('./');
 
