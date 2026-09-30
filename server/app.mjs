@@ -115,6 +115,7 @@ ipv6BlockList.addSubnet('fe80::', 10, 'ipv6');
 ipv6BlockList.addSubnet('fc00::', 7, 'ipv6');
 ipv6BlockList.addSubnet('::ffff:0:0', 96, 'ipv6');
 
+/** Return true only when every resolved address is outside restricted networks. */
 async function isAllowedHost(host) {
   let v4 = [];
   let v6 = [];
@@ -150,6 +151,7 @@ async function isAllowedHost(host) {
   return true;
 }
 
+/** Deliver one signed webhook attempt after fail-closed destination validation. */
 async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
 
@@ -171,6 +173,7 @@ async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   const to = setTimeout(() => ctrl.abort(), 3000);
   fetch(url, {
     method: 'POST',
+    redirect: 'error',
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
