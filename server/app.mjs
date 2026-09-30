@@ -4,6 +4,9 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import { isIPv4, isIPv6, BlockList } from 'node:net';
+import { resolve4, resolve6 } from 'node:dns/promises';
+import { postWebhook } from './webhook_transport.mjs';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -99,12 +102,74 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+const ipv4BlockList = new BlockList();
+ipv4BlockList.addSubnet('127.0.0.0', 8, 'ipv4');
+ipv4BlockList.addSubnet('10.0.0.0', 8, 'ipv4');
+ipv4BlockList.addSubnet('172.16.0.0', 12, 'ipv4');
+ipv4BlockList.addSubnet('192.168.0.0', 16, 'ipv4');
+ipv4BlockList.addSubnet('169.254.0.0', 16, 'ipv4');
+ipv4BlockList.addSubnet('0.0.0.0', 8, 'ipv4');
+
+const ipv6BlockList = new BlockList();
+ipv6BlockList.addSubnet('::1', 128, 'ipv6');
+ipv6BlockList.addSubnet('fe80::', 10, 'ipv6');
+ipv6BlockList.addSubnet('fc00::', 7, 'ipv6');
+ipv6BlockList.addSubnet('::ffff:0:0', 96, 'ipv6');
+
+/** Resolve and return one validated address only when every answer is public. */
+async function resolveAllowedHost(host) {
+  let v4 = [];
+  let v6 = [];
+
+  if (isIPv4(host)) {
+    v4 = [host];
+  } else if (isIPv6(host)) {
+    v6 = [host];
+  } else {
+    try {
+      v4 = await resolve4(host);
+    } catch (e) {
+      if (e.code !== 'ENOTFOUND' && e.code !== 'ENODATA') throw e;
+    }
+    try {
+      v6 = await resolve6(host);
+    } catch (e) {
+      if (e.code !== 'ENOTFOUND' && e.code !== 'ENODATA') throw e;
+    }
+  }
+
+  if (v4.length === 0 && v6.length === 0) return null;
+  if (v4.some((ip) => ipv4BlockList.check(ip, 'ipv4'))) return null;
+  if (v6.some((ip) => ipv6BlockList.check(ip, 'ipv6'))) return null;
+
+  return v4.length > 0
+    ? { address: v4[0], family: 4 }
+    : { address: v6[0], family: 6 };
+}
+
+/** Deliver one signed webhook attempt after fail-closed destination validation. */
+async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+
+  let parsed;
+  let destination = null;
+  try {
+    parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('unsupported webhook protocol');
+    const hostname = parsed.hostname.replace(/^\[|\]$/g, '');
+    destination = await resolveAllowedHost(hostname);
+  } catch {
+    destination = null;
+  }
+
+  if (!destination) {
+    recordDelivery(webhookId, event, null, false, attempt);
+    return; // Halt retry logic if URL is blocked
+  }
+
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
-  fetch(url, {
-    method: 'POST',
+  postWebhook(parsed, destination.address, destination.family, {
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
