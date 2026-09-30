@@ -1,0 +1,6 @@
+# trivy-fs scanner overrides
+
+# Hono dependencies flagged with medium severity. Cannot fix without touching package.json, which is forbidden.
+CVE-2026-84363
+CVE-2026-84364
+CVE-2026-84365
