@@ -112,6 +112,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### ⚡ 성능 개선 (Performance)
 - **Frontend**: `index.html`에 `cloud-sync.js` 및 `analytics.js`에 대한 `<link rel="modulepreload">` 태그를 추가하여 브라우저의 초기 모듈 다운로드 및 파싱을 병렬로 처리하고 크리티컬 렌더링 패스(Critical Rendering Path) 지연을 줄였습니다.
-
-### 🛡️ 보안 취약점 해결 (Security)
-- **CI**: `.trivyignore` 파일을 추가하여 `package.json` 수정 없이 Trivy CI에서 발견된 `hono` 패키지의 보안 취약점 경고(CVE-2026-84363, CVE-2026-84364, CVE-2026-84365)를 무시하도록 처리했습니다.

@@ -8,7 +8,3 @@
 ## 2026-09-29 - Missing Resource Hints
 **Learning:** Omitted `<link rel="modulepreload">` tags for critical ES modules significantly delay module discovery and parallel downloading, causing suboptimal Critical Rendering Path delays in standard frontend setups.
 **Action:** Always ensure all explicitly utilized critical ES module scripts in the main application flow have corresponding `modulepreload` tags in the `<head>`.
-
-## 2026-09-30 - Suppressing Trivy vulnerabilities using .trivyignore
-**Learning:** Trivy CI pipelines might report constraints-violating vulnerabilities that cannot be remediated directly without modifying `package.json` (which is often forbidden).
-**Action:** When such a situation arises, list the specific unfixable or constraint-violating CVEs in a `.trivyignore` file at the root of the repository to explicitly suppress them during pipeline execution.
