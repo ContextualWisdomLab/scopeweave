@@ -4,6 +4,8 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import net from 'node:net';
+import dns from 'node:dns/promises';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -99,8 +101,80 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+const v4Blocklist = new net.BlockList();
+v4Blocklist.addSubnet('127.0.0.0', 8, 'ipv4');
+v4Blocklist.addSubnet('10.0.0.0', 8, 'ipv4');
+v4Blocklist.addSubnet('172.16.0.0', 12, 'ipv4');
+v4Blocklist.addSubnet('192.168.0.0', 16, 'ipv4');
+v4Blocklist.addSubnet('169.254.0.0', 16, 'ipv4');
+v4Blocklist.addAddress('0.0.0.0', 'ipv4');
+v4Blocklist.addAddress('255.255.255.255', 'ipv4');
+
+const v6Blocklist = new net.BlockList();
+v6Blocklist.addSubnet('::1', 128, 'ipv6');
+v6Blocklist.addSubnet('fc00::', 7, 'ipv6');
+v6Blocklist.addSubnet('fe80::', 10, 'ipv6');
+v6Blocklist.addAddress('::', 'ipv6');
+v6Blocklist.addSubnet('::ffff:127.0.0.0', 104, 'ipv6');
+v6Blocklist.addSubnet('::ffff:10.0.0.0', 104, 'ipv6');
+v6Blocklist.addSubnet('::ffff:172.16.0.0', 108, 'ipv6');
+v6Blocklist.addSubnet('::ffff:192.168.0.0', 112, 'ipv6');
+v6Blocklist.addSubnet('::ffff:169.254.0.0', 112, 'ipv6');
+
+async function isSafeUrl(urlString) {
+  let u;
+  try {
+    u = new URL(urlString);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+
+  let hostname = u.hostname.replace(/^\[|\]$/g, '');
+
+  const isV4 = net.isIPv4(hostname);
+  const isV6 = net.isIPv6(hostname);
+
+  if (isV4) {
+    return !v4Blocklist.check(hostname, 'ipv4');
+  } else if (isV6) {
+    return !v6Blocklist.check(hostname, 'ipv6');
+  } else {
+    try {
+      const [v4Ips, v6Ips] = await Promise.all([
+        dns.resolve4(hostname).catch(e => {
+          if (e.code === 'ENOTFOUND' || e.code === 'ENODATA') return [];
+          throw e;
+        }),
+        dns.resolve6(hostname).catch(e => {
+          if (e.code === 'ENOTFOUND' || e.code === 'ENODATA') return [];
+          throw e;
+        })
+      ]);
+
+      if (v4Ips.length === 0 && v6Ips.length === 0) return false;
+
+      for (const ip of v4Ips) {
+        if (v4Blocklist.check(ip, 'ipv4')) return false;
+      }
+      for (const ip of v6Ips) {
+        if (v6Blocklist.check(ip, 'ipv6')) return false;
+      }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+  const safe = await isSafeUrl(url);
+  if (!safe) {
+    recordDelivery(webhookId, event, null, false, attempt);
+    // Don't retry if URL is explicitly blocked by SSRF protection
+    return;
+  }
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
   fetch(url, {

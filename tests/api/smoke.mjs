@@ -286,14 +286,14 @@ r = await req(`/api/projects/${proj.id}`, { method: 'PUT', headers: auth, body: 
 assert.equal(r.status, 200);
 const after = (await (await req('/api/metrics')).json()).webhookDeliveries;
 assert.ok(after > before, 'webhook delivery attempted on project.update');
-// outcome recorded: refused url → ok=0, retried to attempt 2
+// outcome recorded: blocked loopback url → ok=0, no retries
 await new Promise((res) => setTimeout(res, 900));
 r = await req(`/api/orgs/${orgAId}/webhooks/${wh.id}/deliveries`, { headers: auth });
 assert.equal(r.status, 200, 'deliveries endpoint');
 const dels = (await r.json()).deliveries;
-assert.ok(dels.length >= 2, 'delivery attempts recorded');
-assert.ok(dels.every((d) => d.ok === 0), 'refused url recorded as failed');
-assert.ok(dels.some((d) => d.attempt === 2), 'failed delivery retried (attempt 2)');
+assert.ok(dels.length === 1, 'delivery attempt recorded');
+assert.ok(dels.every((d) => d.ok === 0), 'blocked url recorded as failed');
+assert.ok(dels.every((d) => d.attempt === 1), 'blocked delivery not retried');
 r = await req(`/api/orgs/${orgAId}/webhooks/${wh.id}/deliveries`, { headers: oauth });
 assert.equal(r.status, 403, 'non-member deliveries → 403');
 // secret rotation: new whsec_ shown once, differs from the original

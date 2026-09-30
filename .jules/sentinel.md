@@ -128,3 +128,8 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+
+## 2026-09-28 - 웹훅 SSRF(서버 측 요청 위조) 취약점 수정
+**Vulnerability:** 악성 도메인을 통한 내부망(Loopback, Private IP) 접근 가능성
+**Learning:** DNS 조회 시 여러 IP 중 하나라도 차단 목록에 있으면 요청을 즉시 중단(Fail-closed)해야 우회를 방지할 수 있음.
+**Prevention:** Node.js fetch 사용 시 URL scheme(http/https) 검증 후, 원본 hostname 문자열(IPv6 괄호 제거 후)을 DNS 분석하여 반환된 모든 IP(IPv4/IPv6)를 `node:net.BlockList`로 교차 검증.
