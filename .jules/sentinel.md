@@ -128,3 +128,13 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+
+## 2024-05-29 - Prevent User Enumeration via Timing Attack
+**Vulnerability:** The login authentication logic short-circuited when a user was not found, resulting in faster responses for invalid usernames compared to valid ones. This timing difference allows attackers to enumerate valid email addresses.
+**Learning:** Short-circuit evaluation (`!u || !verifyPassword(...)`) in authentication routes creates timing side channels that leak user existence.
+**Prevention:** Unconditionally evaluate cryptographic functions with a dynamically generated dummy hash when the user doesn't exist, and coerce passwords to a string before hashing to prevent TypeErrors, ensuring constant execution time regardless of user existence.
+
+## 2024-05-29 - Prevent ReDoS and Stack Exhaustion from Uncontrolled Brace Expansion
+**Vulnerability:** A vulnerability in `brace-expansion` allowed Denial of Service via uncontrolled recursion parsing payloads with specific brace groups, eventually exhausting the stack.
+**Learning:** Outdated dependencies parsing structured payloads (like globs and braces) expose the service to ReDoS and stack exhaustion vectors.
+**Prevention:** Regularly scan dependencies with `trivy` or `npm audit` and bump transient dependencies mapping to critical flaws.

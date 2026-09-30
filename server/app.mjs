@@ -81,6 +81,7 @@ const metrics = {
   s4xx: 0,
   s5xx: 0,
   signups: 0,
+  passwordVerifications: 0,
   projectsCreated: 0,
   webhookDeliveries: 0,
   attachmentStatusRefreshAttempted: 0,
@@ -194,7 +195,11 @@ app.post('/api/auth/login', async (c) => {
   const u = db.prepare('SELECT * FROM users WHERE email = ?').get(email || '');
   // Pass password through only when it is a string — verifyPassword rejects
   // non-strings (objects/arrays) so they never match an empty-password hash.
-  if (!u || typeof password !== 'string' || !verifyPassword(password, u.password_hash)) {
+  const dummyHash = '0'.repeat(32) + ':' + '0'.repeat(128);
+  const targetHash = u ? u.password_hash : dummyHash;
+  metrics.passwordVerifications++;
+  const validPassword = verifyPassword(typeof password === 'string' ? password : '', targetHash);
+  if (!u || typeof password !== 'string' || !validPassword) {
     return c.json({ error: 'invalid credentials' }, 401);
   }
   return c.json({ token: signToken({ sub: u.id, email: u.email, tv: u.token_version }) });

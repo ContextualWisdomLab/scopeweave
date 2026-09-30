@@ -38,6 +38,19 @@ assert.equal(r.status, 400, 'array password signup → 400');
 r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'a@b.com', password: 'nope' }) });
 assert.equal(r.status, 401, 'bad login → 401');
 
+// user does not exist -> dummy hash evaluated
+const preMetrics = await (await req('/api/metrics')).json();
+const preVerifications = preMetrics.passwordVerifications || 0;
+
+r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'not-exist@b.com', password: 'password123' }) });
+assert.equal(r.status, 401, 'non-existent user login → 401');
+r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'not-exist@b.com', password: { length: 12 } }) });
+assert.equal(r.status, 401, 'non-existent user object password login → 401');
+
+const postMetrics = await (await req('/api/metrics')).json();
+const postVerifications = postMetrics.passwordVerifications || 0;
+assert.equal(postVerifications - preVerifications, 2, 'dummy hash path increments passwordVerifications by 2');
+
 // non-string login password never authenticates
 r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'a@b.com', password: { length: 12 } }) });
 assert.equal(r.status, 401, 'object password login → 401');
