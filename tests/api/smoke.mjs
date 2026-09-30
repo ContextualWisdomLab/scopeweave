@@ -291,8 +291,9 @@ await new Promise((res) => setTimeout(res, 900));
 r = await req(`/api/orgs/${orgAId}/webhooks/${wh.id}/deliveries`, { headers: auth });
 assert.equal(r.status, 200, 'deliveries endpoint');
 const dels = (await r.json()).deliveries;
-assert.ok(dels.length >= 1, 'delivery attempts recorded');
-assert.ok(dels.every((d) => d.ok === 0), 'refused url recorded as failed');
+assert.equal(dels.length, 1, 'blocked URL is attempted once');
+assert.equal(dels[0].attempt, 1, 'blocked URL is not retried');
+assert.equal(dels[0].ok, 0, 'refused url recorded as failed');
 r = await req(`/api/orgs/${orgAId}/webhooks/${wh.id}/deliveries`, { headers: oauth });
 assert.equal(r.status, 403, 'non-member deliveries → 403');
 // secret rotation: new whsec_ shown once, differs from the original
