@@ -116,5 +116,5 @@
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
 ## 2024-05-15 - [Make Card Tooltips Accessible]
-**Learning:** The `title` attribute is not a reliable way to expose supporting text to keyboard or assistive-technology users, and adding an ARIA role does not make that text available.
-**Action:** Put supporting text in the DOM and connect it with `aria-describedby`. Add `tabindex="0"` only when focusing the element provides a useful interaction such as revealing that description, preserve the element's true semantics instead of assigning a generic role, and provide a visible `:focus-visible` state.
+**Learning:** Tooltips (e.g., `title`) on non-interactive elements (like `div` or `span`) are inaccessible to keyboard and screen reader users unless they are modified.
+**Action:** Always add `tabindex="0"` along with a valid ARIA role (e.g., `role="note"` or `role="region"`) and visible focus states (e.g., `:focus-visible`) to non-interactive elements that have tooltips.
