@@ -83,6 +83,7 @@ const metrics = {
   signups: 0,
   projectsCreated: 0,
   webhookDeliveries: 0,
+  passwordVerifications: 0,
   attachmentStatusRefreshAttempted: 0,
   attachmentStatusRefreshChanged: 0,
   attachmentStatusRefreshFailed: 0,
@@ -196,6 +197,7 @@ app.post('/api/auth/login', async (c) => {
   // non-strings (objects/arrays) so they never match an empty-password hash.
   const dummyHash = '0'.repeat(32) + ':' + '0'.repeat(128);
   const targetHash = u ? u.password_hash : dummyHash;
+  metrics.passwordVerifications++;
   const validPassword = verifyPassword(typeof password === 'string' ? password : '', targetHash);
   if (!u || typeof password !== 'string' || !validPassword) {
     return c.json({ error: 'invalid credentials' }, 401);
