@@ -430,6 +430,14 @@ function bindTableEvents(renderDraftValidation, updateEditorDraftFromEvent) {
     }
     event.preventDefault();
     renderDraftValidation.flush();
+
+    // Check if the save button has aria-disabled
+    const saveButton = form.querySelector('button[type="submit"]');
+    if (saveButton && saveButton.getAttribute('aria-disabled') === 'true') {
+      showToast('입력값을 올바르게 수정해야 저장할 수 있습니다.');
+      return;
+    }
+
     saveEditor();
   });
 
@@ -1068,7 +1076,11 @@ function renderEditorValidation() {
 
   const saveButton = form.querySelector('button[type="submit"]');
   if (saveButton) {
-    saveButton.disabled = errors.length > 0;
+    if (errors.length > 0) {
+      saveButton.setAttribute('aria-disabled', 'true');
+    } else {
+      saveButton.removeAttribute('aria-disabled');
+    }
     saveButton.title = errors.length > 0 ? '입력값을 올바르게 수정해야 저장할 수 있습니다.' : '저장 (Enter)';
   }
 
@@ -1253,15 +1265,25 @@ function saveEditor() {
   }
 
   if (state.editor.mode === 'create') {
-      const newTask = {
-        ...createEmptyTaskDraft(),
-        ...sanitizeDraft(state.editor.draft),
-        id: createId(),
-        parentId: state.editor.parentId,
-        depth: state.editor.depth,
-        expanded: true,
-        isSynthetic: false
-      };
+    let finalDepth = 1;
+    if (state.editor.parentId) {
+      const parentIndex = getTaskIndexById(state.editor.parentId);
+      if (parentIndex === -1) {
+        showToast('상위 작업을 찾을 수 없습니다. (유효하지 않은 계층 구조)');
+        return;
+      }
+      finalDepth = state.tasks[parentIndex].depth + 1;
+    }
+
+    const newTask = {
+      ...createEmptyTaskDraft(),
+      ...sanitizeDraft(state.editor.draft),
+      id: createId(),
+      parentId: state.editor.parentId,
+      depth: finalDepth,
+      expanded: true,
+      isSynthetic: false
+    };
     insertTaskAfter(newTask, state.editor.insertAfterId);
   }
 
