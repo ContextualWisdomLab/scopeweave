@@ -24,6 +24,9 @@ export function postWebhook(target, address, family, { headers, body, signal } =
   return new Promise((resolve, reject) => {
     const req = request(target, {
       method: 'POST',
+      // A one-shot agent bypasses NODE_USE_ENV_PROXY so the pinned lookup is
+      // the actual connection boundary on Node 24+ as well as older runtimes.
+      agent: false,
       headers,
       signal,
       lookup: (_hostname, lookupOptions, callback) => {
