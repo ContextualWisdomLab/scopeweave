@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2026-09-30 - 로그인 시 타이밍 공격을 통한 사용자 열거 방지
+**Vulnerability:** `/api/auth/login` 엔드포인트는 사용자가 존재하는 경우에만 비밀번호를 평가하여 타이밍 분석을 통한 사용자 열거를 허용했습니다.
+**Learning:** 인증 엔드포인트에서 사용자 존재 여부에 따른 빠른 반환은 관찰 가능한 타이밍 차이를 만듭니다.
+**Prevention:** 사용자를 찾을 수 없을 때 동적으로 생성된 더미 해시를 전달하여 비밀번호 검증 함수를 무조건 평가하고, 암호화 검사를 위해 입력을 문자열로 안전하게 강제 변환하되 최종 승인 결정을 위해 유형을 엄격하게 검증합니다.
