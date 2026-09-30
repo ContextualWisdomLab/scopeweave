@@ -6,7 +6,8 @@ const appSource = readFileSync(new URL('../../server/app.mjs', import.meta.url),
 
 test('webhook transport refuses redirects before recording delivery', () => {
   const sendWebhook = appSource.match(/async function sendWebhook[\s\S]*?\n}\n\nfunction deliver/)?.[0] ?? '';
-  assert.match(sendWebhook, /redirect:\s*['"]error['"]/, 'redirects must never be followed across the SSRF boundary');
+  assert.doesNotMatch(sendWebhook, /\bfetch\s*\(/, 'fetch would follow an independently resolved destination');
+  assert.match(sendWebhook, /postWebhook\(/, 'the pinned Node transport does not follow redirects');
 });
 
 test('webhook transport pins the validated address for the connection', () => {
