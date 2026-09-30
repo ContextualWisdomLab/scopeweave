@@ -360,9 +360,37 @@ button {
 .secondary-button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-.gantt-bar:focus-visible {
+.gantt-bar:focus-visible,
+.meta-value-card:focus-visible {
   outline: 3px solid rgba(37, 99, 235, 0.5);
   outline-offset: 2px;
+}
+
+.meta-value-card {
+  position: relative;
+}
+
+.meta-value-card .tooltip-text {
+  display: none;
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  padding: 6px 10px;
+  background-color: var(--surface-overlay);
+  color: var(--text);
+  font-size: 0.75rem;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  white-space: nowrap;
+  z-index: 100;
+  border: 1px solid var(--border);
+}
+
+.meta-value-card:hover .tooltip-text,
+.meta-value-card:focus-visible .tooltip-text {
+  display: block;
 }
 
 .toggle-placeholder {
