@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Invalid editor submissions now keep the Save button keyboard-focusable with `aria-disabled`, expose browser-independent validation through `novalidate`, retain the editor, and announce the corrective action without persisting invalid data.
 - Switched the repository-local OpenCode development configuration from GitHub
   Models to an NVIDIA NIM-only candidate set while preserving organization-level
   review-workflow ownership in `ContextualWisdomLab/.github`.
