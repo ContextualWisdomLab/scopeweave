@@ -170,6 +170,34 @@ button {
   letter-spacing: -0.02em;
 }
 
+.meta-card-description {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+}
+
+.meta-value-card:focus-visible .meta-card-description {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  overflow: visible;
+  clip-path: none;
+  white-space: normal;
+}
+
+.accent-card .meta-card-description {
+  color: rgba(255, 255, 255, 0.9);
+}
+
 .accent-card {
   color: #fff;
   border: none;
@@ -360,7 +388,8 @@ button {
 .secondary-button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-.gantt-bar:focus-visible {
+.gantt-bar:focus-visible,
+.meta-value-card:focus-visible {
   outline: 3px solid rgba(37, 99, 235, 0.5);
   outline-offset: 2px;
 }
