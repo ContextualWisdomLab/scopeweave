@@ -6,7 +6,6 @@ import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
 import { isIPv4, isIPv6, BlockList } from 'node:net';
 import { resolve4, resolve6 } from 'node:dns/promises';
-import { postWebhook } from './webhook_transport.mjs';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -116,8 +115,8 @@ ipv6BlockList.addSubnet('fe80::', 10, 'ipv6');
 ipv6BlockList.addSubnet('fc00::', 7, 'ipv6');
 ipv6BlockList.addSubnet('::ffff:0:0', 96, 'ipv6');
 
-/** Resolve and return one validated address only when every answer is public. */
-async function resolveAllowedHost(host) {
+/** Return true only when every resolved address is outside restricted networks. */
+async function isAllowedHost(host) {
   let v4 = [];
   let v6 = [];
 
@@ -138,38 +137,43 @@ async function resolveAllowedHost(host) {
     }
   }
 
-  if (v4.length === 0 && v6.length === 0) return null;
-  if (v4.some((ip) => ipv4BlockList.check(ip, 'ipv4'))) return null;
-  if (v6.some((ip) => ipv6BlockList.check(ip, 'ipv6'))) return null;
+  if (v4.length === 0 && v6.length === 0) {
+    return false;
+  }
 
-  return v4.length > 0
-    ? { address: v4[0], family: 4 }
-    : { address: v6[0], family: 6 };
+  for (const ip of v4) {
+    if (ipv4BlockList.check(ip, 'ipv4')) return false;
+  }
+  for (const ip of v6) {
+    if (ipv6BlockList.check(ip, 'ipv6')) return false;
+  }
+
+  return true;
 }
 
 /** Deliver one signed webhook attempt after fail-closed destination validation. */
 async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
 
-  let parsed;
-  let destination = null;
+  let allowed = false;
   try {
-    parsed = new URL(url);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') throw new Error('unsupported webhook protocol');
+    const parsed = new URL(url);
     const hostname = parsed.hostname.replace(/^\[|\]$/g, '');
-    destination = await resolveAllowedHost(hostname);
+    allowed = await isAllowedHost(hostname);
   } catch {
-    destination = null;
+    allowed = false;
   }
 
-  if (!destination) {
+  if (!allowed) {
     recordDelivery(webhookId, event, null, false, attempt);
     return; // Halt retry logic if URL is blocked
   }
 
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
-  postWebhook(parsed, destination.address, destination.family, {
+  fetch(url, {
+    method: 'POST',
+    redirect: 'error',
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
