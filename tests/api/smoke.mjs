@@ -46,6 +46,12 @@ assert.equal(r.status, 401, 'null password login → 401');
 r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'a@b.com', password: ['password123'] }) });
 assert.equal(r.status, 401, 'array password login → 401');
 
+// non-existent user login timing attack prevention path
+r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'doesnotexist@example.com', password: 'password123' }) });
+assert.equal(r.status, 401, 'non-existent user login → 401');
+r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'doesnotexist@example.com', password: { length: 12 } }) });
+assert.equal(r.status, 401, 'non-existent user login object password → 401');
+
 // me — has an owner workspace
 r = await req('/api/me', { headers: auth });
 assert.equal(r.status, 200);
