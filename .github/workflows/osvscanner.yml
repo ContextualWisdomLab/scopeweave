@@ -21,7 +21,7 @@ name: OSV-Scanner
 
 permissions:
   # Require writing security events to upload SARIF file to security tab
-  security-events: write
+  security-events: read
   # Read commit contents
   contents: read
   # Read PR metadata for comparison of introduced vulnerabilities

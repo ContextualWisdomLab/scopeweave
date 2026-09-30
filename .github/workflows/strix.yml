@@ -174,8 +174,8 @@ jobs:
         if: steps.gate.outputs.enabled == 'true'
         working-directory: ${{ runner.temp }}/trusted-workspace
         run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install --no-cache-dir -r requirements-strix-ci.txt
+          python3 -m pip install --require-hashes --upgrade pip
+          python3 -m pip install --require-hashes --no-cache-dir -r requirements-strix-ci.txt
 
       - name: Mask LLM API key
         if: steps.gate.outputs.enabled == 'true'
