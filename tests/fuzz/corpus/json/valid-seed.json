@@ -1,4 +1,0 @@
-[
-  { "phase": "설계", "activity": "요구분석", "task": "요구사항 정의", "owner": "홍길동", "plannedStartDate": "2024-01-01", "plannedEndDate": "2024-01-10" },
-  { "phase": "개발", "owner": "김철수", "plannedStartDate": "2024-02-01", "plannedEndDate": "2024-02-28" }
-]
