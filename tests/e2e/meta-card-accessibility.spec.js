@@ -14,9 +14,13 @@ test('summary metric descriptions are keyboard-visible and exposed to assistive 
 
     const description = page.locator(`#${descriptionId}`);
     await expect(description).toContainText(/\S/);
-    await expect(description).not.toBeVisible();
+    await expect(description).toHaveCSS('position', 'absolute');
+    await expect(description).toHaveCSS('clip-path', 'inset(50%)');
+    await expect(description).toHaveCSS('width', '1px');
 
     await card.focus();
+    await expect(description).toHaveCSS('position', 'static');
+    await expect(description).toHaveCSS('clip-path', 'none');
     await expect(description).toBeVisible();
   }
 });
