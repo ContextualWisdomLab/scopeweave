@@ -1176,6 +1176,12 @@ function handleRowAction(action, taskId) {
 }
 
 function openEditor({ mode, targetId = null, parentId = null, depth = 1, insertAfterId = null, draft = null }) {
+  if (editorHasUnsavedChanges()) {
+    if (!window.confirm('저장하지 않은 변경 사항이 있습니다. 편집을 취소하시겠습니까?')) {
+      return;
+    }
+  }
+
   state.previousFocus = document.activeElement;
   if (mode === 'edit') {
     const task = findTask(targetId);
