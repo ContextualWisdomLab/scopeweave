@@ -4,6 +4,8 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import net from 'node:net';
+import dns from 'node:dns/promises';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -99,14 +101,69 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+const ipv4Block = new net.BlockList();
+ipv4Block.addSubnet('127.0.0.0', 8);
+ipv4Block.addSubnet('10.0.0.0', 8);
+ipv4Block.addSubnet('172.16.0.0', 12);
+ipv4Block.addSubnet('192.168.0.0', 16);
+ipv4Block.addSubnet('169.254.0.0', 16);
+ipv4Block.addAddress('0.0.0.0');
+
+const ipv6Block = new net.BlockList();
+ipv6Block.addSubnet('::1', 128, 'ipv6');
+ipv6Block.addSubnet('fc00::', 7, 'ipv6');
+ipv6Block.addSubnet('fe80::', 10, 'ipv6');
+ipv6Block.addAddress('::', 'ipv6');
+ipv6Block.addSubnet('::ffff:127.0.0.0', 104, 'ipv6');
+ipv6Block.addSubnet('::ffff:10.0.0.0', 104, 'ipv6');
+ipv6Block.addSubnet('::ffff:172.16.0.0', 108, 'ipv6');
+ipv6Block.addSubnet('::ffff:192.168.0.0', 112, 'ipv6');
+ipv6Block.addSubnet('::ffff:169.254.0.0', 112, 'ipv6');
+
+async function isSsrfBlocked(urlStr) {
+  let u;
+  try { u = new URL(urlStr); } catch { return true; }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return true;
+  const hostname = u.hostname.replace(/^\[|\]$/g, '');
+  let ips = [];
+  if (net.isIPv4(hostname)) {
+    if (ipv4Block.check(hostname)) return true;
+  } else if (net.isIPv6(hostname)) {
+    if (ipv6Block.check(hostname, 'ipv6')) return true;
+  } else {
+    try {
+      const v4 = await dns.resolve4(hostname).catch(e => {
+        if (e.code !== 'ENOTFOUND' && e.code !== 'ENODATA') throw e;
+        return [];
+      });
+      const v6 = await dns.resolve6(hostname).catch(e => {
+        if (e.code !== 'ENOTFOUND' && e.code !== 'ENODATA') throw e;
+        return [];
+      });
+      ips = [...v4, ...v6];
+    } catch { return true; }
+    if (ips.length === 0) return true;
+    for (const ip of ips) {
+      if (net.isIPv4(ip) && ipv4Block.check(ip)) return true;
+      if (net.isIPv6(ip) && ipv6Block.check(ip, 'ipv6')) return true;
+    }
+  }
+  return false;
+}
+
+async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+  if (await isSsrfBlocked(url)) {
+    recordDelivery(webhookId, event, null, false, attempt);
+    return; // block SSRF and halt retries
+  }
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
   fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
+    redirect: 'error', // stop redirects from bypassing the SSRF check
     signal: ctrl.signal,
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
