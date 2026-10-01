@@ -38,6 +38,12 @@ assert.equal(r.status, 400, 'array password signup → 400');
 r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'a@b.com', password: 'nope' }) });
 assert.equal(r.status, 401, 'bad login → 401');
 
+// non-existent user login
+r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'nonexistent@x.com', password: 'password123' }) });
+assert.equal(r.status, 401, 'non-existent user login → 401');
+r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'nonexistent@x.com', password: ['password123'] }) });
+assert.equal(r.status, 401, 'non-existent user with array password → 401');
+
 // non-string login password never authenticates
 r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'a@b.com', password: { length: 12 } }) });
 assert.equal(r.status, 401, 'object password login → 401');
