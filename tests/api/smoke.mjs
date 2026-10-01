@@ -291,9 +291,10 @@ await new Promise((res) => setTimeout(res, 900));
 r = await req(`/api/orgs/${orgAId}/webhooks/${wh.id}/deliveries`, { headers: auth });
 assert.equal(r.status, 200, 'deliveries endpoint');
 const dels = (await r.json()).deliveries;
-assert.ok(dels.length >= 2, 'delivery attempts recorded');
+assert.ok(dels.length >= 1, 'delivery attempts recorded');
 assert.ok(dels.every((d) => d.ok === 0), 'refused url recorded as failed');
-assert.ok(dels.some((d) => d.attempt === 2), 'failed delivery retried (attempt 2)');
+// SSRF blocked requests are not retried, so attempt 2 is not expected for 127.0.0.1
+assert.ok(dels.some((d) => d.attempt === 1), 'failed delivery recorded (attempt 1)');
 r = await req(`/api/orgs/${orgAId}/webhooks/${wh.id}/deliveries`, { headers: oauth });
 assert.equal(r.status, 403, 'non-member deliveries → 403');
 // secret rotation: new whsec_ shown once, differs from the original
