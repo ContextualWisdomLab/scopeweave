@@ -4,3 +4,6 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+## 2026-10-02 - Remove cloneNode micro-optimization for empty tags
+**Learning:** In modern browser engines like V8, createElement for simple tags is heavily optimized. Using cloneNode(false) provides no measurable performance gain, can be slower due to internal heuristics, and introduces global state that hurts maintainability.
+**Action:** Use document.createElement directly instead of maintaining global templates for empty tags.
