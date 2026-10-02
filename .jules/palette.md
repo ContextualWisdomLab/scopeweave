@@ -115,3 +115,7 @@
 ## $(date +%Y-%m-%d) - Prevent accidental data loss in inline editors
 **Learning:** Forms that take a long time to fill out (like a WBS editor) are prone to accidental closure by users pressing `Escape` or clicking cancel. This causes immediate data loss without any warning, resulting in frustration.
 **Action:** When working on editors that can be dismissed, track whether the user has modified any fields compared to their initial state. If there are changes, intercept the close action and present a confirmation dialog (`window.confirm`) to ensure they really want to discard their edits. Bypass this for intentional saves or explicit data overrides.
+
+## 2026-10-02 - Make Tooltips on Non-interactive Elements Keyboard Accessible
+**Learning:** Tooltips (`title`) on non-interactive elements are inaccessible to keyboard users because they cannot receive focus.
+**Action:** Add `tabindex="0"` and an ARIA role (e.g., `role="note"`) to non-interactive elements with tooltips, along with `:focus-visible` styles.
