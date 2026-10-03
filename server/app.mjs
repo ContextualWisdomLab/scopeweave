@@ -4,14 +4,13 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
-import { BlockList, isIPv4, isIPv6 } from 'node:net';
-import { resolve4, resolve6 } from 'node:dns/promises';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
+import { postPinnedWebhook, WebhookTargetBlockedError } from './webhook_http.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
@@ -75,17 +74,6 @@ function projectAccess(userId, projectId) {
   ).get(projectId, userId);
 }
 
-const ssrfBlockList = new BlockList();
-ssrfBlockList.addSubnet('127.0.0.0', 8, 'ipv4');
-ssrfBlockList.addAddress('0.0.0.0', 'ipv4');
-ssrfBlockList.addSubnet('10.0.0.0', 8, 'ipv4');
-ssrfBlockList.addSubnet('172.16.0.0', 12, 'ipv4');
-ssrfBlockList.addSubnet('192.168.0.0', 16, 'ipv4');
-ssrfBlockList.addSubnet('169.254.0.0', 16, 'ipv4');
-ssrfBlockList.addAddress('::1', 'ipv6');
-ssrfBlockList.addSubnet('fc00::', 7, 'ipv6');
-ssrfBlockList.addSubnet('fe80::', 10, 'ipv6');
-
 // --- observability: in-process counters + structured request log.
 const metrics = {
   startedAt: new Date().toISOString(),
@@ -119,37 +107,18 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
 
   (async () => {
     try {
-      const u = new URL(url);
-      const hostname = u.hostname.replace(/^\[|\]$/g, '');
-      const ips = [];
-      if (isIPv4(hostname)) {
-        ips.push({ address: hostname, type: 'ipv4' });
-      } else if (isIPv6(hostname)) {
-        ips.push({ address: hostname, type: 'ipv6' });
-      } else {
-        const [ipv4, ipv6] = await Promise.allSettled([resolve4(hostname), resolve6(hostname)]);
-        if (ipv4.status === 'fulfilled') ips.push(...ipv4.value.map(ip => ({ address: ip, type: 'ipv4' })));
-        if (ipv6.status === 'fulfilled') ips.push(...ipv6.value.map(ip => ({ address: ip, type: 'ipv6' })));
-      }
-
-      const isBlocked = ips.length > 0 && ips.some(ip => ssrfBlockList.check(ip.address, ip.type));
-      if (isBlocked) {
-        recordDelivery(webhookId, event, null, false, attempt);
-        return; // Halt retry logic definitively for blocked SSRF targets.
-      }
-
-      const res = await fetch(url, {
-        method: 'POST',
+      const res = await postPinnedWebhook(url, {
         headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
         body,
-        redirect: 'error',
         signal: ctrl.signal,
       });
       recordDelivery(webhookId, event, res.status, res.ok, attempt);
       if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
     } catch (err) {
       recordDelivery(webhookId, event, null, false, attempt);
-      if (attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
+      if (!(err instanceof WebhookTargetBlockedError) && attempt < 2) {
+        setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
+      }
     } finally {
       clearTimeout(to);
     }
