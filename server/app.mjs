@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
 import { db, rowid } from './db.mjs';
-import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
+import { hashPassword, verifyPassword, verifyLoginPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
@@ -192,9 +192,7 @@ app.post('/api/auth/signup', async (c) => {
 app.post('/api/auth/login', async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}));
   const u = db.prepare('SELECT * FROM users WHERE email = ?').get(email || '');
-  // Pass password through only when it is a string — verifyPassword rejects
-  // non-strings (objects/arrays) so they never match an empty-password hash.
-  if (!u || typeof password !== 'string' || !verifyPassword(password, u.password_hash)) {
+  if (!verifyLoginPassword(u, password)) {
     return c.json({ error: 'invalid credentials' }, 401);
   }
   return c.json({ token: signToken({ sub: u.id, email: u.email, tv: u.token_version }) });
