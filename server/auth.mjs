@@ -77,6 +77,29 @@ export function verifyPassword(pw, stored) {
   return test.length === known.length && timingSafeEqual(test, known);
 }
 
+/** Fixed, well-formed scrypt representation used only for unknown-user work. */
+const UNKNOWN_USER_PASSWORD_HASH = `${'0'.repeat(32)}:${'0'.repeat(128)}`;
+
+/**
+ * Verify login credentials without revealing whether a user row exists.
+ *
+ * The verifier is invoked exactly once for both known and unknown users. The
+ * optional verifier argument is a narrow test seam; production callers use
+ * the real scrypt verifier.
+ *
+ * @param {{password_hash?: unknown}|null|undefined} user - Selected user row.
+ * @param {unknown} password - Candidate password from the request.
+ * @param {(password: unknown, stored: unknown) => boolean} [verifier=verifyPassword] - Password verifier.
+ * @returns {boolean} Whether the existing user supplied a matching string password.
+ */
+export function verifyLoginPassword(user, password, verifier = verifyPassword) {
+  const passwordMatches = verifier(
+    typeof password === 'string' ? password : '',
+    user?.password_hash ?? UNKNOWN_USER_PASSWORD_HASH,
+  );
+  return Boolean(user) && typeof password === 'string' && passwordMatches;
+}
+
 /**
  * Serialize a JSON value using the unpadded base64url form required by JWT.
  *
