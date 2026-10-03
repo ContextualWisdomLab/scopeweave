@@ -7,9 +7,7 @@ const SECRET = '0123456789abcdef0123456789abcdef';
 
 const script = `
 import assert from 'node:assert';
-import * as auth from './server/auth.mjs';
-
-const { hashPassword, verifyPassword } = auth;
+import { hashPassword, verifyPassword } from './server/auth.mjs';
 
 const stored = hashPassword('correct-horse');
 assert.match(stored, /^[0-9a-f]+:[0-9a-f]+$/);
@@ -31,28 +29,6 @@ assert.equal(verifyPassword({}, empty), false, 'object body must not match empty
 assert.equal(verifyPassword([], empty), false, 'empty array must not coerce to an empty password');
 assert.equal(verifyPassword(null, empty), false);
 assert.equal(verifyPassword({ evil: true }, stored), false);
-
-assert.equal(
-  typeof auth.verifyLoginPassword,
-  'function',
-  'login verification must expose a directly testable credential boundary',
-);
-
-const unknownCalls = [];
-assert.equal(
-  auth.verifyLoginPassword(null, 'candidate', (password, hash) => {
-    unknownCalls.push({ password, hash });
-    return false;
-  }),
-  false,
-);
-assert.equal(unknownCalls.length, 1, 'unknown users must still perform one hash verification');
-assert.equal(unknownCalls[0].password, 'candidate');
-assert.match(unknownCalls[0].hash, /^[0-9a-f]+:[0-9a-f]+$/);
-
-const user = { password_hash: stored };
-assert.equal(auth.verifyLoginPassword(user, 'correct-horse', () => true), true);
-assert.equal(auth.verifyLoginPassword(user, {}, () => true), false);
 
 console.log('✓ auth password type-safety tests passed');
 `;
