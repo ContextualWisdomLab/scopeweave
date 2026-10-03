@@ -951,7 +951,9 @@ export function computeSprintStats(tasks, sprints, today) {
   const velocity = closedWithWork.length
     ? closedWithWork.reduce((n, r) => n + r.completed, 0) / closedWithWork.length
     : null;
-  const backlog = leaf.filter((t) => !String(t.sprint || '').trim() || !(sprints || []).some((sp) => sp.name === String(t.sprint).trim()));
+  // ⚡ Bolt: Use an O(1) Set instead of O(N) Array.some to avoid O(N*M) bottleneck when filtering backlog tasks
+  const sprintNames = new Set((sprints || []).map(sp => sp.name));
+  const backlog = leaf.filter((t) => !String(t.sprint || '').trim() || !sprintNames.has(String(t.sprint).trim()));
   return { rows, velocity, backlogCount: backlog.length };
 }
 
@@ -1228,8 +1230,13 @@ async function openAttachmentsModal() {
   list.className = 'team-list';
   panel.appendChild(list);
 
+  // ⚡ Bolt: Use O(1) Map lookup instead of O(N) Array.find to avoid O(N*M) bottleneck when rendering tasks
+  let _taskMap = null;
   const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
+    if (!_taskMap) {
+      _taskMap = new Map((host?.getState?.()?.tasks || []).map((x) => [x.id, x]));
+    }
+    const t = _taskMap.get(id);
     return t ? (t.name || t.task || id) : id;
   };
 
@@ -1365,8 +1372,13 @@ async function openCommentsModal() {
   form.append(input, send);
   panel.appendChild(form);
 
+  // ⚡ Bolt: Use O(1) Map lookup instead of O(N) Array.find to avoid O(N*M) bottleneck when rendering tasks
+  let _taskMap = null;
   const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
+    if (!_taskMap) {
+      _taskMap = new Map((host?.getState?.()?.tasks || []).map((x) => [x.id, x]));
+    }
+    const t = _taskMap.get(id);
     return t ? (t.name || t.task || id) : id;
   };
 
