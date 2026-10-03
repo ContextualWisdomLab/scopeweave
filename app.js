@@ -2167,6 +2167,12 @@ async function connectJsonSync() {
     return;
   }
 
+  if (state.tasks.length > 0 && !state.jsonSyncHandle) {
+    if (!window.confirm('새 wbs.json 파일에 연결하면 현재 로컬 데이터가 덮어씌워질 수 있습니다. 계속하시겠습니까?')) {
+      return;
+    }
+  }
+
   try {
     state.jsonSyncHandle = await window.showSaveFilePicker({
       suggestedName: 'wbs.json',
