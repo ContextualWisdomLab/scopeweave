@@ -38,6 +38,12 @@ assert.equal(r.status, 400, 'array password signup → 400');
 r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'a@b.com', password: 'nope' }) });
 assert.equal(r.status, 401, 'bad login → 401');
 
+// test timing attack prevention paths
+r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'nobody@b.com', password: 'password123' }) });
+assert.equal(r.status, 401, 'unknown user login → 401');
+r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'nobody@b.com', password: { length: 12 } }) });
+assert.equal(r.status, 401, 'unknown user object password login → 401');
+
 // non-string login password never authenticates
 r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'a@b.com', password: { length: 12 } }) });
 assert.equal(r.status, 401, 'object password login → 401');
