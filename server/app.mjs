@@ -5,7 +5,7 @@ import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
 import { db, rowid } from './db.mjs';
-import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken, UNKNOWN_USER_PASSWORD_HASH } from './auth.mjs';
+import { hashPassword, verifyPassword, verifyLoginPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
@@ -192,14 +192,7 @@ app.post('/api/auth/signup', async (c) => {
 app.post('/api/auth/login', async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}));
   const u = db.prepare('SELECT * FROM users WHERE email = ?').get(email || '');
-  // Mitigate timing attacks by unconditionally evaluating a dummy hash when the user is not found.
-  const hashToVerify = u ? u.password_hash : UNKNOWN_USER_PASSWORD_HASH;
-  // Explicitly coerce the candidate password to a string for the cryptographic function,
-  // but retain the original strict type validation in the final authorization decision.
-  const safePassword = typeof password === 'string' ? password : '';
-  const passwordMatches = verifyPassword(safePassword, hashToVerify);
-
-  if (!u || typeof password !== 'string' || !passwordMatches) {
+  if (!verifyLoginPassword(u, password)) {
     return c.json({ error: 'invalid credentials' }, 401);
   }
   return c.json({ token: signToken({ sub: u.id, email: u.email, tv: u.token_version }) });
