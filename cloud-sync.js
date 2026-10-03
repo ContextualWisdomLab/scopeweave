@@ -951,8 +951,22 @@ export function computeSprintStats(tasks, sprints, today) {
   const velocity = closedWithWork.length
     ? closedWithWork.reduce((n, r) => n + r.completed, 0) / closedWithWork.length
     : null;
-  const backlog = leaf.filter((t) => !String(t.sprint || '').trim() || !(sprints || []).some((sp) => sp.name === String(t.sprint).trim()));
+  // ⚡ Bolt: Use an O(1) Set instead of O(N) Array.some to avoid O(N*M) bottleneck when filtering backlog tasks
+  const sprintNames = new Set((sprints || []).map(sp => sp.name));
+  const backlog = leaf.filter((t) => !String(t.sprint || '').trim() || !sprintNames.has(String(t.sprint).trim()));
   return { rows, velocity, backlogCount: backlog.length };
+}
+
+/**
+ * Resolve a task label from the caller's current task snapshot.
+ *
+ * @param {Array<{id: unknown, name?: string, task?: string}>} tasks Current tasks.
+ * @param {unknown} taskId Task identifier to resolve.
+ * @returns {unknown} Current display label, or the identifier when not found.
+ */
+export function resolveTaskName(tasks, taskId) {
+  const task = Array.isArray(tasks) ? tasks.find((item) => item.id === taskId) : null;
+  return task ? (task.name || task.task || taskId) : taskId;
 }
 
 // 번다운 (순수): 스프린트 기간의 일별 잔여 포인트 — ideal(선형 소진) vs
@@ -1228,10 +1242,7 @@ async function openAttachmentsModal() {
   list.className = 'team-list';
   panel.appendChild(list);
 
-  const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
-    return t ? (t.name || t.task || id) : id;
-  };
+  const taskName = (id) => resolveTaskName(host?.getState?.()?.tasks || [], id);
 
   async function refresh() {
     list.textContent = '';
@@ -1365,10 +1376,7 @@ async function openCommentsModal() {
   form.append(input, send);
   panel.appendChild(form);
 
-  const taskName = (id) => {
-    const t = (host?.getState?.()?.tasks || []).find((x) => x.id === id);
-    return t ? (t.name || t.task || id) : id;
-  };
+  const taskName = (id) => resolveTaskName(host?.getState?.()?.tasks || [], id);
 
   async function refresh() {
     list.textContent = '';
@@ -2190,19 +2198,3 @@ if (typeof window !== 'undefined' && location.hash.startsWith('#token=')) {
   }
 }
 
-// Auto-accept an invite token from the URL (?invite=...) once logged in.
-if (typeof window !== 'undefined') {
-  const params = new URLSearchParams(location.search);
-  const inviteToken = routeTokenPathSegment(params.get('invite'));
-  if (inviteToken && getToken()) {
-    api(`/api/invites/${inviteToken}/accept`, { method: 'POST' })
-      .then((res) => { currentOrgId = res.orgId; refreshProjects().then(renderAuthUI); toast('초대를 수락했습니다.'); })
-      .catch(() => {});
-  }
-}
-
-// Bridge onto window so app.js (a plain, non-import script) can reach us
-// without an ESM import statement — keeps app.js eval-safe for unit tests.
-if (typeof window !== 'undefined') {
-  window.ScopeWeaveCloud = cloud;
-}
