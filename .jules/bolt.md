@@ -4,3 +4,6 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+## 2026-10-03 - Optimize filter backlog search
+**Learning:** Checking against an array using `some()` in a filter loop creates an O(N*M) bottleneck.
+**Action:** Replace `Array.some` with a precomputed O(1) `Set` when checking for existence in an array inside a loop.
