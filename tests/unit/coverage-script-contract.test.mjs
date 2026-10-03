@@ -35,9 +35,19 @@ assert.match(
   'the abortable Clearfolio adapter is instrumented',
 );
 assert.match(
+  scripts['test:coverage'],
+  /--include=server\/webhook_http\.mjs/,
+  'the DNS-pinned webhook transport is instrumented',
+);
+assert.match(
   scripts['test:coverage:cases'],
   /tests\/unit\/clearfolio-status-signal\.test\.mjs/,
   'the Clearfolio signal and HTTP failure regression executes under c8',
+);
+assert.match(
+  scripts['test:coverage:cases'],
+  /tests\/unit\/webhook-http\.test\.mjs/,
+  'the webhook SSRF regression executes under c8',
 );
 assert.doesNotMatch(
   scripts['test:coverage:cases'],

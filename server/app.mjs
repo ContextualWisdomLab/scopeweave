@@ -10,6 +10,7 @@ import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.
 import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from './clearfolio.mjs';
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
+import { postPinnedWebhook, WebhookTargetBlockedError } from './webhook_http.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
@@ -103,18 +104,25 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
-  fetch(url, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
-    body,
-    signal: ctrl.signal,
-  }).then((res) => {
-    recordDelivery(webhookId, event, res.status, res.ok, attempt);
-    if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
-  }).catch(() => {
-    recordDelivery(webhookId, event, null, false, attempt);
-    if (attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
-  }).finally(() => clearTimeout(to));
+
+  (async () => {
+    try {
+      const res = await postPinnedWebhook(url, {
+        headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
+        body,
+        signal: ctrl.signal,
+      });
+      recordDelivery(webhookId, event, res.status, res.ok, attempt);
+      if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
+    } catch (err) {
+      recordDelivery(webhookId, event, null, false, attempt);
+      if (!(err instanceof WebhookTargetBlockedError) && attempt < 2) {
+        setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
+      }
+    } finally {
+      clearTimeout(to);
+    }
+  })();
 }
 
 function deliver(orgId, event, payload) {
