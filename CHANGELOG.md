@@ -53,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Weekly report ranges now use UTC calendar arithmetic consistently, so the
+  same date-only reference produces the same Monday-to-Sunday window in every
+  host timezone.
 - Switched the repository-local OpenCode development configuration from GitHub
   Models to an NVIDIA NIM-only candidate set while preserving organization-level
   review-workflow ownership in `ContextualWisdomLab/.github`.

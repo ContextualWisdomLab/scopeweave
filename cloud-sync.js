@@ -607,7 +607,7 @@ export function buildWeeklyReport(tasks, refDate, projectName = '') {
   if (Number.isNaN(ref.getTime())) return '';
   const day = (d) => d.toISOString().slice(0, 10);
   const monday = new Date(ref);
-  monday.setDate(ref.getDate() - ((ref.getDay() + 6) % 7)); // this week's Monday
+  monday.setUTCDate(ref.getUTCDate() - ((ref.getUTCDay() + 6) % 7)); // this week's Monday
   const weekStart = day(monday);
   const weekEnd = day(new Date(monday.getTime() + 6 * 86400000));
   const nextStart = day(new Date(monday.getTime() + 7 * 86400000));
