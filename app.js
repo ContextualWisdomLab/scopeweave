@@ -764,15 +764,12 @@ function createActionButton(label, text, action, title) {
     actionButtonTemplate = document.createElement('button');
     actionButtonTemplate.type = 'button';
     actionButtonTemplate.className = 'icon-button';
-    const iconSpan = document.createElement('span');
-    iconSpan.setAttribute('aria-hidden', 'true');
-    actionButtonTemplate.appendChild(iconSpan);
   }
-  const button = actionButtonTemplate.cloneNode(true);
+  const button = actionButtonTemplate.cloneNode(false);
   button.dataset.action = action;
   button.setAttribute('aria-label', label);
   button.title = title;
-  button.firstChild.textContent = text;
+  button.innerHTML = `<span aria-hidden="true">${text}</span>`;
   return button;
 }
 
