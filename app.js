@@ -570,8 +570,17 @@ function renderAll() {
   renderEditorValidation();
 }
 
+// ⚡ Bolt: Use a DocumentFragment batch append fallback for engines that
+// implement slow rest parameter spread in .replaceChildren()
 function setTableBodyRows(rows) {
-  elements.tableBody.replaceChildren(...rows);
+  // Handle test environments where document.createDocumentFragment might be missing/mocked
+  if (typeof document.createDocumentFragment === 'function') {
+    const fragment = document.createDocumentFragment();
+    rows.forEach(row => fragment.appendChild(row));
+    elements.tableBody.replaceChildren(fragment);
+  } else {
+    elements.tableBody.replaceChildren(...rows);
+  }
 }
 
 function createEmptyStateRow() {
