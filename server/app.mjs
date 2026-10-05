@@ -11,6 +11,50 @@ import { clearfolioMock, mockArtifact, submitJob, jobStatus, artifactUrl } from 
 import { normalizeAttachmentStatusBudgetMs, normalizeAttachmentStatusConcurrency, normalizeAttachmentStatusTimeoutMs, refreshAttachmentStatuses } from './attachment_status.mjs';
 import { chat as orchestratorChat } from './orchestrator.mjs';
 import { computeEvm } from '../analytics.js'; // pure math, shared with the client
+import { BlockList, isIPv4, isIPv6 } from 'node:net';
+import { resolve4, resolve6 } from 'node:dns/promises';
+
+const ssrfBlockList = new BlockList();
+['127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16', '169.254.0.0/16'].forEach(s => {
+  const [ip, mask] = s.split('/');
+  ssrfBlockList.addSubnet(ip, Number(mask), 'ipv4');
+});
+['fe80::/10', 'fc00::/7'].forEach(s => {
+  const [ip, mask] = s.split('/');
+  ssrfBlockList.addSubnet(ip, Number(mask), 'ipv6');
+});
+['0.0.0.0'].forEach(ip => ssrfBlockList.addAddress(ip, 'ipv4'));
+['::1', '::'].forEach(ip => ssrfBlockList.addAddress(ip, 'ipv6'));
+
+async function isSafeWebhookUrl(urlString) {
+  let u;
+  try {
+    u = new URL(urlString);
+  } catch {
+    return false;
+  }
+  if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+
+  const host = u.hostname.replace(/^\[|\]$/g, '');
+
+  if (isIPv4(host)) return !ssrfBlockList.check(host, 'ipv4');
+  if (isIPv6(host)) return !ssrfBlockList.check(host, 'ipv6');
+
+  try {
+    const [ips4, ips6] = await Promise.all([
+      resolve4(host).catch(() => []),
+      resolve6(host).catch(() => [])
+    ]);
+    const ips = [...ips4.map(ip => ({ip, t: 'ipv4'})), ...ips6.map(ip => ({ip, t: 'ipv6'}))];
+    if (ips.length === 0) return false;
+    for (const {ip, t} of ips) {
+      if (ssrfBlockList.check(ip, t)) return false;
+    }
+  } catch {
+    return false;
+  }
+  return true;
+}
 
 const getOrg = (id) => db.prepare('SELECT * FROM orgs WHERE id = ?').get(id);
 
@@ -99,8 +143,12 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+  if (!(await isSafeWebhookUrl(url))) {
+    recordDelivery(webhookId, event, null, false, attempt);
+    return;
+  }
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
   fetch(url, {
@@ -108,6 +156,7 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
+    redirect: 'error',
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
     if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
