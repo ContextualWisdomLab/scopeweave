@@ -571,7 +571,11 @@ function renderAll() {
 }
 
 function setTableBodyRows(rows) {
-  elements.tableBody.replaceChildren(...rows);
+  const fragment = document.createDocumentFragment();
+  for (const row of rows) {
+    fragment.appendChild(row);
+  }
+  elements.tableBody.replaceChildren(fragment);
 }
 
 function createEmptyStateRow() {
@@ -2306,7 +2310,9 @@ function renderGantt() {
     actions.appendChild(backBtn);
 
     emptyDiv.append(icon, title, description, actions);
-    elements.ganttContent.replaceChildren(emptyDiv);
+    const emptyFragment = document.createDocumentFragment();
+    emptyFragment.appendChild(emptyDiv);
+    elements.ganttContent.replaceChildren(emptyFragment);
     return;
   }
 
@@ -2330,7 +2336,9 @@ function renderGantt() {
   chart.appendChild(createGanttChartTable(weeks, weekdays, totalWidth));
 
   shell.append(meta, chart);
-  elements.ganttContent.replaceChildren(shell);
+  const shellFragment = document.createDocumentFragment();
+  shellFragment.appendChild(shell);
+  elements.ganttContent.replaceChildren(shellFragment);
 }
 
 function createGanttMetaTable() {

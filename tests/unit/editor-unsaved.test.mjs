@@ -30,7 +30,7 @@ function loadApp() {
     toggle() {},
   };
   const dummyElement = new Proxy(
-    { classList, style: {}, value: '', textContent: '', innerHTML: '', checked: false },
+    { classList, style: {}, value: '', textContent: '', innerHTML: '', checked: false, appendChild: () => {} },
     {
       get(target, prop) {
         if (prop in target) return target[prop];
@@ -64,6 +64,7 @@ function loadApp() {
     document: {
       getElementById: () => dummyElement,
       createElement: () => dummyElement,
+      createDocumentFragment: () => dummyElement,
       body: dummyElement,
       addEventListener() {},
       querySelector: () => dummyElement,
