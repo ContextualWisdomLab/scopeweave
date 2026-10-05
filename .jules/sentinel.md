@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2025-02-14 - SSRF in Webhooks
+**Vulnerability:** Found an SSRF vulnerability where user-provided webhook URLs could target local network addresses or internal systems because there was no domain/IP validation.
+**Learning:** Relying on default `fetch()` is insecure for webhooks. `node:net.BlockList` can be used to validate resolved IP addresses. Webhooks often need to retry, but if an SSRF blocklist stops the request, halting retries makes sense in production, although existing tests may rely on the retry logic to simulate network errors with local IPs.
+**Prevention:** Always validate URLs against an internal IP blocklist before performing outbound requests. Ensure that the validation blocks loopback, private networks (RFC1918), and zero addresses.
