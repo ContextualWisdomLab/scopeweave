@@ -571,7 +571,11 @@ function renderAll() {
 }
 
 function setTableBodyRows(rows) {
-  elements.tableBody.replaceChildren(...rows);
+  const fragment = document.createDocumentFragment();
+  for (const row of rows) {
+    fragment.appendChild(row);
+  }
+  elements.tableBody.replaceChildren(fragment);
 }
 
 function createEmptyStateRow() {
