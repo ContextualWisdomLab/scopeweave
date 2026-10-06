@@ -30,6 +30,10 @@ assert.equal(verifyPassword([], empty), false, 'empty array must not coerce to a
 assert.equal(verifyPassword(null, empty), false);
 assert.equal(verifyPassword({ evil: true }, stored), false);
 
+// Dummy hash evaluation prevents timing attacks by mimicking valid scrypt timing
+const dummyHash = '0'.repeat(32) + ':' + '0'.repeat(128);
+assert.equal(verifyPassword('password123', dummyHash), false, 'dummy hash rejects any password');
+
 console.log('✓ auth password type-safety tests passed');
 `;
 
