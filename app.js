@@ -571,7 +571,9 @@ function renderAll() {
 }
 
 function setTableBodyRows(rows) {
-  elements.tableBody.replaceChildren(...rows);
+  const fragment = document.createDocumentFragment();
+  rows.forEach(row => fragment.appendChild(row));
+  elements.tableBody.replaceChildren(fragment);
 }
 
 function createEmptyStateRow() {
@@ -2330,7 +2332,9 @@ function renderGantt() {
   chart.appendChild(createGanttChartTable(weeks, weekdays, totalWidth));
 
   shell.append(meta, chart);
-  elements.ganttContent.replaceChildren(shell);
+  const fragment = document.createDocumentFragment();
+  fragment.appendChild(shell);
+  elements.ganttContent.replaceChildren(fragment);
 }
 
 function createGanttMetaTable() {
