@@ -192,9 +192,16 @@ app.post('/api/auth/signup', async (c) => {
 app.post('/api/auth/login', async (c) => {
   const { email, password } = await c.req.json().catch(() => ({}));
   const u = db.prepare('SELECT * FROM users WHERE email = ?').get(email || '');
+
+  const dummyHash = '0'.repeat(32) + ':' + '0'.repeat(128);
+  const hashToVerify = u ? u.password_hash : dummyHash;
+  const passwordStr = typeof password === 'string' ? password : '';
+
+  const isValidPassword = verifyPassword(passwordStr, hashToVerify);
+
   // Pass password through only when it is a string — verifyPassword rejects
   // non-strings (objects/arrays) so they never match an empty-password hash.
-  if (!u || typeof password !== 'string' || !verifyPassword(password, u.password_hash)) {
+  if (!u || typeof password !== 'string' || !isValidPassword) {
     return c.json({ error: 'invalid credentials' }, 401);
   }
   return c.json({ token: signToken({ sub: u.id, email: u.email, tv: u.token_version }) });
@@ -1352,6 +1359,8 @@ app.post('/api/auth/change-password', requireAuth, async (c) => {
   const { oldPassword, newPassword } = await c.req.json().catch(() => ({}));
   if (typeof newPassword !== 'string' || newPassword.length < 8) return c.json({ error: 'new password (min 8) required' }, 400);
   const u = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(uid);
+
+  // No timing attack mitigation here because user existence is guaranteed by auth token
   if (!u || typeof oldPassword !== 'string' || !verifyPassword(oldPassword, u.password_hash)) {
     return c.json({ error: 'current password incorrect' }, 403);
   }
@@ -1365,6 +1374,8 @@ app.delete('/api/account', requireAuth, async (c) => {
   const uid = c.get('user').sub;
   const { password } = await c.req.json().catch(() => ({}));
   const u = db.prepare('SELECT password_hash FROM users WHERE id = ?').get(uid);
+
+  // No timing attack mitigation here because user existence is guaranteed by auth token
   if (!u || typeof password !== 'string' || !verifyPassword(password, u.password_hash)) {
     return c.json({ error: 'password required to delete account' }, 403);
   }
