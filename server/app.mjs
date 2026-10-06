@@ -4,6 +4,8 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
+import { BlockList } from 'node:net';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -89,6 +91,34 @@ const metrics = {
   attachmentStatusRefreshDeferred: 0,
 };
 
+const ssrfBlockList = new BlockList();
+ssrfBlockList.addAddress('127.0.0.1');
+ssrfBlockList.addAddress('0.0.0.0');
+ssrfBlockList.addAddress('::1', 'ipv6');
+ssrfBlockList.addAddress('::', 'ipv6');
+ssrfBlockList.addSubnet('10.0.0.0', 8);
+ssrfBlockList.addSubnet('172.16.0.0', 12);
+ssrfBlockList.addSubnet('192.168.0.0', 16);
+ssrfBlockList.addSubnet('fc00::', 7, 'ipv6');
+ssrfBlockList.addSubnet('fe80::', 10, 'ipv6');
+
+async function isSafeUrl(urlStr) {
+  try {
+    const u = new URL(urlStr);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') return false;
+    const hostname = u.hostname.replace(/^\[|\]$/g, '');
+    const ips = await lookup(hostname, { all: true });
+    for (const { address, family } of ips) {
+      if (ssrfBlockList.check(address, family === 6 ? 'ipv6' : 'ipv4')) {
+        return false;
+      }
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 // Outbound webhooks: POST signed JSON to each active hook subscribed to `event`.
 // Fire-and-forget with a timeout, one retry on failure, and a recorded outcome
 // per attempt — never blocks or fails the triggering request.
@@ -99,14 +129,19 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+  if (!(await isSafeUrl(url))) {
+    recordDelivery(webhookId, event, null, false, attempt);
+    return; // Do not retry SSRF blocked urls
+  }
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
   fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
+    redirect: 'error',
     signal: ctrl.signal,
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
