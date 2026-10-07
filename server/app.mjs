@@ -4,6 +4,8 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import net from 'node:net';
+import dns from 'node:dns/promises';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -99,14 +101,49 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+const webhookBlockList = new net.BlockList();
+webhookBlockList.addSubnet('127.0.0.0', 8, 'ipv4');
+webhookBlockList.addSubnet('10.0.0.0', 8, 'ipv4');
+webhookBlockList.addSubnet('172.16.0.0', 12, 'ipv4');
+webhookBlockList.addSubnet('192.168.0.0', 16, 'ipv4');
+webhookBlockList.addSubnet('169.254.0.0', 16, 'ipv4');
+webhookBlockList.addAddress('0.0.0.0', 'ipv4');
+webhookBlockList.addAddress('::1', 'ipv6');
+webhookBlockList.addAddress('::', 'ipv6');
+webhookBlockList.addSubnet('fc00::', 7, 'ipv6');
+webhookBlockList.addSubnet('fe80::', 10, 'ipv6');
+webhookBlockList.addSubnet('::ffff:0:0', 96, 'ipv6');
+
+async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+  let targetUrl;
+  try {
+    targetUrl = new URL(url);
+    const hostname = targetUrl.hostname.replace(/^\[|\]$/g, '');
+    let ips = [];
+    if (net.isIP(hostname)) {
+      ips = [{ address: hostname, family: net.isIPv6(hostname) ? 6 : 4 }];
+    } else {
+      ips = await dns.lookup(hostname, { all: true });
+    }
+    for (const ip of ips) {
+      if (webhookBlockList.check(ip.address, ip.family === 6 ? 'ipv6' : 'ipv4')) {
+        recordDelivery(webhookId, event, 403, false, attempt);
+        return; // Halt retry logic if SSRF check fails
+      }
+    }
+  } catch {
+    recordDelivery(webhookId, event, null, false, attempt);
+    return; // Halt if URL parsing or DNS resolution fails completely
+  }
+
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
   fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
+    redirect: 'error',
     signal: ctrl.signal,
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
