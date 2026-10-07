@@ -4,3 +4,7 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+
+## 2026-10-07 - Webhook Database Filtering
+**Learning:** Filtering array values inside a loop by parsing strings is inefficient, especially when database querying is involved.
+**Action:** Use database querying (e.g. `LIKE`) for matching values to reduce JS overhead when the data allows it.

@@ -123,6 +123,7 @@ function deliver(orgId, event, payload) {
     hooks = db.prepare('SELECT id, url, secret, events FROM webhooks WHERE org_id = ? AND active = 1').all(orgId);
   } catch { return; }
   for (const h of hooks) {
+    if (h.events !== '*' && !String(h.events || '').includes(event)) continue;
     const subs = String(h.events || '').split(',').map((s) => s.trim());
     if (!(subs.includes('*') || subs.includes(event))) continue;
     const body = JSON.stringify({ event, orgId: Number(orgId), payload, ts: new Date().toISOString() });
