@@ -128,3 +128,7 @@
 **Vulnerability:** The backend CSV export for audit logs neutralized `=`, `+`, `-`, and `@` but failed to neutralize `|` (pipe) characters, allowing potential DDE (Dynamic Data Exchange) injection if exported logs were opened in spreadsheet software.
 **Learning:** Spreadsheet formula defenses must cover all command-style prefixes including `|` across all CSV export boundaries, both frontend and backend.
 **Prevention:** Update the sanitization regex in the backend export function to `/^[=+\-@|]/` so that all potentially executable spreadsheet payloads are prefixed with a single quote.
+## 2026-10-07 - SSRF Vulnerability in Webhooks
+**Vulnerability:** Unrestricted outbound HTTP requests (SSRF) in the webhook delivery mechanism via Node.js native `fetch`.
+**Learning:** Default `fetch` follows redirects and does not restrict requests to internal network ranges, allowing malicious webhook URLs or redirects to pivot into internal infrastructure.
+**Prevention:** Use `node:net.BlockList` to validate all resolved IPs against internal/loopback ranges, and explicitly configure `fetch` with `redirect: 'error'` to prevent redirect bypasses.
