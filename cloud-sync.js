@@ -951,7 +951,11 @@ export function computeSprintStats(tasks, sprints, today) {
   const velocity = closedWithWork.length
     ? closedWithWork.reduce((n, r) => n + r.completed, 0) / closedWithWork.length
     : null;
-  const backlog = leaf.filter((t) => !String(t.sprint || '').trim() || !(sprints || []).some((sp) => sp.name === String(t.sprint).trim()));
+  const sprintNames = new Set((sprints || []).map((sp) => sp.name));
+  const backlog = leaf.filter((t) => {
+    const s = String(t.sprint || '').trim();
+    return !s || !sprintNames.has(s);
+  });
   return { rows, velocity, backlogCount: backlog.length };
 }
 
