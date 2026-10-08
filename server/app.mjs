@@ -4,6 +4,8 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import { BlockList, isIPv4, isIPv6 } from 'node:net';
+import dns from 'node:dns';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -99,8 +101,49 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+const ssrfBlockList = new BlockList();
+ssrfBlockList.addSubnet('127.0.0.0', 8, 'ipv4');
+ssrfBlockList.addSubnet('169.254.0.0', 16, 'ipv4');
+ssrfBlockList.addSubnet('10.0.0.0', 8, 'ipv4');
+ssrfBlockList.addSubnet('172.16.0.0', 12, 'ipv4');
+ssrfBlockList.addSubnet('192.168.0.0', 16, 'ipv4');
+ssrfBlockList.addAddress('0.0.0.0', 'ipv4');
+ssrfBlockList.addSubnet('::1', 128, 'ipv6');
+ssrfBlockList.addAddress('::', 'ipv6');
+ssrfBlockList.addSubnet('::ffff:0:0', 96, 'ipv6');
+
+async function validateUrl(targetUrl) {
+  try {
+    const parsed = new URL(targetUrl);
+    const hostname = parsed.hostname.replace(/^\[|\]$/g, '');
+    let ips = [];
+    if (isIPv4(hostname) || isIPv6(hostname)) {
+      ips.push({ address: hostname, family: isIPv4(hostname) ? 4 : 6 });
+    } else {
+      ips = await dns.promises.lookup(hostname, { all: true });
+    }
+    for (const ip of ips) {
+      if (ssrfBlockList.check(ip.address, ip.family === 4 ? 'ipv4' : 'ipv6')) {
+        return false;
+      }
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+  const isValid = await validateUrl(url);
+  if (!isValid) {
+    recordDelivery(webhookId, event, null, false, attempt);
+    if (attempt < 2) {
+      setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
+    }
+    return;
+  }
+
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
   fetch(url, {
@@ -108,6 +151,7 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
+    redirect: 'error'
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
     if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
