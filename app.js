@@ -571,7 +571,12 @@ function renderAll() {
 }
 
 function setTableBodyRows(rows) {
-  elements.tableBody.replaceChildren(...rows);
+  // Optimization: Use DocumentFragment instead of spreading large arrays to avoid RangeError and improve performance
+  const fragment = document.createDocumentFragment();
+  for (let i = 0; i < rows.length; i++) {
+    fragment.appendChild(rows[i]);
+  }
+  elements.tableBody.replaceChildren(fragment);
 }
 
 function createEmptyStateRow() {

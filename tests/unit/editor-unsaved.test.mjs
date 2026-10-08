@@ -62,6 +62,7 @@ function loadApp() {
     window: windowStub,
     self: windowStub,
     document: {
+      createDocumentFragment: () => dummyElement,
       getElementById: () => dummyElement,
       createElement: () => dummyElement,
       body: dummyElement,
