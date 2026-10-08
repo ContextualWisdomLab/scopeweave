@@ -34,6 +34,10 @@ assert.equal(r.status, 400, 'object password signup → 400');
 r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'arr@y.com', password: ['password123'] }) });
 assert.equal(r.status, 400, 'array password signup → 400');
 
+// non-existent user login rejected (constant time evaluation coverage)
+r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'nonexistent@b.com', password: 'password123' }) });
+assert.equal(r.status, 401, 'non-existent user login → 401');
+
 // wrong password rejected
 r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'a@b.com', password: 'nope' }) });
 assert.equal(r.status, 401, 'bad login → 401');
