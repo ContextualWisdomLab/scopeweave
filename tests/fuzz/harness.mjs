@@ -65,6 +65,7 @@ function loadAppExports() {
     document: {
       getElementById: () => dummyElement,
       createElement: () => dummyElement,
+      createDocumentFragment: () => dummyElement,
       body: dummyElement,
     },
     localStorage: {

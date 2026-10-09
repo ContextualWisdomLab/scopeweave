@@ -64,6 +64,7 @@ function loadApp() {
     document: {
       getElementById: () => dummyElement,
       createElement: () => dummyElement,
+      createDocumentFragment: () => dummyElement,
       body: dummyElement,
       addEventListener() {},
       querySelector: () => dummyElement,
