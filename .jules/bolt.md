@@ -4,3 +4,7 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+
+## 2024-06-25 - Prevent Call Stack Size Exceeded on DOM Updates
+**Learning:** Spreading large arrays into DOM manipulation methods like `replaceChildren(...rows)` can trigger `RangeError: Maximum call stack size exceeded` and degrades performance due to large argument allocations.
+**Action:** Always construct a `DocumentFragment` iteratively and pass the single fragment to the updating function instead of using array spreading on large collections of nodes.
