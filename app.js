@@ -571,7 +571,13 @@ function renderAll() {
 }
 
 function setTableBodyRows(rows) {
-  elements.tableBody.replaceChildren(...rows);
+  // ⚡ Bolt: Use DocumentFragment instead of spreading large arrays into replaceChildren
+  // to avoid 'Maximum call stack size exceeded' and reduce GC pressure.
+  const fragment = document.createDocumentFragment();
+  for (let i = 0; i < rows.length; i++) {
+    fragment.appendChild(rows[i]);
+  }
+  elements.tableBody.replaceChildren(fragment);
 }
 
 function createEmptyStateRow() {
