@@ -4,6 +4,8 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import { lookup } from 'node:dns/promises';
+import { BlockList } from 'node:net';
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -99,8 +101,35 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+const ssrfBlockList = new BlockList();
+ssrfBlockList.addSubnet('127.0.0.0', 8, 'ipv4');
+ssrfBlockList.addSubnet('10.0.0.0', 8, 'ipv4');
+ssrfBlockList.addSubnet('172.16.0.0', 12, 'ipv4');
+ssrfBlockList.addSubnet('192.168.0.0', 16, 'ipv4');
+ssrfBlockList.addSubnet('169.254.0.0', 16, 'ipv4');
+ssrfBlockList.addSubnet('::ffff:0:0', 96, 'ipv6');
+ssrfBlockList.addSubnet('fe80::', 10, 'ipv6');
+ssrfBlockList.addSubnet('fc00::', 7, 'ipv6');
+ssrfBlockList.addAddress('0.0.0.0', 'ipv4');
+ssrfBlockList.addAddress('::', 'ipv6');
+ssrfBlockList.addAddress('::1', 'ipv6');
+
+async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+
+  try {
+    const u = new URL(url);
+    const hostname = u.hostname.replace(/^\[|\]$/g, '');
+    const addrs = await lookup(hostname, { all: true });
+    for (const addr of addrs) {
+      if (ssrfBlockList.check(addr.address, addr.family === 6 ? 'ipv6' : 'ipv4')) throw new Error('Blocked SSRF');
+    }
+  } catch (err) {
+    recordDelivery(webhookId, event, null, false, attempt);
+    if (attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
+    return;
+  }
+
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
   fetch(url, {
@@ -108,6 +137,7 @@ function sendWebhook(webhookId, url, sig, event, body, attempt) {
     headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
     body,
     signal: ctrl.signal,
+    redirect: 'error',
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
     if (!res.ok && attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
