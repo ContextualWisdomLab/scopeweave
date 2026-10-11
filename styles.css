@@ -163,6 +163,11 @@ button {
   color: var(--text-muted);
 }
 
+.meta-value-card:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.5);
+  outline-offset: 2px;
+}
+
 .meta-value-card strong {
   font-size: 1.75rem;
   font-weight: 800;
