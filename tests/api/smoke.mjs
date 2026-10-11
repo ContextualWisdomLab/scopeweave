@@ -34,6 +34,12 @@ assert.equal(r.status, 400, 'object password signup → 400');
 r = await req('/api/auth/signup', { method: 'POST', body: body({ email: 'arr@y.com', password: ['password123'] }) });
 assert.equal(r.status, 400, 'array password signup → 400');
 
+// dummy hash execution path coverage (timing attack mitigation)
+r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'nonexistent@x.com', password: 'password123' }) });
+assert.equal(r.status, 401, 'nonexistent user login → 401');
+r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'nonexistent@x.com', password: { length: 12 } }) });
+assert.equal(r.status, 401, 'nonexistent user object password login → 401');
+
 // wrong password rejected
 r = await req('/api/auth/login', { method: 'POST', body: body({ email: 'a@b.com', password: 'nope' }) });
 assert.equal(r.status, 401, 'bad login → 401');
