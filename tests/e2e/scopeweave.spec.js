@@ -1293,10 +1293,21 @@ test.describe('ScopeWeave Planner - Palette UX Enhancements', () => {
   test('adds helpful tooltips and ARIA attributes for progress cards and gantt buttons', async ({ page }) => {
     await page.goto('./');
 
-    // Verify progress card tooltips
-    await expect(page.locator('.meta-value-card').first()).toHaveAttribute('title', '프로젝트의 작업 기간(일수) 합계입니다.');
-    await expect(page.locator('.plan-card')).toHaveAttribute('title', '기간(일수) 가중치가 반영된 프로젝트 전체 계획 진척률입니다.');
-    await expect(page.locator('.actual-card')).toHaveAttribute('title', '기간(일수) 가중치가 반영된 프로젝트 전체 실적 진척률입니다.');
+    // Verify progress card tooltips and ARIA attributes
+    const totalDaysCard = page.locator('.meta-value-card').first();
+    await expect(totalDaysCard).toHaveAttribute('title', '프로젝트의 작업 기간(일수) 합계입니다.');
+    await expect(totalDaysCard).toHaveAttribute('role', 'note');
+    await expect(totalDaysCard).toHaveAttribute('tabindex', '0');
+
+    const planCard = page.locator('.plan-card');
+    await expect(planCard).toHaveAttribute('title', '기간(일수) 가중치가 반영된 프로젝트 전체 계획 진척률입니다.');
+    await expect(planCard).toHaveAttribute('role', 'note');
+    await expect(planCard).toHaveAttribute('tabindex', '0');
+
+    const actualCard = page.locator('.actual-card');
+    await expect(actualCard).toHaveAttribute('title', '기간(일수) 가중치가 반영된 프로젝트 전체 실적 진척률입니다.');
+    await expect(actualCard).toHaveAttribute('role', 'note');
+    await expect(actualCard).toHaveAttribute('tabindex', '0');
 
     // Verify sync status ARIA attributes
     const syncStatus = page.locator('#sync-status');
