@@ -2606,6 +2606,9 @@ function createId(seed = Date.now()) {
 
 // ⚡ Bolt: Memoize date parsing and validation to reduce GC pressure and expensive Date allocations in tight render loops
 
+// Bolt: Fast path array lookup for days in month. Index 0 is a padding to allow 1-based month access.
+const DAYS_IN_MONTH = [0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+
 function isValidDateString(value) {
   if (!isValidDateString.cache) isValidDateString.cache = new Map();
   const validDateCache = isValidDateString.cache;
@@ -2616,7 +2619,21 @@ function isValidDateString(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return false;
   }
-  const isValid = formatDateInput(new Date(dateStringToUtcMs(value))) === value;
+
+  const year = Number(value.substring(0, 4));
+  const month = Number(value.substring(5, 7));
+  const day = Number(value.substring(8, 10));
+
+  let isValid = false;
+  if (month >= 1 && month <= 12 && day >= 1) {
+    let maxDays = DAYS_IN_MONTH[month];
+    if (month === 2) {
+      const isLeap = (year % 4 === 0 && year % 100 !== 0) || (year % 400 === 0);
+      if (isLeap) maxDays = 29;
+    }
+    isValid = day <= maxDays;
+  }
+
   // Bolt: Increase cache limits to prevent cache thrashing in large loops.
   if (validDateCache.size < 10000) {
     validDateCache.set(value, isValid);
