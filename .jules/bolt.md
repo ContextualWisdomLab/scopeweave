@@ -4,3 +4,6 @@
 ## 2026-07-12 - Optimize renderTaskRow DOM allocations
 **Learning:** Caching unattached template nodes and instantiating them via `.cloneNode(false)` reduces DOM instantiation overhead in O(N) render loops significantly.
 **Action:** Apply this optimization to other hot-path rendering elements such as rows, cells, and stack containers.
+## 2024-05-24 - isValidDateString optimization
+**Learning:** new Date() allocation and string formatting in hot loops (like date validation called millions of times) creates significant memory pressure and CPU overhead. Explicit integer checks are dramatically faster.
+**Action:** Avoid new Date() and string manipulation in core utility functions that are part of nested iteration loops.
