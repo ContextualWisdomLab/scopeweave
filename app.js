@@ -2616,7 +2616,17 @@ function isValidDateString(value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
     return false;
   }
-  const isValid = formatDateInput(new Date(dateStringToUtcMs(value))) === value;
+
+  const year = Number(value.substring(0, 4));
+  const month = Number(value.substring(5, 7));
+  const day = Number(value.substring(8, 10));
+
+  let isValid = false;
+  if (month >= 1 && month <= 12) {
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+    isValid = day >= 1 && day <= daysInMonth;
+  }
+
   // Bolt: Increase cache limits to prevent cache thrashing in large loops.
   if (validDateCache.size < 10000) {
     validDateCache.set(value, isValid);
