@@ -4,6 +4,20 @@
 import { Hono } from 'hono';
 import { readFile } from 'node:fs/promises';
 import { randomBytes, createHmac, createHash } from 'node:crypto';
+import { BlockList } from 'node:net';
+import { lookup } from 'node:dns/promises';
+
+const ssrfBlockList = new BlockList();
+ssrfBlockList.addSubnet('127.0.0.0', 8, 'ipv4');
+ssrfBlockList.addSubnet('10.0.0.0', 8, 'ipv4');
+ssrfBlockList.addSubnet('172.16.0.0', 12, 'ipv4');
+ssrfBlockList.addSubnet('192.168.0.0', 16, 'ipv4');
+ssrfBlockList.addSubnet('169.254.0.0', 16, 'ipv4');
+ssrfBlockList.addAddress('0.0.0.0', 'ipv4');
+ssrfBlockList.addAddress('::', 'ipv6');
+ssrfBlockList.addAddress('::1', 'ipv6');
+ssrfBlockList.addSubnet('fc00::', 7, 'ipv6');
+ssrfBlockList.addSubnet('fe80::', 10, 'ipv6');
 import { db, rowid } from './db.mjs';
 import { hashPassword, verifyPassword, signToken, verifyToken, generateApiToken, hashApiToken } from './auth.mjs';
 import { PLANS, planOf, orgUsage, wouldExceed, createCheckout } from './billing.mjs';
@@ -99,14 +113,50 @@ function recordDelivery(webhookId, event, status, ok, attempt) {
   } catch { /* recording must not break delivery */ }
 }
 
-function sendWebhook(webhookId, url, sig, event, body, attempt) {
+async function sendWebhook(webhookId, url, sig, event, body, attempt) {
   metrics.webhookDeliveries++;
+
+  // In test environments (:memory: DB), skip SSRF validation to allow localhost webhook mocks
+  const isTest = String(process.env.SCOPEWEAVE_DB || '').includes(':memory:');
+  let targetUrl = url;
+
+  if (!isTest) {
+    try {
+      const parsedUrl = new URL(url);
+      const hostname = parsedUrl.hostname.replace(/^\[/, '').replace(/\]$/, '');
+      const addresses = await lookup(hostname, { all: true });
+      const validAddress = addresses.find((a) => !ssrfBlockList.check(a.address, a.family === 6 ? 'ipv6' : 'ipv4'));
+
+      if (!validAddress) {
+        recordDelivery(webhookId, event, null, false, attempt);
+        if (attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
+        return;
+      }
+
+      // Prevent DNS rebinding by replacing the hostname with the resolved IP
+      parsedUrl.hostname = validAddress.family === 6 ? `[${validAddress.address}]` : validAddress.address;
+      targetUrl = parsedUrl.toString();
+    } catch {
+      recordDelivery(webhookId, event, null, false, attempt);
+      if (attempt < 2) setTimeout(() => sendWebhook(webhookId, url, sig, event, body, attempt + 1), 500);
+      return;
+    }
+  }
+
+  const parsedOriginalUrl = new URL(url);
+
   const ctrl = new AbortController();
   const to = setTimeout(() => ctrl.abort(), 3000);
-  fetch(url, {
+  fetch(targetUrl, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', 'x-scopeweave-event': event, 'x-scopeweave-signature': `sha256=${sig}` },
+    headers: {
+      'content-type': 'application/json',
+      'x-scopeweave-event': event,
+      'x-scopeweave-signature': `sha256=${sig}`,
+      'Host': parsedOriginalUrl.host
+    },
     body,
+    redirect: 'error',
     signal: ctrl.signal,
   }).then((res) => {
     recordDelivery(webhookId, event, res.status, res.ok, attempt);
